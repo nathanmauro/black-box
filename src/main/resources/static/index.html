@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SBA Agentic</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">local agent control plane</p>
+      <h1>SBA Agentic</h1>
+    </div>
+    <div class="status-strip" id="statusStrip" aria-live="polite"></div>
+  </header>
+
+  <main class="workspace">
+    <section class="command-panel" aria-label="Capture event">
+      <div class="panel-heading">
+        <h2>Capture</h2>
+        <button id="refreshButton" class="icon-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button>
+      </div>
+      <form id="captureForm" class="capture-form">
+        <label>
+          Source
+          <select name="source">
+            <option value="manual">manual</option>
+            <option value="claude">claude</option>
+            <option value="codex">codex</option>
+            <option value="lm-studio">lm-studio</option>
+          </select>
+        </label>
+        <label>
+          Session
+          <input name="clientSessionId" value="manual-session" autocomplete="off">
+        </label>
+        <label>
+          Type
+          <input name="eventType" value="ManualCapture" autocomplete="off">
+        </label>
+        <label class="wide">
+          Text
+          <textarea name="text" rows="5" placeholder="Capture a decision, observation, todo, or handoff note."></textarea>
+        </label>
+        <button type="submit">Capture event</button>
+      </form>
+    </section>
+
+    <section class="search-panel" aria-label="Search events">
+      <div class="panel-heading">
+        <h2>Search</h2>
+        <span id="searchMeta" class="meta"></span>
+      </div>
+      <form id="searchForm" class="search-form">
+        <input name="query" placeholder="Search sessions, tools, events, paths" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+      <div id="searchResults" class="results"></div>
+    </section>
+
+    <section class="sessions-panel" aria-label="Recent sessions">
+      <div class="panel-heading">
+        <h2>Sessions</h2>
+        <span id="sessionCount" class="meta"></span>
+      </div>
+      <div id="sessions" class="session-list"></div>
+    </section>
+
+    <section class="timeline-panel" aria-label="Session timeline">
+      <div class="panel-heading">
+        <div>
+          <h2 id="timelineTitle">Timeline</h2>
+          <p id="timelineMeta" class="meta"></p>
+        </div>
+        <button id="summarizeButton" class="small-button" disabled>Summarize</button>
+      </div>
+      <div id="summary" class="summary" hidden></div>
+      <div id="events" class="event-list"></div>
+    </section>
+  </main>
+
+  <template id="sessionTemplate">
+    <button class="session-row" type="button">
+      <span class="session-title"></span>
+      <span class="session-meta"></span>
+    </button>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>

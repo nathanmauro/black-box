@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: sba-agentic
+  datasource:
+    url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+      connection-test-query: SELECT 1
+  sql:
+    init:
+      mode: always
+  ai:
+    mcp:
+      server:
+        name: sba-agentic
+        version: 0.1.0
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp
+
+server:
+  port: ${SBA_PORT:8766}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+sba:
+  local-ai:
+    enabled: ${SBA_LOCAL_AI_ENABLED:true}
+    base-url: ${SBA_LOCAL_AI_BASE_URL:http://localhost:1234}
+    chat-path: ${SBA_LOCAL_AI_CHAT_PATH:/v1/chat/completions}
+    model: ${SBA_LOCAL_AI_MODEL:local-model}
+    api-key: ${SBA_LOCAL_AI_API_KEY:lm-studio}
+    timeout: 30s
+    max-tokens: 320
+  elasticsearch:
+    enabled: ${SBA_ELASTICSEARCH_ENABLED:false}
+    base-url: ${SBA_ELASTICSEARCH_URL:http://localhost:9200}
+    index-name: ${SBA_ELASTICSEARCH_INDEX:sba-agentic-events}
+    timeout: 5s
+  ingestion:
+    max-text-length: 20000

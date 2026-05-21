@@ -1,0 +1,7 @@
+target/
+.mvn/wrapper/maven-wrapper.jar
+sba-agentic.db
+sba-agentic.db-*
+.DS_Store
+.idea/
+*.iml
