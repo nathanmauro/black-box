@@ -106,11 +106,15 @@ SBA_LOCAL_AI_ENABLED=false mvn spring-boot:run
 Enable Elasticsearch:
 
 ```bash
+docker compose -f compose.elasticsearch.yml up -d
+
 SBA_ELASTICSEARCH_ENABLED=true \
 SBA_ELASTICSEARCH_URL=http://localhost:9200 \
 SBA_ELASTICSEARCH_INDEX=sba-agentic-events \
 mvn spring-boot:run
 ```
+
+See `docs/local-writes-and-elasticsearch.md` for the write paths, verification commands, and stop commands.
 
 ## CLI
 
@@ -188,6 +192,8 @@ Script path:
 ```text
 /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh
 ```
+
+For Codex, keep the hook config local to your machine and point it at this script for `UserPromptSubmit` and `PostToolUse` capture.
 
 Manual hook smoke test:
 
