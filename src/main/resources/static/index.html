@@ -3,89 +3,110 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SBA Agentic</title>
+  <title>Black Box — local flight recorder for machine minds</title>
+  <meta name="description" content="A local recorder that AI coding agents write their reasoning into and recall each other's prior decisions back out of, mid-task.">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" crossorigin>
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">local agent control plane</p>
-      <h1>SBA Agentic</h1>
+  <header class="masthead">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="5.5" y="8.5" width="21" height="15" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M5.5 16 H10 L12.5 11 L16 21 L19 13.5 L21 16 H26.5" fill="none"
+              stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <p class="eyebrow">local flight recorder for machine minds</p>
+        <h1>BLACK<span>BOX</span></h1>
+      </div>
     </div>
-    <div class="status-strip" id="statusStrip" aria-live="polite"></div>
+    <div class="readouts" id="readouts" aria-live="polite"></div>
   </header>
 
-  <main class="workspace">
-    <section class="command-panel" aria-label="Capture event">
-      <div class="panel-heading">
-        <h2>Capture</h2>
-        <button id="refreshButton" class="icon-button" title="Refresh sessions" aria-label="Refresh sessions">↻</button>
-      </div>
-      <form id="captureForm" class="capture-form">
-        <label>
-          Source
-          <select name="source">
-            <option value="manual">manual</option>
-            <option value="claude">claude</option>
-            <option value="codex">codex</option>
-            <option value="lm-studio">lm-studio</option>
-          </select>
-        </label>
-        <label>
-          Session
-          <input name="clientSessionId" value="manual-session" autocomplete="off">
-        </label>
-        <label>
-          Type
-          <input name="eventType" value="ManualCapture" autocomplete="off">
-        </label>
-        <label class="wide">
-          Text
-          <textarea name="text" rows="5" placeholder="Capture a decision, observation, todo, or handoff note."></textarea>
-        </label>
-        <button type="submit">Capture event</button>
-      </form>
-    </section>
-
-    <section class="search-panel" aria-label="Search events">
-      <div class="panel-heading">
-        <h2>Search</h2>
-        <span id="searchMeta" class="meta"></span>
-      </div>
-      <form id="searchForm" class="search-form">
-        <input name="query" placeholder="Search sessions, tools, events, paths" autocomplete="off">
-        <button type="submit">Search</button>
-      </form>
-      <div id="searchResults" class="results"></div>
-    </section>
-
-    <section class="sessions-panel" aria-label="Recent sessions">
-      <div class="panel-heading">
-        <h2>Sessions</h2>
-        <span id="sessionCount" class="meta"></span>
-      </div>
-      <div id="sessions" class="session-list"></div>
-    </section>
-
-    <section class="timeline-panel" aria-label="Session timeline">
-      <div class="panel-heading">
-        <div>
-          <h2 id="timelineTitle">Timeline</h2>
-          <p id="timelineMeta" class="meta"></p>
+  <main class="deck">
+    <aside class="rail">
+      <section class="panel channels">
+        <div class="panel-head">
+          <span class="eyebrow">sessions</span>
+          <span class="readout" id="sessionCount"></span>
+          <button id="refreshButton" class="ghost" title="Refresh" aria-label="Refresh">↻</button>
         </div>
-        <button id="summarizeButton" class="small-button" disabled>Summarize</button>
-      </div>
-      <div id="summary" class="summary" hidden></div>
-      <div id="events" class="event-list"></div>
+        <div id="sessions" class="channel-list"></div>
+      </section>
+
+      <section class="panel utility">
+        <div class="panel-head"><span class="eyebrow">capture</span></div>
+        <form id="captureForm" class="mini-form">
+          <div class="field-row">
+            <label class="field">
+              <span>source</span>
+              <select name="source">
+                <option value="manual">manual</option>
+                <option value="claude">claude</option>
+                <option value="codex">codex</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>session</span>
+              <input name="clientSessionId" value="manual-session" autocomplete="off">
+            </label>
+          </div>
+          <label class="field">
+            <span>note</span>
+            <textarea name="text" rows="2" placeholder="A decision, observation, or handoff note."></textarea>
+          </label>
+          <button type="submit" class="action">Capture</button>
+        </form>
+      </section>
+
+      <section class="panel utility">
+        <div class="panel-head"><span class="eyebrow">search</span><span class="readout" id="searchMeta"></span></div>
+        <form id="searchForm" class="mini-form search-form">
+          <input name="query" placeholder="Full-text across events" autocomplete="off">
+          <button type="submit" class="action ghost-action">Go</button>
+        </form>
+        <div id="searchResults" class="search-results"></div>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <section class="panel recall">
+        <div class="panel-head">
+          <span class="eyebrow">recall · read prior intent back out</span>
+          <span class="readout" id="recallMeta"></span>
+        </div>
+        <form id="recallForm" class="recall-console">
+          <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
+          <select name="withinHours" aria-label="time window">
+            <option value="24">24h</option>
+            <option value="168" selected>7d</option>
+            <option value="720">30d</option>
+            <option value="0">all</option>
+          </select>
+          <button type="submit" class="action recall-fire">Recall</button>
+        </form>
+        <div class="recall-stage" id="recallStage" hidden>
+          <svg class="cone" id="cone" aria-hidden="true" preserveAspectRatio="none"></svg>
+          <div class="memory-cards" id="memoryCards"></div>
+        </div>
+      </section>
+
+      <section class="panel spine-panel">
+        <div class="panel-head">
+          <div class="spine-heading">
+            <h2 id="spineTitle">Cognition Spine</h2>
+            <p class="readout" id="spineMeta">Select a session to read its trace.</p>
+          </div>
+          <button id="summarizeButton" class="action" disabled>Summarize</button>
+        </div>
+        <div id="summary" class="summary" hidden></div>
+        <div id="spine" class="spine"></div>
+      </section>
     </section>
   </main>
-
-  <template id="sessionTemplate">
-    <button class="session-row" type="button">
-      <span class="session-title"></span>
-      <span class="session-meta"></span>
-    </button>
-  </template>
 
   <script src="/app.js"></script>
 </body>
