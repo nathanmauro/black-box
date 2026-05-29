@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     source TEXT NOT NULL,
     client_session_id TEXT NOT NULL,
     title TEXT NOT NULL,
+    title_rank INTEGER NOT NULL DEFAULT 1,
     cwd TEXT,
     summary TEXT,
     started_at TEXT NOT NULL,

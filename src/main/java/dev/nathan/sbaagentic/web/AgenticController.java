@@ -5,6 +5,10 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.ai.SessionSummaryService;
+import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.context.ContextService;
+import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.event.AgentEvent;
 import dev.nathan.sbaagentic.event.EventIngestRequest;
 import dev.nathan.sbaagentic.event.EventIngestService;
@@ -30,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgenticController {
 
     private final EventIngestService ingestService;
+    private final ContextService contextService;
     private final EventRepository repository;
     private final SearchService searchService;
     private final SessionSummaryService summaryService;
@@ -38,12 +43,14 @@ public class AgenticController {
 
     public AgenticController(
             EventIngestService ingestService,
+            ContextService contextService,
             EventRepository repository,
             SearchService searchService,
             SessionSummaryService summaryService,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient) {
         this.ingestService = ingestService;
+        this.contextService = contextService;
         this.repository = repository;
         this.searchService = searchService;
         this.summaryService = summaryService;
@@ -54,6 +61,24 @@ public class AgenticController {
     @PostMapping("/events")
     public IngestResponse ingest(@Valid @RequestBody EventIngestRequest request) {
         return ingestService.ingest(request);
+    }
+
+    @PostMapping("/decisions")
+    public IngestResponse captureDecision(@Valid @RequestBody CaptureDecisionRequest request) {
+        return contextService.captureDecision(request);
+    }
+
+    @PostMapping("/handoffs")
+    public IngestResponse captureHandoff(@Valid @RequestBody CaptureHandoffRequest request) {
+        return contextService.captureHandoff(request);
+    }
+
+    @GetMapping("/recall")
+    public RecallResult recall(
+            @RequestParam(required = false) String scope,
+            @RequestParam(defaultValue = "168") int withinHours,
+            @RequestParam(required = false) List<String> kinds) {
+        return contextService.recall(scope, withinHours, kinds);
     }
 
     @GetMapping("/sessions")

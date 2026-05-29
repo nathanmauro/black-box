@@ -4,11 +4,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.search.EventIndexSink;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.session.TitleRank;
+import dev.nathan.sbaagentic.session.Titles;
 
 import org.springframework.stereotype.Service;
 
@@ -28,13 +28,18 @@ public class EventIngestService {
     public IngestResponse ingest(EventIngestRequest request) {
         EventIngestRequest normalized = normalize(request);
         Instant observedAt = normalized.observedAt() == null ? Instant.now() : normalized.observedAt();
-        AgentSession session = repository.findOrCreateSession(normalized, observedAt, titleFor(normalized));
-        AgentEvent event = repository.saveEvent(normalized, session, observedAt);
-        AgentSession updatedSession = repository.findSessionById(session.id()).orElse(session);
+        TitleCandidate title = titleFor(normalized);
+
+        // SQLite is the source of truth: persist atomically first, then fan out to optional indexes.
+        // Indexing runs outside the transaction so an external search backend can never hold the
+        // database connection open or fail the canonical write.
+        EventRepository.Persisted persisted =
+                repository.persistEvent(normalized, observedAt, title.value(), title.rank());
+        AgentEvent event = persisted.event();
 
         boolean indexed = false;
         for (EventIndexSink sink : indexSinks) {
-            indexed = sink.index(updatedSession, event) || indexed;
+            indexed = sink.index(persisted.session(), event) || indexed;
         }
 
         return new IngestResponse(
@@ -64,18 +69,18 @@ public class EventIngestService {
                 request.observedAt());
     }
 
-    private String titleFor(EventIngestRequest request) {
+    private TitleCandidate titleFor(EventIngestRequest request) {
         Object title = request.metadata().get("title");
         if (title instanceof String value && !value.isBlank()) {
-            return truncateTitle(value);
+            return new TitleCandidate(Titles.sanitize(value), TitleRank.EXPLICIT);
         }
         if (request.text() != null && !request.text().isBlank()) {
-            return truncateTitle(firstLine(request.text()));
+            return new TitleCandidate(Titles.sanitize(Titles.firstLine(request.text())), TitleRank.TEXT);
         }
         if (request.toolName() != null && !request.toolName().isBlank()) {
-            return truncateTitle(request.toolName() + " via " + request.eventType());
+            return new TitleCandidate(Titles.sanitize(request.toolName() + " via " + request.eventType()), TitleRank.TOOL);
         }
-        return truncateTitle(request.source() + " " + request.eventType());
+        return new TitleCandidate(Titles.sanitize(request.source() + " " + request.eventType()), TitleRank.FALLBACK);
     }
 
     private String truncate(String value) {
@@ -89,16 +94,7 @@ public class EventIngestService {
         return value.substring(0, max) + "\n[truncated]";
     }
 
-    private static String truncateTitle(String value) {
-        String compact = Objects.requireNonNullElse(value, "Untitled session")
-                .replaceAll("\\s+", " ")
-                .trim();
-        return compact.length() <= 96 ? compact : compact.substring(0, 93) + "...";
-    }
-
-    private static String firstLine(String value) {
-        int newline = value.indexOf('\n');
-        return newline >= 0 ? value.substring(0, newline) : value;
+    private record TitleCandidate(String value, int rank) {
     }
 
     private static String blankToNull(String value) {

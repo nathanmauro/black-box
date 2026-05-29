@@ -5,8 +5,12 @@ spring:
     url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
     driver-class-name: org.sqlite.JDBC
     hikari:
-      maximum-pool-size: 1
+      # WAL (set once at startup) lets several connections read while one writes; a pool of a few
+      # connections plus a busy_timeout means concurrent agents can capture without blocking the UI,
+      # and the rare writer-vs-writer overlap waits briefly instead of erroring.
+      maximum-pool-size: 4
       connection-test-query: SELECT 1
+      connection-init-sql: PRAGMA busy_timeout=5000
   sql:
     init:
       mode: always
