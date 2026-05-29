@@ -43,13 +43,17 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 ## Open follow-ups
 
 1. Capture and commit `docs/assets/hero.gif` from `./scripts/demo.sh` (the README references it with a placeholder comment).
-2. Title behavior test coverage: metadata title wins, first-line seeding, tool fallback, truncation, and an explicit test that later events do not retitle.
-3. Recall/decision/handoff round-trip tests (write a decision via `/api/decisions`, recall it via `/api/recall`).
-4. Decide the next product slice:
+2. Decide the next product slice:
    - explicit retitle endpoint / MCP tool, or
    - early-session retitle rules that only replace weak fallback titles, or
    - local-AI title suggestion with user-visible confirmation.
-5. Roadmap candidates (do not claim yet): semantic/vector recall, live event streaming to the UI.
+3. Roadmap candidates (do not claim yet): semantic/vector recall, live event streaming to the UI.
+
+## Done since this plan was written
+
+- Title behavior test coverage — `SessionTitleTest`: metadata title wins, first-line seeding, tool fallback, truncation, and an explicit test that later events do not retitle.
+- Recall/decision/handoff round-trip — `ContextLoopTest`: write a decision via `/api/decisions`, recall it via `/api/recall`.
+- Full suite green: 10 tests across 5 files (`mvn test`).
 
 ## Verification checklist
 
