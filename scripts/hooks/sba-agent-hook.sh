@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Black Box capture bridge. Reads a Claude Code or Codex hook payload on stdin, normalizes the common
+# fields, and posts an event to the local recorder.
+#
+# Safety contract: this hook must NEVER fail its host agent's turn. If the recorder is down, slow, or
+# jq is missing, the agent should carry on as if nothing happened. So we do not use `set -e`, we cap
+# the request with a short timeout, we swallow any network failure, and we always exit 0.
+set -uo pipefail
 
 SBA_AGENTIC_URL="${SBA_AGENTIC_URL:-http://localhost:8766}"
 SOURCE="${SBA_AGENT_SOURCE:-${1:-unknown}}"
-PAYLOAD="$(cat)"
+
+# If jq is unavailable there is nothing useful we can do — never fail the host agent over it.
+command -v jq >/dev/null 2>&1 || exit 0
+
+RAW="$(cat)"
+# Tolerate non-JSON stdin: wrap it so the text is still captured rather than dropped.
+if printf '%s' "$RAW" | jq -e . >/dev/null 2>&1; then
+  PAYLOAD="$RAW"
+else
+  PAYLOAD="$(jq -n --arg t "$RAW" '{hook_event_name: "RawText", prompt: $t}')"
+fi
 
 EVENT_TYPE="$(jq -r '.hook_event_name // .hookEventName // .event // "HookEvent"' <<<"$PAYLOAD")"
 SESSION_ID="$(jq -r '.session_id // .sessionId // .conversation_id // .conversationId // .turn_id // .turnId // "unknown-session"' <<<"$PAYLOAD")"
@@ -42,8 +58,10 @@ jq -n \
     metadata: { rawHook: $raw },
     observedAt: now | todateiso8601
   }' |
-curl -fsS \
+curl -fsS --max-time 3 \
   -H "Content-Type: application/json" \
   -X POST \
   --data-binary @- \
-  "$SBA_AGENTIC_URL/api/events" >/dev/null
+  "$SBA_AGENTIC_URL/api/events" >/dev/null 2>&1 || true
+
+exit 0
