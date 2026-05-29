@@ -10,7 +10,7 @@ Use a local `.codex/hooks.json` if you want Codex to run the hook bridge for thi
 
 Codex may ask you to trust the local hook the next time a session starts here. Approve it if you want automatic capture.
 
-I also verified that `/Users/nathan/.codex/config.toml` already has this MCP server registered:
+As an example from one local setup, the Codex config at `/path/to/.codex/config.toml` registered this MCP server:
 
 ```toml
 [mcp_servers.sba-agentic]
@@ -94,8 +94,10 @@ Hook write:
 ```bash
 SBA_AGENT_SOURCE=codex \
 SBA_AGENTIC_URL=http://localhost:8766 \
-/Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh
+/ABSOLUTE/PATH/TO/scripts/hooks/sba-agent-hook.sh
 ```
+
+Replace `/ABSOLUTE/PATH/TO/...` with the path on your machine.
 
 Wire that command in a local `.codex/hooks.json` for `UserPromptSubmit` and `PostToolUse`.
 

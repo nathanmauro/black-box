@@ -1,97 +1,66 @@
-# SBA Agentic Public Showcase Handoff
+# Black Box — Public Showcase Plan
+
+> Repo dir is still `sba-agentic` (artifact id `sba-agentic`); the product is **Black Box**.
 
 ## Goal
 
-Make `sba-agentic` safe and compelling as a public repo without overselling unfinished behavior.
+Make Black Box safe and compelling as a public portfolio repo without overselling unfinished behavior.
 
-The showcase story should be:
+## The story
 
-- Local-first control plane for agent sessions, prompts, tool events, manual notes, MCP capture, search, and summaries.
-- Codex and Claude hook payloads can land in one SQLite-backed timeline.
-- The web UI shows live sessions, events, search, health, and summaries.
-- Optional Elasticsearch extends search without replacing SQLite as the source of truth.
-- Current session titles are seeded from the first captured prompt or explicit metadata title.
+Black Box is a local "flight recorder for machine minds." AI coding agents (Claude Code, Codex) **write** structured intent — decisions, handoffs, observations — into it and **query** each other's prior reasoning back out at runtime via MCP. Local, no cloud, no file mutation.
 
-## Current Proof
+It is **not** a passive dashboard. It is the writable/queryable shared-memory bus agents act through. It deliberately differs from the read-only sibling [agent-observatory](https://github.com/nathanmauro/agent-observatory) (a telescope): Black Box owns the **write + query** verb (the nervous system).
 
-- The app runs on `localhost:8766` with API, web UI, CLI, MCP, SQLite storage, and optional local AI summary support.
-- Hook capture is implemented through `scripts/hooks/sba-agent-hook.sh`.
-- `UserPromptSubmit` events provide enough text for useful session titles.
-- `EventIngestService.titleFor(...)` uses `metadata.title`, then first event text, then tool/event fallback, compacted to 96 characters.
-- `EventRepository.findOrCreateSession(...)` stores that title only when a `(source, clientSessionId)` session is first created.
-- This means the current behavior is title seeding, not a later smart retitle/update system.
+The signature moment: an agent calls `recallContext` and a structured `Decision` a *different* agent committed yesterday — with its open loops and confidence — comes straight back into the prompt.
 
-## Showcase Readiness Gates
+## Current proof
 
-- Public docs must avoid machine-specific claims. Absolute local paths are allowed only as examples or clearly marked local setup notes.
-- Hook config must be documented as local/opt-in. Do not commit private `.codex`, `.claude`, database, IDE, or runtime state.
-- README should include a crisp "why this exists" section, quickstart, architecture sketch, and privacy boundary.
-- Add demo-safe sample data or a deterministic smoke script so visitors can see value without private session history.
-- Add at least one screenshot or short GIF of the sessions/timeline/search flow.
-- Add tests around title seeding and any future retitle behavior before calling it smart session naming.
-- Keep SQLite as the canonical store in the public story; Elasticsearch is optional indexing.
+- Runs on `localhost:8766` with HTTP API, web control surface, CLI, MCP server, SQLite storage, optional local-AI summaries, optional Elasticsearch index.
+- MCP tools live in `AgenticTools`: write — `captureDecision`, `captureHandoff`, `captureObservation`; query — `recallContext`, `searchSessions`, `recentSessions`, `localModelStatus`.
+- REST routes in `AgenticController`: `POST /api/{events,decisions,handoffs}`, `GET /api/{recall,sessions,sessions/{id}/events,search,status}`, `POST /api/sessions/{id}/summarize`, plus health endpoints.
+- Hook bridge implemented at `scripts/hooks/sba-agent-hook.sh` (local/opt-in).
+- One-command demo at `scripts/demo.sh` (starts app, seeds a decision/handoff, shows the recall) — referenced as the README quickstart.
+- Title seeding: `EventIngestService.titleFor(...)` uses `metadata.title` → first event text → tool/event fallback, compacted to 96 chars; stored once on first creation of a `(source, clientSessionId)` session. Later events do **not** retitle. This is title *seeding*, not smart retitle.
 
-## Implementation Plan
+## Showcase readiness gates
 
-1. Package the first-run demo.
-   - Add a `scripts/demo-seed.sh` or documented curl sequence that creates a fake Codex session, tool event, and manual observation.
-   - Keep the demo data free of private paths, tokens, customer names, and personal session text.
-   - Verify the UI shows a useful title seeded from the first prompt.
+- Public docs avoid machine-specific claims; absolute local paths only as clearly marked examples.
+- Hook config documented as local/opt-in. Do not commit private `.codex` / `.claude` / database / IDE / runtime state.
+- README is why-first: hook, hero asset, the write+query loop ("the clever bit"), quickstart, privacy line, vs-observatory divider, then reference.
+- SQLite is the canonical store in the public story; Elasticsearch is explicitly optional/secondary and never led with.
+- Local model is the only outbound dependency, and only for summaries.
+- Hero GIF/screenshot captured from `./scripts/demo.sh` lands at `docs/assets/hero.gif`.
+- Keep honest: no semantic/vector search, no live streaming — those are roadmap.
 
-2. Harden docs for public readers.
-   - Add a short architecture diagram to README.
-   - Split local-machine operator notes from public setup docs.
-   - Document supported ingestion paths: HTTP, CLI, hook, MCP.
-   - Add a privacy section explaining what is stored and what is not redacted yet.
+## Docs delivered
 
-3. Add title behavior coverage.
-   - Test metadata title wins.
-   - Test first-line prompt title seeding.
-   - Test tool fallback.
-   - Test title truncation.
-   - Explicitly document that later events do not retitle existing sessions today.
+- `README.md` — full rewrite, why-first inverted pyramid. Done.
+- `LICENSE` — MIT, © 2026 Nathan Mauro. Done.
+- `docs/architecture.md` — write+query loop narrative + Mermaid diagram (agents → ingress → ingest → SQLite → recall/search/summary → back to agents; optional ES/local-model off to the side). Done.
+- `docs/local-writes-and-elasticsearch.md` — existing operator notes, still valid for the optional ES path.
 
-4. Add showcase assets.
-   - Capture one clean screenshot of the session list and timeline using demo data.
-   - Add it under a public-safe docs/assets path.
-   - Reference it from README.
+## Open follow-ups
 
-5. Decide the next product slice.
-   - Option A: explicit retitle endpoint or MCP tool.
-   - Option B: early-session retitle rules that replace weak fallback titles only.
-   - Option C: local AI title suggestion with user-visible confirmation.
+1. Capture and commit `docs/assets/hero.gif` from `./scripts/demo.sh` (the README references it with a placeholder comment).
+2. Decide the next product slice:
+   - explicit retitle endpoint / MCP tool, or
+   - early-session retitle rules that only replace weak fallback titles, or
+   - local-AI title suggestion with user-visible confirmation.
+3. Roadmap candidates (do not claim yet): semantic/vector recall, live event streaming to the UI.
 
-## Verification Checklist
+## Done since this plan was written
+
+- Title behavior test coverage — `SessionTitleTest`: metadata title wins, first-line seeding, tool fallback, truncation, and an explicit test that later events do not retitle.
+- Recall/decision/handoff round-trip — `ContextLoopTest`: write a decision via `/api/decisions`, recall it via `/api/recall`.
+- Full suite green: 10 tests across 5 files (`mvn test`).
+
+## Verification checklist
 
 - `mvn test`
 - `mvn -q -DskipTests package`
 - `curl -fsS http://localhost:8766/api/status | jq`
-- Demo event write through `/api/events`
-- Demo search through `/api/search`
+- Write a decision through `POST /api/decisions`, recall it through `GET /api/recall`
+- Demo search through `GET /api/search`
 - Hook smoke test through `scripts/hooks/sba-agent-hook.sh`
-- `git status --short` is clean except intentional handoff branch state
-
-## Git Handoff Flow
-
-Use this repo flow for the showcase prep:
-
-1. Commit the current docs and plan on a `codex/...` branch.
-2. Push the branch and open a PR against `main`.
-3. Merge the PR after local verification.
-4. Pull or fast-forward `main`.
-5. Create the next handoff branch from updated `main`:
-
-```bash
-git switch main
-git pull --ff-only
-git switch -c codex/sba-agentic-showcase-handoff
-git push -u origin codex/sba-agentic-showcase-handoff
-```
-
-## Next Session Prompt
-
-Use this when starting the next implementation session:
-
-```text
-We are preparing /Users/nathan/Developer/proj/sba-agentic for a public showcase repo. Start from PLAN.md. Keep local hook config opt-in and do not commit private .codex/.claude/database/IDE state. First package a demo-safe seed flow, add tests for title seeding behavior, and update README with a public quickstart, architecture sketch, privacy boundary, and screenshot plan. Verify with mvn test and a local API smoke test.
-```
+- `git status --short` clean except intentional handoff branch state

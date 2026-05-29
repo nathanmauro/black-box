@@ -1,262 +1,109 @@
-# SBA Agentic
+# Black Box
 
-Local Spring Boot control plane for agent sessions, hook capture, search, MCP tools, and local AI summarization.
+**A local flight recorder for machine minds.** Your coding agents reason out loud all day — deciding, weighing alternatives, leaving loose ends — and then forget it the moment the session ends. Black Box is the recorder they write that reasoning into, and the one place a *different* agent can fly back into mid-task to recall what was already decided.
 
-It gives Claude Code, Codex, and manual notes a shared local event store:
+`Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first / no-cloud`
 
-- SQLite stores canonical sessions and events.
-- The web UI shows captured sessions, timelines, search, status, and summaries.
-- The CLI supports quick ingest, search, session listing, and health checks.
-- The hook script captures Claude Code or Codex hook payloads.
-- The MCP endpoint exposes session/search/capture tools to MCP clients.
-- LM Studio can summarize sessions through an OpenAI-compatible chat endpoint.
-- Elasticsearch can be enabled for optional full-text indexing.
+<!-- Still captured from ./scripts/demo.sh — swap in an animated hero.gif of the live recall when you record one. -->
+![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back, with zero cloud and zero file reads.](docs/assets/hero.png)
 
-## Quick Start
+> Captured from `./scripts/demo.sh`. Run the demo, then record the recall moment to replace this still with a GIF.
 
-Prerequisites:
+## The clever bit
 
-- Java 21 or newer
-- Maven 3.9 or newer
-- `jq` for hook capture
-- LM Studio or another OpenAI-compatible local model server, optional but useful
+Black Box owns one verb the read-only tools don't: **write + query**. Agents call MCP tools to *commit* structured intent and to *recall* it back out at runtime — not raw transcript text, but the decision, its rationale, the alternatives rejected, the open loops, and a confidence score.
 
-Start the app:
+- `captureDecision` / `captureHandoff` — an agent writes down what it chose and why, and what it's leaving for whoever comes next.
+- `recallContext` — a later agent asks "what was already settled here?" before redoing the thinking.
+
+A concrete loop: yesterday a **Codex** session committed a `Decision` — *"Keep SQLite as the source of truth; Elasticsearch is optional indexing"* — with its rationale and an open loop. Today a fresh **Claude Code** session opens in the same repo, calls `recallContext`, and that exact decision comes back into its context window before it touches a line. Two agents sharing one thought through a third thing that remembers for both.
+
+## Quickstart
+
+One command — starts the app, seeds a demo decision/handoff, and shows the recall:
 
 ```bash
-cd /Users/nathan/Developer/proj/sba-agentic
+./scripts/demo.sh
+```
 
-SBA_LOCAL_AI_MODEL=qwen3-4b-instruct-2507-mlx \
-SBA_LOCAL_AI_BASE_URL=http://localhost:1234 \
+Or the manual path:
+
+```bash
 mvn spring-boot:run
+# then open the control surface:
+open http://localhost:8766
 ```
 
-Open the UI:
-
-```text
-http://localhost:8766
-```
-
-Verify the app:
+Sanity check:
 
 ```bash
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-Capture a manual event:
+## Privacy
 
-```bash
-curl -fsS -H 'Content-Type: application/json' \
-  -X POST http://localhost:8766/api/events \
-  --data '{
-    "source": "manual",
-    "clientSessionId": "manual-session",
-    "eventType": "ManualCapture",
-    "role": "user",
-    "text": "first note",
-    "metadata": { "title": "ManualCapture" }
-  }' | jq
-```
+Everything stays on localhost: your agents' transcripts, decisions, and handoffs live in a local SQLite file and never leave the machine — the only outbound call is to an optional local model server you point it at yourself.
 
-Search it:
+## Black Box vs. agent-observatory
 
-```bash
-curl -fsS 'http://localhost:8766/api/search?q=first%20note' | jq
-```
+[agent-observatory](https://github.com/nathanmauro/agent-observatory) is read-only filesystem discovery — a **telescope** that watches what agents already wrote to disk. Black Box is the writable, queryable MCP memory bus agents deliberately call *back into* — the **nervous system**. The telescope observes; the recorder remembers and answers. They're complementary.
 
-## Configuration
+---
 
-Most configuration is environment variables. Defaults live in `src/main/resources/application.yml`.
+## Reference
+
+### Requirements
+
+- Java 21+
+- Maven 3.9+
+- `jq` (for the hook bridge)
+- A local OpenAI-compatible model server such as LM Studio — *optional*, only needed for AI-written summaries
+- Elasticsearch — *optional*, a secondary search index; SQLite is always the source of truth
+
+### Configuration
+
+Configuration is environment variables; defaults live in `src/main/resources/application.yml`.
 
 | Variable | Default | Use |
 | --- | --- | --- |
 | `SBA_PORT` | `8766` | HTTP server port |
 | `SBA_DATASOURCE_URL` | `jdbc:sqlite:sba-agentic.db` | SQLite database location |
 | `SBA_LOCAL_AI_ENABLED` | `true` | Enables local AI summaries |
-| `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | LM Studio or OpenAI-compatible base URL |
+| `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | LM Studio / OpenAI-compatible base URL |
 | `SBA_LOCAL_AI_CHAT_PATH` | `/v1/chat/completions` | Chat completion path |
 | `SBA_LOCAL_AI_MODEL` | `local-model` | Model id sent to the local AI server |
 | `SBA_LOCAL_AI_API_KEY` | `lm-studio` | Bearer token value for local AI requests |
-| `SBA_ELASTICSEARCH_ENABLED` | `false` | Enables Elasticsearch indexing/search |
+| `SBA_ELASTICSEARCH_ENABLED` | `false` | Enables optional Elasticsearch indexing/search |
 | `SBA_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch base URL |
 | `SBA_ELASTICSEARCH_INDEX` | `sba-agentic-events` | Elasticsearch index name |
 
-The hook script also reads:
+The hook bridge also reads:
 
 | Variable | Default | Use |
 | --- | --- | --- |
-| `SBA_AGENTIC_URL` | `http://localhost:8766` | Target SBA Agentic server |
-| `SBA_AGENT_SOURCE` | first script argument or `unknown` | Source label, such as `claude` or `codex` |
+| `SBA_AGENTIC_URL` | `http://localhost:8766` | Target Black Box server |
+| `SBA_AGENT_SOURCE` | first script argument or `unknown` | Source label, e.g. `claude` or `codex` |
 
-Use a different database file:
-
-```bash
-mkdir -p /Users/nathan/.local/share/sba-agentic
-
-SBA_DATASOURCE_URL='jdbc:sqlite:/Users/nathan/.local/share/sba-agentic/sba-agentic.db' \
-mvn spring-boot:run
-```
-
-Run without local AI:
+Point at a database outside the repo, or run without the local model:
 
 ```bash
+SBA_DATASOURCE_URL='jdbc:sqlite:/path/to/black-box.db' mvn spring-boot:run
 SBA_LOCAL_AI_ENABLED=false mvn spring-boot:run
 ```
 
-Enable Elasticsearch:
+### MCP tools
 
-```bash
-docker compose -f compose.elasticsearch.yml up -d
+Black Box exposes a streamable HTTP MCP server at `http://localhost:8766/mcp`.
 
-SBA_ELASTICSEARCH_ENABLED=true \
-SBA_ELASTICSEARCH_URL=http://localhost:9200 \
-SBA_ELASTICSEARCH_INDEX=sba-agentic-events \
-mvn spring-boot:run
-```
-
-See `docs/local-writes-and-elasticsearch.md` for the write paths, verification commands, and stop commands.
-
-## CLI
-
-Build the jar:
-
-```bash
-mvn -DskipTests package
-```
-
-Run health checks:
-
-```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar doctor
-```
-
-Capture text:
-
-```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar ingest \
-  --source=manual \
-  --session=test \
-  --type=ManualCapture \
-  --text='first note'
-```
-
-Pipe text into capture:
-
-```bash
-printf 'note from stdin\n' | java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar ingest \
-  --source=manual \
-  --session=stdin-test \
-  --type=ManualCapture
-```
-
-Search:
-
-```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar search 'first note'
-```
-
-List recent sessions:
-
-```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar sessions --limit=10
-```
-
-Summarize a session:
-
-```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar summarize <session-id>
-```
-
-The CLI uses the same environment variables as the server. Set `SBA_DATASOURCE_URL` if you want the CLI and server to use a database outside the repo.
-
-## Web UI
-
-The UI is served from the Spring Boot app at `http://localhost:8766`.
-
-Use it for:
-
-- Checking storage, local AI, and Elasticsearch status.
-- Capturing manual notes.
-- Searching local and Elasticsearch results.
-- Browsing sessions and event timelines.
-- Running session summaries.
-
-The UI calls the same `/api/*` endpoints listed below.
-
-## Hook Capture
-
-Start the app first. The hook script reads JSON from stdin, normalizes common Claude Code and Codex hook fields, then posts an event to `/api/events`.
-
-Script path:
-
-```text
-/Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh
-```
-
-For Codex, keep the hook config local to your machine and point it at this script for `UserPromptSubmit` and `PostToolUse` capture.
-
-Manual hook smoke test:
-
-```bash
-printf '{"hook_event_name":"UserPromptSubmit","session_id":"hook-test","prompt":"hello from hook","cwd":"%s"}' "$PWD" |
-  SBA_AGENT_SOURCE=manual /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh
-```
-
-Claude Code example:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "SBA_AGENT_SOURCE=claude SBA_AGENTIC_URL=http://localhost:8766 /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "SBA_AGENT_SOURCE=claude SBA_AGENTIC_URL=http://localhost:8766 /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Codex example shape:
-
-```toml
-[hooks.UserPromptSubmit]
-command = "SBA_AGENT_SOURCE=codex SBA_AGENTIC_URL=http://localhost:8766 /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh"
-
-[hooks.PostToolUse]
-command = "SBA_AGENT_SOURCE=codex SBA_AGENTIC_URL=http://localhost:8766 /Users/nathan/Developer/proj/sba-agentic/scripts/hooks/sba-agent-hook.sh"
-```
-
-Hook file formats can differ by client version. Keep the command the same and adapt the surrounding config shape to the client.
-
-## MCP
-
-The app exposes a streamable HTTP MCP server at:
-
-```text
-http://localhost:8766/mcp
-```
-
-Tools:
-
-- `recentSessions` lists recent captured sessions.
-- `searchSessions` searches local and Elasticsearch-backed events.
-- `captureObservation` writes a note into the event store.
-- `localModelStatus` checks the LM Studio/OpenAI-compatible backend.
+| Tool | Verb | What it does |
+| --- | --- | --- |
+| `captureDecision` | write | Commit a decision with rationale, alternatives, confidence, open loops |
+| `captureHandoff` | write | Leave context, open loops, and a next action for the next agent |
+| `captureObservation` | write | Drop a free-form note into the recorder |
+| `recallContext` | query | Pull structured prior decisions/handoffs by repo or topic + time window |
+| `searchSessions` | query | Free-text search across captured events |
+| `recentSessions` | query | List recently captured sessions |
+| `localModelStatus` | query | Health of the optional local model backend |
 
 Register with Codex:
 
@@ -272,98 +119,122 @@ claude mcp add --transport http --scope user sba-agentic http://localhost:8766/m
 claude mcp list
 ```
 
-Restart the client after registration if the tools do not appear.
+Restart the client after registration if the tools don't appear.
 
-## API
+### Hook capture (local, opt-in)
 
-Status:
+The hook bridge reads a Claude Code or Codex hook payload on stdin, normalizes the common fields, and POSTs an event to `/api/events`. Wiring it up is entirely opt-in and stays local to your machine — no private hook config is committed to this repo.
 
-```bash
-curl -fsS http://localhost:8766/api/status | jq
-```
+Script: `scripts/hooks/sba-agent-hook.sh`
 
-List sessions:
+Smoke test:
 
 ```bash
-curl -fsS 'http://localhost:8766/api/sessions?limit=25' | jq
+printf '{"hook_event_name":"UserPromptSubmit","session_id":"hook-test","prompt":"hello from hook","cwd":"%s"}' "$PWD" |
+  SBA_AGENT_SOURCE=manual scripts/hooks/sba-agent-hook.sh
 ```
 
-List session events:
+Claude Code (`UserPromptSubmit` / `PostToolUse`), in your local settings:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "SBA_AGENT_SOURCE=claude SBA_AGENTIC_URL=http://localhost:8766 /ABSOLUTE/PATH/TO/scripts/hooks/sba-agent-hook.sh" } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "SBA_AGENT_SOURCE=claude SBA_AGENTIC_URL=http://localhost:8766 /ABSOLUTE/PATH/TO/scripts/hooks/sba-agent-hook.sh" } ] }
+    ]
+  }
+}
+```
+
+Codex (`.codex/hooks.json`, local to the repo or your machine) uses the same command shape with `SBA_AGENT_SOURCE=codex`. Replace `/ABSOLUTE/PATH/TO/...` with the path on your machine. Hook config formats vary by client version — keep the command identical and adapt the surrounding shape.
+
+### HTTP API
+
+All endpoints are served at `http://localhost:8766`.
+
+**Write**
+
+| Method · Path | Body / purpose |
+| --- | --- |
+| `POST /api/decisions` | `{ source, clientSessionId, repo, decision, rationale, alternatives[], confidence, openLoops[] }` |
+| `POST /api/handoffs` | `{ source, clientSessionId, repo, toAgent, contextSummary, openLoops[], nextAction }` |
+| `POST /api/events` | `{ source, clientSessionId, eventType, role, text, cwd, metadata, observedAt }` |
+
+**Query**
+
+| Method · Path | Returns |
+| --- | --- |
+| `GET /api/recall?scope=<repo-or-topic>&withinHours=168&kinds=decision,handoff` | Structured recalled decisions/handoffs |
+| `GET /api/sessions?limit=40` | Recent sessions |
+| `GET /api/sessions/{id}/events?limit=100` | A session's events (newest first) |
+| `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
+| `GET /api/status` | Storage counts + local AI / Elasticsearch health |
+| `POST /api/sessions/{id}/summarize` | Summarizes a session (compacted transcript fallback when local AI is off) |
+
+Examples:
 
 ```bash
-curl -fsS 'http://localhost:8766/api/sessions/<session-id>/events?limit=100' | jq
+# Commit a decision
+curl -fsS -H 'Content-Type: application/json' -X POST http://localhost:8766/api/decisions \
+  --data '{
+    "source": "codex",
+    "clientSessionId": "codex-42",
+    "repo": "/repos/black-box",
+    "decision": "Keep SQLite as the source of truth; Elasticsearch is optional indexing",
+    "rationale": "Local-first, zero external deps for the core loop",
+    "alternatives": ["Elasticsearch-primary", "Postgres + pgvector"],
+    "confidence": 0.8,
+    "openLoops": ["Decide on backfill for pre-existing rows"]
+  }' | jq
+
+# Recall it from a later session
+curl -fsS 'http://localhost:8766/api/recall?scope=/repos/black-box&withinHours=168&kinds=decision,handoff' | jq
 ```
 
-Search:
+### CLI
 
 ```bash
-curl -fsS 'http://localhost:8766/api/search?q=first%20note&limit=25' | jq
+mvn -DskipTests package
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar doctor
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar ingest --source=manual --session=test --type=ManualCapture --text='first note'
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar search 'first note'
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar sessions --limit=10
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar summarize <session-id>
 ```
 
-Summarize:
+The CLI reads the same environment variables as the server — set `SBA_DATASOURCE_URL` to share a database between them.
+
+### Data model
+
+SQLite is the canonical store. Tables are created from `src/main/resources/schema.sql`.
+
+- `agent_sessions` — one row per `(source, clientSessionId)`; carries the session title (seeded from `metadata.title`, then the first prompt, then a tool/event fallback, truncated to 96 chars — later events do not retitle an existing session today).
+- `agent_events` — individual prompts, tool events, manual notes, observations, and the structured `Decision` / `Handoff` events whose fields live in `metadata`.
+
+Delete the database file (`sba-agentic.db` by default) only to wipe local captured history.
+
+### Optional: Elasticsearch
+
+Elasticsearch is a secondary index, not the source of truth. When enabled, new events are mirrored into it as they're written; existing SQLite rows are not backfilled. See [`docs/local-writes-and-elasticsearch.md`](docs/local-writes-and-elasticsearch.md) for the full write paths, verification, and stop commands.
 
 ```bash
-curl -fsS -X POST 'http://localhost:8766/api/sessions/<session-id>/summarize' | jq
+docker compose -f compose.elasticsearch.yml up -d
+SBA_ELASTICSEARCH_ENABLED=true mvn spring-boot:run
 ```
 
-Health endpoints:
+### Architecture
+
+See [`docs/architecture.md`](docs/architecture.md) for the write + query loop and a diagram.
+
+### Tests
 
 ```bash
-curl -fsS http://localhost:8766/api/health/local-ai | jq
-curl -fsS http://localhost:8766/api/health/elasticsearch | jq
-curl -fsS http://localhost:8766/actuator/health | jq
+mvn test
 ```
 
-## Data Model
+## License
 
-SQLite tables are created from `src/main/resources/schema.sql`.
-
-- `agent_sessions` stores one row per source and client session id.
-- `agent_events` stores individual captured prompts, tool events, manual notes, and observations.
-
-The default database file is:
-
-```text
-sba-agentic.db
-```
-
-Delete that file only if you want to wipe local captured history.
-
-## Troubleshooting
-
-Port already in use:
-
-```bash
-lsof -nP -iTCP:8766 -sTCP:LISTEN
-SBA_PORT=8767 mvn spring-boot:run
-```
-
-Local AI shows offline:
-
-```bash
-curl -fsS http://localhost:1234/v1/models | jq
-SBA_LOCAL_AI_MODEL=<model-id-from-output> mvn spring-boot:run
-```
-
-Hook capture does nothing:
-
-```bash
-command -v jq
-curl -fsS http://localhost:8766/api/status | jq
-```
-
-Then run the manual hook smoke test from the hook section and check the UI.
-
-MCP tools do not show up:
-
-```bash
-curl -fsS http://localhost:8766/actuator/health | jq
-codex mcp list
-claude mcp list
-```
-
-Restart the MCP client after adding the server.
-
-Elasticsearch is disabled:
-
-That is the default. Local SQLite search still works. Enable Elasticsearch only when you want a separate search index.
+[MIT](LICENSE) © 2026 Nathan Mauro

@@ -7,6 +7,7 @@ import java.util.List;
 import dev.nathan.sbaagentic.event.AgentEvent;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.session.TitleRank;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -51,8 +52,10 @@ public class SessionSummaryService {
             transcript.append("\n\n");
         }
 
+        // Call the local model outside any transaction (it is a network round-trip), then commit the
+        // summary and the AI-derived title — which outranks every ingest-time title — in one atomic write.
         String summary = localAiClient.summarize(transcript.toString());
-        repository.saveSummary(sessionId, summary);
+        repository.saveSummaryAndTitle(sessionId, summary, localAiClient.title(summary), TitleRank.AI);
         return repository.findSessionById(sessionId).orElse(session);
     }
 }
