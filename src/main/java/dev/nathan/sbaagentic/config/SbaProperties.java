@@ -33,6 +33,11 @@ public class SbaProperties {
         private String apiKey = "lm-studio";
         private Duration timeout = Duration.ofSeconds(30);
         private int maxTokens = 320;
+        // Per-request char budget for the local model. 8000 chars ~= 2.7k tokens at the dense ~3 chars/token
+        // of a raw transcript; that leaves real headroom on a 4096-token context after the max-tokens output
+        // reservation, the system prompt, and chat-template overhead. Larger transcripts are map-reduced, not
+        // rejected. Raise this if the loaded model has a bigger context window.
+        private int maxInputChars = 8_000;
 
         public boolean isEnabled() {
             return enabled;
@@ -88,6 +93,14 @@ public class SbaProperties {
 
         public void setMaxTokens(int maxTokens) {
             this.maxTokens = maxTokens;
+        }
+
+        public int getMaxInputChars() {
+            return maxInputChars;
+        }
+
+        public void setMaxInputChars(int maxInputChars) {
+            this.maxInputChars = maxInputChars;
         }
     }
 

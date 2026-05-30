@@ -45,6 +45,11 @@ sba:
     api-key: ${SBA_LOCAL_AI_API_KEY:lm-studio}
     timeout: 30s
     max-tokens: 320
+    # Per-request char budget for the local model. Transcripts above this are map-reduced (summarized in
+    # windows, then folded) instead of overflowing the context. 8000 chars ~= 2.7k tokens of dense
+    # transcript, leaving headroom on a 4096-token context after output + system prompt. Raise for bigger
+    # context windows; lower it for a 2k-context model.
+    max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
   elasticsearch:
     enabled: ${SBA_ELASTICSEARCH_ENABLED:false}
     base-url: ${SBA_ELASTICSEARCH_URL:http://localhost:9200}
