@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Black Box recallContext hero</title>
+  <desc id="desc">An amber recall beam strikes a vertical Cognition Spine and surfaces a structured Decision card with confidence 0.80 and one open loop.</desc>
+  <defs>
+    <pattern id="ink-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0H0V28" fill="none" stroke="#2c303a" stroke-width="1" opacity="0.32"/>
+    </pattern>
+    <linearGradient id="beam-fill" x1="290" y1="192" x2="668" y2="336" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8a33d" stop-opacity="0"/>
+      <stop offset="0.52" stop-color="#e8a33d" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#e8a33d" stop-opacity="0.42"/>
+    </linearGradient>
+    <filter id="amber-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      <![CDATA[
+      :root {
+        --coal: #15161a;
+        --panel: #1c1e24;
+        --raised: #23262e;
+        --line: #2c303a;
+        --soft: #626774;
+        --paper: #e9eae4;
+        --muted: #9a9fab;
+        --amber: #e8a33d;
+        --amber-soft: rgba(232, 163, 61, 0.16);
+      }
+      text {
+        font-family: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        fill: var(--paper);
+      }
+      .mono {
+        font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+      }
+      .eyebrow {
+        fill: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 2.5px;
+      }
+      .small {
+        fill: var(--muted);
+        font-size: 15px;
+      }
+      .readout {
+        fill: var(--soft);
+        font-size: 13px;
+        letter-spacing: 1.2px;
+      }
+      .panel {
+        fill: var(--panel);
+        stroke: var(--line);
+        stroke-width: 1.5;
+      }
+      .panel-top {
+        fill: #181a1f;
+        stroke: var(--line);
+        stroke-width: 1.5;
+      }
+      .beam-haze {
+        opacity: 0;
+        animation: beamHaze 5.4s ease-in-out infinite;
+      }
+      .beam-core {
+        stroke-dasharray: 520;
+        stroke-dashoffset: 520;
+        opacity: 0;
+        animation: beamDraw 5.4s cubic-bezier(0.18, 0.82, 0.26, 1) infinite;
+      }
+      .target-ring {
+        opacity: 0;
+        transform-origin: 666px 336px;
+        animation: targetPulse 5.4s ease-out infinite;
+      }
+      .decision-card {
+        opacity: 0;
+        transform: translateY(10px);
+        animation: cardRise 5.4s cubic-bezier(0.18, 0.82, 0.26, 1) infinite;
+      }
+      .connector {
+        stroke-dasharray: 130;
+        stroke-dashoffset: 130;
+        opacity: 0;
+        animation: connectorDraw 5.4s cubic-bezier(0.18, 0.82, 0.26, 1) infinite;
+      }
+      .spine-node {
+        fill: var(--coal);
+        stroke: #8b93a3;
+        stroke-width: 2;
+      }
+      .spine-node.intent {
+        stroke: var(--amber);
+      }
+      .spine-node.target {
+        fill: var(--amber);
+        stroke: var(--amber);
+        filter: url(#amber-glow);
+      }
+      .confidence-fill {
+        animation: confFill 5.4s ease-in-out infinite;
+      }
+      @keyframes beamHaze {
+        0%, 14%, 88%, 100% { opacity: 0; }
+        22%, 62% { opacity: 1; }
+        76% { opacity: 0.2; }
+      }
+      @keyframes beamDraw {
+        0%, 15% { opacity: 0; stroke-dashoffset: 520; }
+        18% { opacity: 1; }
+        31%, 68% { opacity: 0.95; stroke-dashoffset: 0; }
+        86%, 100% { opacity: 0; stroke-dashoffset: 0; }
+      }
+      @keyframes targetPulse {
+        0%, 18%, 87%, 100% { opacity: 0; transform: scale(0.62); }
+        28% { opacity: 0.9; transform: scale(1.25); }
+        48% { opacity: 0.26; transform: scale(1.72); }
+        68% { opacity: 0; transform: scale(2.02); }
+      }
+      @keyframes cardRise {
+        0%, 23%, 88%, 100% { opacity: 0; transform: translateY(10px); }
+        34%, 72% { opacity: 1; transform: translateY(0); }
+        82% { opacity: 0.2; transform: translateY(0); }
+      }
+      @keyframes connectorDraw {
+        0%, 24% { opacity: 0; stroke-dashoffset: 130; }
+        35%, 72% { opacity: 0.85; stroke-dashoffset: 0; }
+        86%, 100% { opacity: 0; stroke-dashoffset: 0; }
+      }
+      @keyframes confFill {
+        0%, 32% { width: 0; }
+        43%, 72% { width: 144px; }
+        86%, 100% { width: 144px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .beam-haze, .beam-core, .target-ring, .decision-card, .connector, .confidence-fill {
+          animation: none;
+        }
+        .beam-haze, .beam-core, .decision-card, .connector { opacity: 1; }
+        .beam-core, .connector { stroke-dashoffset: 0; }
+        .target-ring { opacity: 0.35; transform: scale(1.4); }
+        .confidence-fill { width: 144px; }
+      }
+      ]]>
+    </style>
+  </defs>
+
+  <rect width="1280" height="720" fill="#15161a"/>
+  <rect width="1280" height="720" fill="url(#ink-grid)" opacity="0.72"/>
+
+  <g opacity="0.18">
+    <path d="M0 96H1280M0 624H1280" stroke="#e9eae4" stroke-width="1"/>
+    <path d="M120 0V720M1160 0V720" stroke="#e9eae4" stroke-width="1"/>
+  </g>
+
+  <g transform="translate(92 74)">
+    <rect class="panel" x="0" y="0" width="346" height="200"/>
+    <rect class="panel-top" x="0" y="0" width="346" height="42"/>
+    <text class="mono eyebrow" x="22" y="27">FRESH AGENT</text>
+    <text class="mono readout" x="238" y="27">claude / now</text>
+    <text class="mono" x="22" y="76" font-size="18" fill="#e9eae4">recallContext({</text>
+    <text class="mono" x="48" y="108" font-size="17" fill="#9a9fab">scope: "/tmp/acme-auth",</text>
+    <text class="mono" x="48" y="138" font-size="17" fill="#9a9fab">kinds: ["decision"]</text>
+    <text class="mono" x="22" y="168" font-size="18" fill="#e9eae4">})</text>
+    <rect x="22" y="178" width="84" height="3" fill="#e8a33d"/>
+  </g>
+
+  <g transform="translate(584 78)">
+    <text class="mono eyebrow" x="-62" y="0">COGNITION SPINE</text>
+    <line x1="82" y1="42" x2="82" y2="548" stroke="#2c303a" stroke-width="6"/>
+    <line x1="82" y1="42" x2="82" y2="548" stroke="#626774" stroke-width="1.5" opacity="0.6"/>
+
+    <g transform="translate(0 78)">
+      <circle class="spine-node" cx="82" cy="0" r="10"/>
+      <line x1="102" y1="0" x2="182" y2="0" stroke="#2c303a"/>
+      <text class="mono readout" x="196" y="5">prompt</text>
+    </g>
+    <g transform="translate(0 170)">
+      <circle class="spine-node" cx="82" cy="0" r="12"/>
+      <line x1="102" y1="0" x2="178" y2="0" stroke="#2c303a"/>
+      <text class="mono readout" x="192" y="5">tool read</text>
+    </g>
+    <g transform="translate(0 258)">
+      <circle class="spine-node target" cx="82" cy="0" r="14"/>
+      <circle class="target-ring" cx="82" cy="0" r="20" fill="none" stroke="#e8a33d" stroke-width="2"/>
+      <line x1="104" y1="0" x2="198" y2="0" stroke="#e8a33d" stroke-opacity="0.56"/>
+      <text class="mono" x="214" y="5" font-size="13" fill="#e8a33d" letter-spacing="1.2">DECISION</text>
+    </g>
+    <g transform="translate(0 354)">
+      <circle class="spine-node intent" cx="82" cy="0" r="11"/>
+      <line x1="102" y1="0" x2="190" y2="0" stroke="#2c303a"/>
+      <text class="mono readout" x="204" y="5">handoff</text>
+    </g>
+    <g transform="translate(0 464)">
+      <circle class="spine-node" cx="82" cy="0" r="9"/>
+      <line x1="101" y1="0" x2="174" y2="0" stroke="#2c303a"/>
+      <text class="mono readout" x="188" y="5">note</text>
+    </g>
+  </g>
+
+  <g filter="url(#amber-glow)">
+    <path class="beam-haze" d="M374 192 L666 336 L374 242 Z" fill="url(#beam-fill)"/>
+    <path class="beam-core" d="M374 217 C462 218 548 288 666 336" fill="none" stroke="#e8a33d" stroke-width="3.5" stroke-linecap="square"/>
+    <circle class="beam-core" cx="374" cy="217" r="4" fill="#e8a33d" stroke="none"/>
+  </g>
+
+  <g class="decision-card" transform="translate(772 204)">
+    <path class="connector" d="M-104 132 H0" fill="none" stroke="#e8a33d" stroke-width="2" stroke-linecap="square"/>
+    <rect x="0" y="0" width="416" height="282" fill="#1c1e24" stroke="#e8a33d" stroke-width="1.6"/>
+    <rect x="0" y="0" width="416" height="44" fill="#181a1f" stroke="#e8a33d" stroke-width="1.2" opacity="0.72"/>
+    <rect x="0" y="0" width="4" height="282" fill="#e8a33d"/>
+    <text class="mono eyebrow" x="22" y="28" fill="#e8a33d">STRUCTURED DECISION</text>
+    <text class="mono readout" x="288" y="28">codex / earlier</text>
+
+    <text class="mono readout" x="22" y="78">decision</text>
+    <text x="22" y="108" font-size="23" font-weight="600">Use JWT access tokens</text>
+    <text x="22" y="136" font-size="23" font-weight="600">with refresh rotation</text>
+
+    <text class="mono readout" x="22" y="176">confidence</text>
+    <rect x="126" y="163" width="180" height="18" fill="#23262e" stroke="#2c303a"/>
+    <rect class="confidence-fill" x="126" y="163" width="0" height="18" fill="#e8a33d"/>
+    <text class="mono" x="326" y="178" font-size="18" fill="#e9eae4">0.80</text>
+
+    <text class="mono readout" x="22" y="220">open loop</text>
+    <rect x="22" y="235" width="12" height="12" fill="#15161a" stroke="#e8a33d"/>
+    <text x="46" y="247" font-size="18" fill="#e9eae4">revoke-on-logout not wired</text>
+  </g>
+
+  <g transform="translate(92 640)">
+    <text class="mono readout" x="0" y="0">BLACK BOX LOCAL RECALL</text>
+    <rect x="198" y="-10" width="88" height="2" fill="#e8a33d"/>
+    <text class="small" x="308" y="2">a later agent asks; prior intent returns from the recorder</text>
+  </g>
+</svg>

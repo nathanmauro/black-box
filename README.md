@@ -4,10 +4,10 @@
 
 `Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first / no-cloud`
 
-<!-- Still captured from ./scripts/demo.sh — swap in an animated hero.gif of the live recall when you record one. -->
-![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back, with zero cloud and zero file reads.](docs/assets/hero.png)
+<!-- Animated SVG illustration. Run ./scripts/capture-hero.sh against the seeded live demo to record docs/assets/hero.gif from the real recall moment. -->
+![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back, with zero cloud and zero file reads.](docs/assets/hero.svg)
 
-> Captured from `./scripts/demo.sh`. Run the demo, then record the recall moment to replace this still with a GIF.
+> This SVG illustrates the recall moment. Run `./scripts/demo.sh`, leave it running, then `./scripts/capture-hero.sh` to record the real UI as `docs/assets/hero.gif`.
 
 ## The clever bit
 

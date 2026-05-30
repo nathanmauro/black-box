@@ -1,17 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Black Box — local flight recorder for machine minds</title>
   <meta name="description" content="A local recorder that AI coding agents write their reasoning into and recall each other's prior decisions back out of, mid-task.">
+  <script>
+    (() => {
+      const key = "blackbox.theme";
+      let stored = null;
+      try { stored = localStorage.getItem(key); } catch (_) { /* localStorage unavailable */ }
+      const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+      const theme = stored === "light" || stored === "dark" ? stored : (prefersLight ? "light" : "dark");
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" crossorigin>
   <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" crossorigin>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="masthead">
+  <header class="masthead" id="masthead">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
         <rect x="5.5" y="8.5" width="21" height="15" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -23,7 +33,13 @@
         <h1>BLACK<span>BOX</span></h1>
       </div>
     </div>
-    <div class="readouts" id="readouts" aria-live="polite"></div>
+    <div class="header-instruments">
+      <div class="readouts" id="readouts" aria-live="polite"></div>
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light theme" aria-pressed="false" title="Switch to light theme">
+        <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
+        <span class="theme-toggle-label" id="themeLabel">dark</span>
+      </button>
+    </div>
   </header>
 
   <main class="deck">

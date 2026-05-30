@@ -8,7 +8,10 @@ const state = {
 };
 
 const els = {
+  masthead: document.querySelector("#masthead"),
   readouts: document.querySelector("#readouts"),
+  themeToggle: document.querySelector("#themeToggle"),
+  themeLabel: document.querySelector("#themeLabel"),
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#sessionCount"),
   refreshButton: document.querySelector("#refreshButton"),
@@ -29,6 +32,9 @@ const els = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const THEME_STORAGE_KEY = "blackbox.theme";
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const colorScheme = window.matchMedia("(prefers-color-scheme: light)");
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -77,6 +83,44 @@ function num(value) {
   return Number(value).toLocaleString("en-US");
 }
 
+function readStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "dark" ? stored : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function systemTheme() {
+  return colorScheme.matches ? "light" : "dark";
+}
+
+function writeStoredTheme(theme) {
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme); }
+  catch (_) { /* localStorage unavailable */ }
+}
+
+function applyTheme(theme, persist = false) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  if (persist) writeStoredTheme(next);
+  if (els.themeLabel) els.themeLabel.textContent = next;
+  if (els.themeToggle) {
+    const target = next === "light" ? "dark" : "light";
+    els.themeToggle.setAttribute("aria-pressed", String(next === "light"));
+    els.themeToggle.setAttribute("aria-label", `Switch to ${target} theme`);
+    els.themeToggle.title = `Switch to ${target} theme`;
+  }
+}
+
+function initTheme() {
+  applyTheme(readStoredTheme() || systemTheme());
+  colorScheme.addEventListener("change", () => {
+    if (!readStoredTheme()) applyTheme(systemTheme());
+  });
+}
+
 // ------------------------------------------------------------------ readouts
 function gauge(label, cls, value) {
   return `<div class="gauge ${cls}"><span class="gauge-dot"></span>` +
@@ -101,6 +145,11 @@ async function loadStatus(pulse = false) {
   if (pulse) {
     const g = els.readouts.querySelector(".gauge");
     if (g) { g.classList.remove("capturing"); void g.offsetWidth; g.classList.add("capturing"); }
+    if (els.masthead) {
+      els.masthead.classList.remove("ingesting");
+      void els.masthead.offsetWidth;
+      els.masthead.classList.add("ingesting");
+    }
   }
 }
 
@@ -197,11 +246,11 @@ function renderNode(event, i) {
     const headline = escapeHtml(meta.decision || firstLine(event.text) || "Decision");
     const rationale = meta.rationale ? `<div class="mem-rationale" style="color:var(--muted);font-size:13px">${escapeHtml(meta.rationale)}</div>` : "";
     const loops = loopList(meta.openLoops);
-    const conf = (meta.confidence != null) ? `<span>confidence <b>${escapeHtml(formatConf(meta.confidence))}</b></span>` : "";
+    const conf = meta.confidence != null ? renderConfidence(meta.confidence, "node") : "";
     const alts = altsDetails(meta.alternatives);
     body = head("Decision", srcTick(event.source)) +
       `<div class="node-text">${headline}</div>${rationale}${loops}` +
-      (conf ? `<div class="node-meta-line">${conf}</div>` : "") + alts;
+      (conf ? `<div class="node-meta-line node-confidence">${conf}</div>` : "") + alts;
   } else if (cls === "handoff") {
     const headline = escapeHtml(meta.contextSummary || firstLine(event.text) || "Handoff");
     const loops = loopList(meta.openLoops);
@@ -222,7 +271,7 @@ function renderNode(event, i) {
       `<div class="node-text">${escapeHtml(clamp(event.text || event.toolInputJson || "", 800))}</div>`;
   }
 
-  return `<article class="node node--${cls}" data-event-id="${escapeHtml(event.id)}" style="--i:${i}">
+  return `<article class="node node--${cls}" data-event-id="${escapeHtml(event.id)}" style="--i:${i};--strike-delay:${strikeDelay(i)}">
     <div class="node-rail"><span class="node-dot" style="--dot:${dotSize(event)}px"></span></div>
     <div class="node-body">${body}</div>
   </article>`;
@@ -257,9 +306,36 @@ function clamp(value, max) {
   return v.length <= max ? v : v.slice(0, max) + " …";
 }
 
+function strikeDelay(i) {
+  return `${Math.min(Number(i) || 0, 12) * 28}ms`;
+}
+
+function normalizeConfidence(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+}
+
 function formatConf(c) {
   const n = Number(c);
   return Number.isFinite(n) ? n.toFixed(2) : String(c);
+}
+
+function confidenceBand(confidence) {
+  if (confidence < 0.34) return "low";
+  if (confidence < 0.67) return "mid";
+  return "high";
+}
+
+function renderConfidence(value, mode) {
+  const confidence = normalizeConfidence(value);
+  if (confidence == null) return "";
+  const pct = Math.round(confidence * 100);
+  const band = confidenceBand(confidence);
+  return `<div class="conf-gauge conf-gauge--${band} conf-gauge--${escapeHtml(mode)}" style="--conf:${pct}%">
+    <span class="conf-gauge__label">conf</span>
+    <span class="conf-gauge__track" aria-hidden="true"><span></span></span>
+    <span class="conf-gauge__num">${escapeHtml(formatConf(confidence))}</span>
+  </div>`;
 }
 
 // ----------------------------------------------------------------- recall
@@ -304,17 +380,14 @@ function renderMemory(item, i) {
 
   let foot;
   if (item.confidence != null) {
-    const pct = Math.round(Math.max(0, Math.min(1, Number(item.confidence))) * 100);
     foot = `<div class="mem-foot"><span class="readout">${escapeHtml(item.repo || "")}</span>
-      <div class="mem-conf"><span class="lbl">conf</span>
-        <div class="bar"><span style="width:${pct}%"></span></div>
-        <span class="num">${escapeHtml(formatConf(item.confidence))}</span></div></div>`;
+      ${renderConfidence(item.confidence, "mem")}</div>`;
   } else {
     const to = item.toAgent ? ` → ${escapeHtml(item.toAgent)}` : "";
     foot = `<div class="mem-foot"><span class="readout">${escapeHtml(item.repo || "")}${to}</span></div>`;
   }
 
-  return `<article class="mem" data-event-id="${escapeHtml(item.eventId)}" style="--i:${i}">
+  return `<article class="mem" data-event-id="${escapeHtml(item.eventId)}" style="--i:${i};--strike-delay:${strikeDelay(i)}">
     <div class="mem-head">
       <span class="mem-kind">${escapeHtml(item.kind || "intent")}</span>
       <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
@@ -340,7 +413,8 @@ function wireMemoryCards() {
 function locateOnSpine(eventId) {
   const node = els.spine.querySelector(`.node[data-event-id="${CSS.escape(eventId)}"]`);
   if (!node) return;
-  node.scrollIntoView({ behavior: "smooth", block: "center" });
+  node.scrollIntoView({ behavior: reducedMotion.matches ? "auto" : "smooth", block: "center" });
+  if (reducedMotion.matches) return;
   node.animate(
     [
       { boxShadow: "inset 0 0 0 0 transparent", offset: 0 },
@@ -480,7 +554,13 @@ window.addEventListener("resize", () => {
   if (!els.recallStage.hidden && els.memoryCards.children.length) drawCone();
 });
 
+els.themeToggle?.addEventListener("click", () => {
+  const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+  applyTheme(current === "light" ? "dark" : "light", true);
+});
+
 // ----------------------------------------------------------------- boot
+initTheme();
 Promise.all([loadStatus(), loadSessions(true)]).catch(error => {
   els.readouts.innerHTML = gauge("recorder", "degraded", "unreachable");
   els.spine.innerHTML = `<p class="empty">Could not reach the recorder: ${escapeHtml(error.message)}</p>`;
