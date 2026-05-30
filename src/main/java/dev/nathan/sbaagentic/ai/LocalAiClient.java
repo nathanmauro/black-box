@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.ai;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +16,22 @@ import org.springframework.web.client.RestClientException;
 
 @Component
 public class LocalAiClient {
+
+    /** Floor for the input budget so a misconfigured tiny value cannot make chunking/clamping degenerate. */
+    private static final int MIN_BUDGET = 500;
+
+    private static final String SUMMARY_SYSTEM =
+            "Summarize this local agent session for later recall. Be concise, factual, and action-oriented.";
+
+    private static final String ELISION_MARKER =
+            "\n\n[... transcript elided to fit local model context ...]\n\n";
+
+    private static final String REDUCE_SYSTEM =
+            "Combine these ordered partial summaries of one local agent session into a single concise, "
+                    + "factual, action-oriented recap. Do not mention that it was summarized in parts.";
+
+    /** Folding rounds before we give up and clamp; each round shrinks the set by ~budget/part-size. */
+    private static final int MAX_REDUCE_ROUNDS = 6;
 
     private final SbaProperties.LocalAi properties;
     private final RestClient restClient;
@@ -48,11 +65,81 @@ public class LocalAiClient {
         if (!properties.isEnabled()) {
             return fallbackSummary(text);
         }
+        String source = text == null ? "" : text;
+        if (source.length() <= budget()) {
+            return summarizeOnce(SUMMARY_SYSTEM, source);
+        }
+        // The transcript is larger than the local model's context window. Map-reduce instead of shipping
+        // it whole (which makes the server 400): summarize each window (map), then fold the partial
+        // summaries down to one recap (reduce). The fold batches by budget and recurses, so no part is
+        // ever dropped — even a session with hundreds of windows collapses faithfully.
+        List<String> chunks = splitIntoChunks(source, budget());
+        List<String> partials = new ArrayList<>(chunks.size());
+        int degraded = 0;
+        for (int i = 0; i < chunks.size(); i++) {
+            ChunkSummary part = summarizeChunk(chunks.get(i), i + 1, chunks.size());
+            if (part.degraded()) {
+                degraded++;
+            }
+            partials.add("Part " + (i + 1) + ": " + part.text());
+        }
+        String summary = reduceSummaries(partials);
+        if (degraded > 0) {
+            // Appended outside the model so it cannot be paraphrased away: the reader must see that some
+            // segments are raw excerpts because the local model was unreachable for them.
+            summary = summary + "\n\n(Note: " + degraded + " of " + chunks.size()
+                    + " transcript segments could not reach the local model and were kept as raw excerpts.)";
+        }
+        return summary;
+    }
+
+    /** Fold ordered partial summaries to a single recap, batching by budget and recursing so none drop. */
+    private String reduceSummaries(List<String> partials) {
+        List<String> current = partials;
+        for (int round = 0; round < MAX_REDUCE_ROUNDS; round++) {
+            String combined = String.join("\n\n", current);
+            if (current.size() <= 1 || combined.length() <= budget()) {
+                return summarizeOnce(REDUCE_SYSTEM, combined);
+            }
+            List<String> batches = batchByBudget(current, budget());
+            if (batches.size() >= current.size()) {
+                // Cannot fold further (a single part already exceeds budget); the clamp in chatRequest
+                // is the floor that still keeps this request from overflowing the context.
+                return summarizeOnce(REDUCE_SYSTEM, combined);
+            }
+            List<String> next = new ArrayList<>(batches.size());
+            for (String batch : batches) {
+                next.add(summarizeOnce(REDUCE_SYSTEM, batch));
+            }
+            current = next;
+        }
+        return summarizeOnce(REDUCE_SYSTEM, String.join("\n\n", current));
+    }
+
+    /** Summarize one window of a longer transcript; degrade quietly so the fold still runs. */
+    private ChunkSummary summarizeChunk(String chunk, int index, int total) {
+        String system = "This is part " + index + " of " + total
+                + " of a longer local agent session. Summarize just this part concisely and factually.";
         try {
-            Map<String, Object> request = chatRequest(properties.getMaxTokens(),
-                    "Summarize this local agent session for later recall. Be concise, factual, and action-oriented.",
-                    text);
-            String content = extractContent(post(request));
+            String content = extractContent(post(chatRequest(properties.getMaxTokens(), system, chunk)));
+            if (content != null) {
+                return new ChunkSummary(content, false);
+            }
+        }
+        catch (RestClientException ex) {
+            // One unreachable chunk should not sink the whole summary — fall back for this part only.
+            return new ChunkSummary(fallbackSummary(chunk), true);
+        }
+        return new ChunkSummary(fallbackSummary(chunk), true);
+    }
+
+    private record ChunkSummary(String text, boolean degraded) {
+    }
+
+    /** One user-facing model call, with the offline-degradation note kept for genuine outages. */
+    private String summarizeOnce(String system, String text) {
+        try {
+            String content = extractContent(post(chatRequest(properties.getMaxTokens(), system, text)));
             if (content != null) {
                 return content;
             }
@@ -91,7 +178,83 @@ public class LocalAiClient {
                 "stream", false,
                 "messages", List.of(
                         Map.of("role", "system", "content", system),
-                        Map.of("role", "user", "content", user)));
+                        // Final safety net: even a map-reduce chunk or the reduced partials can never
+                        // exceed the budget here, so a single request can no longer overflow the context.
+                        Map.of("role", "user", "content", clampToBudget(user, budget()))));
+    }
+
+    private int budget() {
+        return Math.max(MIN_BUDGET, properties.getMaxInputChars());
+    }
+
+    /** Group ordered parts into the fewest contiguous batches whose joined length each stays within budget. */
+    static List<String> batchByBudget(List<String> parts, int budget) {
+        int effective = Math.max(MIN_BUDGET, budget);
+        List<String> batches = new ArrayList<>();
+        StringBuilder batch = new StringBuilder();
+        for (String part : parts) {
+            int joined = batch.length() == 0 ? part.length() : batch.length() + 2 + part.length();
+            if (batch.length() > 0 && joined > effective) {
+                batches.add(batch.toString());
+                batch.setLength(0);
+            }
+            if (batch.length() > 0) {
+                batch.append("\n\n");
+            }
+            batch.append(part);
+        }
+        if (batch.length() > 0) {
+            batches.add(batch.toString());
+        }
+        return batches;
+    }
+
+    /** Slice text into contiguous windows no larger than {@code max(MIN_BUDGET, budget)}, preferring line breaks. */
+    static List<String> splitIntoChunks(String text, int budget) {
+        List<String> chunks = new ArrayList<>();
+        int effective = Math.max(MIN_BUDGET, budget);
+        int len = text.length();
+        int pos = 0;
+        while (pos < len) {
+            int hardEnd = Math.min(pos + effective, len);
+            int end = hardEnd;
+            if (end < len) {
+                // Break on a paragraph/line boundary in the last fifth of the window so we do not cut
+                // mid-sentence; a hard cut is fine when no boundary is close. Search below the hard cap
+                // so the boundary plus its delimiter still lands within budget.
+                int floor = pos + (effective * 4 / 5);
+                int para = text.lastIndexOf("\n\n", hardEnd - 2);
+                int line = text.lastIndexOf('\n', hardEnd - 1);
+                if (para >= floor) {
+                    end = para + 2;
+                }
+                else if (line >= floor) {
+                    end = line + 1;
+                }
+            }
+            chunks.add(text.substring(pos, end));
+            pos = end;
+        }
+        return chunks;
+    }
+
+    /** Trim to {@code budget}, keeping the head and tail with a visible marker — recall wants both ends. */
+    static String clampToBudget(String text, int budget) {
+        if (text == null) {
+            return "";
+        }
+        int effective = Math.max(MIN_BUDGET, budget);
+        if (text.length() <= effective) {
+            return text;
+        }
+        int keep = effective - ELISION_MARKER.length();
+        if (keep <= 0) {
+            // Unreachable while MIN_BUDGET (500) > ELISION_MARKER length: defensive guard only.
+            return text.substring(0, effective);
+        }
+        int head = keep / 2;
+        int tail = keep - head;
+        return text.substring(0, head) + ELISION_MARKER + text.substring(text.length() - tail);
     }
 
     private Map<?, ?> post(Map<String, Object> request) {
