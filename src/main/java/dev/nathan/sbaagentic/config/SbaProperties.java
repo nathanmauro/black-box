@@ -9,12 +9,18 @@ public class SbaProperties {
 
     private final LocalAi localAi = new LocalAi();
 
+    private final Summary summary = new Summary();
+
     private final Elasticsearch elasticsearch = new Elasticsearch();
 
     private final Ingestion ingestion = new Ingestion();
 
     public LocalAi getLocalAi() {
         return localAi;
+    }
+
+    public Summary getSummary() {
+        return summary;
     }
 
     public Elasticsearch getElasticsearch() {
@@ -101,6 +107,36 @@ public class SbaProperties {
 
         public void setMaxInputChars(int maxInputChars) {
             this.maxInputChars = maxInputChars;
+        }
+    }
+
+    public static class Summary {
+        private String backend = "local";
+        private String externalCommand = "";
+        private Duration timeout = Duration.ofMinutes(10);
+
+        public String getBackend() {
+            return backend;
+        }
+
+        public void setBackend(String backend) {
+            this.backend = backend;
+        }
+
+        public String getExternalCommand() {
+            return externalCommand;
+        }
+
+        public void setExternalCommand(String externalCommand) {
+            this.externalCommand = externalCommand;
+        }
+
+        public Duration getTimeout() {
+            return timeout;
+        }
+
+        public void setTimeout(Duration timeout) {
+            this.timeout = timeout;
         }
     }
 
