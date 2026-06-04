@@ -62,17 +62,24 @@
         </form>
       </section>
 
-      <section class="panel utility">
-        <div class="panel-head"><span class="eyebrow">search</span><span class="readout" id="searchMeta"></span></div>
-        <form id="searchForm" class="mini-form search-form">
-          <input name="query" placeholder="Full-text across events" autocomplete="off">
-          <button type="submit" class="action ghost-action">Go</button>
-        </form>
-        <div id="searchResults" class="search-results"></div>
-      </section>
     </aside>
 
     <section class="stage">
+      <section class="panel search-panel">
+        <div class="panel-head">
+          <div class="spine-heading">
+            <h2>Search</h2>
+            <p class="readout">Elasticsearch fuzzy search with local fallback.</p>
+          </div>
+          <span class="readout" id="searchMeta"></span>
+        </div>
+        <form id="searchForm" class="mini-form search-form">
+          <input name="query" placeholder="Search events, titles, tools, cwd, source, or session id" autocomplete="off">
+          <button type="submit" class="action">Search</button>
+        </form>
+        <div id="searchResults" class="search-results"></div>
+      </section>
+
       <section class="panel recall">
         <div class="panel-head">
           <span class="eyebrow">recall · read prior intent back out</span>

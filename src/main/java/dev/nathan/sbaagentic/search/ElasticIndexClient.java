@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.search;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -16,6 +17,9 @@ import org.springframework.web.client.RestClientException;
 
 @Component
 public class ElasticIndexClient implements EventIndexSink {
+
+    private static final List<String> SEARCH_FIELDS =
+            List.of("text^4", "title^3", "cwd^2", "toolName", "eventType", "source", "clientSessionId");
 
     private final SbaProperties.Elasticsearch properties;
     private final RestClient restClient;
@@ -73,10 +77,28 @@ public class ElasticIndexClient implements EventIndexSink {
             Map<String, Object> body = Map.of(
                     "size", limit,
                     "query", Map.of(
-                            "multi_match", Map.of(
-                                    "query", query,
-                                    "fields", List.of("text^3", "title^2", "toolName", "eventType", "source", "cwd"))),
-                    "sort", List.of(Map.of("observedAt", Map.of("order", "desc"))));
+                            "bool", Map.of(
+                                    "minimum_should_match", 1,
+                                    "should", List.of(
+                                            Map.of("multi_match", Map.of(
+                                                    "query", query,
+                                                    "fields", SEARCH_FIELDS,
+                                                    "type", "phrase",
+                                                    "boost", 2.0)),
+                                            Map.of("multi_match", Map.of(
+                                                    "query", query,
+                                                    "fields", SEARCH_FIELDS,
+                                                    "type", "best_fields",
+                                                    "operator", "or",
+                                                    "fuzziness", "AUTO",
+                                                    "prefix_length", 1,
+                                                    "max_expansions", 50))))),
+                    "highlight", Map.of(
+                            "pre_tags", List.of("<mark>"),
+                            "post_tags", List.of("</mark>"),
+                            "fields", Map.of(
+                                    "title", Map.of("number_of_fragments", 0),
+                                    "text", Map.of("fragment_size", 220, "number_of_fragments", 2))));
 
             Map<?, ?> response = restClient.post()
                     .uri("/{index}/_search", properties.getIndexName())
@@ -96,15 +118,23 @@ public class ElasticIndexClient implements EventIndexSink {
             return list.stream()
                     .filter(Map.class::isInstance)
                     .map(Map.class::cast)
-                    .map(hit -> Map.<String, Object>of(
-                            "id", String.valueOf(hit.get("_id")),
-                            "score", hit.get("_score") == null ? 0 : hit.get("_score"),
-                            "source", hit.get("_source") == null ? Map.of() : hit.get("_source")))
+                    .map(ElasticIndexClient::mapSearchHit)
                     .toList();
         }
         catch (RestClientException ex) {
             return List.of();
         }
+    }
+
+    private static Map<String, Object> mapSearchHit(Map<?, ?> hit) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", String.valueOf(hit.get("_id")));
+        result.put("score", hit.get("_score") == null ? 0 : hit.get("_score"));
+        result.put("source", hit.get("_source") == null ? Map.of() : hit.get("_source"));
+        if (hit.get("highlight") != null) {
+            result.put("highlight", hit.get("highlight"));
+        }
+        return result;
     }
 
     private void ensureIndex() {

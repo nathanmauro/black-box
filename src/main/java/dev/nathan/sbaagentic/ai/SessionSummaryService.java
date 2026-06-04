@@ -18,11 +18,11 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class SessionSummaryService {
 
     private final EventRepository repository;
-    private final LocalAiClient localAiClient;
+    private final SummaryBackend summaryBackend;
 
-    public SessionSummaryService(EventRepository repository, LocalAiClient localAiClient) {
+    public SessionSummaryService(EventRepository repository, SummaryBackend summaryBackend) {
         this.repository = repository;
-        this.localAiClient = localAiClient;
+        this.summaryBackend = summaryBackend;
     }
 
     public AgentSession summarize(String sessionId) {
@@ -54,8 +54,8 @@ public class SessionSummaryService {
 
         // Call the local model outside any transaction (it is a network round-trip), then commit the
         // summary and the AI-derived title — which outranks every ingest-time title — in one atomic write.
-        String summary = localAiClient.summarize(transcript.toString());
-        repository.saveSummaryAndTitle(sessionId, summary, localAiClient.title(summary), TitleRank.AI);
+        String summary = summaryBackend.summarize(transcript.toString());
+        repository.saveSummaryAndTitle(sessionId, summary, summaryBackend.title(summary), TitleRank.AI);
         return repository.findSessionById(sessionId).orElse(session);
     }
 }

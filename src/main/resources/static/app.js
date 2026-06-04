@@ -262,6 +262,20 @@ function formatConf(c) {
   return Number.isFinite(n) ? n.toFixed(2) : String(c);
 }
 
+function highlightText(highlight, field, fallback, max = 320) {
+  const fragments = highlight?.[field];
+  if (Array.isArray(fragments) && fragments.length) {
+    return sanitizeHighlight(clamp(fragments.join(" … "), max));
+  }
+  return escapeHtml(clamp(fallback, max));
+}
+
+function sanitizeHighlight(value) {
+  return escapeHtml(value)
+    .replaceAll("&lt;mark&gt;", "<mark>")
+    .replaceAll("&lt;/mark&gt;", "</mark>");
+}
+
 // ----------------------------------------------------------------- recall
 async function doRecall(scope, withinHours) {
   els.recallMeta.textContent = "reading…";
@@ -443,16 +457,101 @@ els.searchForm.addEventListener("submit", async event => {
 function renderSearch(results) {
   const local = results.local || [];
   const elastic = results.elastic || [];
-  els.searchMeta.textContent = `${local.length} local${elastic.length ? ` · ${elastic.length} es` : ""}`;
-  if (!local.length && !elastic.length) {
+  const merged = mergeSearchResults(local, elastic);
+  const health = results.elasticHealth || {};
+  const backend = health.available === true
+    ? "elastic fuzzy"
+    : health.enabled === false ? "local" : "local · elastic offline";
+  els.searchMeta.textContent = `${merged.length} hits · ${backend}`;
+  if (!merged.length) {
     els.searchResults.innerHTML = `<p class="empty">No matches.</p>`;
     return;
   }
-  els.searchResults.innerHTML = local.map(event => `
-    <article class="result">
-      <div class="result-head"><span>${escapeHtml(event.source)} · ${escapeHtml(event.eventType)}</span><span>${escapeHtml(relativeTime(event.observedAt))}</span></div>
-      <pre>${escapeHtml(clamp(event.text || event.toolName || event.clientSessionId || "", 240))}</pre>
-    </article>`).join("");
+  els.searchResults.innerHTML = merged.map(renderSearchHit).join("");
+}
+
+function mergeSearchResults(local, elastic) {
+  const localById = new Map(local.map(event => [event.id, event]));
+  const seen = new Set();
+  const merged = [];
+  for (const hit of elastic) {
+    const event = localById.get(hit.id) || eventFromElastic(hit);
+    seen.add(hit.id);
+    merged.push({
+      event,
+      score: Number(hit.score),
+      origin: localById.has(hit.id) ? "elastic + local" : "elastic",
+      highlight: hit.highlight || {},
+    });
+  }
+  for (const event of local) {
+    if (!seen.has(event.id)) {
+      merged.push({ event, score: null, origin: "local", highlight: {} });
+    }
+  }
+  return merged;
+}
+
+function eventFromElastic(hit) {
+  const source = hit.source || {};
+  return {
+    id: hit.id,
+    sessionId: source.sessionId || "",
+    source: source.source || "unknown",
+    clientSessionId: source.clientSessionId || "",
+    turnId: source.turnId || "",
+    eventType: source.eventType || "Event",
+    role: "",
+    text: source.text || "",
+    toolName: source.toolName || "",
+    toolInputJson: null,
+    toolOutputJson: null,
+    metadata: {},
+    observedAt: source.observedAt || "",
+    title: source.title || "",
+    cwd: source.cwd || "",
+  };
+}
+
+function renderSearchHit(hit, i) {
+  const event = hit.event;
+  const src = (event.source || "unknown").toLowerCase();
+  const title = highlightText(hit.highlight, "title", event.title || event.metadata?.title || event.eventType || "Event", 120);
+  const body = highlightText(hit.highlight, "text", event.text || event.toolName || event.clientSessionId || "", 420);
+  const score = hit.score == null || !Number.isFinite(hit.score)
+    ? ""
+    : `<span class="result-score">${hit.score.toFixed(2)}</span>`;
+  const where = event.cwd || event.clientSessionId || event.sessionId || "";
+  return `<article class="result" data-session-id="${escapeHtml(event.sessionId)}" data-event-id="${escapeHtml(event.id)}" tabindex="0" style="--i:${i}">
+    <div class="result-head">
+      <span class="result-origin">${escapeHtml(hit.origin)}</span>
+      ${score}
+      <span class="result-time">${escapeHtml(relativeTime(event.observedAt))}</span>
+    </div>
+    <div class="result-title">
+      <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
+      <span>${title}</span>
+    </div>
+    <div class="result-body">${body}</div>
+    <div class="result-foot">${escapeHtml(event.eventType || "Event")}${where ? ` · ${escapeHtml(where)}` : ""}</div>
+  </article>`;
+}
+
+els.searchResults.addEventListener("click", event => {
+  const row = event.target.closest(".result[data-session-id]");
+  if (row) openSearchResult(row);
+});
+
+els.searchResults.addEventListener("keydown", event => {
+  if (event.key !== "Enter") return;
+  const row = event.target.closest(".result[data-session-id]");
+  if (row) openSearchResult(row);
+});
+
+async function openSearchResult(row) {
+  if (!row.dataset.sessionId) return;
+  await selectSession(row.dataset.sessionId);
+  requestAnimationFrame(() => locateOnSpine(row.dataset.eventId));
 }
 
 els.summarizeButton.addEventListener("click", async () => {

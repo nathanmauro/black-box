@@ -151,6 +151,8 @@ Claude Code (`UserPromptSubmit` / `PostToolUse`), in your local settings:
 
 Codex (`.codex/hooks.json`, local to the repo or your machine) uses the same command shape with `SBA_AGENT_SOURCE=codex`. Replace `/ABSOLUTE/PATH/TO/...` with the path on your machine. Hook config formats vary by client version — keep the command identical and adapt the surrounding shape.
 
+For the current workstation's installed hook behavior, timeout expectations, and the distinction between visible hook status and model-visible context injection, see [`docs/local-writes-and-elasticsearch.md#hook-behavior-on-this-workstation`](docs/local-writes-and-elasticsearch.md#hook-behavior-on-this-workstation).
+
 ### HTTP API
 
 All endpoints are served at `http://localhost:8766`.
@@ -224,6 +226,14 @@ Elasticsearch is a secondary index, not the source of truth. When enabled, new e
 docker compose -f compose.elasticsearch.yml up -d
 SBA_ELASTICSEARCH_ENABLED=true mvn spring-boot:run
 ```
+
+Kibana is available as an optional Compose profile for inspecting the local index:
+
+```bash
+docker compose -f compose.elasticsearch.yml --profile kibana up -d kibana
+```
+
+Then open `http://localhost:5601`.
 
 ### Architecture
 

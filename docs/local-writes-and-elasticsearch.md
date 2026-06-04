@@ -10,6 +10,22 @@ Use a local `.codex/hooks.json` if you want Codex to run the hook bridge for thi
 
 Codex may ask you to trust the local hook the next time a session starts here. Approve it if you want automatic capture.
 
+## Hook behavior on this workstation
+
+The current local setup uses hooks as a low-noise event capture layer, not as a blocking control plane:
+
+- Codex has a global hook file at `~/.codex/hooks.json` that runs `/Users/nathan/.local/bin/cockpit-agent-hook --client codex` for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop`.
+- Claude Code has a global user setting at `~/.claude/settings.json` that runs `/Users/nathan/.local/bin/cockpit-agent-hook --client claude` for the same capture lifecycle.
+- This repo also has a Claude-local provenance hook at `.claude/settings.local.json` for edit tools only (`Write`, `Edit`, `MultiEdit`, and `NotebookEdit`). It calls `.claude/hooks/post-tool-call.py`, which posts changed file paths to the local provenance webserver when that server is available.
+- The Black Box/Cockpit capture hooks use a 5 second client timeout. The repo-local provenance hook does not currently declare a Claude-level timeout, but its HTTP call uses a 0.5 second timeout and only runs after edit tools.
+- The hook events are visible in Black Box as captured `SessionStart`, `UserPromptSubmit`, and `PostToolUse` rows. They can also make search results noisy because command output becomes indexed event text.
+
+Treat the hook output channels separately:
+
+- `statusMessage` is visible runner text such as "Loading Cockpit startup context" or "Running PostToolUse hooks". It is for humans and should be short.
+- `hookSpecificOutput.additionalContext` is the intended "console.log for the LLM" style channel: hook-produced text that could be injected into a session as model-visible context.
+- On the current Codex path, startup logs show that Codex does not consume `hookSpecificOutput.additionalContext`; the hook still captures/curates events, but it does not inject visible text into the model context. Use an explicit prompt wrapper, MCP recall call, or Black Box UI surface when model-visible injection is required.
+
 As an example from one local setup, the Codex config at `/path/to/.codex/config.toml` registered this MCP server:
 
 ```toml
@@ -20,6 +36,7 @@ url = "http://localhost:8766/mcp"
 The service uses:
 
 - Elasticsearch `8.15.3`
+- Kibana `8.15.3` when the optional `kibana` Compose profile is enabled
 - single-node discovery
 - disabled local security, because the current app client uses unauthenticated HTTP
 - a named Docker volume, `sba-agentic-elasticsearch`, for index persistence
@@ -34,6 +51,24 @@ Check Elasticsearch:
 
 ```bash
 curl -fsS http://localhost:9200 | jq
+```
+
+Start Kibana without changing the live app:
+
+```bash
+docker compose -f compose.elasticsearch.yml --profile kibana up -d kibana
+```
+
+Kibana uses the same Compose network as Elasticsearch and connects to `http://elasticsearch:9200`. The local UI is available at:
+
+```text
+http://localhost:5601
+```
+
+Check Kibana:
+
+```bash
+curl -fsS http://localhost:5601/api/status | jq '{overall: .status.overall, elasticsearch: .status.core.elasticsearch}'
 ```
 
 Start the app with Elasticsearch indexing enabled:
@@ -166,6 +201,12 @@ Stop only Elasticsearch:
 
 ```bash
 docker compose -f compose.elasticsearch.yml down
+```
+
+Stop Kibana and leave Elasticsearch running:
+
+```bash
+docker compose -f compose.elasticsearch.yml --profile kibana stop kibana
 ```
 
 Stop Elasticsearch and remove its index data:

@@ -50,6 +50,12 @@ sba:
     # transcript, leaving headroom on a 4096-token context after output + system prompt. Raise for bigger
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
+  summary:
+    # local = LM Studio/OpenAI-compatible local model. external = run a configured CLI wrapper and
+    # pipe the assembled session transcript to stdin, falling back to local when the command fails.
+    backend: ${SBA_SUMMARY_BACKEND:local}
+    external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:}
+    timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   elasticsearch:
     enabled: ${SBA_ELASTICSEARCH_ENABLED:false}
     base-url: ${SBA_ELASTICSEARCH_URL:http://localhost:9200}

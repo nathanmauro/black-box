@@ -292,22 +292,103 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--amber-line);
   box-shadow: inset 0 -2px 0 var(--amber);
 }
+.search-panel { box-shadow: var(--shadow-reg); }
+.search-panel .panel-head { align-items: flex-start; }
+.search-panel .spine-heading { flex: 1; min-width: 0; }
+.search-panel .search-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  padding: 16px;
+}
+.search-panel .search-form input {
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
 .search-form { grid-template-columns: 1fr auto; align-items: end; }
 
-.search-results { display: grid; gap: 1px; background: var(--line-soft); }
+.search-results {
+  display: grid;
+  gap: 1px;
+  background: var(--line-soft);
+  max-height: min(54vh, 620px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 .search-results:empty { display: none; }
 .result {
-  padding: 9px 14px; background: var(--coal-solid);
+  padding: 11px 14px;
+  background: var(--coal-solid);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  outline: none;
+  animation: strike 180ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 24ms);
+  transition: background 110ms, border-color 110ms;
+}
+.result:hover, .result:focus {
+  background: var(--coal-hover);
+  border-left-color: var(--amber);
 }
 .result-head {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-family: var(--font-mono); font-size: 10px; color: var(--faint-text);
-  letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint-text);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
 }
-.result pre {
-  margin: 0; font-family: var(--font-mono); font-size: 11.5px;
-  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted);
-  max-height: 60px; overflow: hidden;
+.result-origin {
+  color: var(--amber);
+}
+.result-score {
+  color: var(--paper);
+  border: 1px solid var(--line);
+  padding: 0 5px;
+  font-feature-settings: var(--tnum);
+}
+.result-time {
+  margin-left: auto;
+}
+.result-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--paper);
+}
+.result-title > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.result-body {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  max-height: 74px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.result-body mark,
+.result-title mark {
+  background: var(--amber-soft);
+  color: var(--amber);
+  padding: 0 2px;
+}
+.result-foot {
+  margin-top: 7px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--faint-text);
+  overflow-wrap: anywhere;
 }
 
 /* ------------------------------------------------------------------- recall */

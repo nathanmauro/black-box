@@ -4,4 +4,6 @@ sba-agentic.db
 sba-agentic.db-*
 .DS_Store
 .idea/
+.claude/
+.firecrawl/
 *.iml
