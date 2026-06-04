@@ -1,0 +1,30 @@
+---
+black_box_session_id: {{{sessionIdYaml}}}
+client_session_id: {{{clientSessionIdYaml}}}
+source: {{{sourceYaml}}}
+title: {{{titleYaml}}}
+{{#hasCwd}}cwd: {{{cwdYaml}}}
+{{/hasCwd}}started_at: {{{startedAtYaml}}}
+last_seen_at: {{{lastSeenAtYaml}}}
+event_count: {{eventCount}}
+tags:
+  - black-box
+  - agent-summary
+  - {{sourceTag}}
+---
+
+# {{title}}
+
+| Field | Value |
+| --- | --- |
+| Source | `{{source}}` |
+| Client session | `{{clientSessionId}}` |
+| Black Box session | `{{sessionId}}` |
+{{#hasCwd}}| CWD | `{{cwdTable}}` |
+{{/hasCwd}}| Events | {{eventCount}} |
+| Started | {{startedAt}} |
+| Last seen | {{lastSeenAt}} |
+
+## Summary
+
+{{{summary}}}

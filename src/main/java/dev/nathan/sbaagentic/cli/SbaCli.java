@@ -61,6 +61,7 @@ public class SbaCli implements ApplicationRunner {
             case "search" -> search(args, positional);
             case "ingest" -> ingest(args);
             case "summarize" -> summarize(positional);
+            case "summarize-missing" -> summarizeMissing(args);
             default -> usage();
         }
     }
@@ -115,6 +116,10 @@ public class SbaCli implements ApplicationRunner {
         writeJson(summaryService.summarize(positional.get(1)));
     }
 
+    private void summarizeMissing(ApplicationArguments args) throws IOException {
+        writeJson(summaryService.summarizeMissing(limit(args, 10)));
+    }
+
     private void usage() {
         System.out.println("""
                 Usage:
@@ -123,6 +128,7 @@ public class SbaCli implements ApplicationRunner {
                   sba-agentic search <query> [--limit=25]
                   sba-agentic ingest --source=manual --session=my-session --type=ManualCapture --text='note'
                   sba-agentic summarize <session-id>
+                  sba-agentic summarize-missing [--limit=10]
                 """);
     }
 

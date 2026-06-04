@@ -18,7 +18,7 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 
 - Runs on `localhost:8766` with HTTP API, web control surface, CLI, MCP server, SQLite storage, optional local-AI summaries, optional Elasticsearch index.
 - MCP tools live in `AgenticTools`: write — `captureDecision`, `captureHandoff`, `captureObservation`; query — `recallContext`, `searchSessions`, `recentSessions`, `localModelStatus`.
-- REST routes in `AgenticController`: `POST /api/{events,decisions,handoffs}`, `GET /api/{recall,sessions,sessions/{id}/events,search,status}`, `POST /api/sessions/{id}/summarize`, plus health endpoints.
+- REST routes in `AgenticController`: `POST /api/{events,decisions,handoffs}`, `GET /api/{recall,sessions,sessions/{id}/events,search,status,exports/targets}`, `POST /api/sessions/{id}/summarize`, `POST /api/sessions/summarize`, `POST /api/sessions/summarize-missing`, `POST /api/sessions/{id}/exports/{targetId}`, plus health endpoints.
 - Hook bridge implemented at `scripts/hooks/sba-agent-hook.sh` (local/opt-in).
 - One-command demo at `scripts/demo.sh` (starts app, seeds a decision/handoff, shows the recall) — referenced as the README quickstart.
 - Title seeding: `EventIngestService.titleFor(...)` uses `metadata.title` → first event text → tool/event fallback, compacted to 96 chars; stored once on first creation of a `(source, clientSessionId)` session. Later events do **not** retitle. This is title *seeding*, not smart retitle.
@@ -48,6 +48,7 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
    - early-session retitle rules that only replace weak fallback titles, or
    - local-AI title suggestion with user-visible confirmation.
 3. Roadmap candidates (do not claim yet): semantic/vector recall, live event streaming to the UI.
+4. Diagram/flow documentation workflow: install or standardize on draw.io Desktop for polished flow diagrams, keep Excalidraw for fast whiteboard sketches, and use Mermaid for repo-native diagrams in Markdown.
 
 ## Done since this plan was written
 

@@ -193,6 +193,16 @@ public class EventRepository {
                 """, this::mapSession, limit);
     }
 
+    public List<AgentSession> recentSessionsMissingSummary(int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                  FROM agent_sessions
+                 WHERE summary IS NULL OR trim(summary) = ''
+                 ORDER BY last_seen_at DESC
+                 LIMIT ?
+                """, this::mapSession, limit);
+    }
+
     public List<AgentEvent> eventsForSession(String sessionId, int limit) {
         return jdbcTemplate.query("""
                 SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,

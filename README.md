@@ -175,6 +175,10 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
 | `GET /api/status` | Storage counts + local AI / Elasticsearch health |
 | `POST /api/sessions/{id}/summarize` | Summarizes a session (compacted transcript fallback when local AI is off) |
+| `POST /api/sessions/summarize?source=codex&clientSessionId=<id>` | Summarizes the same session by hook/client ids |
+| `POST /api/sessions/summarize-missing?limit=10` | Backfills recent sessions missing summaries, capped per call |
+| `GET /api/exports/targets` | Lists configured summary export targets |
+| `POST /api/sessions/{id}/exports/{targetId}` | Writes that session's existing summary to the selected export target |
 
 Examples:
 
@@ -205,9 +209,27 @@ java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar ingest --source=manual --session
 java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar search 'first note'
 java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar sessions --limit=10
 java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar summarize <session-id>
+java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar summarize-missing --limit=10
 ```
 
 The CLI reads the same environment variables as the server — set `SBA_DATASOURCE_URL` to share a database between them.
+
+Summary export is opt-in. The shipped example target is Obsidian, implemented as a configurable `markdown-file` target that uses the bundled Mustache template at `classpath:/exports/summary-markdown.mustache`. Override its directory with `SBA_EXPORT_OBSIDIAN_DIR`, or define your own `sba.exports.targets[]` entries:
+
+```yaml
+sba:
+  exports:
+    targets:
+      - id: team-wiki
+        label: Team Wiki
+        type: markdown-file
+        directory: /path/to/exported/summaries
+        template: file:/path/to/summary-template.mustache
+        subdirectory-template: "{{month}}"
+        filename-template: "{{source}}-{{slug}}-{{shortId}}.md"
+```
+
+Templates receive fields such as `title`, `summary`, `source`, `cwd`, `date`, `month`, `slug`, `shortId`, `sessionId`, `clientSessionId`, `startedAt`, `lastSeenAt`, and `eventCount`.
 
 ### Data model
 

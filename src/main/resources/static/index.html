@@ -80,24 +80,30 @@
         <div id="searchResults" class="search-results"></div>
       </section>
 
-      <section class="panel recall">
+      <section class="panel recall" id="recallPanel">
         <div class="panel-head">
           <span class="eyebrow">recall · read prior intent back out</span>
           <span class="readout" id="recallMeta"></span>
+          <div class="panel-actions">
+            <button id="clearRecallButton" class="ghost small-ghost" title="Clear recall results" aria-label="Clear recall results">Clear</button>
+            <button id="toggleRecallButton" class="ghost small-ghost" title="Collapse recall" aria-label="Collapse recall" aria-expanded="true">▴</button>
+          </div>
         </div>
-        <form id="recallForm" class="recall-console">
-          <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
-          <select name="withinHours" aria-label="time window">
-            <option value="24">24h</option>
-            <option value="168" selected>7d</option>
-            <option value="720">30d</option>
-            <option value="0">all</option>
-          </select>
-          <button type="submit" class="action recall-fire">Recall</button>
-        </form>
-        <div class="recall-stage" id="recallStage" hidden>
-          <svg class="cone" id="cone" aria-hidden="true" preserveAspectRatio="none"></svg>
-          <div class="memory-cards" id="memoryCards"></div>
+        <div id="recallBody" class="recall-body">
+          <form id="recallForm" class="recall-console">
+            <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
+            <select name="withinHours" aria-label="time window">
+              <option value="24">24h</option>
+              <option value="168" selected>7d</option>
+              <option value="720">30d</option>
+              <option value="0">all</option>
+            </select>
+            <button type="submit" class="action recall-fire">Recall</button>
+          </form>
+          <div class="recall-stage" id="recallStage" hidden>
+            <svg class="cone" id="cone" aria-hidden="true" preserveAspectRatio="none"></svg>
+            <div class="memory-cards" id="memoryCards"></div>
+          </div>
         </div>
       </section>
 
@@ -106,10 +112,22 @@
           <div class="spine-heading">
             <h2 id="spineTitle">Cognition Spine</h2>
             <p class="readout" id="spineMeta">Select a session to read its trace.</p>
+            <div class="session-identity" id="sessionIdentity" aria-live="polite"></div>
           </div>
-          <button id="summarizeButton" class="action" disabled>Summarize</button>
+          <div class="spine-actions">
+            <button id="copySessionButton" class="icon-button" title="Copy session IDs" aria-label="Copy session IDs" disabled>⧉</button>
+            <button id="summarizeButton" class="action" disabled>Summarize</button>
+            <select id="exportTargetSelect" class="export-target-select" aria-label="Export target" disabled></select>
+            <button id="exportSummaryButton" class="action ghost-action" disabled>Export</button>
+          </div>
+        </div>
+        <div class="spine-toolbar">
+          <span class="toolbar-label">filter</span>
+          <div id="toolFilter" class="filter-strip" role="group" aria-label="Filter by tool use type"></div>
+          <span class="readout" id="toolFilterMeta"></span>
         </div>
         <div id="summary" class="summary" hidden></div>
+        <div id="summaryExportStatus" class="summary-export-status readout" hidden></div>
         <div id="spine" class="spine"></div>
       </section>
     </section>

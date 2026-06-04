@@ -14,6 +14,7 @@ import dev.nathan.sbaagentic.event.EventIngestRequest;
 import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.exporting.SummaryExportService;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
@@ -38,6 +39,7 @@ public class AgenticController {
     private final EventRepository repository;
     private final SearchService searchService;
     private final SessionSummaryService summaryService;
+    private final SummaryExportService summaryExportService;
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
 
@@ -47,6 +49,7 @@ public class AgenticController {
             EventRepository repository,
             SearchService searchService,
             SessionSummaryService summaryService,
+            SummaryExportService summaryExportService,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient) {
         this.ingestService = ingestService;
@@ -54,6 +57,7 @@ public class AgenticController {
         this.repository = repository;
         this.searchService = searchService;
         this.summaryService = summaryService;
+        this.summaryExportService = summaryExportService;
         this.localAiClient = localAiClient;
         this.elasticIndexClient = elasticIndexClient;
     }
@@ -88,12 +92,37 @@ public class AgenticController {
 
     @GetMapping("/sessions/{sessionId}/events")
     public List<AgentEvent> events(@PathVariable String sessionId, @RequestParam(defaultValue = "100") int limit) {
-        return repository.eventsForSession(sessionId, safeLimit(limit));
+        return repository.eventsForSession(sessionId, safeEventLimit(limit));
     }
 
     @PostMapping("/sessions/{sessionId}/summarize")
     public AgentSession summarize(@PathVariable String sessionId) {
         return summaryService.summarize(sessionId);
+    }
+
+    @PostMapping("/sessions/summarize")
+    public AgentSession summarizeByClientSession(
+            @RequestParam String source,
+            @RequestParam String clientSessionId) {
+        return summaryService.summarize(source, clientSessionId);
+    }
+
+    @PostMapping("/sessions/summarize-missing")
+    public SessionSummaryService.SummaryBackfillResult summarizeMissing(
+            @RequestParam(defaultValue = "10") int limit) {
+        return summaryService.summarizeMissing(limit);
+    }
+
+    @GetMapping("/exports/targets")
+    public List<SummaryExportService.ExportTarget> exportTargets() {
+        return summaryExportService.targets();
+    }
+
+    @PostMapping("/sessions/{sessionId}/exports/{targetId}")
+    public SummaryExportService.SummaryExport exportSummary(
+            @PathVariable String sessionId,
+            @PathVariable String targetId) {
+        return summaryExportService.exportSummary(sessionId, targetId);
     }
 
     @GetMapping("/search")
@@ -121,5 +150,9 @@ public class AgenticController {
 
     private static int safeLimit(int limit) {
         return Math.max(1, Math.min(limit, 250));
+    }
+
+    private static int safeEventLimit(int limit) {
+        return Math.max(1, Math.min(limit, 2_000));
     }
 }

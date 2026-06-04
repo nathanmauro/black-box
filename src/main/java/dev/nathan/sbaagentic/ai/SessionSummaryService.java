@@ -17,6 +17,8 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 @Service
 public class SessionSummaryService {
 
+    private static final int MAX_BACKFILL_LIMIT = 25;
+
     private final EventRepository repository;
     private final SummaryBackend summaryBackend;
 
@@ -28,7 +30,7 @@ public class SessionSummaryService {
     public AgentSession summarize(String sessionId) {
         AgentSession session = repository.findSessionById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Session not found"));
-        List<AgentEvent> events = new ArrayList<>(repository.eventsForSession(sessionId, 200));
+        List<AgentEvent> events = new ArrayList<>(repository.eventsForSession(sessionId, summaryEventLimit(session)));
         Collections.reverse(events);
 
         StringBuilder transcript = new StringBuilder();
@@ -57,5 +59,32 @@ public class SessionSummaryService {
         String summary = summaryBackend.summarize(transcript.toString());
         repository.saveSummaryAndTitle(sessionId, summary, summaryBackend.title(summary), TitleRank.AI);
         return repository.findSessionById(sessionId).orElse(session);
+    }
+
+    public AgentSession summarize(String source, String clientSessionId) {
+        AgentSession session = repository.findSession(source, clientSessionId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Session not found"));
+        return summarize(session.id());
+    }
+
+    public SummaryBackfillResult summarizeMissing(int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, MAX_BACKFILL_LIMIT));
+        List<AgentSession> missing = repository.recentSessionsMissingSummary(safeLimit);
+        List<AgentSession> summarized = new ArrayList<>();
+        for (AgentSession session : missing) {
+            summarized.add(summarize(session.id()));
+        }
+        return new SummaryBackfillResult(safeLimit, summarized.size(), summarized);
+    }
+
+    public record SummaryBackfillResult(int requested, int summarized, List<AgentSession> sessions) {
+    }
+
+    private static int summaryEventLimit(AgentSession session) {
+        long count = session.eventCount();
+        if (count <= 0) {
+            return 200;
+        }
+        return (int) Math.max(200, Math.min(count, 2_000));
     }
 }

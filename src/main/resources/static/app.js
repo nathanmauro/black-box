@@ -3,7 +3,10 @@
 
 const state = {
   sessions: [],
+  exportTargets: [],
   activeSessionId: null,
+  activeEvents: [],
+  activeToolFilter: "all",
   spineEventIds: new Set(),
 };
 
@@ -16,16 +19,27 @@ const els = {
   searchForm: document.querySelector("#searchForm"),
   searchResults: document.querySelector("#searchResults"),
   searchMeta: document.querySelector("#searchMeta"),
+  recallPanel: document.querySelector("#recallPanel"),
+  recallBody: document.querySelector("#recallBody"),
   recallForm: document.querySelector("#recallForm"),
   recallMeta: document.querySelector("#recallMeta"),
   recallStage: document.querySelector("#recallStage"),
   memoryCards: document.querySelector("#memoryCards"),
   cone: document.querySelector("#cone"),
+  clearRecallButton: document.querySelector("#clearRecallButton"),
+  toggleRecallButton: document.querySelector("#toggleRecallButton"),
   spine: document.querySelector("#spine"),
   spineTitle: document.querySelector("#spineTitle"),
   spineMeta: document.querySelector("#spineMeta"),
+  sessionIdentity: document.querySelector("#sessionIdentity"),
+  copySessionButton: document.querySelector("#copySessionButton"),
+  toolFilter: document.querySelector("#toolFilter"),
+  toolFilterMeta: document.querySelector("#toolFilterMeta"),
   summary: document.querySelector("#summary"),
   summarizeButton: document.querySelector("#summarizeButton"),
+  exportTargetSelect: document.querySelector("#exportTargetSelect"),
+  exportSummaryButton: document.querySelector("#exportSummaryButton"),
+  summaryExportStatus: document.querySelector("#summaryExportStatus"),
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -104,6 +118,22 @@ async function loadStatus(pulse = false) {
   }
 }
 
+async function loadExportTargets() {
+  state.exportTargets = await api("/api/exports/targets");
+  if (!state.exportTargets.length) {
+    els.exportTargetSelect.innerHTML = `<option value="">No export targets</option>`;
+    els.exportTargetSelect.disabled = true;
+    els.exportSummaryButton.disabled = true;
+    els.exportSummaryButton.textContent = "Export";
+    return;
+  }
+  els.exportTargetSelect.innerHTML = state.exportTargets
+    .map(target => `<option value="${escapeHtml(target.id)}">${escapeHtml(target.label || target.id)}</option>`)
+    .join("");
+  els.exportTargetSelect.disabled = false;
+  els.exportSummaryButton.textContent = "Export";
+}
+
 // A real three-state readout: ok (reachable), degraded (enabled but unreachable), off (disabled).
 function serviceGauge(label, health, okValue) {
   if (health.enabled === false) return gauge(label, "off", "off");
@@ -116,6 +146,14 @@ async function loadSessions(selectFirst = false) {
   state.sessions = await api("/api/sessions?limit=40");
   els.sessionCount.textContent = `${state.sessions.length}`;
   if (!state.sessions.length) {
+    state.activeEvents = [];
+    els.copySessionButton.disabled = true;
+    els.exportTargetSelect.disabled = true;
+    els.exportSummaryButton.disabled = true;
+    els.sessionIdentity.innerHTML = "";
+    els.toolFilter.innerHTML = "";
+    els.toolFilter.setAttribute("aria-disabled", "true");
+    els.toolFilterMeta.textContent = "";
     els.sessions.innerHTML = `<p class="empty">No sessions yet. Run ./scripts/demo.sh or connect a hook.</p>`;
     els.spine.innerHTML = `<p class="empty">The recorder is idle. Capture an event to lay down the first trace.</p>`;
     return;
@@ -123,15 +161,19 @@ async function loadSessions(selectFirst = false) {
   els.sessions.innerHTML = state.sessions.map(session => {
     const src = (session.source || "unknown").toLowerCase();
     const aiTitled = session.summary ? `<span class="seal">◆ ai</span>` : "";
-    return `<button class="channel ${session.id === state.activeSessionId ? "active" : ""}" data-id="${escapeHtml(session.id)}">
-      <span class="channel-title">${escapeHtml(session.title)} ${aiTitled}</span>
-      <span class="channel-meta">
-        <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
-        <span>${num(session.eventCount)} ev</span>
-        <span>·</span>
-        <span>${escapeHtml(relativeTime(session.lastSeenAt))}</span>
-      </span>
-    </button>`;
+    const active = session.id === state.activeSessionId ? "active" : "";
+    return `<div class="channel-row ${active}" data-id="${escapeHtml(session.id)}">
+      <button class="channel ${active}" data-id="${escapeHtml(session.id)}">
+        <span class="channel-title">${escapeHtml(session.title)} ${aiTitled}</span>
+        <span class="channel-meta">
+          <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
+          <span>${num(session.eventCount)} ev</span>
+          <span>·</span>
+          <span>${escapeHtml(relativeTime(session.lastSeenAt))}</span>
+        </span>
+      </button>
+      <button class="copy-button" data-session-id="${escapeHtml(session.id)}" title="Copy session IDs" aria-label="Copy session IDs">⧉</button>
+    </div>`;
   }).join("");
   if (selectFirst || !state.activeSessionId || !state.sessions.some(s => s.id === state.activeSessionId)) {
     await selectSession(state.sessions[0].id);
@@ -144,15 +186,60 @@ async function selectSession(sessionId) {
   if (session) {
     els.spineTitle.textContent = session.title;
     const where = session.cwd ? ` · ${session.cwd}` : "";
-    els.spineMeta.textContent = `${session.source} · ${session.clientSessionId}${where} · ${session.eventCount} events`;
+    els.spineMeta.textContent = `${session.source}${where} · ${session.eventCount} events`;
+    els.sessionIdentity.innerHTML = renderSessionIdentity(session);
+    els.copySessionButton.disabled = false;
     els.summary.hidden = !session.summary;
     els.summary.textContent = session.summary || "";
+    setSummaryExportState(session);
   }
   els.summarizeButton.disabled = false;
   els.sessions.querySelectorAll(".channel").forEach(row =>
     row.classList.toggle("active", row.dataset.id === sessionId));
-  const events = await api(`/api/sessions/${encodeURIComponent(sessionId)}/events?limit=120`);
-  renderSpine(events);
+  els.sessions.querySelectorAll(".channel-row").forEach(row =>
+    row.classList.toggle("active", row.dataset.id === sessionId));
+  const events = await api(`/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${eventLimitFor(session)}`);
+  state.activeEvents = events;
+  refreshToolFilter(events);
+  renderFilteredSpine();
+}
+
+function setSummaryExportState(session) {
+  const hasTargets = state.exportTargets.length > 0;
+  const hasSummary = !!session?.summary;
+  els.exportTargetSelect.disabled = !hasSummary || !hasTargets;
+  els.exportSummaryButton.disabled = !hasSummary || !hasTargets;
+  els.summaryExportStatus.hidden = true;
+  els.summaryExportStatus.textContent = "";
+  els.summaryExportStatus.classList.remove("error");
+}
+
+function eventLimitFor(session) {
+  const count = Number(session?.eventCount);
+  if (!Number.isFinite(count)) return 250;
+  return Math.max(250, Math.min(count, 2000));
+}
+
+function renderSessionIdentity(session) {
+  return [
+    idChip("blackbox", session.id),
+    idChip("client", session.clientSessionId),
+  ].join("");
+}
+
+function idChip(label, value) {
+  if (!value) return "";
+  return `<button type="button" class="id-chip" data-copy-value="${escapeHtml(value)}" title="Copy ${escapeHtml(label)} session ID" aria-label="Copy ${escapeHtml(label)} session ID">
+    <span>${escapeHtml(label)}</span>
+    <code>${escapeHtml(compactId(value))}</code>
+    <span class="copy-symbol">⧉</span>
+  </button>`;
+}
+
+function compactId(value) {
+  const text = String(value ?? "");
+  if (text.length <= 20) return text;
+  return `${text.slice(0, 8)}…${text.slice(-6)}`;
 }
 
 // ---------------------------------------------------------------- the spine
@@ -177,12 +264,84 @@ function dotSize(event) {
 function renderSpine(events) {
   state.spineEventIds = new Set(events.map(e => e.id));
   if (!events.length) {
-    els.spine.innerHTML = `<p class="empty">No events in this session.</p>`;
+    els.spine.innerHTML = `<p class="empty">No events match this filter.</p>`;
     return;
   }
   // Oldest-first reads like a trace laid down over time; the API returns newest-first.
   const ordered = [...events].reverse();
   els.spine.innerHTML = ordered.map((event, i) => renderNode(event, i)).join("");
+}
+
+function refreshToolFilter(events) {
+  const counts = toolCounts(events);
+  const previous = state.activeToolFilter;
+  const options = [
+    { value: "all", label: "All", count: events.length },
+    { value: "tools", label: "Tool uses", count: toolEventCount(events) },
+    ...counts.map(([tool, count]) => ({ value: `tool:${tool}`, label: tool, count })),
+  ];
+  els.toolFilter.innerHTML = options
+    .map(renderFilterButton)
+    .join("");
+  const values = new Set(options.map(option => option.value));
+  state.activeToolFilter = values.has(previous) ? previous : "all";
+  els.toolFilter.setAttribute("aria-disabled", String(!events.length));
+  updateFilterButtons();
+}
+
+function renderFilterButton(option) {
+  return `<button type="button" class="filter-chip" data-filter="${escapeHtml(option.value)}" aria-pressed="false">
+    <span>${escapeHtml(option.label)}</span>
+    <strong>${escapeHtml(num(option.count))}</strong>
+  </button>`;
+}
+
+function updateFilterButtons() {
+  els.toolFilter.querySelectorAll(".filter-chip").forEach(button => {
+    const active = button.dataset.filter === state.activeToolFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function toolCounts(events) {
+  const counts = new Map();
+  for (const event of events) {
+    if (!event.toolName) continue;
+    counts.set(event.toolName, (counts.get(event.toolName) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function toolEventCount(events) {
+  return events.filter(isToolEvent).length;
+}
+
+function isToolEvent(event) {
+  return Boolean(event.toolName) || /tool/i.test(event.eventType || "");
+}
+
+function renderFilteredSpine() {
+  const filtered = filterEventsByTool(state.activeEvents);
+  updateFilterButtons();
+  renderSpine(filtered);
+  if (!state.activeEvents.length) {
+    els.toolFilterMeta.textContent = "";
+  } else if (state.activeToolFilter === "all") {
+    els.toolFilterMeta.textContent = `${num(state.activeEvents.length)} events`;
+  } else {
+    els.toolFilterMeta.textContent = `${num(filtered.length)} / ${num(state.activeEvents.length)} shown`;
+  }
+}
+
+function filterEventsByTool(events) {
+  if (state.activeToolFilter === "all") return events;
+  if (state.activeToolFilter === "tools") return events.filter(isToolEvent);
+  if (state.activeToolFilter.startsWith("tool:")) {
+    const tool = state.activeToolFilter.slice("tool:".length);
+    return events.filter(event => event.toolName === tool);
+  }
+  return events;
 }
 
 function renderNode(event, i) {
@@ -395,8 +554,21 @@ function drawCone() {
 
 // ----------------------------------------------------------------- actions
 els.sessions.addEventListener("click", event => {
+  const copy = event.target.closest(".copy-button[data-session-id]");
+  if (copy) {
+    event.preventDefault();
+    event.stopPropagation();
+    const session = state.sessions.find(item => item.id === copy.dataset.sessionId);
+    if (session) copySessionIds(session, copy);
+    return;
+  }
   const row = event.target.closest(".channel");
   if (row) selectSession(row.dataset.id);
+});
+
+els.sessionIdentity.addEventListener("click", event => {
+  const button = event.target.closest(".id-chip[data-copy-value]");
+  if (button) copyValue(button.dataset.copyValue, button);
 });
 
 els.refreshButton.addEventListener("click", async () => {
@@ -413,6 +585,26 @@ els.recallForm.addEventListener("submit", async event => {
     els.recallMeta.textContent = `recall failed: ${err.message}`;
   }
 });
+
+els.clearRecallButton.addEventListener("click", clearRecall);
+
+els.toggleRecallButton.addEventListener("click", () => {
+  const collapsed = !els.recallPanel.classList.contains("collapsed");
+  els.recallPanel.classList.toggle("collapsed", collapsed);
+  els.recallBody.hidden = collapsed;
+  els.toggleRecallButton.textContent = collapsed ? "▾" : "▴";
+  els.toggleRecallButton.title = collapsed ? "Expand recall" : "Collapse recall";
+  els.toggleRecallButton.setAttribute("aria-label", collapsed ? "Expand recall" : "Collapse recall");
+  els.toggleRecallButton.setAttribute("aria-expanded", String(!collapsed));
+});
+
+function clearRecall() {
+  els.recallForm.reset();
+  els.recallMeta.textContent = "";
+  els.recallStage.hidden = true;
+  els.cone.innerHTML = "";
+  els.memoryCards.innerHTML = "";
+}
 
 els.captureForm.addEventListener("submit", async event => {
   event.preventDefault();
@@ -453,6 +645,60 @@ els.searchForm.addEventListener("submit", async event => {
     els.searchResults.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
   }
 });
+
+els.copySessionButton.addEventListener("click", () => {
+  const session = state.sessions.find(item => item.id === state.activeSessionId);
+  if (session) copySessionIds(session, els.copySessionButton);
+});
+
+els.toolFilter.addEventListener("click", event => {
+  const button = event.target.closest(".filter-chip[data-filter]");
+  if (!button) return;
+  state.activeToolFilter = button.dataset.filter;
+  renderFilteredSpine();
+});
+
+async function copySessionIds(session, button) {
+  const payload = [
+    `blackBoxSessionId: ${session.id}`,
+    `clientSessionId: ${session.clientSessionId}`,
+  ].join("\n");
+  await copyValue(payload, button);
+}
+
+async function copyValue(value, button) {
+  try {
+    await copyText(value);
+    flashCopy(button, true);
+  } catch (err) {
+    console.error(err);
+    flashCopy(button, false);
+  }
+}
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function flashCopy(button, ok = true) {
+  button.classList.remove("copied", "copy-failed");
+  button.classList.add(ok ? "copied" : "copy-failed");
+  window.setTimeout(() => {
+    button.classList.remove("copied", "copy-failed");
+  }, 900);
+}
 
 function renderSearch(results) {
   const local = results.local || [];
@@ -551,6 +797,10 @@ els.searchResults.addEventListener("keydown", event => {
 async function openSearchResult(row) {
   if (!row.dataset.sessionId) return;
   await selectSession(row.dataset.sessionId);
+  if (state.activeToolFilter !== "all") {
+    state.activeToolFilter = "all";
+    renderFilteredSpine();
+  }
   requestAnimationFrame(() => locateOnSpine(row.dataset.eventId));
 }
 
@@ -565,6 +815,7 @@ els.summarizeButton.addEventListener("click", async () => {
     els.spineTitle.textContent = session.title;
     els.summary.hidden = !session.summary;
     els.summary.textContent = session.summary || "";
+    setSummaryExportState(session);
     await loadSessions(false);
   } catch (err) {
     els.summary.hidden = false;
@@ -575,12 +826,40 @@ els.summarizeButton.addEventListener("click", async () => {
   }
 });
 
+els.exportSummaryButton.addEventListener("click", async () => {
+  if (!state.activeSessionId) return;
+  const targetId = els.exportTargetSelect.value || state.exportTargets[0]?.id;
+  if (!targetId) return;
+  const target = state.exportTargets.find(target => target.id === targetId);
+  const targetLabel = target?.label || targetId;
+  const button = els.exportSummaryButton;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Exporting…";
+  els.summaryExportStatus.hidden = false;
+  els.summaryExportStatus.textContent = `Exporting summary to ${targetLabel}…`;
+  els.summaryExportStatus.classList.remove("error");
+  try {
+    const result = await api(`/api/sessions/${encodeURIComponent(state.activeSessionId)}/exports/${encodeURIComponent(targetId)}`, { method: "POST" });
+    els.summaryExportStatus.textContent = `Exported to ${result.targetLabel || targetLabel}: ${result.relativePath || result.path}`;
+  } catch (err) {
+    els.summaryExportStatus.textContent = `Export failed: ${err.message}`;
+    els.summaryExportStatus.classList.add("error");
+  } finally {
+    button.textContent = original;
+    const session = state.sessions.find(s => s.id === state.activeSessionId);
+    setSummaryExportState(session);
+  }
+});
+
 window.addEventListener("resize", () => {
   if (!els.recallStage.hidden && els.memoryCards.children.length) drawCone();
 });
 
 // ----------------------------------------------------------------- boot
-Promise.all([loadStatus(), loadSessions(true)]).catch(error => {
+Promise.all([loadStatus(), loadExportTargets()])
+  .then(() => loadSessions(true))
+  .catch(error => {
   els.readouts.innerHTML = gauge("recorder", "degraded", "unreachable");
   els.spine.innerHTML = `<p class="empty">Could not reach the recorder: ${escapeHtml(error.message)}</p>`;
 });
