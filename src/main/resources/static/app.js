@@ -24,8 +24,8 @@ const els = {
   recallForm: document.querySelector("#recallForm"),
   recallMeta: document.querySelector("#recallMeta"),
   recallStage: document.querySelector("#recallStage"),
-  memoryCards: document.querySelector("#memoryCards"),
-  cone: document.querySelector("#cone"),
+  constellation: document.querySelector("#constellation"),
+  memoryDetail: document.querySelector("#memoryDetail"),
   clearRecallButton: document.querySelector("#clearRecallButton"),
   toggleRecallButton: document.querySelector("#toggleRecallButton"),
   spine: document.querySelector("#spine"),
@@ -41,8 +41,6 @@ const els = {
   exportSummaryButton: document.querySelector("#exportSummaryButton"),
   summaryExportStatus: document.querySelector("#summaryExportStatus"),
 };
-
-const SVG_NS = "http://www.w3.org/2000/svg";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -445,18 +443,24 @@ async function doRecall(scope, withinHours) {
   const result = await api(`/api/recall?${params.toString()}`);
 
   els.recallStage.hidden = false;
-  els.cone.innerHTML = "";
-  const scopeLabel = result.scope ? `“${result.scope}”` : "all repos";
-  els.recallMeta.textContent = `${result.count} recalled · ${scopeLabel}`;
+  window.BlackBoxConstellation?.destroy();
+  els.constellation.innerHTML = "";
+  els.memoryDetail.innerHTML = "";
+  const scopeLabel = result.scope || "all repos";
+  const metaScopeLabel = result.scope ? `“${result.scope}”` : "all repos";
+  els.recallMeta.textContent = `${result.count} recalled · ${metaScopeLabel}`;
 
   if (!result.items.length) {
-    els.memoryCards.innerHTML = `<p class="recall-empty">No prior intent committed for ${escapeHtml(scopeLabel)} yet — capture a decision, then recall it back.</p>`;
+    els.memoryDetail.innerHTML = `<p class="recall-empty">No prior intent committed for ${escapeHtml(metaScopeLabel)} yet — capture a decision, then recall it back.</p>`;
     return;
   }
-  els.memoryCards.innerHTML = result.items.map((item, i) => renderMemory(item, i)).join("");
-  wireMemoryCards();
-  // Draw the cone after layout settles so card geometry is final.
-  requestAnimationFrame(() => requestAnimationFrame(drawCone));
+  window.BlackBoxConstellation.render(els.constellation, result.items, {
+    scopeLabel,
+    spineEventIds: state.spineEventIds,
+    locateOnSpine,
+    onSelect: renderRecallDetail,
+  });
+  renderRecallDetail(result.items[0]);
 }
 
 function renderMemory(item, i) {
@@ -498,9 +502,14 @@ function renderMemory(item, i) {
   </article>`;
 }
 
+function renderRecallDetail(item) {
+  els.memoryDetail.innerHTML = renderMemory(item, 0);
+  wireMemoryCards(els.memoryDetail);
+}
+
 // Click a recalled memory to find it on the active Spine — the coordination edge, made tangible.
-function wireMemoryCards() {
-  els.memoryCards.querySelectorAll(".mem").forEach(card => {
+function wireMemoryCards(root) {
+  root.querySelectorAll(".mem").forEach(card => {
     const id = card.dataset.eventId;
     if (state.spineEventIds.has(id)) {
       card.style.cursor = "pointer";
@@ -522,34 +531,6 @@ function locateOnSpine(eventId) {
     ],
     { duration: 1100, easing: "ease-out" }
   );
-}
-
-// The signature: an amber cone of light fanning from the recall console to each surfaced memory.
-function drawCone() {
-  const cards = [...els.memoryCards.querySelectorAll(".mem")];
-  els.cone.innerHTML = "";
-  if (!cards.length) return;
-  const stage = els.recallStage.getBoundingClientRect();
-  const originX = stage.width / 2;
-  const originY = 2;
-  const emitter = document.createElementNS(SVG_NS, "circle");
-  emitter.setAttribute("cx", String(originX));
-  emitter.setAttribute("cy", String(originY));
-  emitter.setAttribute("r", "3");
-  els.cone.appendChild(emitter);
-  for (const card of cards) {
-    const r = card.getBoundingClientRect();
-    const tx = r.left - stage.left + r.width / 2;
-    const ty = r.top - stage.top;
-    const midY = (originY + ty) / 2;
-    const d = `M ${originX} ${originY} C ${originX} ${midY}, ${tx} ${midY}, ${tx} ${ty}`;
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d);
-    const dx = tx - originX, dy = ty - originY;
-    const len = Math.round(Math.hypot(dx, dy) * 1.35);
-    path.style.setProperty("--len", String(len));
-    els.cone.appendChild(path);
-  }
 }
 
 // ----------------------------------------------------------------- actions
@@ -602,8 +583,9 @@ function clearRecall() {
   els.recallForm.reset();
   els.recallMeta.textContent = "";
   els.recallStage.hidden = true;
-  els.cone.innerHTML = "";
-  els.memoryCards.innerHTML = "";
+  window.BlackBoxConstellation?.destroy();
+  els.constellation.innerHTML = "";
+  els.memoryDetail.innerHTML = "";
 }
 
 els.captureForm.addEventListener("submit", async event => {
@@ -853,7 +835,7 @@ els.exportSummaryButton.addEventListener("click", async () => {
 });
 
 window.addEventListener("resize", () => {
-  if (!els.recallStage.hidden && els.memoryCards.children.length) drawCone();
+  if (!els.recallStage.hidden) window.BlackBoxConstellation?.redraw();
 });
 
 // ----------------------------------------------------------------- boot

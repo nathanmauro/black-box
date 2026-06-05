@@ -24,6 +24,14 @@ spring:
           mcp-endpoint: /mcp
   mustache:
     check-template-location: false
+  # Local dev recorder: never serve stale UI assets. no-store forces the browser to refetch
+  # index.html/app.js/graph.js/styles.css each load, so a rebuilt jar shows up on a plain refresh
+  # (no hard-refresh needed) and new JS can never run against a cached old DOM.
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-store: true
 
 server:
   port: ${SBA_PORT:8766}
