@@ -130,6 +130,19 @@ public class AgenticController {
         return searchService.search(q, safeLimit(limit));
     }
 
+    @GetMapping("/search/fields")
+    public List<Map<String, Object>> searchFields() {
+        return searchService.fields();
+    }
+
+    @GetMapping("/search/values")
+    public List<String> searchValues(
+            @RequestParam String field,
+            @RequestParam(required = false, defaultValue = "") String prefix,
+            @RequestParam(defaultValue = "20") int limit) {
+        return searchService.fieldValues(field, prefix, safeValueLimit(limit));
+    }
+
     @GetMapping("/status")
     public Map<String, Object> status() {
         return Map.of(
@@ -154,5 +167,9 @@ public class AgenticController {
 
     private static int safeEventLimit(int limit) {
         return Math.max(1, Math.min(limit, 2_000));
+    }
+
+    private static int safeValueLimit(int limit) {
+        return Math.max(1, Math.min(limit, 50));
     }
 }

@@ -74,7 +74,14 @@
           <span class="readout" id="searchMeta"></span>
         </div>
         <form id="searchForm" class="mini-form search-form">
-          <input name="query" placeholder="Search events, titles, tools, cwd, source, or session id" autocomplete="off">
+          <div class="qb" id="queryBar">
+            <pre class="qb-overlay" id="queryOverlay" aria-hidden="true"></pre>
+            <input name="query" class="qb-input" id="queryInput"
+                   placeholder="field:value  AND  free text  —  e.g. source:claude AND auth"
+                   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="qbPop">
+            <div class="qb-pop" id="qbPop" role="listbox" hidden></div>
+          </div>
           <button type="submit" class="action">Search</button>
         </form>
         <div id="searchResults" class="search-results"></div>
@@ -134,6 +141,7 @@
   </main>
 
   <script src="/graph.js"></script>
+  <script src="/querybar.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

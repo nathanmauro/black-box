@@ -1,8 +1,8 @@
 # Black Box Frontend Overhaul — START HERE (session handoff)
 
-**Last updated:** 2026-06-05 · **Branch:** `frontend-overhaul` · **State:** P1 + P2 shipped, live, and **committed as a checkpoint**; P3 not started. Nothing pushed.
+**Last updated:** 2026-06-05 · **Branch:** `frontend-overhaul` · **State:** P1 + P2 + **P3 shipped, live, and verified from the served jar**; P1 + P2 committed as a checkpoint, P3 in the working tree (unstaged). Nothing pushed.
 
-> **TL;DR for a fresh agent / new session:** We are doing a visual + UX overhaul of the Black Box recorder's web UI (vanilla JS + CSS served by a Spring Boot jar). The hard rule is **no existing feature is removed or regressed** (see the 16-point inventory in `docs/frontend-overhaul-plan.md` §1). Two phases are done, verified, and running at `http://localhost:8766`: **P1** replaced the old recall "cone" with a real **Recall Constellation** graph (`graph.js`), and **P2** restyled everything into a sharpened **"Instrument"** aesthetic (CSS-only). **P3 (Elasticsearch query autocomplete) is the next phase and has not been started.** Read this whole file, then `docs/frontend-overhaul-plan.md` for full design rationale.
+> **TL;DR for a fresh agent / new session:** We are doing a visual + UX overhaul of the Black Box recorder's web UI (vanilla JS + CSS served by a Spring Boot jar). The hard rule is **no existing feature is removed or regressed** (see the 16-point inventory in `docs/frontend-overhaul-plan.md` §1). Three phases are done, verified, and running at `http://localhost:8766`: **P1** replaced the old recall "cone" with a real **Recall Constellation** graph (`graph.js`), **P2** restyled everything into a sharpened **"Instrument"** aesthetic (CSS-only), and **P3** added **Elasticsearch query autocomplete** — a KQL-lite query bar (`querybar.js`) over a token-coloring overlay, backed by two additive endpoints (`/api/search/fields`, `/api/search/values`). Read this whole file, then `docs/frontend-overhaul-plan.md` for full design rationale.
 
 ---
 
@@ -13,7 +13,7 @@
 | P0 | Modularize | **Folded into P1** — instead of an ES-module refactor of `app.js`, new code ships as a **classic-script global** (`graph.js` = an IIFE exposing `window.BlackBoxConstellation`). Lower regression risk. |
 | **P1** | **Recall Constellation graph** | ✅ **Done, verified, live.** Hand-rolled deterministic radial SVG graph replaces `drawCone()`. Clusters collapsed-by-default, click-to-expand, viewBox zoom/pan, fit button, LOD label-hiding, hover dim/highlight, keyboard + ARIA, `AbortController` teardown, reduced-motion gated. |
 | **P2** | **"Instrument" restyle** | ✅ **Done, verified, live.** CSS-only reskin of `styles.css`: machined chassis, bezel/screen/tick tokens, LED gauges, oscilloscope screen for the constellation, strip-chart baseline behind the Spine, corner ticks, custom scrollbars, `:focus-visible`. Amber kept as signal-only. |
-| **P3** | **ES query autocomplete** | ⛔ **NOT STARTED — this is the next action.** Design fully specced in `docs/frontend-overhaul-plan.md` §4. |
+| **P3** | **ES query autocomplete** | ✅ **Done, verified from the served jar, live.** KQL-lite query bar (`querybar.js`) — native `<input>` + char-aligned token-coloring `<pre>` overlay, regex tokenizer (`field:value`, `"quoted"`, `val*`, `field:*`, ranges, `AND/OR/NOT`, parens), red wavy underline on unbalanced quotes/parens, cursor-context suggestions (fields → debounced ~120ms values → operators). Two additive backend endpoints (`/api/search/fields`, `/api/search/values`) with ES → curated/SQLite fallbacks. Plain free-text submit is byte-for-byte unchanged (input keeps `name="query"`). Design in `docs/frontend-overhaul-plan.md` §4. |
 | Fast-follow | Provenance graphs | Not started. Within-session decision→handoff→next-action DAG + recall-provenance. Zero new backend (data already in `/api/sessions/{id}/events` + `/api/recall`). Plan §5. |
 | **Tangent** | Chat/session relations | ⛔ **PARKED — do NOT build without Nathan's greenlight.** Plan §6. Rides existing Elasticsearch (`adjacency_matrix`/Graph `_explore`), no new datastore. |
 
@@ -57,6 +57,19 @@ Working tree vs `main` (`git diff --stat`): `app.js` +72, `index.html` +5/-2, `s
 - **`src/main/resources/application.yml`** — added `no-store` for static resources (the cache fix).
 - **`docs/frontend-overhaul-plan.md`** — the full plan: feature inventory (no-loss proof), visual direction, graph fix, ES-autocomplete design, graphability, the chat-relations tangent, research provenance. **Read it for the "why".**
 
+**P3 additions (ES query autocomplete):**
+- **`src/main/resources/static/querybar.js`** (NEW) — `window.BlackBoxQueryBar = { attach, mount, … }`. Classic script (no import/export), loaded **after** `app.js` (`index.html:144`). Wires the existing `#searchForm` input: a transparent-text native `<input>` (caret amber, `z-index 1`) rides over an absolutely-positioned `<pre>` overlay (`z-index 0`) whose colored `<span>` tokens align char-for-char via a matched box model. KQL-lite tokenizer + recursive-descent parser (precedence `NOT > AND > OR`), red wavy underline on unbalanced quotes/parens, cursor-context suggestion popover (fields → debounced ~120ms values → operators). **Independence guarantee:** only `addEventListener("input"/"keyup"/"keydown"/…)` — never re-creates the input; `preventDefault` on Enter is gated strictly to "popover open AND a row highlighted," so a plain Enter falls through to native form submission untouched. Lazy-fetches `/api/search/fields` on first interaction so the bar works stand-alone.
+- **`src/main/java/.../web/AgenticController.java`** — two additive `@GetMapping` endpoints under `/api`:
+  - **`GET /api/search/fields`** → `List<Map<String,Object>>` of `[{name,type,searchable,aggregatable}]` (live ES `_field_caps`; curated fallback when ES off). Verified `200`.
+  - **`GET /api/search/values?field=&prefix=&limit=`** → JSON `string[]` of matching values (ES `_terms_enum`; SQLite `DISTINCT … LIKE 'prefix%'` fallback). Verified returns a JSON array, prefix-filterable.
+  - `GET /api/search?q=` behavior **unchanged** — plain free-text still returns `{query, local[], elastic[], elasticHealth}` (verified 25/25 hits, no regression).
+- **`src/main/java/.../search/SearchService.java`** — field list + value enumeration with caching. **ES-off fallback behavior:** fields fall back to a `CURATED_FIELDS` list mirroring the ES mapping (so autocomplete still works); values fall back from `_terms_enum` to the SQLite `DISTINCT … LIKE 'prefix%'` path when ES returns empty/off. Field list cached (soft-refresh + hard-TTL, single-flight reload).
+- **`src/main/java/.../search/ElasticIndexClient.java`** — `fieldCaps()` + `termsEnum(field, prefix, limit)` thin clients over ES `_field_caps` / `_terms_enum`.
+- **`src/main/resources/static/index.html`** — `#searchForm` query bar markup (`#queryInput` `name="query"`, `#queryOverlay` `<pre class="qb-overlay">`, `#qbPop` listbox); loads `/querybar.js`.
+- **`src/main/resources/static/styles.css`** — query-bar Instrument styling: `.qb-*` token-coloring family (each KQL-lite token its own machined hue; amber reserved for the wildcard "live match" signal), red error underline, deep-screen suggestion popover. (Note: an additive `.token-*`/`.query-suggestions` "acceptance API" alias block also exists but is currently inert — the live runtime vocabulary is `.qb-*`.)
+
+**Deploy + verify (T10, done):** `mvn -q -DskipTests package` → `launchctl kickstart -k gui/$(id -u)/com.nathan.sba-agentic` → wait for `/api/status`. Verified from the **served jar**: `curl /` → `querybar` count = 1; `/api/search/fields` = `200`; `/api/search/values?field=source&prefix=` = `["claude","cli","cockpit","codex","manual"]` (prefix-filterable); free-text `?q=` returns results (row-5 no-regression); Enter submits both inside and outside the ~120ms debounce window (submit handler at `app.js:619` reads `FormData` live and is on an independent event channel from the debounced suggestion fetch; Enter only `preventDefault`s on a highlighted popover row). `mvn test` → 38 tests green.
+
 ---
 
 ## 4. The no-loss contract
@@ -67,10 +80,10 @@ All **16** pre-existing features are preserved or upgraded — full table in `do
 
 ## 5. What's next — exact next action
 
-**Start P3: Elasticsearch query autocomplete** (design in plan §4). Concretely:
-1. **Backend (Java, additive):** `GET /api/search/fields` (from ES `_field_caps`, cached; static curated list fallback when ES off) and `GET /api/search/values?field=&prefix=&limit=` (from ES `_terms_enum`; SQLite `DISTINCT … LIKE 'prefix%'` fallback). Touch `AgenticController` + `ElasticIndexClient`/`SearchService`. Keep `/api/search?q=` behavior unchanged.
-2. **Frontend:** new classic script `querybar.js` — native `<input>` + aligned token-coloring overlay + small regex tokenizer (KQL-lite: `field:value`, `"quoted"`, `val*`, `field:*`, ranges, `AND/OR/NOT`, parens). Cursor-context suggestions (fields → values debounced ~120ms → operators). Inline syntax highlight + red error underline. **Plain free-text search must still work identically.**
-3. **Wire** into the existing `#searchForm` input; on submit, structured KQL-lite translates to the ES query, free-text falls through to today's path.
+**P3 (Elasticsearch query autocomplete) is DONE and verified from the served jar** (see §1 / §3). Remaining work, in order:
+
+1. **Git:** P3 is in the working tree, **unstaged**. Per §7, **Claude owns git** — commit a P3 checkpoint (Nathan sole author, no AI attribution) so the verify baseline stays clean for the next phase. Working-tree files for P3: `querybar.js` (untracked), plus modified `AgenticController.java`, `SearchService.java`, `ElasticIndexClient.java`, `EventRepository.java`, `index.html`, `styles.css`, `app.js`, and the two updated tests (`ElasticIndexClientTest.java`, `AgenticControllerTest.java`).
+2. **Optional polish (not required for correctness):** the `app.js` mount call still uses the legacy `mount()` adapter and never passes `fields` (the bar self-fetches lazily on first interaction). A forward-compat cleanup would migrate to `attach(els.searchForm, {...})` and optionally pass `fields` from a single app.js boot-time fetch — but this is cosmetic; the bar works stand-alone today. Likewise, the inert `.token-*` "acceptance API" CSS aliases could be reconciled with the live `.qb-*` vocabulary (rename JS/HTML or prune the dead block) — owner decision, no functional impact.
 
 **Then** (optional, only if scope/time): the fast-follow provenance graphs (plan §5). **Do not** build the chat-relations tangent without explicit greenlight.
 

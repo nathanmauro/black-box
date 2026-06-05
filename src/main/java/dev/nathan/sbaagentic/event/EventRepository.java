@@ -230,6 +230,45 @@ public class EventRepository {
                 """, this::mapEvent, like, like, like, like, like, limit);
     }
 
+    /** A whitelisted enumerable column resolved to its physical table and column name. */
+    private record FieldColumn(String table, String column) {
+    }
+
+    /**
+     * SQLite fallback for query-bar value autocomplete when Elasticsearch is off. Returns the
+     * distinct, prefix-matching values of a single whitelisted column.
+     *
+     * <p>The logical {@code field} name is mapped through a fixed switch to a physical
+     * (table, column) pair — the column is never interpolated from user input, so an unknown or
+     * crafted field yields an empty list rather than an injection vector. The four event columns
+     * read from {@code agent_events}; {@code cwd} lives on {@code agent_sessions}. Both snake_case
+     * and camelCase logical names are accepted so callers can pass either the UI field name or the
+     * physical column name. The prefix is a bound parameter and the limit is clamped to {@code <=50}.
+     */
+    public List<String> distinctFieldValues(String field, String prefix, int limit) {
+        FieldColumn target = switch (field) {
+            case "source" -> new FieldColumn("agent_events", "source");
+            case "event_type", "eventType" -> new FieldColumn("agent_events", "event_type");
+            case "tool_name", "toolName" -> new FieldColumn("agent_events", "tool_name");
+            case "client_session_id", "clientSessionId" -> new FieldColumn("agent_events", "client_session_id");
+            case "cwd" -> new FieldColumn("agent_sessions", "cwd");
+            default -> null;
+        };
+        if (target == null) {
+            return List.of();
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        String like = (prefix == null ? "" : prefix) + "%";
+        // table and column come only from the fixed switch above, never from caller input.
+        String sql = "SELECT DISTINCT " + target.column() + " AS v"
+                + "   FROM " + target.table()
+                + "  WHERE " + target.column() + " IS NOT NULL AND " + target.column() + " <> ''"
+                + "    AND lower(" + target.column() + ") LIKE lower(?)"
+                + "  ORDER BY " + target.column()
+                + "  LIMIT ?";
+        return jdbcTemplate.query(sql, (rs, rowNum) -> rs.getString("v"), like, safeLimit);
+    }
+
     /**
      * Reads prior intent back out for {@link dev.nathan.sbaagentic.context.ContextService}. Filters
      * to the given event types, bounds the window by {@code since}, and — when {@code scopeLike} is

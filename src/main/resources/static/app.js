@@ -838,6 +838,50 @@ window.addEventListener("resize", () => {
   if (!els.recallStage.hidden) window.BlackBoxConstellation?.redraw();
 });
 
+// ----------------------------------------------------------------- query bar (P3)
+// Enhances the existing search input with KQL-lite token highlighting + autocomplete.
+// Purely additive: the input keeps name="query"; the submit path below (els.searchForm
+// submit handler) is the ONLY submit path and is left untouched. The query bar attaches
+// input/keyup/focus listeners on its own dispatch channel and never preventDefaults the
+// submit, so plain free-text search behaves identically (n=1-9,19-24).
+
+// Resolve value suggestions over /api/search/values for a (field, prefix). Honours an
+// AbortSignal so a superseded request is cancelled; degrades to [] on any failure so a
+// suggestion miss never surfaces in the submit handler's error path.
+function fetchSearchValues(field, prefix, signal) {
+  if (typeof window.fetch !== "function") return Promise.resolve([]);
+  const url =
+    `/api/search/values?field=${encodeURIComponent(field)}` +
+    `&prefix=${encodeURIComponent(prefix || "")}&limit=20`;
+  return window
+    .fetch(url, { headers: { Accept: "application/json" }, signal })
+    .then(response => (response.ok ? response.json() : []))
+    .then(values => (Array.isArray(values) ? values : []))
+    .catch(() => []);
+}
+
+// Load the field catalogue once at init and hand it to the query bar so the bar does not
+// have to lazy-fetch it itself. Failures degrade to [] — the bar falls back to its own
+// lazy /api/search/fields fetch, so autocomplete still works.
+function attachQueryBar(fields) {
+  if (!window.BlackBoxQueryBar || !document.querySelector("#queryInput")) return;
+  // attach(form, options): the named input + .qb-overlay sibling resolve from els.searchForm;
+  // `pop` wires the cursor-context suggestion layer, which consumes fetchValues. Returns null
+  // if the input/overlay are missing — we discard the return (no destroy needed at page scope).
+  window.BlackBoxQueryBar.attach(els.searchForm, {
+    fields,
+    fetchValues: fetchSearchValues,
+    pop: document.querySelector("#qbPop"),
+  });
+}
+
+if (window.BlackBoxQueryBar && document.querySelector("#queryInput")) {
+  fetch("/api/search/fields", { headers: { Accept: "application/json" } })
+    .then(response => (response.ok ? response.json() : []))
+    .catch(() => [])
+    .then(fields => attachQueryBar(Array.isArray(fields) ? fields : []));
+}
+
 // ----------------------------------------------------------------- boot
 Promise.all([loadStatus(), loadExportTargets()])
   .then(() => loadSessions(true))

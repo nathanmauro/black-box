@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.search;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
@@ -20,6 +21,15 @@ public class ElasticIndexClient implements EventIndexSink {
 
     private static final List<String> SEARCH_FIELDS =
             List.of("text^4", "title^3", "cwd^2", "toolName", "eventType", "source", "clientSessionId");
+
+    /**
+     * Keyword-family fields actually mapped as {@code keyword} in {@link #ensureIndex()}. Only these
+     * may be passed to {@code _terms_enum}; the analyzed {@code text} fields ({@code title},
+     * {@code text}) are excluded because {@code _terms_enum} silently returns an empty array on a
+     * text field (it supports only keyword/constant_keyword/flattened/version/ip).
+     */
+    private static final Set<String> TERMS_ENUM_FIELDS = Set.of(
+            "sessionId", "source", "clientSessionId", "eventType", "turnId", "cwd", "toolName");
 
     private final SbaProperties.Elasticsearch properties;
     private final RestClient restClient;
@@ -120,6 +130,106 @@ public class ElasticIndexClient implements EventIndexSink {
                     .map(Map.class::cast)
                     .map(ElasticIndexClient::mapSearchHit)
                     .toList();
+        }
+        catch (RestClientException ex) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Field list for query-bar autocomplete, derived from Elasticsearch {@code _field_caps}. Each
+     * entry is {@code {name,type,searchable,aggregatable}}. Internal {@code _}-prefixed fields are
+     * skipped. Returns empty (signalling the caller to use the curated fallback) when ES is off or
+     * unreachable.
+     */
+    public List<Map<String, Object>> fieldCaps() {
+        if (!properties.isEnabled()) {
+            return List.of();
+        }
+        try {
+            Map<?, ?> response = restClient.get()
+                    .uri("/{index}/_field_caps?fields=*", properties.getIndexName())
+                    .retrieve()
+                    .body(Map.class);
+            Object fieldsObject = response == null ? null : response.get("fields");
+            if (!(fieldsObject instanceof Map<?, ?> fields)) {
+                return List.of();
+            }
+            List<Map<String, Object>> result = new java.util.ArrayList<>();
+            for (Map.Entry<?, ?> entry : fields.entrySet()) {
+                String name = String.valueOf(entry.getKey());
+                if (name.startsWith("_")) {
+                    continue;
+                }
+                if (!(entry.getValue() instanceof Map<?, ?> byType) || byType.isEmpty()) {
+                    continue;
+                }
+                Object firstCapObject = byType.values().iterator().next();
+                if (!(firstCapObject instanceof Map<?, ?> cap)) {
+                    continue;
+                }
+                Object type = cap.get("type");
+                Map<String, Object> field = new LinkedHashMap<>();
+                field.put("name", name);
+                field.put("type", type == null ? "text" : String.valueOf(type));
+                field.put("searchable", Boolean.TRUE.equals(cap.get("searchable")));
+                field.put("aggregatable", Boolean.TRUE.equals(cap.get("aggregatable")));
+                result.add(field);
+            }
+            return result;
+        }
+        catch (RestClientException ex) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Low-latency prefix value lookup for query-bar autocomplete, backed by Elasticsearch
+     * {@code _terms_enum} (the API that powers Kibana value suggestions). Delegates to
+     * {@link #termsEnum(String, String, int, boolean)} with {@code caseInsensitive=false} (the ES
+     * default).
+     */
+    public List<String> termsEnum(String field, String prefix, int size) {
+        return termsEnum(field, prefix, size, false);
+    }
+
+    /**
+     * Low-latency prefix value lookup for query-bar autocomplete, backed by Elasticsearch
+     * {@code _terms_enum}: {@code POST /{index}/_terms_enum} with body
+     * {@code {field, string:prefix, size, case_insensitive}}, reading the top-level {@code terms[]}
+     * array from the JSON object response.
+     *
+     * <p>Callable fields are restricted to the keyword-family fields mapped in {@link #ensureIndex()}
+     * ({@code sessionId, source, clientSessionId, eventType, turnId, cwd, toolName}); analyzed
+     * {@code text} fields ({@code title}, {@code text}) are rejected with an empty list because
+     * {@code _terms_enum} returns {@code []} on text fields. Returns empty when ES is off, the field
+     * is blank/unsupported, or on any {@link RestClientException} — the caller then falls back to the
+     * SQLite {@code DISTINCT} path.
+     *
+     * <p>Note: {@code _terms_enum} requires Elasticsearch &gt;= 7.14.
+     */
+    public List<String> termsEnum(String field, String prefix, int size, boolean caseInsensitive) {
+        if (!properties.isEnabled() || field == null || field.isBlank()
+                || !TERMS_ENUM_FIELDS.contains(field)) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> body = Map.of(
+                    "field", field,
+                    "string", prefix == null ? "" : prefix,
+                    "size", size,
+                    "case_insensitive", caseInsensitive);
+            Map<?, ?> response = restClient.post()
+                    .uri("/{index}/_terms_enum", properties.getIndexName())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+            Object terms = response == null ? null : response.get("terms");
+            if (!(terms instanceof List<?> list)) {
+                return List.of();
+            }
+            return list.stream().map(String::valueOf).toList();
         }
         catch (RestClientException ex) {
             return List.of();

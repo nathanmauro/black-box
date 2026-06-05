@@ -67,6 +67,22 @@
 
   --shadow-reg: 6px 6px 0 rgba(0, 0, 0, 0.44);
   --shadow-reg-amber: 5px 5px 0 rgba(232, 163, 61, 0.12);
+
+  /* P3 query bar — KQL-lite syntax vocabulary (Signal Stage) */
+  --qb-field: #8fb5e6;        /* field names — cool steel-blue */
+  --qb-operator: #c9882f;     /* AND OR NOT, : , ranges — dimmed amber, not full signal amber */
+  --qb-value: var(--paper);   /* values — paper white */
+  --qb-string: var(--sage);   /* "quoted strings" */
+  --qb-wildcard: var(--amber);/* * wildcard / field:* exists — full amber = active signal */
+  --qb-paren: var(--steel);   /* ( ) grouping */
+  --qb-error: var(--red);     /* red underline for unbalanced quotes/parens, unknown field */
+  --qb-incomplete: #80858f;   /* still-typing token (unterminated quote) — dim grey, not red:
+                                 WCAG 5.04:1 on --screen (clears AA 4.5:1), reads de-emphasized
+                                 vs the valid --sage string, no full-amber signal stolen */
+  --qb-caret-glow: 0 0 6px rgba(232, 163, 61, 0.28);
+  --qb-pop-bg: #0d1014;       /* suggestion popover — deep screen */
+  --qb-pop-line: var(--line); /* popover hairline */
+  --qb-pop-sel: rgba(232, 163, 61, 0.12); /* selected suggestion row */
 }
 
 * { box-sizing: border-box; }
@@ -530,6 +546,128 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0.01em;
 }
 .search-form { grid-template-columns: 1fr auto; align-items: end; }
+
+/* --------------------------------------------------- P3 query bar (Signal Stage) */
+.qb {
+  position: relative;
+  min-width: 0;
+}
+/* The transparent-text input rides above a color overlay; caret stays amber-lit. */
+.qb-input {
+  position: relative;
+  z-index: 1;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: transparent;
+  caret-color: var(--amber);
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 60%),
+    var(--screen);
+}
+.qb-input::placeholder { color: var(--faint-text); }
+.qb-input:focus { caret-color: var(--amber); }
+/* Overlay aligns char-for-char under the input: same box model, behind it, colored spans only. */
+.qb-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  /* match input padding (9px 11px) + border (1px) so glyphs sit exactly under typed chars */
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  color: transparent;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+.qb-tok { color: var(--qb-value); }
+.qb-tok--field { color: var(--qb-field); }
+.qb-tok--operator { color: var(--qb-operator); font-weight: 600; }
+.qb-tok--colon { color: var(--qb-operator); }
+.qb-tok--value { color: var(--qb-value); }
+.qb-tok--string { color: var(--qb-string); }
+.qb-tok--wildcard { color: var(--qb-wildcard); }
+.qb-tok--paren { color: var(--qb-paren); }
+.qb-tok--text { color: var(--muted); }
+.qb-tok--error {
+  text-decoration: wavy underline var(--qb-error);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+/* Suggestion popover — phosphor readout, mono + tabular, like the gauges. */
+.qb-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--qb-pop-bg);
+  border: 1px solid var(--qb-pop-line);
+  border-top: 1px solid var(--bezel);
+  box-shadow: var(--shadow-reg);
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(155, 161, 173, 0.35) rgba(12, 14, 18, 0.35);
+}
+/* corner tick — echoes panel detailing */
+.qb-pop::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid var(--amber-line);
+  border-right: 1px solid var(--amber-line);
+  pointer-events: none;
+}
+.qb-pop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 90ms ease, border-color 90ms ease;
+}
+.qb-pop-row[aria-selected="true"] {
+  background: var(--qb-pop-sel);
+  border-left-color: var(--amber);
+}
+.qb-pop-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qb-pop-meta {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint-text);
+  font-feature-settings: var(--tnum);
+  flex: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .qb-pop-row { transition: none; }
+  .qb-input { caret-color: var(--amber); }
+}
 
 .search-results {
   display: grid;
@@ -1339,4 +1477,20 @@ input:focus, select:focus, textarea:focus {
   .constellation-label {
     transition: none;
   }
+}
+
+/* ---------------------------------------- P3 query bar — dim/incomplete token state
+   An unterminated quote (still typing) is incomplete-but-valid, not invalid: the tokenizer
+   flags it dim, never red (querybar.js renders the live "qb-tok qb-tok--string
+   qb-tok--incomplete" span). Source order matters: .qb-tok--incomplete is equal-specificity
+   (0,1,0) with .qb-tok--string, so it MUST sit after .qb-tok--string to win the tie.
+   Color-only (no opacity/filter) keeps the overlay glyph fully opaque, creates no stacking
+   context, and stays pixel-identical to the input underneath; opacity/filter would flip the
+   overlay to grayscale anti-aliasing and break char-for-char alignment. */
+.qb-tok--incomplete { color: var(--qb-incomplete); }
+
+/* Forced-colors / Windows High Contrast strips author colors: re-assert the de-emphasis with
+   the system GrayText keyword (preserved by the UA) to keep the incomplete cue distinct. */
+@media (forced-colors: active) {
+  .qb-tok--incomplete { color: GrayText; }
 }
