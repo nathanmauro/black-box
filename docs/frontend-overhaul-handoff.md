@@ -1,6 +1,6 @@
 # Black Box Frontend Overhaul — START HERE (session handoff)
 
-**Last updated:** 2026-06-05 · **Branch:** `frontend-overhaul` · **State:** P1 + P2 + **P3 shipped, live, and verified from the served jar**; P1 + P2 committed as a checkpoint, P3 in the working tree (unstaged). Nothing pushed.
+**Last updated:** 2026-06-05 · **Branch:** `frontend-overhaul` · **State:** P1 + P2 + **P3 shipped, live, verified from the served jar, and committed** (P3 = `0258d81`). Verify baseline clean for the next phase. Nothing pushed.
 
 > **TL;DR for a fresh agent / new session:** We are doing a visual + UX overhaul of the Black Box recorder's web UI (vanilla JS + CSS served by a Spring Boot jar). The hard rule is **no existing feature is removed or regressed** (see the 16-point inventory in `docs/frontend-overhaul-plan.md` §1). Three phases are done, verified, and running at `http://localhost:8766`: **P1** replaced the old recall "cone" with a real **Recall Constellation** graph (`graph.js`), **P2** restyled everything into a sharpened **"Instrument"** aesthetic (CSS-only), and **P3** added **Elasticsearch query autocomplete** — a KQL-lite query bar (`querybar.js`) over a token-coloring overlay, backed by two additive endpoints (`/api/search/fields`, `/api/search/values`). Read this whole file, then `docs/frontend-overhaul-plan.md` for full design rationale.
 
@@ -80,12 +80,13 @@ All **16** pre-existing features are preserved or upgraded — full table in `do
 
 ## 5. What's next — exact next action
 
-**P3 (Elasticsearch query autocomplete) is DONE and verified from the served jar** (see §1 / §3). Remaining work, in order:
+**P3 (Elasticsearch query autocomplete) is DONE, verified from the served jar, and committed** at `0258d81` (Nathan sole author, no AI attribution). The verify baseline is clean for the next phase. Nothing pushed.
 
-1. **Git:** P3 is in the working tree, **unstaged**. Per §7, **Claude owns git** — commit a P3 checkpoint (Nathan sole author, no AI attribution) so the verify baseline stays clean for the next phase. Working-tree files for P3: `querybar.js` (untracked), plus modified `AgenticController.java`, `SearchService.java`, `ElasticIndexClient.java`, `EventRepository.java`, `index.html`, `styles.css`, `app.js`, and the two updated tests (`ElasticIndexClientTest.java`, `AgenticControllerTest.java`).
-2. **Optional polish (not required for correctness):** the `app.js` mount call still uses the legacy `mount()` adapter and never passes `fields` (the bar self-fetches lazily on first interaction). A forward-compat cleanup would migrate to `attach(els.searchForm, {...})` and optionally pass `fields` from a single app.js boot-time fetch — but this is cosmetic; the bar works stand-alone today. Likewise, the inert `.token-*` "acceptance API" CSS aliases could be reconciled with the live `.qb-*` vocabulary (rename JS/HTML or prune the dead block) — owner decision, no functional impact.
+Resolved during the P3 commit (don't re-flag these as open):
+- `app.js` boots the bar via `attach(els.searchForm, {fields, fetchValues, pop})` with an init-time `/api/search/fields` fetch — the legacy `mount()` path is gone.
+- The CSS class-name vocabulary was reconciled: **`qb-*` is the blessed contract**; the inert `.token-*` / `.overlay-tokens` / `.query-suggestions` / `.query-error` "acceptance API" aliases were pruned (no dead CSS in the tree). The live `.qb-tok--incomplete` dim-state rule is the one survivor and is kept.
 
-**Then** (optional, only if scope/time): the fast-follow provenance graphs (plan §5). **Do not** build the chat-relations tangent without explicit greenlight.
+**Next action (optional, only if scope/time): the fast-follow provenance graphs** (plan §5) — within-session decision→handoff→next-action DAG + recall-provenance, zero new backend (data already in `/api/sessions/{id}/events` + `/api/recall`). **Do not** build the chat-relations tangent (plan §6) without explicit greenlight.
 
 ---
 
@@ -121,4 +122,4 @@ Guardrails baked into every Codex task: edit only named paths; never `git add/co
 - **Live UI:** `http://localhost:8766`
 - **Black Box continuity events** (recall via the `sba-agentic` MCP `recallContext`/`recentSessions`): decision `e298be6d` (direction locked), observation `f51f6078` (jaws "make it a doer" tangent), handoff (this state) — see latest.
 - **Todoist:** task `bf7dd11c` — rework `/jaws` + siblings into doers (research → implement), not research-only.
-- **Checkpoint commit:** P1 + P2 + the cache fix + these docs are committed on `frontend-overhaul` (Nathan sole author, no AI attribution). Verify baseline is clean for P3. Nothing pushed.
+- **Checkpoint commits** on `frontend-overhaul` (Nathan sole author, no AI attribution, nothing pushed): P1 + P2 + cache fix + docs = `0b28e58`; **P3 (query bar) = `0258d81`**. Verify baseline is clean for the next phase.
