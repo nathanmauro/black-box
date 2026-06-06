@@ -111,7 +111,7 @@ public class ElasticMemoryClient implements MemoryRetriever {
         }
     }
 
-    private static List<MemoryHit> mapHits(Map<?, ?> response) {
+    static List<MemoryHit> mapHits(Map<?, ?> response) {
         Object hitsObject = response == null ? null : response.get("hits");
         if (!(hitsObject instanceof Map<?, ?> hits)) {
             return List.of();
@@ -136,11 +136,11 @@ public class ElasticMemoryClient implements MemoryRetriever {
                 string(hit.get("_id")),
                 number(hit.get("_score")),
                 firstString(source, "title", "session_title", "name"),
-                firstString(source, "source", "agent", "kind"),
+                firstString(source, "source", "agent", "kind", "corpus"),
                 firstString(source, "source_path", "path", "file", "sourcePath"),
                 firstString(source, "session_id", "sessionId", "black_box_session_id"),
                 firstString(source, "client_session_id", "clientSessionId", "external_id"),
-                firstString(source, "observed_at", "observedAt", "timestamp", "created_at", "createdAt"),
+                firstString(source, "observed_at", "observedAt", "timestamp", "created_at", "createdAt", "ts"),
                 text,
                 snippet(hit, text));
     }
