@@ -135,7 +135,14 @@
             <span class="readout" id="searchMeta"></span>
           </div>
           <form id="searchForm" class="mini-form search-form">
-            <input name="query" placeholder="Search events, titles, tools, cwd, source, or session id" autocomplete="off">
+            <div class="qb" id="queryBar">
+              <pre class="qb-overlay" id="queryOverlay" aria-hidden="true"></pre>
+              <input name="query" class="qb-input" id="queryInput"
+                     placeholder="field:value  AND  free text  -  e.g. source:claude AND auth"
+                     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                     role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="qbPop">
+              <div class="qb-pop" id="qbPop" role="listbox" hidden></div>
+            </div>
             <button type="submit" class="action">Search</button>
           </form>
           <div id="searchResults" class="search-results"></div>
@@ -149,8 +156,6 @@
             <span class="readout" id="recallMeta"></span>
             <div class="panel-actions">
               <button id="clearRecallButton" class="ghost small-ghost" title="Clear recall results" aria-label="Clear recall results">Clear</button>
-              <button id="fitRecallGraphButton" class="ghost small-ghost" title="Fit graph" aria-label="Fit graph">Fit</button>
-              <button id="resetRecallGraphButton" class="ghost small-ghost" title="Reset graph" aria-label="Reset graph">Reset</button>
               <button id="toggleRecallButton" class="ghost small-ghost" title="Collapse recall" aria-label="Collapse recall" aria-expanded="true">▴</button>
             </div>
           </div>
@@ -166,11 +171,8 @@
               <button type="submit" class="action recall-fire">Recall</button>
             </form>
             <div class="recall-stage" id="recallStage" hidden>
-              <div class="recall-graph-area" id="recallGraphArea">
-                <svg class="recall-graph" id="recallGraphSvg" aria-label="Recall graph" preserveAspectRatio="xMidYMid meet"></svg>
-                <aside class="recall-detail" id="recallDetailPanel"></aside>
-              </div>
-              <div class="memory-cards" id="memoryCards"></div>
+              <div class="constellation" id="constellation"></div>
+              <div class="memory-detail detail-panel" id="memoryDetail"></div>
             </div>
           </div>
         </section>

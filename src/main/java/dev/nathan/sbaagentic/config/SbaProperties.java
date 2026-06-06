@@ -125,8 +125,8 @@ public class SbaProperties {
     }
 
     public static class Summary {
-        private String backend = "local";
-        private String externalCommand = "";
+        private String backend = "external";
+        private String externalCommand = "scripts/summarize-with-codex.sh";
         private Duration timeout = Duration.ofMinutes(10);
 
         public String getBackend() {

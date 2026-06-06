@@ -45,8 +45,9 @@ class StaticUiContractTest {
                 .contains("/api/ask/retrieve")
                 .contains("activateTab")
                 .contains("renderAskResponse")
-                .contains("renderRecallGraph")
-                .contains("bindCommandEnterSearch")
+                .contains("BlackBoxConstellation.render")
+                .contains("BlackBoxQueryBar.attach")
+                .contains("queryInput")
                 .contains("activateTab(\"spine\")")
                 .contains("renderAnswerSourceLinks")
                 .contains("citation-memory-link");

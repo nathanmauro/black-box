@@ -2,10 +2,10 @@
 
 **A local flight recorder for machine minds.** Your coding agents reason out loud all day — deciding, weighing alternatives, leaving loose ends — and then forget it the moment the session ends. Black Box is the recorder they write that reasoning into, and the one place a *different* agent can fly back into mid-task to recall what was already decided.
 
-`Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first / no-cloud`
+`Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first storage` · `Codex summaries`
 
 <!-- Still captured from ./scripts/demo.sh — swap in an animated hero.gif of the live recall when you record one. -->
-![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back, with zero cloud and zero file reads.](docs/assets/hero.png)
+![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back from the local recorder.](docs/assets/hero.png)
 
 > Captured from `./scripts/demo.sh`. Run the demo, then record the recall moment to replace this still with a GIF.
 
@@ -42,7 +42,7 @@ curl -fsS http://localhost:8766/api/status | jq
 
 ## Privacy
 
-Everything stays on localhost: your agents' transcripts, decisions, and handoffs live in a local SQLite file and never leave the machine — the only outbound call is to an optional local model server you point it at yourself.
+Black Box storage stays local: your agents' transcripts, decisions, and handoffs live in a local SQLite file. Session summaries are owned by Black Box and default to the bundled Codex CLI wrapper, so summary generation can send transcript text to Codex cloud. Set `SBA_SUMMARY_BACKEND=local` when you explicitly want the LM Studio/OpenAI-compatible local model path instead.
 
 ## Black Box vs. agent-observatory
 
@@ -57,7 +57,8 @@ Everything stays on localhost: your agents' transcripts, decisions, and handoffs
 - Java 21+
 - Maven 3.9+
 - `jq` (for the hook bridge)
-- A local OpenAI-compatible model server such as LM Studio — *optional*, only needed for AI-written summaries
+- Codex CLI authenticated for `codex exec` — used by the default summary backend
+- A local OpenAI-compatible model server such as LM Studio — *optional*, only used when `SBA_SUMMARY_BACKEND=local`
 - Elasticsearch — *optional*, a secondary search index; SQLite is always the source of truth
 
 ### Configuration
@@ -68,7 +69,13 @@ Configuration is environment variables; defaults live in `src/main/resources/app
 | --- | --- | --- |
 | `SBA_PORT` | `8766` | HTTP server port |
 | `SBA_DATASOURCE_URL` | `jdbc:sqlite:sba-agentic.db` | SQLite database location |
-| `SBA_LOCAL_AI_ENABLED` | `true` | Enables local AI summaries |
+| `SBA_SUMMARY_BACKEND` | `external` | Summary owner backend: Codex wrapper by default, or `local` for the local AI path |
+| `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command used when `SBA_SUMMARY_BACKEND=external` |
+| `SBA_SUMMARY_TIMEOUT` | `10m` | Maximum runtime for the external summary command |
+| `SBA_SUMMARY_CODEX_BIN` | `/opt/homebrew/bin/codex` | Codex executable used by the bundled external summary wrapper |
+| `SBA_SUMMARY_CODEX_AUTH` | `$CODEX_HOME/auth.json` or `~/.codex/auth.json` | Auth file symlinked into the wrapper's temporary Codex home |
+| `SBA_SUMMARY_CODEX_MODEL` | unset | Optional model override passed to `codex exec` |
+| `SBA_LOCAL_AI_ENABLED` | `true` | Enables the optional local AI client when `SBA_SUMMARY_BACKEND=local` |
 | `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | LM Studio / OpenAI-compatible base URL |
 | `SBA_LOCAL_AI_CHAT_PATH` | `/v1/chat/completions` | Chat completion path |
 | `SBA_LOCAL_AI_MODEL` | `local-model` | Model id sent to the local AI server |
@@ -84,11 +91,11 @@ The hook bridge also reads:
 | `SBA_AGENTIC_URL` | `http://localhost:8766` | Target Black Box server |
 | `SBA_AGENT_SOURCE` | first script argument or `unknown` | Source label, e.g. `claude` or `codex` |
 
-Point at a database outside the repo, or run without the local model:
+Point at a database outside the repo, or explicitly use the local model path:
 
 ```bash
 SBA_DATASOURCE_URL='jdbc:sqlite:/path/to/black-box.db' mvn spring-boot:run
-SBA_LOCAL_AI_ENABLED=false mvn spring-boot:run
+SBA_SUMMARY_BACKEND=local mvn spring-boot:run
 ```
 
 ### MCP tools
@@ -123,7 +130,7 @@ Restart the client after registration if the tools don't appear.
 
 ### Hook capture (local, opt-in)
 
-The hook bridge reads a Claude Code or Codex hook payload on stdin, normalizes the common fields, and POSTs an event to `/api/events`. Wiring it up is entirely opt-in and stays local to your machine — no private hook config is committed to this repo.
+The hook bridge reads a Claude Code or Codex hook payload on stdin, normalizes the common fields, and POSTs an event to `/api/events`. Wiring it up is entirely opt-in and stays local to your machine — no private hook config is committed to this repo. When Black Box ingests a final lifecycle event (`SessionEnd` or the debounced Codex `Stop`), Black Box schedules the session summary internally through its configured summary backend.
 
 Script: `scripts/hooks/sba-agent-hook.sh`
 
@@ -174,7 +181,7 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/sessions/{id}/events?limit=100` | A session's events (newest first) |
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
 | `GET /api/status` | Storage counts + local AI / Elasticsearch health |
-| `POST /api/sessions/{id}/summarize` | Summarizes a session (compacted transcript fallback when local AI is off) |
+| `POST /api/sessions/{id}/summarize` | Summarizes a session through the configured Black Box summary backend (Codex cloud by default) |
 | `POST /api/sessions/summarize?source=codex&clientSessionId=<id>` | Summarizes the same session by hook/client ids |
 | `POST /api/sessions/summarize-missing?limit=10` | Backfills recent sessions missing summaries, capped per call |
 | `GET /api/exports/targets` | Lists configured summary export targets |
@@ -213,6 +220,14 @@ java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar summarize-missing --limit=10
 ```
 
 The CLI reads the same environment variables as the server — set `SBA_DATASOURCE_URL` to share a database between them.
+
+Session summaries are owned by Black Box. The default backend is external Codex cloud via
+`scripts/summarize-with-codex.sh`; set `SBA_SUMMARY_BACKEND=local` only when you explicitly want the
+LM Studio/OpenAI-compatible local model path. External summary failures fail closed instead of
+silently falling back to local inference. The bundled Codex wrapper disables hooks and ignores
+Codex user/project rules while summarizing. It also runs with a temporary auth-only `CODEX_HOME`,
+so the summary worker does not load separate MCP, skills, plugins, memory, or agent-continuity
+surfaces.
 
 Summary export is opt-in. The shipped example target is Obsidian, implemented as a configurable `markdown-file` target that uses the bundled Mustache template at `classpath:/exports/summary-markdown.mustache`. Override its directory with `SBA_EXPORT_OBSIDIAN_DIR`, or define your own `sba.exports.targets[]` entries:
 
