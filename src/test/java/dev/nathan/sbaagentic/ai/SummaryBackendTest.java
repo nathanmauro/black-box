@@ -5,6 +5,7 @@ import dev.nathan.sbaagentic.config.SbaProperties;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SummaryBackendTest {
 
@@ -18,22 +19,40 @@ class SummaryBackendTest {
     }
 
     @Test
-    void externalBackendFallsBackToLocalSummaryWhenCommandFails() {
+    void externalBackendFailsClosedWhenCommandFails() {
         SbaProperties properties = propertiesWithExternalCommand("exit 42");
         SummaryBackend backend = new SummaryBackend(
                 properties, new LocalAiClient(properties), new ExternalSummaryClient(properties));
 
-        assertThat(backend.summarize("fallback transcript")).isEqualTo("fallback transcript");
+        assertThatThrownBy(() -> backend.summarize("fallback transcript"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("External summary command failed");
     }
 
     @Test
     void localBackendKeepsUsingLocalAiClient() {
         SbaProperties properties = new SbaProperties();
         properties.getLocalAi().setEnabled(false);
+        properties.getSummary().setBackend("local");
         SummaryBackend backend = new SummaryBackend(
                 properties, new LocalAiClient(properties), new ExternalSummaryClient(properties));
 
         assertThat(backend.summarize("local transcript")).isEqualTo("local transcript");
+    }
+
+    @Test
+    void externalBackendDerivesTitleWithoutLocalAi() {
+        SbaProperties properties = propertiesWithExternalCommand("cat");
+        SummaryBackend backend = new SummaryBackend(
+                properties, new LocalAiClient(properties), new ExternalSummaryClient(properties));
+
+        assertThat(backend.title("""
+                # Session Summary
+
+                ## Search Query Bar Shipped
+
+                User-facing details.
+                """)).isEqualTo("Search Query Bar Shipped");
     }
 
     private static SbaProperties propertiesWithExternalCommand(String command) {

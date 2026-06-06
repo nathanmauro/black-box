@@ -61,10 +61,11 @@ sba:
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
   summary:
-    # local = LM Studio/OpenAI-compatible local model. external = run a configured CLI wrapper and
-    # pipe the assembled session transcript to stdin, falling back to local when the command fails.
-    backend: ${SBA_SUMMARY_BACKEND:local}
-    external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:}
+    # Black Box owns session summaries. Default to Codex cloud via the bundled wrapper so Cockpit and
+    # other hooks do not create competing local-model summary paths. Set backend=local explicitly to
+    # use the LM Studio/OpenAI-compatible local model.
+    backend: ${SBA_SUMMARY_BACKEND:external}
+    external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:scripts/summarize-with-codex.sh}
     timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   exports:
     # Export is opt-in through the API/UI. Obsidian is only the shipped example target.

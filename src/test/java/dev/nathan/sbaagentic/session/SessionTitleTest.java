@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:file:session-title-test?mode=memory&cache=shared",
         "sba.local-ai.enabled=false",
+        "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false"
 })
 class SessionTitleTest {

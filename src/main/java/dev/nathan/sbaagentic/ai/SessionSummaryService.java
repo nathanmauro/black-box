@@ -54,8 +54,8 @@ public class SessionSummaryService {
             transcript.append("\n\n");
         }
 
-        // Call the local model outside any transaction (it is a network round-trip), then commit the
-        // summary and the AI-derived title — which outranks every ingest-time title — in one atomic write.
+        // Call the configured summary backend outside any transaction, then commit the summary and
+        // derived title — which outranks every ingest-time title — in one atomic write.
         String summary = summaryBackend.summarize(transcript.toString());
         repository.saveSummaryAndTitle(sessionId, summary, summaryBackend.title(summary), TitleRank.AI);
         return repository.findSessionById(sessionId).orElse(session);

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import dev.nathan.sbaagentic.ai.SessionFinalizationService;
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.search.EventIndexSink;
 import dev.nathan.sbaagentic.session.TitleRank;
@@ -18,11 +19,17 @@ public class EventIngestService {
     private final EventRepository repository;
     private final SbaProperties properties;
     private final List<EventIndexSink> indexSinks;
+    private final SessionFinalizationService finalizationService;
 
-    public EventIngestService(EventRepository repository, SbaProperties properties, List<EventIndexSink> indexSinks) {
+    public EventIngestService(
+            EventRepository repository,
+            SbaProperties properties,
+            List<EventIndexSink> indexSinks,
+            SessionFinalizationService finalizationService) {
         this.repository = repository;
         this.properties = properties;
         this.indexSinks = indexSinks;
+        this.finalizationService = finalizationService;
     }
 
     public IngestResponse ingest(EventIngestRequest request) {
@@ -41,6 +48,7 @@ public class EventIngestService {
         for (EventIndexSink sink : indexSinks) {
             indexed = sink.index(persisted.session(), event) || indexed;
         }
+        finalizationService.summarizeAfterFinalEvent(persisted.session(), event);
 
         return new IngestResponse(
                 event.id(),
