@@ -17,6 +17,8 @@ public class SbaProperties {
 
     private final Elasticsearch elasticsearch = new Elasticsearch();
 
+    private final Ask ask = new Ask();
+
     private final Ingestion ingestion = new Ingestion();
 
     public LocalAi getLocalAi() {
@@ -33,6 +35,10 @@ public class SbaProperties {
 
     public Elasticsearch getElasticsearch() {
         return elasticsearch;
+    }
+
+    public Ask getAsk() {
+        return ask;
     }
 
     public Ingestion getIngestion() {
@@ -281,6 +287,128 @@ public class SbaProperties {
 
         public void setTimeout(Duration timeout) {
             this.timeout = timeout;
+        }
+    }
+
+    public static class Ask {
+        private String memoryIndex = "agent-memory";
+        private String vectorField = "embedding";
+        private List<String> searchFields = new ArrayList<>(List.of(
+                "text^4",
+                "content^4",
+                "summary^3",
+                "title^3",
+                "source_path^2",
+                "path^2",
+                "source",
+                "session_id",
+                "sessionId",
+                "client_session_id",
+                "clientSessionId"));
+        private boolean embeddingEnabled = true;
+        private String embeddingBaseUrl = "http://localhost:11434";
+        private String embeddingPath = "/api/embeddings";
+        private String embeddingModel = "nomic-embed-text";
+        private int embeddingDimensions = 768;
+        private Duration embeddingTimeout = Duration.ofSeconds(5);
+        private int defaultAskCitations = 6;
+        private int defaultRetrieveResults = 10;
+        private int answerMaxTokens = 640;
+
+        public String getMemoryIndex() {
+            return memoryIndex;
+        }
+
+        public void setMemoryIndex(String memoryIndex) {
+            this.memoryIndex = memoryIndex;
+        }
+
+        public String getVectorField() {
+            return vectorField;
+        }
+
+        public void setVectorField(String vectorField) {
+            this.vectorField = vectorField;
+        }
+
+        public List<String> getSearchFields() {
+            return searchFields;
+        }
+
+        public void setSearchFields(List<String> searchFields) {
+            this.searchFields = searchFields == null ? new ArrayList<>() : searchFields;
+        }
+
+        public boolean isEmbeddingEnabled() {
+            return embeddingEnabled;
+        }
+
+        public void setEmbeddingEnabled(boolean embeddingEnabled) {
+            this.embeddingEnabled = embeddingEnabled;
+        }
+
+        public String getEmbeddingBaseUrl() {
+            return embeddingBaseUrl;
+        }
+
+        public void setEmbeddingBaseUrl(String embeddingBaseUrl) {
+            this.embeddingBaseUrl = embeddingBaseUrl;
+        }
+
+        public String getEmbeddingPath() {
+            return embeddingPath;
+        }
+
+        public void setEmbeddingPath(String embeddingPath) {
+            this.embeddingPath = embeddingPath;
+        }
+
+        public String getEmbeddingModel() {
+            return embeddingModel;
+        }
+
+        public void setEmbeddingModel(String embeddingModel) {
+            this.embeddingModel = embeddingModel;
+        }
+
+        public int getEmbeddingDimensions() {
+            return embeddingDimensions;
+        }
+
+        public void setEmbeddingDimensions(int embeddingDimensions) {
+            this.embeddingDimensions = embeddingDimensions;
+        }
+
+        public Duration getEmbeddingTimeout() {
+            return embeddingTimeout;
+        }
+
+        public void setEmbeddingTimeout(Duration embeddingTimeout) {
+            this.embeddingTimeout = embeddingTimeout;
+        }
+
+        public int getDefaultAskCitations() {
+            return defaultAskCitations;
+        }
+
+        public void setDefaultAskCitations(int defaultAskCitations) {
+            this.defaultAskCitations = defaultAskCitations;
+        }
+
+        public int getDefaultRetrieveResults() {
+            return defaultRetrieveResults;
+        }
+
+        public void setDefaultRetrieveResults(int defaultRetrieveResults) {
+            this.defaultRetrieveResults = defaultRetrieveResults;
+        }
+
+        public int getAnswerMaxTokens() {
+            return answerMaxTokens;
+        }
+
+        public void setAnswerMaxTokens(int answerMaxTokens) {
+            this.answerMaxTokens = answerMaxTokens;
         }
     }
 

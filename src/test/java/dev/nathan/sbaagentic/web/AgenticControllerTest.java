@@ -24,6 +24,7 @@ import static org.hamcrest.Matchers.hasItem;
         "spring.datasource.url=jdbc:sqlite:file:agentic-controller-test?mode=memory&cache=shared",
         "sba.local-ai.enabled=false",
         "sba.elasticsearch.enabled=false",
+        "sba.ask.embedding-enabled=false",
         "sba.exports.targets[0].id=obsidian",
         "sba.exports.targets[0].label=Obsidian",
         "sba.exports.targets[0].type=markdown-file",
@@ -175,5 +176,39 @@ class AgenticControllerTest {
                 .contains("black_box_session_id: \"" + sessionId + "\"")
                 .contains("client_session_id: \"configured-export-session\"")
                 .contains("## Summary");
+    }
+
+    @Test
+    void askStatusReportsConfiguredAskDependencies() throws Exception {
+        mockMvc.perform(get("/api/ask/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.memoryIndex").value("agent-memory"))
+                .andExpect(jsonPath("$.embeddingModel").value("nomic-embed-text"))
+                .andExpect(jsonPath("$.retrievalMode").value("unavailable"));
+    }
+
+    @Test
+    void askRetrieveReturnsEmptyResultsWhenMemorySearchIsUnavailable() throws Exception {
+        mockMvc.perform(get("/api/ask/retrieve").param("q", "history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.query").value("history"))
+                .andExpect(jsonPath("$.retrievalMode").value("unavailable"))
+                .andExpect(jsonPath("$.results").isArray());
+    }
+
+    @Test
+    void askReturnsGroundedNoHitAnswerWhenNoMemoryHitsExist() throws Exception {
+        mockMvc.perform(post("/api/ask")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "question": "What did we decide about agent memory?",
+                                  "limit": 6
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.answer").value("Answer not found in memory."))
+                .andExpect(jsonPath("$.citations").isArray())
+                .andExpect(jsonPath("$.citations.length()").value(0));
     }
 }

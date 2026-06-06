@@ -65,70 +65,115 @@
     </aside>
 
     <section class="stage">
-      <section class="panel search-panel">
-        <div class="panel-head">
-          <div class="spine-heading">
-            <h2>Search</h2>
-            <p class="readout">Elasticsearch fuzzy search with local fallback.</p>
+      <nav class="stage-tabs" role="tablist" aria-label="Black Box workspace">
+        <button class="stage-tab active" id="tab-search" type="button" role="tab" aria-selected="true" aria-controls="panel-search" data-tab="search">Search</button>
+        <button class="stage-tab" id="tab-recall" type="button" role="tab" aria-selected="false" aria-controls="panel-recall" data-tab="recall">Recall</button>
+        <button class="stage-tab" id="tab-ask" type="button" role="tab" aria-selected="false" aria-controls="panel-ask" data-tab="ask">ASK</button>
+        <button class="stage-tab" id="tab-spine" type="button" role="tab" aria-selected="false" aria-controls="panel-spine" data-tab="spine">Session</button>
+      </nav>
+
+      <section class="tab-panel" id="panel-spine" role="tabpanel" aria-labelledby="tab-spine" data-tab-panel="spine" data-panel="spine" hidden>
+        <section class="panel spine-panel">
+          <div class="panel-head">
+            <div class="spine-heading">
+              <h2 id="spineTitle">Session Trace</h2>
+              <p class="readout" id="spineMeta">Open a search result or session to read its trace.</p>
+              <div class="session-identity" id="sessionIdentity" aria-live="polite"></div>
+            </div>
+            <div class="spine-actions">
+              <button id="copySessionButton" class="icon-button" title="Copy session IDs" aria-label="Copy session IDs" disabled>⧉</button>
+              <button id="summarizeButton" class="action" disabled>Summarize</button>
+              <select id="exportTargetSelect" class="export-target-select" aria-label="Export target" disabled></select>
+              <button id="exportSummaryButton" class="action ghost-action" disabled>Export</button>
+            </div>
           </div>
-          <span class="readout" id="searchMeta"></span>
-        </div>
-        <form id="searchForm" class="mini-form search-form">
-          <input name="query" placeholder="Search events, titles, tools, cwd, source, or session id" autocomplete="off">
-          <button type="submit" class="action">Search</button>
-        </form>
-        <div id="searchResults" class="search-results"></div>
+          <div class="spine-toolbar">
+            <span class="toolbar-label">filter</span>
+            <div id="toolFilter" class="filter-strip" role="group" aria-label="Filter by tool use type"></div>
+            <span class="readout" id="toolFilterMeta"></span>
+          </div>
+          <div id="summary" class="summary" hidden></div>
+          <div id="summaryExportStatus" class="summary-export-status readout" hidden></div>
+          <div id="spine" class="spine"></div>
+        </section>
       </section>
 
-      <section class="panel recall" id="recallPanel">
-        <div class="panel-head">
-          <span class="eyebrow">recall · read prior intent back out</span>
-          <span class="readout" id="recallMeta"></span>
-          <div class="panel-actions">
-            <button id="clearRecallButton" class="ghost small-ghost" title="Clear recall results" aria-label="Clear recall results">Clear</button>
-            <button id="toggleRecallButton" class="ghost small-ghost" title="Collapse recall" aria-label="Collapse recall" aria-expanded="true">▴</button>
+      <section class="tab-panel" id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" data-tab-panel="ask" data-panel="ask" hidden>
+        <section class="panel ask-panel">
+          <div class="panel-head">
+            <div class="spine-heading">
+              <h2>ASK</h2>
+              <p class="readout">Hybrid memory retrieval over the agent-memory index.</p>
+            </div>
+            <span class="readout" id="askMeta"></span>
           </div>
-        </div>
-        <div id="recallBody" class="recall-body">
-          <form id="recallForm" class="recall-console">
-            <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
-            <select name="withinHours" aria-label="time window">
-              <option value="24">24h</option>
-              <option value="168" selected>7d</option>
-              <option value="720">30d</option>
-              <option value="0">all</option>
-            </select>
-            <button type="submit" class="action recall-fire">Recall</button>
+          <form id="askForm" class="ask-console">
+            <label class="field ask-question">
+              <span>question</span>
+              <textarea name="question" rows="4" placeholder="Ask a grounded question across memory." autocomplete="off"></textarea>
+            </label>
+            <div class="ask-actions">
+              <label class="field ask-limit">
+                <span>sources</span>
+                <input name="limit" type="number" min="1" max="50" value="6">
+              </label>
+              <button type="submit" class="action">Ask</button>
+              <button type="button" id="retrieveButton" class="action ghost-action">Retrieve</button>
+            </div>
           </form>
-          <div class="recall-stage" id="recallStage" hidden>
-            <svg class="cone" id="cone" aria-hidden="true" preserveAspectRatio="none"></svg>
-            <div class="memory-cards" id="memoryCards"></div>
-          </div>
-        </div>
+          <div id="askResults" class="ask-results"></div>
+        </section>
       </section>
 
-      <section class="panel spine-panel">
-        <div class="panel-head">
-          <div class="spine-heading">
-            <h2 id="spineTitle">Cognition Spine</h2>
-            <p class="readout" id="spineMeta">Select a session to read its trace.</p>
-            <div class="session-identity" id="sessionIdentity" aria-live="polite"></div>
+      <section class="tab-panel active" id="panel-search" role="tabpanel" aria-labelledby="tab-search" data-tab-panel="search" data-panel="search">
+        <section class="panel search-panel">
+          <div class="panel-head">
+            <div class="spine-heading">
+              <h2>Search</h2>
+              <p class="readout">Fast memory search. Open a result to inspect the session trace.</p>
+            </div>
+            <span class="readout" id="searchMeta"></span>
           </div>
-          <div class="spine-actions">
-            <button id="copySessionButton" class="icon-button" title="Copy session IDs" aria-label="Copy session IDs" disabled>⧉</button>
-            <button id="summarizeButton" class="action" disabled>Summarize</button>
-            <select id="exportTargetSelect" class="export-target-select" aria-label="Export target" disabled></select>
-            <button id="exportSummaryButton" class="action ghost-action" disabled>Export</button>
+          <form id="searchForm" class="mini-form search-form">
+            <input name="query" placeholder="Search events, titles, tools, cwd, source, or session id" autocomplete="off">
+            <button type="submit" class="action">Search</button>
+          </form>
+          <div id="searchResults" class="search-results"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="panel-recall" role="tabpanel" aria-labelledby="tab-recall" data-tab-panel="recall" data-panel="recall" hidden>
+        <section class="panel recall" id="recallPanel">
+          <div class="panel-head">
+            <span class="eyebrow">recall · read prior intent back out</span>
+            <span class="readout" id="recallMeta"></span>
+            <div class="panel-actions">
+              <button id="clearRecallButton" class="ghost small-ghost" title="Clear recall results" aria-label="Clear recall results">Clear</button>
+              <button id="fitRecallGraphButton" class="ghost small-ghost" title="Fit graph" aria-label="Fit graph">Fit</button>
+              <button id="resetRecallGraphButton" class="ghost small-ghost" title="Reset graph" aria-label="Reset graph">Reset</button>
+              <button id="toggleRecallButton" class="ghost small-ghost" title="Collapse recall" aria-label="Collapse recall" aria-expanded="true">▴</button>
+            </div>
           </div>
-        </div>
-        <div class="spine-toolbar">
-          <span class="toolbar-label">filter</span>
-          <div id="toolFilter" class="filter-strip" role="group" aria-label="Filter by tool use type"></div>
-          <span class="readout" id="toolFilterMeta"></span>
-        </div>
-        <div id="summary" class="summary" hidden></div>
-        <div id="summaryExportStatus" class="summary-export-status readout" hidden></div>
-        <div id="spine" class="spine"></div>
+          <div id="recallBody" class="recall-body">
+            <form id="recallForm" class="recall-console">
+              <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
+              <select name="withinHours" aria-label="time window">
+                <option value="24">24h</option>
+                <option value="168" selected>7d</option>
+                <option value="720">30d</option>
+                <option value="0">all</option>
+              </select>
+              <button type="submit" class="action recall-fire">Recall</button>
+            </form>
+            <div class="recall-stage" id="recallStage" hidden>
+              <div class="recall-graph-area" id="recallGraphArea">
+                <svg class="recall-graph" id="recallGraphSvg" aria-label="Recall graph" preserveAspectRatio="xMidYMid meet"></svg>
+                <aside class="recall-detail" id="recallDetailPanel"></aside>
+              </div>
+              <div class="memory-cards" id="memoryCards"></div>
+            </div>
+          </div>
+        </section>
       </section>
     </section>
   </main>

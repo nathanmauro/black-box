@@ -1,21 +1,35 @@
-// Black Box — instrument logic. Reads the local recorder over /api/*, draws the Cognition Spine,
+// Black Box — instrument logic. Reads the local recorder over /api/*, draws the session trace,
 // and fires the recall beam. No framework, no build step. The screen is an instrument, not a page.
 
 const state = {
   sessions: [],
   exportTargets: [],
+  activeTab: "search",
   activeSessionId: null,
   activeEvents: [],
   activeToolFilter: "all",
   spineEventIds: new Set(),
+  recallResult: null,
+  recallGraph: {
+    nodes: [],
+    edges: [],
+    viewBox: [0, 0, 1100, 620],
+    baseViewBox: [0, 0, 1100, 620],
+  },
 };
 
 const els = {
   readouts: document.querySelector("#readouts"),
+  stageTabs: document.querySelector(".stage-tabs"),
+  tabPanels: document.querySelectorAll("[data-tab-panel]"),
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#sessionCount"),
   refreshButton: document.querySelector("#refreshButton"),
   captureForm: document.querySelector("#captureForm"),
+  askForm: document.querySelector("#askForm"),
+  askMeta: document.querySelector("#askMeta"),
+  askResults: document.querySelector("#askResults"),
+  retrieveButton: document.querySelector("#retrieveButton"),
   searchForm: document.querySelector("#searchForm"),
   searchResults: document.querySelector("#searchResults"),
   searchMeta: document.querySelector("#searchMeta"),
@@ -25,8 +39,12 @@ const els = {
   recallMeta: document.querySelector("#recallMeta"),
   recallStage: document.querySelector("#recallStage"),
   memoryCards: document.querySelector("#memoryCards"),
-  cone: document.querySelector("#cone"),
+  recallGraphArea: document.querySelector("#recallGraphArea"),
+  recallGraphSvg: document.querySelector("#recallGraphSvg"),
+  recallDetailPanel: document.querySelector("#recallDetailPanel"),
   clearRecallButton: document.querySelector("#clearRecallButton"),
+  fitRecallGraphButton: document.querySelector("#fitRecallGraphButton"),
+  resetRecallGraphButton: document.querySelector("#resetRecallGraphButton"),
   toggleRecallButton: document.querySelector("#toggleRecallButton"),
   spine: document.querySelector("#spine"),
   spineTitle: document.querySelector("#spineTitle"),
@@ -91,6 +109,24 @@ function num(value) {
   return Number(value).toLocaleString("en-US");
 }
 
+// --------------------------------------------------------------------- tabs
+function activateTab(tab) {
+  state.activeTab = tab;
+  els.stageTabs.querySelectorAll("[data-tab]").forEach(button => {
+    const active = button.dataset.tab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  els.tabPanels.forEach(panel => {
+    const active = panel.dataset.tabPanel === tab;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+  if (tab === "recall" && !els.recallStage.hidden && state.recallResult) {
+    requestAnimationFrame(() => renderRecallGraph(state.recallResult));
+  }
+}
+
 // ------------------------------------------------------------------ readouts
 function gauge(label, cls, value) {
   return `<div class="gauge ${cls}"><span class="gauge-dot"></span>` +
@@ -115,6 +151,17 @@ async function loadStatus(pulse = false) {
   if (pulse) {
     const g = els.readouts.querySelector(".gauge");
     if (g) { g.classList.remove("capturing"); void g.offsetWidth; g.classList.add("capturing"); }
+  }
+}
+
+async function loadAskStatus() {
+  try {
+    const status = await api("/api/ask/status");
+    const mode = status.retrievalMode || "unavailable";
+    const chat = status.chat?.available ? "chat ok" : "chat degraded";
+    els.askMeta.textContent = `${mode} · ${status.memoryIndex || "agent-memory"} · ${chat}`;
+  } catch (err) {
+    els.askMeta.textContent = `ask status failed: ${err.message}`;
   }
 }
 
@@ -435,6 +482,103 @@ function sanitizeHighlight(value) {
     .replaceAll("&lt;/mark&gt;", "</mark>");
 }
 
+// --------------------------------------------------------------------- ask
+async function doAsk(question, mode) {
+  const limit = askLimit();
+  els.askResults.classList.remove("degraded");
+  els.askResults.innerHTML = `<p class="empty">Reading memory…</p>`;
+  els.askMeta.textContent = mode === "retrieve" ? "retrieving…" : "asking…";
+
+  if (mode === "retrieve") {
+    const result = await api(`/api/ask/retrieve?q=${encodeURIComponent(question)}&limit=${encodeURIComponent(limit)}`);
+    renderAskRetrieve(result);
+    return;
+  }
+
+  const result = await api("/api/ask", {
+    method: "POST",
+    body: JSON.stringify({ question, limit }),
+  });
+  renderAskResponse(result);
+}
+
+function renderAskRetrieve(result) {
+  const count = result.results?.length || 0;
+  els.askMeta.textContent = `${count} retrieved · ${result.retrievalMode || "unavailable"}`;
+  els.askResults.classList.toggle("degraded", Boolean(result.degraded));
+  const summary = count
+    ? `<div class="ask-answer-label">Retrieve</div><p>${escapeHtml(count)} grounded memory hits.</p>`
+    : `<div class="ask-answer-label">Retrieve</div><p>No grounded memory hits.</p>`;
+  els.askResults.innerHTML = summary + renderAskCitations(result.results || []);
+}
+
+function renderAskResponse(result) {
+  const citations = result.citations || [];
+  els.askMeta.textContent = `${citations.length} citations · ${result.retrievalMode || "unavailable"}`;
+  els.askResults.classList.toggle("degraded", Boolean(result.degraded));
+  els.askResults.innerHTML = `<div class="ask-answer">
+    <div class="ask-answer-label">Answer</div>
+    <div class="answer-copy">${renderAnswerText(result.answer || "")}</div>
+    ${renderAnswerSourceLinks(citations)}
+  </div>` + renderAskCitations(citations);
+}
+
+function renderAnswerText(answer) {
+  return escapeHtml(answer)
+    .replace(/\[(\d+)\]/g, (_match, n) => `<a href="#ask-citation-${n}" class="answer-citation">[${n}]</a>`)
+    .replace(/\n/g, "<br>");
+}
+
+function askLimit() {
+  const value = Number(new FormData(els.askForm).get("limit"));
+  return Number.isFinite(value) ? Math.max(1, Math.min(value, 50)) : 6;
+}
+
+function renderAnswerSourceLinks(citations) {
+  if (!citations.length) return "";
+  return `<div class="answer-source-links" aria-label="Answer sources">` +
+    citations.map(citation => `<a href="#ask-citation-${escapeHtml(citation.number)}">${escapeHtml(citation.number)} ${escapeHtml(citation.title || "memory")}</a>`).join("") +
+    `</div>`;
+}
+
+function renderAskCitations(citations) {
+  if (!citations.length) {
+    return `<p class="empty">No citations.</p>`;
+  }
+  return `<div class="ask-citations">${citations.map(renderAskCitation).join("")}</div>`;
+}
+
+function renderAskCitation(citation) {
+  const source = citation.sourcePath || citation.sessionId || citation.source || "";
+  const memoryAction = citation.sessionId
+    ? `<a href="#session-${escapeHtml(citation.sessionId)}" class="citation-memory-link ask-open-memory" data-session-id="${escapeHtml(citation.sessionId)}" data-event-id="${escapeHtml(citation.id)}">Open memory</a>`
+    : "";
+  const sourceHref = sourcePathHref(citation.sourcePath);
+  const sourceAction = sourceHref
+    ? `<a href="${escapeHtml(sourceHref)}" class="citation-source-link" target="_blank" rel="noreferrer">Source path</a>`
+    : "";
+  const copySource = source
+    ? `<button type="button" class="ghost small-ghost ask-copy-source" data-copy-value="${escapeHtml(source)}" title="Copy source" aria-label="Copy source">Copy</button>`
+    : "";
+  return `<article class="ask-citation-card" id="ask-citation-${escapeHtml(citation.number)}">
+    <div class="ask-citation-head">
+      <span class="ask-citation-num">[${escapeHtml(citation.number)}]</span>
+      <strong>${escapeHtml(citation.title || "(untitled memory)")}</strong>
+      <span class="readout">${escapeHtml(relativeTime(citation.timestamp))}</span>
+    </div>
+    <div class="ask-citation-source">${escapeHtml(source)}</div>
+    <div class="ask-citation-snippet">${escapeHtml(citation.snippet || "")}</div>
+    <div class="ask-citation-actions">${memoryAction}${sourceAction}${copySource}</div>
+  </article>`;
+}
+
+function sourcePathHref(path) {
+  if (!path || typeof path !== "string") return "";
+  if (path.startsWith("/")) return `file://${path}`;
+  if (/^https?:\/\//i.test(path)) return path;
+  return "";
+}
+
 // ----------------------------------------------------------------- recall
 async function doRecall(scope, withinHours) {
   els.recallMeta.textContent = "reading…";
@@ -443,20 +587,20 @@ async function doRecall(scope, withinHours) {
   params.set("withinHours", String(withinHours));
   params.set("kinds", "decision,handoff");
   const result = await api(`/api/recall?${params.toString()}`);
+  state.recallResult = result;
 
   els.recallStage.hidden = false;
-  els.cone.innerHTML = "";
   const scopeLabel = result.scope ? `“${result.scope}”` : "all repos";
   els.recallMeta.textContent = `${result.count} recalled · ${scopeLabel}`;
 
   if (!result.items.length) {
+    clearRecallGraph();
     els.memoryCards.innerHTML = `<p class="recall-empty">No prior intent committed for ${escapeHtml(scopeLabel)} yet — capture a decision, then recall it back.</p>`;
     return;
   }
   els.memoryCards.innerHTML = result.items.map((item, i) => renderMemory(item, i)).join("");
   wireMemoryCards();
-  // Draw the cone after layout settles so card geometry is final.
-  requestAnimationFrame(() => requestAnimationFrame(drawCone));
+  renderRecallGraph(result);
 }
 
 function renderMemory(item, i) {
@@ -524,35 +668,260 @@ function locateOnSpine(eventId) {
   );
 }
 
-// The signature: an amber cone of light fanning from the recall console to each surfaced memory.
-function drawCone() {
-  const cards = [...els.memoryCards.querySelectorAll(".mem")];
-  els.cone.innerHTML = "";
-  if (!cards.length) return;
-  const stage = els.recallStage.getBoundingClientRect();
-  const originX = stage.width / 2;
-  const originY = 2;
-  const emitter = document.createElementNS(SVG_NS, "circle");
-  emitter.setAttribute("cx", String(originX));
-  emitter.setAttribute("cy", String(originY));
-  emitter.setAttribute("r", "3");
-  els.cone.appendChild(emitter);
-  for (const card of cards) {
-    const r = card.getBoundingClientRect();
-    const tx = r.left - stage.left + r.width / 2;
-    const ty = r.top - stage.top;
-    const midY = (originY + ty) / 2;
-    const d = `M ${originX} ${originY} C ${originX} ${midY}, ${tx} ${midY}, ${tx} ${ty}`;
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", d);
-    const dx = tx - originX, dy = ty - originY;
-    const len = Math.round(Math.hypot(dx, dy) * 1.35);
-    path.style.setProperty("--len", String(len));
-    els.cone.appendChild(path);
+function renderRecallGraph(result) {
+  const graph = buildRecallGraph(result);
+  state.recallGraph = graph;
+  setRecallViewBox(graph.baseViewBox);
+  drawRecallGraph();
+  renderRecallDetail(graph.nodes.find(node => node.type === "scope"));
+}
+
+function clearRecallGraph() {
+  state.recallGraph = {
+    nodes: [],
+    edges: [],
+    viewBox: [0, 0, 1100, 620],
+    baseViewBox: [0, 0, 1100, 620],
+  };
+  els.recallGraphSvg.innerHTML = "";
+  els.recallDetailPanel.innerHTML = "";
+}
+
+function buildRecallGraph(result) {
+  const items = result.items || [];
+  const width = 1180;
+  const height = Math.max(620, 260 + items.length * 46);
+  const scopeId = "scope";
+  const scopeLabel = result.scope || "All memory";
+  const nodes = [{
+    id: scopeId,
+    type: "scope",
+    label: scopeLabel,
+    x: width / 2,
+    y: 78,
+    count: items.length,
+  }];
+  const edges = [];
+  const clusters = new Map();
+  for (const item of items) {
+    const key = clusterKey(item);
+    if (!clusters.has(key)) {
+      clusters.set(key, { key, label: clusterLabel(item), items: [] });
+    }
+    clusters.get(key).items.push(item);
+  }
+
+  const clusterList = [...clusters.values()];
+  const clusterRadiusX = Math.min(430, width / 3);
+  const clusterRadiusY = Math.max(165, Math.min(260, height / 3));
+  clusterList.forEach((cluster, index) => {
+    const angle = clusterList.length === 1 ? Math.PI / 2 : (Math.PI * 2 * index / clusterList.length) + Math.PI / 8;
+    const clusterNode = {
+      id: `cluster:${cluster.key}`,
+      type: "cluster",
+      label: cluster.label,
+      x: width / 2 + Math.cos(angle) * clusterRadiusX,
+      y: 285 + Math.sin(angle) * clusterRadiusY,
+      count: cluster.items.length,
+    };
+    nodes.push(clusterNode);
+    edges.push({ from: scopeId, to: clusterNode.id });
+    cluster.items.forEach((item, itemIndex) => {
+      const itemAngle = cluster.items.length === 1
+        ? angle
+        : (Math.PI * 2 * itemIndex / cluster.items.length) + angle;
+      const itemNode = {
+        id: `item:${item.eventId}`,
+        type: "item",
+        item,
+        label: item.headline || item.kind || "memory",
+        x: clusterNode.x + Math.cos(itemAngle) * 138,
+        y: clusterNode.y + Math.sin(itemAngle) * 94,
+        kind: item.kind,
+      };
+      nodes.push(itemNode);
+      edges.push({ from: clusterNode.id, to: itemNode.id });
+    });
+  });
+
+  return {
+    nodes,
+    edges,
+    viewBox: [0, 0, width, height],
+    baseViewBox: [0, 0, width, height],
+  };
+}
+
+function clusterKey(item) {
+  return [
+    item.kind || "memory",
+    item.source || "unknown",
+    item.repo || "global",
+  ].join(":");
+}
+
+function clusterLabel(item) {
+  const kind = item.kind || "memory";
+  const source = item.source || "unknown";
+  const repo = item.repo ? item.repo.split("/").filter(Boolean).pop() : "global";
+  return `${kind} · ${source} · ${repo}`;
+}
+
+function drawRecallGraph() {
+  const graph = state.recallGraph;
+  els.recallGraphSvg.innerHTML = "";
+  els.recallGraphSvg.setAttribute("viewBox", graph.viewBox.join(" "));
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+
+  for (const edge of graph.edges) {
+    const from = byId.get(edge.from);
+    const to = byId.get(edge.to);
+    if (!from || !to) continue;
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", from.x);
+    line.setAttribute("y1", from.y);
+    line.setAttribute("x2", to.x);
+    line.setAttribute("y2", to.y);
+    line.classList.add("recall-edge", `edge-from-${cssToken(from.type)}`, `edge-to-${cssToken(to.type)}`);
+    els.recallGraphSvg.appendChild(line);
+  }
+
+  for (const node of graph.nodes) {
+    const group = document.createElementNS(SVG_NS, "g");
+    group.classList.add("recall-node", `recall-node--${cssToken(node.type)}`);
+    group.dataset.nodeId = node.id;
+    group.setAttribute("transform", `translate(${node.x} ${node.y})`);
+    group.setAttribute("tabindex", "0");
+    group.setAttribute("role", "button");
+
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("r", nodeRadius(node));
+    group.appendChild(circle);
+
+    const label = document.createElementNS(SVG_NS, "text");
+    label.setAttribute("y", node.type === "item" ? 34 : 46);
+    label.setAttribute("text-anchor", "middle");
+    label.textContent = clamp(node.label, node.type === "item" ? 32 : 44);
+    group.appendChild(label);
+
+    if (node.count) {
+      const count = document.createElementNS(SVG_NS, "text");
+      count.setAttribute("class", "recall-node-count");
+      count.setAttribute("y", 5);
+      count.setAttribute("text-anchor", "middle");
+      count.textContent = String(node.count);
+      group.appendChild(count);
+    }
+
+    els.recallGraphSvg.appendChild(group);
   }
 }
 
+function nodeRadius(node) {
+  if (node.type === "scope") return 42;
+  if (node.type === "cluster") return 32;
+  return 18;
+}
+
+function cssToken(value) {
+  return String(value || "unknown").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
+}
+
+function renderRecallDetail(node) {
+  if (!node) {
+    els.recallDetailPanel.innerHTML = "";
+    return;
+  }
+  if (node.type === "item") {
+    els.recallDetailPanel.innerHTML = renderMemoryDetail(node.item);
+    return;
+  }
+  els.recallDetailPanel.innerHTML = `<div class="recall-detail-kind">${escapeHtml(node.type)}</div>
+    <div class="recall-detail-title">${escapeHtml(node.label)}</div>
+    <div class="recall-detail-meta">${escapeHtml(node.count || 0)} linked memories</div>`;
+}
+
+function renderMemoryDetail(item) {
+  return `<div class="recall-detail-kind">${escapeHtml(item.kind || "memory")}</div>
+    <div class="recall-detail-title">${escapeHtml(item.headline || "(untitled)")}</div>
+    <div class="recall-detail-meta">${escapeHtml(item.repo || "")} · ${escapeHtml(relativeTime(item.observedAt))}</div>
+    ${item.rationale ? `<div class="recall-detail-body">${escapeHtml(item.rationale)}</div>` : ""}
+    ${item.nextAction ? `<div class="recall-detail-body"><b>next</b> ${escapeHtml(item.nextAction)}</div>` : ""}`;
+}
+
+function setRecallViewBox(viewBox) {
+  state.recallGraph.viewBox = [...viewBox];
+  els.recallGraphSvg.setAttribute("viewBox", state.recallGraph.viewBox.join(" "));
+}
+
+function zoomRecallGraph(scale) {
+  const [x, y, w, h] = state.recallGraph.viewBox;
+  const nextW = w * scale;
+  const nextH = h * scale;
+  setRecallViewBox([
+    x + (w - nextW) / 2,
+    y + (h - nextH) / 2,
+    nextW,
+    nextH,
+  ]);
+}
+
 // ----------------------------------------------------------------- actions
+els.stageTabs.addEventListener("click", event => {
+  const button = event.target.closest("[data-tab]");
+  if (button) activateTab(button.dataset.tab);
+});
+
+els.askForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const question = (new FormData(event.currentTarget).get("question") || "").trim();
+  if (!question) return;
+  const buttons = [...event.currentTarget.querySelectorAll("button")];
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    await doAsk(question, "ask");
+  } catch (err) {
+    els.askResults.classList.add("degraded");
+    els.askResults.innerHTML = `<div class="ask-answer-label">Error</div><p>${escapeHtml(err.message)}</p>`;
+    els.askMeta.textContent = "ask failed";
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+});
+
+els.retrieveButton.addEventListener("click", async () => {
+  const question = (new FormData(els.askForm).get("question") || "").trim();
+  if (!question) return;
+  const buttons = [...els.askForm.querySelectorAll("button")];
+  buttons.forEach(button => { button.disabled = true; });
+  try {
+    await doAsk(question, "retrieve");
+  } catch (err) {
+    els.askResults.classList.add("degraded");
+    els.askResults.innerHTML = `<div class="ask-answer-label">Error</div><p>${escapeHtml(err.message)}</p>`;
+    els.askMeta.textContent = "retrieve failed";
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+});
+
+els.askResults.addEventListener("click", async event => {
+  const open = event.target.closest(".ask-open-memory[data-session-id], .ask-open-session[data-session-id]");
+  if (open) {
+    event.preventDefault();
+    await selectSession(open.dataset.sessionId);
+    activateTab("spine");
+    if (open.dataset.eventId) {
+      requestAnimationFrame(() => locateOnSpine(open.dataset.eventId));
+    }
+    return;
+  }
+  const copy = event.target.closest(".ask-copy-source[data-copy-value]");
+  if (copy) {
+    await copyValue(copy.dataset.copyValue, copy);
+  }
+});
+
 els.sessions.addEventListener("click", event => {
   const copy = event.target.closest(".copy-button[data-session-id]");
   if (copy) {
@@ -563,7 +932,10 @@ els.sessions.addEventListener("click", event => {
     return;
   }
   const row = event.target.closest(".channel");
-  if (row) selectSession(row.dataset.id);
+  if (row) {
+    selectSession(row.dataset.id);
+    activateTab("spine");
+  }
 });
 
 els.sessionIdentity.addEventListener("click", event => {
@@ -588,6 +960,18 @@ els.recallForm.addEventListener("submit", async event => {
 
 els.clearRecallButton.addEventListener("click", clearRecall);
 
+els.fitRecallGraphButton.addEventListener("click", () => {
+  setRecallViewBox(state.recallGraph.baseViewBox);
+});
+
+els.resetRecallGraphButton.addEventListener("click", () => {
+  if (state.recallResult) {
+    renderRecallGraph(state.recallResult);
+  } else {
+    clearRecallGraph();
+  }
+});
+
 els.toggleRecallButton.addEventListener("click", () => {
   const collapsed = !els.recallPanel.classList.contains("collapsed");
   els.recallPanel.classList.toggle("collapsed", collapsed);
@@ -602,8 +986,9 @@ function clearRecall() {
   els.recallForm.reset();
   els.recallMeta.textContent = "";
   els.recallStage.hidden = true;
-  els.cone.innerHTML = "";
   els.memoryCards.innerHTML = "";
+  clearRecallGraph();
+  state.recallResult = null;
 }
 
 els.captureForm.addEventListener("submit", async event => {
@@ -636,15 +1021,10 @@ els.captureForm.addEventListener("submit", async event => {
 
 els.searchForm.addEventListener("submit", async event => {
   event.preventDefault();
-  const query = (new FormData(event.currentTarget).get("query") || "").trim();
-  if (!query) return;
-  try {
-    const results = await api(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
-    renderSearch(results);
-  } catch (err) {
-    els.searchResults.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
-  }
+  await runSearchFromForm(event.currentTarget);
 });
+
+bindCommandEnterSearch(els.searchForm.elements.query);
 
 els.copySessionButton.addEventListener("click", () => {
   const session = state.sessions.find(item => item.id === state.activeSessionId);
@@ -797,11 +1177,34 @@ els.searchResults.addEventListener("keydown", event => {
 async function openSearchResult(row) {
   if (!row.dataset.sessionId) return;
   await selectSession(row.dataset.sessionId);
+  activateTab("spine");
   if (state.activeToolFilter !== "all") {
     state.activeToolFilter = "all";
     renderFilteredSpine();
   }
   requestAnimationFrame(() => locateOnSpine(row.dataset.eventId));
+}
+
+function bindCommandEnterSearch(input) {
+  if (!input) return;
+  input.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
+    event.preventDefault();
+    els.searchForm.requestSubmit();
+  });
+}
+
+async function runSearchFromForm(form) {
+  const query = (new FormData(form).get("query") || "").trim();
+  if (!query) return;
+  els.searchMeta.textContent = "searching…";
+  try {
+    const results = await api(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
+    renderSearch(results);
+  } catch (err) {
+    els.searchMeta.textContent = "search failed";
+    els.searchResults.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
+  }
 }
 
 els.summarizeButton.addEventListener("click", async () => {
@@ -852,12 +1255,66 @@ els.exportSummaryButton.addEventListener("click", async () => {
   }
 });
 
+els.recallGraphSvg.addEventListener("click", event => {
+  const nodeEl = event.target.closest(".recall-node[data-node-id]");
+  if (!nodeEl) return;
+  const node = state.recallGraph.nodes.find(item => item.id === nodeEl.dataset.nodeId);
+  renderRecallDetail(node);
+  els.recallGraphSvg.querySelectorAll(".recall-node").forEach(item =>
+    item.classList.toggle("selected", item.dataset.nodeId === nodeEl.dataset.nodeId));
+  if (node?.type === "item" && node.item?.eventId) {
+    const card = els.memoryCards.querySelector(`.mem[data-event-id="${CSS.escape(node.item.eventId)}"]`);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+});
+
+els.recallGraphSvg.addEventListener("keydown", event => {
+  if (event.key !== "Enter") return;
+  const nodeEl = event.target.closest(".recall-node[data-node-id]");
+  if (nodeEl) nodeEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+});
+
+els.recallGraphSvg.addEventListener("wheel", event => {
+  if (!state.recallGraph.nodes.length) return;
+  event.preventDefault();
+  zoomRecallGraph(event.deltaY < 0 ? 0.86 : 1.16);
+}, { passive: false });
+
+let recallDrag = null;
+els.recallGraphSvg.addEventListener("pointerdown", event => {
+  if (!state.recallGraph.nodes.length || event.target.closest(".recall-node")) return;
+  recallDrag = {
+    x: event.clientX,
+    y: event.clientY,
+    viewBox: [...state.recallGraph.viewBox],
+  };
+  els.recallGraphSvg.setPointerCapture(event.pointerId);
+});
+
+els.recallGraphSvg.addEventListener("pointermove", event => {
+  if (!recallDrag) return;
+  const rect = els.recallGraphSvg.getBoundingClientRect();
+  const [, , w, h] = recallDrag.viewBox;
+  const dx = (event.clientX - recallDrag.x) / rect.width * w;
+  const dy = (event.clientY - recallDrag.y) / rect.height * h;
+  setRecallViewBox([
+    recallDrag.viewBox[0] - dx,
+    recallDrag.viewBox[1] - dy,
+    recallDrag.viewBox[2],
+    recallDrag.viewBox[3],
+  ]);
+});
+
+els.recallGraphSvg.addEventListener("pointerup", () => {
+  recallDrag = null;
+});
+
 window.addEventListener("resize", () => {
-  if (!els.recallStage.hidden && els.memoryCards.children.length) drawCone();
+  if (!els.recallStage.hidden && state.recallResult) renderRecallGraph(state.recallResult);
 });
 
 // ----------------------------------------------------------------- boot
-Promise.all([loadStatus(), loadExportTargets()])
+Promise.all([loadStatus(), loadAskStatus(), loadExportTargets()])
   .then(() => loadSessions(true))
   .catch(error => {
   els.readouts.innerHTML = gauge("recorder", "degraded", "unreachable");
