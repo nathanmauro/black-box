@@ -170,6 +170,17 @@ public class LocalAiClient {
         return fallbackTitle(sourceText);
     }
 
+    public String complete(String system, String user, int maxTokens) {
+        if (!properties.isEnabled()) {
+            throw new RestClientException("local AI disabled");
+        }
+        String content = extractContent(post(chatRequest(maxTokens, system, user == null ? "" : user)));
+        if (content == null) {
+            throw new RestClientException("local AI returned no message content");
+        }
+        return content;
+    }
+
     private Map<String, Object> chatRequest(int maxTokens, String system, String user) {
         return Map.of(
                 "model", properties.getModel(),

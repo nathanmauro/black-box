@@ -74,5 +74,17 @@ sba:
     base-url: ${SBA_ELASTICSEARCH_URL:http://localhost:9200}
     index-name: ${SBA_ELASTICSEARCH_INDEX:sba-agentic-events}
     timeout: 5s
+  ask:
+    memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
+    vector-field: ${SBA_ASK_VECTOR_FIELD:embedding}
+    embedding-enabled: ${SBA_ASK_EMBEDDING_ENABLED:true}
+    embedding-base-url: ${SBA_ASK_EMBEDDING_URL:http://localhost:11434}
+    embedding-path: ${SBA_ASK_EMBEDDING_PATH:/api/embeddings}
+    embedding-model: ${SBA_ASK_EMBEDDING_MODEL:nomic-embed-text}
+    embedding-dimensions: ${SBA_ASK_EMBEDDING_DIMENSIONS:768}
+    embedding-timeout: 5s
+    default-ask-citations: ${SBA_ASK_DEFAULT_CITATIONS:6}
+    default-retrieve-results: ${SBA_ASK_DEFAULT_RETRIEVE_RESULTS:10}
+    answer-max-tokens: ${SBA_ASK_ANSWER_MAX_TOKENS:640}
   ingestion:
     max-text-length: 20000

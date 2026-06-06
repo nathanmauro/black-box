@@ -3,6 +3,11 @@ package dev.nathan.sbaagentic.web;
 import java.util.List;
 import java.util.Map;
 
+import dev.nathan.sbaagentic.ask.AskRequest;
+import dev.nathan.sbaagentic.ask.AskResponse;
+import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
+import dev.nathan.sbaagentic.ask.AskService;
+import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.ai.SessionSummaryService;
 import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
@@ -42,6 +47,7 @@ public class AgenticController {
     private final SummaryExportService summaryExportService;
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
+    private final AskService askService;
 
     public AgenticController(
             EventIngestService ingestService,
@@ -51,7 +57,8 @@ public class AgenticController {
             SessionSummaryService summaryService,
             SummaryExportService summaryExportService,
             LocalAiClient localAiClient,
-            ElasticIndexClient elasticIndexClient) {
+            ElasticIndexClient elasticIndexClient,
+            AskService askService) {
         this.ingestService = ingestService;
         this.contextService = contextService;
         this.repository = repository;
@@ -60,6 +67,7 @@ public class AgenticController {
         this.summaryExportService = summaryExportService;
         this.localAiClient = localAiClient;
         this.elasticIndexClient = elasticIndexClient;
+        this.askService = askService;
     }
 
     @PostMapping("/events")
@@ -128,6 +136,21 @@ public class AgenticController {
     @GetMapping("/search")
     public SearchResponse search(@RequestParam String q, @RequestParam(defaultValue = "25") int limit) {
         return searchService.search(q, safeLimit(limit));
+    }
+
+    @GetMapping("/ask/status")
+    public AskStatus askStatus() {
+        return askService.status();
+    }
+
+    @GetMapping("/ask/retrieve")
+    public AskRetrieveResponse askRetrieve(@RequestParam String q, @RequestParam(defaultValue = "10") int limit) {
+        return askService.retrieve(q, safeLimit(limit));
+    }
+
+    @PostMapping("/ask")
+    public AskResponse ask(@RequestBody AskRequest request) {
+        return askService.ask(request);
     }
 
     @GetMapping("/status")
