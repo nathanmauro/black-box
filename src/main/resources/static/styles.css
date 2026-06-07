@@ -237,14 +237,14 @@ h1, h2 { margin: 0; font-weight: 600; }
 .deck {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  gap: 18px;
-  width: min(1480px, calc(100vw - 40px));
-  margin: 20px auto 36px;
+  gap: 28px;
+  width: min(1480px, calc(100vw - 64px));
+  margin: 26px auto 40px;
   align-items: start;
 }
 
-.rail { display: grid; gap: 18px; position: sticky; top: 86px; }
-.stage { display: grid; gap: 18px; }
+.rail { display: grid; gap: 22px; position: sticky; top: 92px; }
+.stage { display: grid; gap: 22px; }
 
 /* ------------------------------------------------------------------- panels */
 .panel {
@@ -393,6 +393,64 @@ h1, h2 { margin: 0; font-weight: 600; }
 
 /* ----------------------------------------------------------------- channels */
 .channel-list { display: grid; gap: 1px; background: var(--line-soft); max-height: 46vh; overflow-y: auto; }
+
+.session-group {
+  display: grid;
+  gap: 1px;
+  background: var(--line-soft);
+}
+.session-group.active {
+  box-shadow: inset 2px 0 0 rgba(232, 163, 61, 0.5);
+}
+.session-group-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  text-align: left;
+  color: var(--muted);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 70%),
+    var(--screen);
+  border-left: 3px solid transparent;
+  font-family: var(--font-mono);
+  transition: color 110ms ease, background 110ms ease, border-color 110ms ease;
+}
+.session-group-toggle:hover {
+  color: var(--paper);
+  background: var(--coal-hover);
+  border-left-color: var(--amber-line);
+}
+.session-group.active > .session-group-toggle {
+  color: var(--amber);
+  border-left-color: var(--amber);
+}
+.session-group-caret {
+  color: var(--faint-text);
+  font-size: 10px;
+}
+.session-group-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.session-group-count {
+  min-width: 2ch;
+  color: var(--faint-text);
+  font-size: 10px;
+  font-feature-settings: var(--tnum);
+  text-align: right;
+}
+.session-group-sessions {
+  display: grid;
+  gap: 1px;
+}
 
 .channel-row {
   display: grid;
@@ -560,7 +618,7 @@ input:focus, select:focus, textarea:focus {
   font-family: var(--font-mono);
   font-size: 13px;
   letter-spacing: 0.01em;
-  color: transparent;
+  color: var(--paper);
   caret-color: var(--amber);
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 60%),
@@ -583,6 +641,7 @@ input:focus, select:focus, textarea:focus {
   letter-spacing: 0.01em;
   line-height: 1.5;
   color: transparent;
+  opacity: 0.72;
   white-space: pre;
   overflow: hidden;
   pointer-events: none;
@@ -678,6 +737,33 @@ input:focus, select:focus, textarea:focus {
   scrollbar-gutter: stable;
 }
 .search-results:empty { display: none; }
+
+.kibana-link {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: var(--muted);
+  background: var(--screen);
+  border: 1px solid var(--bezel);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 var(--panel-top);
+  transition: color 110ms, border-color 110ms, background 110ms, transform 110ms;
+}
+.kibana-link:hover {
+  color: var(--amber);
+  background: var(--coal-hover);
+  border-color: var(--amber-line);
+  transform: translateY(-1px);
+}
+
 .result {
   padding: 11px 14px;
   background:
@@ -1567,7 +1653,12 @@ input:focus, select:focus, textarea:focus {
 
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1000px) {
-  .deck { grid-template-columns: 1fr; }
+  .deck {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    width: min(100% - 32px, 1480px);
+    margin-top: 18px;
+  }
   .rail { position: static; }
   .channel-list { max-height: none; }
   .readouts { display: none; }

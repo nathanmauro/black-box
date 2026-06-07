@@ -4,12 +4,18 @@
 const state = {
   sessions: [],
   exportTargets: [],
-  activeTab: "search",
+  activeTab: "spine",
   activeSessionId: null,
   activeEvents: [],
   activeToolFilter: "all",
   spineEventIds: new Set(),
+  expandedSessionGroups: new Set(),
+  sessionGroupStateLoaded: false,
 };
+
+const SESSION_GROUP_STORAGE_KEY = "blackbox.sessions.expandedGroups.v1";
+const NO_PROJECT_GROUP_KEY = "__no_project__";
+const NO_PROJECT_GROUP_LABEL = "No project / manual / system";
 
 const els = {
   readouts: document.querySelector("#readouts"),
@@ -18,6 +24,8 @@ const els = {
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#sessionCount"),
   refreshButton: document.querySelector("#refreshButton"),
+  expandAllSessionsButton: document.querySelector("#expandAllSessionsButton"),
+  collapseAllSessionsButton: document.querySelector("#collapseAllSessionsButton"),
   captureForm: document.querySelector("#captureForm"),
   askForm: document.querySelector("#askForm"),
   askMeta: document.querySelector("#askMeta"),
@@ -192,11 +200,41 @@ async function loadSessions(selectFirst = false) {
     els.spine.innerHTML = `<p class="empty">The recorder is idle. Capture an event to lay down the first trace.</p>`;
     return;
   }
-  els.sessions.innerHTML = state.sessions.map(session => {
-    const src = (session.source || "unknown").toLowerCase();
-    const aiTitled = session.summary ? `<span class="seal">◆ ai</span>` : "";
-    const active = session.id === state.activeSessionId ? "active" : "";
-    return `<div class="channel-row ${active}" data-id="${escapeHtml(session.id)}">
+  const groups = groupSessionsByProject(state.sessions);
+  loadExpandedSessionGroups(groups);
+  const shouldSelect = selectFirst || !state.activeSessionId || !state.sessions.some(s => s.id === state.activeSessionId);
+  const selectedSessionId = shouldSelect ? state.sessions[0].id : state.activeSessionId;
+  ensureSessionGroupExpanded(selectedSessionId, false);
+  renderSessionsRail(groups);
+  if (shouldSelect) {
+    await selectSession(selectedSessionId, { renderRail: false });
+    renderSessionsRail();
+  }
+}
+
+function renderSessionsRail(groups = groupSessionsByProject(state.sessions)) {
+  els.sessions.innerHTML = groups.map(renderSessionGroup).join("");
+}
+
+function renderSessionGroup(group) {
+  const expanded = state.expandedSessionGroups.has(group.key);
+  const active = group.sessions.some(session => session.id === state.activeSessionId) ? "active" : "";
+  const rows = group.sessions.map(renderSessionRow).join("");
+  return `<section class="session-group ${active}" data-project-key="${escapeHtml(group.key)}">
+    <button type="button" class="session-group-toggle" data-project-key="${escapeHtml(group.key)}" aria-expanded="${String(expanded)}">
+      <span class="session-group-caret">${expanded ? "▾" : "▸"}</span>
+      <span class="session-group-title">${escapeHtml(group.label)}</span>
+      <span class="session-group-count">${num(group.sessions.length)}</span>
+    </button>
+    <div class="session-group-sessions" ${expanded ? "" : "hidden"}>${rows}</div>
+  </section>`;
+}
+
+function renderSessionRow(session) {
+  const src = (session.source || "unknown").toLowerCase();
+  const aiTitled = session.summary ? `<span class="seal">◆ ai</span>` : "";
+  const active = session.id === state.activeSessionId ? "active" : "";
+  return `<div class="channel-row ${active}" data-id="${escapeHtml(session.id)}">
       <button class="channel ${active}" data-id="${escapeHtml(session.id)}">
         <span class="channel-title">${escapeHtml(session.title)} ${aiTitled}</span>
         <span class="channel-meta">
@@ -208,14 +246,97 @@ async function loadSessions(selectFirst = false) {
       </button>
       <button class="copy-button" data-session-id="${escapeHtml(session.id)}" title="Copy session IDs" aria-label="Copy session IDs">⧉</button>
     </div>`;
-  }).join("");
-  if (selectFirst || !state.activeSessionId || !state.sessions.some(s => s.id === state.activeSessionId)) {
-    await selectSession(state.sessions[0].id);
-  }
 }
 
-async function selectSession(sessionId) {
+function groupSessionsByProject(sessions) {
+  const groupsByKey = new Map();
+  for (const session of sessions) {
+    const key = sessionProjectGroupKey(session);
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, {
+        key,
+        label: key === NO_PROJECT_GROUP_KEY ? NO_PROJECT_GROUP_LABEL : key,
+        noProject: key === NO_PROJECT_GROUP_KEY,
+        sessions: [],
+      });
+    }
+    groupsByKey.get(key).sessions.push(session);
+  }
+  const groups = [...groupsByKey.values()];
+  return [
+    ...groups.filter(group => !group.noProject),
+    ...groups.filter(group => group.noProject),
+  ];
+}
+
+function sessionProjectGroupKey(session) {
+  return formatProjectPath(session?.cwd) || NO_PROJECT_GROUP_KEY;
+}
+
+function formatProjectPath(path) {
+  const value = String(path || "").trim();
+  if (!value) return "";
+  if (value === "/Users/nathan") return "~";
+  if (value.startsWith("/Users/nathan/")) return `~/${value.slice("/Users/nathan/".length)}`;
+  return value;
+}
+
+function loadExpandedSessionGroups(groups) {
+  if (state.sessionGroupStateLoaded) return;
+  state.sessionGroupStateLoaded = true;
+  try {
+    const raw = window.localStorage?.getItem(SESSION_GROUP_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        state.expandedSessionGroups = new Set(parsed.filter(item => typeof item === "string"));
+        return;
+      }
+    }
+  } catch (_) {
+    state.expandedSessionGroups = new Set();
+  }
+  state.expandedSessionGroups = new Set(groups.map(group => group.key));
+  saveExpandedSessionGroups();
+}
+
+function saveExpandedSessionGroups() {
+  try {
+    window.localStorage?.setItem(
+      SESSION_GROUP_STORAGE_KEY,
+      JSON.stringify([...state.expandedSessionGroups].sort())
+    );
+  } catch (_) { /* localStorage may be unavailable in private or file contexts */ }
+}
+
+function ensureSessionGroupExpanded(sessionId, persist = true) {
+  const session = state.sessions.find(item => item.id === sessionId);
+  if (!session) return;
+  const key = sessionProjectGroupKey(session);
+  if (state.expandedSessionGroups.has(key)) return;
+  state.expandedSessionGroups.add(key);
+  if (persist) saveExpandedSessionGroups();
+}
+
+function expandAllSessionGroups() {
+  for (const group of groupSessionsByProject(state.sessions)) {
+    state.expandedSessionGroups.add(group.key);
+  }
+  saveExpandedSessionGroups();
+  renderSessionsRail();
+}
+
+function collapseAllSessionGroups() {
+  state.expandedSessionGroups.clear();
+  ensureSessionGroupExpanded(state.activeSessionId, false);
+  saveExpandedSessionGroups();
+  renderSessionsRail();
+}
+
+async function selectSession(sessionId, options = {}) {
+  const { renderRail = true } = options;
   state.activeSessionId = sessionId;
+  ensureSessionGroupExpanded(sessionId);
   const session = state.sessions.find(s => s.id === sessionId);
   if (session) {
     els.spineTitle.textContent = session.title;
@@ -228,6 +349,7 @@ async function selectSession(sessionId) {
     setSummaryExportState(session);
   }
   els.summarizeButton.disabled = false;
+  if (renderRail) renderSessionsRail();
   els.sessions.querySelectorAll(".channel").forEach(row =>
     row.classList.toggle("active", row.dataset.id === sessionId));
   els.sessions.querySelectorAll(".channel-row").forEach(row =>
@@ -723,6 +845,18 @@ els.askResults.addEventListener("click", async event => {
 });
 
 els.sessions.addEventListener("click", event => {
+  const toggle = event.target.closest(".session-group-toggle[data-project-key]");
+  if (toggle) {
+    const key = toggle.dataset.projectKey;
+    if (state.expandedSessionGroups.has(key)) {
+      state.expandedSessionGroups.delete(key);
+    } else {
+      state.expandedSessionGroups.add(key);
+    }
+    saveExpandedSessionGroups();
+    renderSessionsRail();
+    return;
+  }
   const copy = event.target.closest(".copy-button[data-session-id]");
   if (copy) {
     event.preventDefault();
@@ -737,6 +871,9 @@ els.sessions.addEventListener("click", event => {
     activateTab("spine");
   }
 });
+
+els.expandAllSessionsButton.addEventListener("click", expandAllSessionGroups);
+els.collapseAllSessionsButton.addEventListener("click", collapseAllSessionGroups);
 
 els.sessionIdentity.addEventListener("click", event => {
   const button = event.target.closest(".id-chip[data-copy-value]");
