@@ -83,6 +83,7 @@ Configuration is environment variables; defaults live in `src/main/resources/app
 | `SBA_ELASTICSEARCH_ENABLED` | `false` | Enables optional Elasticsearch indexing/search |
 | `SBA_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch base URL |
 | `SBA_ELASTICSEARCH_INDEX` | `sba-agentic-events` | Elasticsearch index name |
+| `SBA_ELASTICSEARCH_REPLICAS` | `0` | Replica count for newly created Elasticsearch indices; keep `0` for the shipped single-node local Compose setup |
 
 The hook bridge also reads:
 
@@ -263,6 +264,8 @@ Elasticsearch is a secondary index, not the source of truth. When enabled, new e
 docker compose -f compose.elasticsearch.yml up -d
 SBA_ELASTICSEARCH_ENABLED=true mvn spring-boot:run
 ```
+
+The local Compose topology is single-node, so Black Box creates new Elasticsearch indices with `SBA_ELASTICSEARCH_REPLICAS=0` by default. A multi-node Elasticsearch deployment can override that value.
 
 Kibana is available as an optional Compose profile for inspecting the local index:
 

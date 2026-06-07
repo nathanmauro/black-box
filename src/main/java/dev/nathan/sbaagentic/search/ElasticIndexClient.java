@@ -260,7 +260,10 @@ public class ElasticIndexClient implements EventIndexSink {
             // Create below. If another process wins the race, indexing will retry on the next event.
         }
 
-        Map<String, Object> mapping = Map.of(
+        Map<String, Object> indexDefinition = Map.of(
+                "settings", Map.of(
+                        "number_of_shards", 1,
+                        "number_of_replicas", properties.getNumberOfReplicas()),
                 "mappings", Map.of(
                         "properties", Map.of(
                                 "sessionId", Map.of("type", "keyword"),
@@ -276,7 +279,7 @@ public class ElasticIndexClient implements EventIndexSink {
         restClient.put()
                 .uri("/{index}", properties.getIndexName())
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(mapping)
+                .body(indexDefinition)
                 .retrieve()
                 .toBodilessEntity();
         indexReady.set(true);

@@ -82,6 +82,7 @@ sba:
     enabled: ${SBA_ELASTICSEARCH_ENABLED:false}
     base-url: ${SBA_ELASTICSEARCH_URL:http://localhost:9200}
     index-name: ${SBA_ELASTICSEARCH_INDEX:sba-agentic-events}
+    number-of-replicas: ${SBA_ELASTICSEARCH_REPLICAS:0}
     timeout: 5s
   ask:
     memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
