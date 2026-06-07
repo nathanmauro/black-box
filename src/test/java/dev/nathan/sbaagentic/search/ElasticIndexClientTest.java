@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -12,12 +13,52 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.event.AgentEvent;
+import dev.nathan.sbaagentic.session.AgentSession;
 
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ElasticIndexClientTest {
+
+    @Test
+    void indexCreationUsesZeroReplicasForLocalSingleNodeDefault() throws Exception {
+        AtomicReference<String> createBody = new AtomicReference<>();
+        AtomicReference<String> documentBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/sba-agentic-events", exchange -> {
+            if ("HEAD".equals(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(404, -1);
+                return;
+            }
+            if ("PUT".equals(exchange.getRequestMethod())) {
+                createBody.set(readBody(exchange));
+                respondJson(exchange, "{\"acknowledged\":true}");
+                return;
+            }
+            exchange.sendResponseHeaders(405, -1);
+        });
+        server.createContext("/sba-agentic-events/_doc/event-1", exchange -> {
+            documentBody.set(readBody(exchange));
+            respondJson(exchange, "{\"result\":\"created\"}");
+        });
+        server.start();
+        try {
+            ElasticIndexClient client = client(server, true);
+
+            boolean indexed = client.index(session(), event());
+
+            assertThat(indexed).isTrue();
+            assertThat(createBody.get())
+                    .contains("\"settings\"")
+                    .contains("\"number_of_replicas\":0");
+            assertThat(documentBody.get()).contains("\"text\":\"elastic smoke test note\"");
+        }
+        finally {
+            server.stop(0);
+        }
+    }
 
     @Test
     void searchUsesFuzzyRelevanceQuery() throws Exception {
@@ -224,6 +265,41 @@ class ElasticIndexClientTest {
                 .filter(cap -> name.equals(cap.get("name")))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("no field cap named " + name));
+    }
+
+    private static AgentSession session() {
+        Instant observedAt = Instant.parse("2026-06-07T19:00:00Z");
+        return new AgentSession(
+                "session-1",
+                "manual",
+                "client-session-1",
+                "Elastic smoke",
+                "/tmp/sba-agentic",
+                null,
+                observedAt,
+                observedAt,
+                1);
+    }
+
+    private static AgentEvent event() {
+        return new AgentEvent(
+                "event-1",
+                "session-1",
+                "manual",
+                "client-session-1",
+                "turn-1",
+                "ManualCapture",
+                "user",
+                "elastic smoke test note",
+                null,
+                null,
+                null,
+                Map.of("title", "Elastic smoke"),
+                Instant.parse("2026-06-07T19:00:00Z"));
+    }
+
+    private static String readBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     }
 
     private static void respondJson(HttpExchange exchange, String body) throws IOException {

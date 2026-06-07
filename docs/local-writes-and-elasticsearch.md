@@ -40,6 +40,7 @@ The service uses:
 - single-node discovery
 - disabled local security, because the current app client uses unauthenticated HTTP
 - a named Docker volume, `sba-agentic-elasticsearch`, for index persistence
+- new Black Box indices default to `number_of_replicas: 0`, because the local Compose topology is single-node
 
 Start Elasticsearch:
 
@@ -51,6 +52,15 @@ Check Elasticsearch:
 
 ```bash
 curl -fsS http://localhost:9200 | jq
+```
+
+If Kibana shows `sba-agentic-events` as yellow with one unassigned replica on this single-node cluster, repair the existing index setting:
+
+```bash
+curl -fsS -X PUT \
+  -H 'Content-Type: application/json' \
+  http://localhost:9200/sba-agentic-events/_settings \
+  --data '{"index":{"number_of_replicas":0}}' | jq
 ```
 
 Start Kibana without changing the live app:
