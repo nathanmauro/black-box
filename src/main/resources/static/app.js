@@ -1,22 +1,21 @@
-// Black Box — instrument logic. Reads the local recorder over /api/*, draws the session trace,
+// Black Box — instrument logic. Reads the local recorder over /api/*, draws the Cognition Spine,
 // and fires the recall beam. No framework, no build step. The screen is an instrument, not a page.
 
 const state = {
   sessions: [],
   exportTargets: [],
-  activeTab: "search",
+  activeTab: "spine",
   activeSessionId: null,
   activeEvents: [],
   activeToolFilter: "all",
   spineEventIds: new Set(),
-  recallResult: null,
-  recallGraph: {
-    nodes: [],
-    edges: [],
-    viewBox: [0, 0, 1100, 620],
-    baseViewBox: [0, 0, 1100, 620],
-  },
+  expandedSessionGroups: new Set(),
+  sessionGroupStateLoaded: false,
 };
+
+const SESSION_GROUP_STORAGE_KEY = "blackbox.sessions.expandedGroups.v1";
+const NO_PROJECT_GROUP_KEY = "__no_project__";
+const NO_PROJECT_GROUP_LABEL = "No project / manual / system";
 
 const els = {
   readouts: document.querySelector("#readouts"),
@@ -25,6 +24,8 @@ const els = {
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#sessionCount"),
   refreshButton: document.querySelector("#refreshButton"),
+  expandAllSessionsButton: document.querySelector("#expandAllSessionsButton"),
+  collapseAllSessionsButton: document.querySelector("#collapseAllSessionsButton"),
   captureForm: document.querySelector("#captureForm"),
   askForm: document.querySelector("#askForm"),
   askMeta: document.querySelector("#askMeta"),
@@ -38,13 +39,9 @@ const els = {
   recallForm: document.querySelector("#recallForm"),
   recallMeta: document.querySelector("#recallMeta"),
   recallStage: document.querySelector("#recallStage"),
-  memoryCards: document.querySelector("#memoryCards"),
-  recallGraphArea: document.querySelector("#recallGraphArea"),
-  recallGraphSvg: document.querySelector("#recallGraphSvg"),
-  recallDetailPanel: document.querySelector("#recallDetailPanel"),
+  constellation: document.querySelector("#constellation"),
+  memoryDetail: document.querySelector("#memoryDetail"),
   clearRecallButton: document.querySelector("#clearRecallButton"),
-  fitRecallGraphButton: document.querySelector("#fitRecallGraphButton"),
-  resetRecallGraphButton: document.querySelector("#resetRecallGraphButton"),
   toggleRecallButton: document.querySelector("#toggleRecallButton"),
   spine: document.querySelector("#spine"),
   spineTitle: document.querySelector("#spineTitle"),
@@ -59,8 +56,6 @@ const els = {
   exportSummaryButton: document.querySelector("#exportSummaryButton"),
   summaryExportStatus: document.querySelector("#summaryExportStatus"),
 };
-
-const SVG_NS = "http://www.w3.org/2000/svg";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -122,8 +117,8 @@ function activateTab(tab) {
     panel.classList.toggle("active", active);
     panel.hidden = !active;
   });
-  if (tab === "recall" && !els.recallStage.hidden && state.recallResult) {
-    requestAnimationFrame(() => renderRecallGraph(state.recallResult));
+  if (tab === "recall" && !els.recallStage.hidden) {
+    requestAnimationFrame(() => window.BlackBoxConstellation?.redraw());
   }
 }
 
@@ -205,11 +200,41 @@ async function loadSessions(selectFirst = false) {
     els.spine.innerHTML = `<p class="empty">The recorder is idle. Capture an event to lay down the first trace.</p>`;
     return;
   }
-  els.sessions.innerHTML = state.sessions.map(session => {
-    const src = (session.source || "unknown").toLowerCase();
-    const aiTitled = session.summary ? `<span class="seal">◆ ai</span>` : "";
-    const active = session.id === state.activeSessionId ? "active" : "";
-    return `<div class="channel-row ${active}" data-id="${escapeHtml(session.id)}">
+  const groups = groupSessionsByProject(state.sessions);
+  loadExpandedSessionGroups(groups);
+  const shouldSelect = selectFirst || !state.activeSessionId || !state.sessions.some(s => s.id === state.activeSessionId);
+  const selectedSessionId = shouldSelect ? state.sessions[0].id : state.activeSessionId;
+  ensureSessionGroupExpanded(selectedSessionId, false);
+  renderSessionsRail(groups);
+  if (shouldSelect) {
+    await selectSession(selectedSessionId, { renderRail: false });
+    renderSessionsRail();
+  }
+}
+
+function renderSessionsRail(groups = groupSessionsByProject(state.sessions)) {
+  els.sessions.innerHTML = groups.map(renderSessionGroup).join("");
+}
+
+function renderSessionGroup(group) {
+  const expanded = state.expandedSessionGroups.has(group.key);
+  const active = group.sessions.some(session => session.id === state.activeSessionId) ? "active" : "";
+  const rows = group.sessions.map(renderSessionRow).join("");
+  return `<section class="session-group ${active}" data-project-key="${escapeHtml(group.key)}">
+    <button type="button" class="session-group-toggle" data-project-key="${escapeHtml(group.key)}" aria-expanded="${String(expanded)}">
+      <span class="session-group-caret">${expanded ? "▾" : "▸"}</span>
+      <span class="session-group-title">${escapeHtml(group.label)}</span>
+      <span class="session-group-count">${num(group.sessions.length)}</span>
+    </button>
+    <div class="session-group-sessions" ${expanded ? "" : "hidden"}>${rows}</div>
+  </section>`;
+}
+
+function renderSessionRow(session) {
+  const src = (session.source || "unknown").toLowerCase();
+  const aiTitled = session.summary ? `<span class="seal">◆ ai</span>` : "";
+  const active = session.id === state.activeSessionId ? "active" : "";
+  return `<div class="channel-row ${active}" data-id="${escapeHtml(session.id)}">
       <button class="channel ${active}" data-id="${escapeHtml(session.id)}">
         <span class="channel-title">${escapeHtml(session.title)} ${aiTitled}</span>
         <span class="channel-meta">
@@ -221,14 +246,97 @@ async function loadSessions(selectFirst = false) {
       </button>
       <button class="copy-button" data-session-id="${escapeHtml(session.id)}" title="Copy session IDs" aria-label="Copy session IDs">⧉</button>
     </div>`;
-  }).join("");
-  if (selectFirst || !state.activeSessionId || !state.sessions.some(s => s.id === state.activeSessionId)) {
-    await selectSession(state.sessions[0].id);
-  }
 }
 
-async function selectSession(sessionId) {
+function groupSessionsByProject(sessions) {
+  const groupsByKey = new Map();
+  for (const session of sessions) {
+    const key = sessionProjectGroupKey(session);
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, {
+        key,
+        label: key === NO_PROJECT_GROUP_KEY ? NO_PROJECT_GROUP_LABEL : key,
+        noProject: key === NO_PROJECT_GROUP_KEY,
+        sessions: [],
+      });
+    }
+    groupsByKey.get(key).sessions.push(session);
+  }
+  const groups = [...groupsByKey.values()];
+  return [
+    ...groups.filter(group => !group.noProject),
+    ...groups.filter(group => group.noProject),
+  ];
+}
+
+function sessionProjectGroupKey(session) {
+  return formatProjectPath(session?.cwd) || NO_PROJECT_GROUP_KEY;
+}
+
+function formatProjectPath(path) {
+  const value = String(path || "").trim();
+  if (!value) return "";
+  if (value === "/Users/nathan") return "~";
+  if (value.startsWith("/Users/nathan/")) return `~/${value.slice("/Users/nathan/".length)}`;
+  return value;
+}
+
+function loadExpandedSessionGroups(groups) {
+  if (state.sessionGroupStateLoaded) return;
+  state.sessionGroupStateLoaded = true;
+  try {
+    const raw = window.localStorage?.getItem(SESSION_GROUP_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        state.expandedSessionGroups = new Set(parsed.filter(item => typeof item === "string"));
+        return;
+      }
+    }
+  } catch (_) {
+    state.expandedSessionGroups = new Set();
+  }
+  state.expandedSessionGroups = new Set(groups.map(group => group.key));
+  saveExpandedSessionGroups();
+}
+
+function saveExpandedSessionGroups() {
+  try {
+    window.localStorage?.setItem(
+      SESSION_GROUP_STORAGE_KEY,
+      JSON.stringify([...state.expandedSessionGroups].sort())
+    );
+  } catch (_) { /* localStorage may be unavailable in private or file contexts */ }
+}
+
+function ensureSessionGroupExpanded(sessionId, persist = true) {
+  const session = state.sessions.find(item => item.id === sessionId);
+  if (!session) return;
+  const key = sessionProjectGroupKey(session);
+  if (state.expandedSessionGroups.has(key)) return;
+  state.expandedSessionGroups.add(key);
+  if (persist) saveExpandedSessionGroups();
+}
+
+function expandAllSessionGroups() {
+  for (const group of groupSessionsByProject(state.sessions)) {
+    state.expandedSessionGroups.add(group.key);
+  }
+  saveExpandedSessionGroups();
+  renderSessionsRail();
+}
+
+function collapseAllSessionGroups() {
+  state.expandedSessionGroups.clear();
+  ensureSessionGroupExpanded(state.activeSessionId, false);
+  saveExpandedSessionGroups();
+  renderSessionsRail();
+}
+
+async function selectSession(sessionId, options = {}) {
+  const { renderRail = true } = options;
   state.activeSessionId = sessionId;
+  ensureSessionGroupExpanded(sessionId);
   const session = state.sessions.find(s => s.id === sessionId);
   if (session) {
     els.spineTitle.textContent = session.title;
@@ -241,6 +349,7 @@ async function selectSession(sessionId) {
     setSummaryExportState(session);
   }
   els.summarizeButton.disabled = false;
+  if (renderRail) renderSessionsRail();
   els.sessions.querySelectorAll(".channel").forEach(row =>
     row.classList.toggle("active", row.dataset.id === sessionId));
   els.sessions.querySelectorAll(".channel-row").forEach(row =>
@@ -486,8 +595,8 @@ function sanitizeHighlight(value) {
 async function doAsk(question, mode) {
   const limit = askLimit();
   els.askResults.classList.remove("degraded");
-  els.askResults.innerHTML = `<p class="empty">Reading memory…</p>`;
-  els.askMeta.textContent = mode === "retrieve" ? "retrieving…" : "asking…";
+  els.askResults.innerHTML = `<p class="empty">Reading memory...</p>`;
+  els.askMeta.textContent = mode === "retrieve" ? "retrieving..." : "asking...";
 
   if (mode === "retrieve") {
     const result = await api(`/api/ask/retrieve?q=${encodeURIComponent(question)}&limit=${encodeURIComponent(limit)}`);
@@ -587,20 +696,26 @@ async function doRecall(scope, withinHours) {
   params.set("withinHours", String(withinHours));
   params.set("kinds", "decision,handoff");
   const result = await api(`/api/recall?${params.toString()}`);
-  state.recallResult = result;
 
   els.recallStage.hidden = false;
-  const scopeLabel = result.scope ? `“${result.scope}”` : "all repos";
-  els.recallMeta.textContent = `${result.count} recalled · ${scopeLabel}`;
+  window.BlackBoxConstellation?.destroy();
+  els.constellation.innerHTML = "";
+  els.memoryDetail.innerHTML = "";
+  const scopeLabel = result.scope || "all repos";
+  const metaScopeLabel = result.scope ? `“${result.scope}”` : "all repos";
+  els.recallMeta.textContent = `${result.count} recalled · ${metaScopeLabel}`;
 
   if (!result.items.length) {
-    clearRecallGraph();
-    els.memoryCards.innerHTML = `<p class="recall-empty">No prior intent committed for ${escapeHtml(scopeLabel)} yet — capture a decision, then recall it back.</p>`;
+    els.memoryDetail.innerHTML = `<p class="recall-empty">No prior intent committed for ${escapeHtml(metaScopeLabel)} yet — capture a decision, then recall it back.</p>`;
     return;
   }
-  els.memoryCards.innerHTML = result.items.map((item, i) => renderMemory(item, i)).join("");
-  wireMemoryCards();
-  renderRecallGraph(result);
+  window.BlackBoxConstellation.render(els.constellation, result.items, {
+    scopeLabel,
+    spineEventIds: state.spineEventIds,
+    locateOnSpine,
+    onSelect: renderRecallDetail,
+  });
+  renderRecallDetail(result.items[0]);
 }
 
 function renderMemory(item, i) {
@@ -642,9 +757,14 @@ function renderMemory(item, i) {
   </article>`;
 }
 
+function renderRecallDetail(item) {
+  els.memoryDetail.innerHTML = renderMemory(item, 0);
+  wireMemoryCards(els.memoryDetail);
+}
+
 // Click a recalled memory to find it on the active Spine — the coordination edge, made tangible.
-function wireMemoryCards() {
-  els.memoryCards.querySelectorAll(".mem").forEach(card => {
+function wireMemoryCards(root) {
+  root.querySelectorAll(".mem").forEach(card => {
     const id = card.dataset.eventId;
     if (state.spineEventIds.has(id)) {
       card.style.cursor = "pointer";
@@ -666,204 +786,6 @@ function locateOnSpine(eventId) {
     ],
     { duration: 1100, easing: "ease-out" }
   );
-}
-
-function renderRecallGraph(result) {
-  const graph = buildRecallGraph(result);
-  state.recallGraph = graph;
-  setRecallViewBox(graph.baseViewBox);
-  drawRecallGraph();
-  renderRecallDetail(graph.nodes.find(node => node.type === "scope"));
-}
-
-function clearRecallGraph() {
-  state.recallGraph = {
-    nodes: [],
-    edges: [],
-    viewBox: [0, 0, 1100, 620],
-    baseViewBox: [0, 0, 1100, 620],
-  };
-  els.recallGraphSvg.innerHTML = "";
-  els.recallDetailPanel.innerHTML = "";
-}
-
-function buildRecallGraph(result) {
-  const items = result.items || [];
-  const width = 1180;
-  const height = Math.max(620, 260 + items.length * 46);
-  const scopeId = "scope";
-  const scopeLabel = result.scope || "All memory";
-  const nodes = [{
-    id: scopeId,
-    type: "scope",
-    label: scopeLabel,
-    x: width / 2,
-    y: 78,
-    count: items.length,
-  }];
-  const edges = [];
-  const clusters = new Map();
-  for (const item of items) {
-    const key = clusterKey(item);
-    if (!clusters.has(key)) {
-      clusters.set(key, { key, label: clusterLabel(item), items: [] });
-    }
-    clusters.get(key).items.push(item);
-  }
-
-  const clusterList = [...clusters.values()];
-  const clusterRadiusX = Math.min(430, width / 3);
-  const clusterRadiusY = Math.max(165, Math.min(260, height / 3));
-  clusterList.forEach((cluster, index) => {
-    const angle = clusterList.length === 1 ? Math.PI / 2 : (Math.PI * 2 * index / clusterList.length) + Math.PI / 8;
-    const clusterNode = {
-      id: `cluster:${cluster.key}`,
-      type: "cluster",
-      label: cluster.label,
-      x: width / 2 + Math.cos(angle) * clusterRadiusX,
-      y: 285 + Math.sin(angle) * clusterRadiusY,
-      count: cluster.items.length,
-    };
-    nodes.push(clusterNode);
-    edges.push({ from: scopeId, to: clusterNode.id });
-    cluster.items.forEach((item, itemIndex) => {
-      const itemAngle = cluster.items.length === 1
-        ? angle
-        : (Math.PI * 2 * itemIndex / cluster.items.length) + angle;
-      const itemNode = {
-        id: `item:${item.eventId}`,
-        type: "item",
-        item,
-        label: item.headline || item.kind || "memory",
-        x: clusterNode.x + Math.cos(itemAngle) * 138,
-        y: clusterNode.y + Math.sin(itemAngle) * 94,
-        kind: item.kind,
-      };
-      nodes.push(itemNode);
-      edges.push({ from: clusterNode.id, to: itemNode.id });
-    });
-  });
-
-  return {
-    nodes,
-    edges,
-    viewBox: [0, 0, width, height],
-    baseViewBox: [0, 0, width, height],
-  };
-}
-
-function clusterKey(item) {
-  return [
-    item.kind || "memory",
-    item.source || "unknown",
-    item.repo || "global",
-  ].join(":");
-}
-
-function clusterLabel(item) {
-  const kind = item.kind || "memory";
-  const source = item.source || "unknown";
-  const repo = item.repo ? item.repo.split("/").filter(Boolean).pop() : "global";
-  return `${kind} · ${source} · ${repo}`;
-}
-
-function drawRecallGraph() {
-  const graph = state.recallGraph;
-  els.recallGraphSvg.innerHTML = "";
-  els.recallGraphSvg.setAttribute("viewBox", graph.viewBox.join(" "));
-  const byId = new Map(graph.nodes.map(node => [node.id, node]));
-
-  for (const edge of graph.edges) {
-    const from = byId.get(edge.from);
-    const to = byId.get(edge.to);
-    if (!from || !to) continue;
-    const line = document.createElementNS(SVG_NS, "line");
-    line.setAttribute("x1", from.x);
-    line.setAttribute("y1", from.y);
-    line.setAttribute("x2", to.x);
-    line.setAttribute("y2", to.y);
-    line.classList.add("recall-edge", `edge-from-${cssToken(from.type)}`, `edge-to-${cssToken(to.type)}`);
-    els.recallGraphSvg.appendChild(line);
-  }
-
-  for (const node of graph.nodes) {
-    const group = document.createElementNS(SVG_NS, "g");
-    group.classList.add("recall-node", `recall-node--${cssToken(node.type)}`);
-    group.dataset.nodeId = node.id;
-    group.setAttribute("transform", `translate(${node.x} ${node.y})`);
-    group.setAttribute("tabindex", "0");
-    group.setAttribute("role", "button");
-
-    const circle = document.createElementNS(SVG_NS, "circle");
-    circle.setAttribute("r", nodeRadius(node));
-    group.appendChild(circle);
-
-    const label = document.createElementNS(SVG_NS, "text");
-    label.setAttribute("y", node.type === "item" ? 34 : 46);
-    label.setAttribute("text-anchor", "middle");
-    label.textContent = clamp(node.label, node.type === "item" ? 32 : 44);
-    group.appendChild(label);
-
-    if (node.count) {
-      const count = document.createElementNS(SVG_NS, "text");
-      count.setAttribute("class", "recall-node-count");
-      count.setAttribute("y", 5);
-      count.setAttribute("text-anchor", "middle");
-      count.textContent = String(node.count);
-      group.appendChild(count);
-    }
-
-    els.recallGraphSvg.appendChild(group);
-  }
-}
-
-function nodeRadius(node) {
-  if (node.type === "scope") return 42;
-  if (node.type === "cluster") return 32;
-  return 18;
-}
-
-function cssToken(value) {
-  return String(value || "unknown").replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
-}
-
-function renderRecallDetail(node) {
-  if (!node) {
-    els.recallDetailPanel.innerHTML = "";
-    return;
-  }
-  if (node.type === "item") {
-    els.recallDetailPanel.innerHTML = renderMemoryDetail(node.item);
-    return;
-  }
-  els.recallDetailPanel.innerHTML = `<div class="recall-detail-kind">${escapeHtml(node.type)}</div>
-    <div class="recall-detail-title">${escapeHtml(node.label)}</div>
-    <div class="recall-detail-meta">${escapeHtml(node.count || 0)} linked memories</div>`;
-}
-
-function renderMemoryDetail(item) {
-  return `<div class="recall-detail-kind">${escapeHtml(item.kind || "memory")}</div>
-    <div class="recall-detail-title">${escapeHtml(item.headline || "(untitled)")}</div>
-    <div class="recall-detail-meta">${escapeHtml(item.repo || "")} · ${escapeHtml(relativeTime(item.observedAt))}</div>
-    ${item.rationale ? `<div class="recall-detail-body">${escapeHtml(item.rationale)}</div>` : ""}
-    ${item.nextAction ? `<div class="recall-detail-body"><b>next</b> ${escapeHtml(item.nextAction)}</div>` : ""}`;
-}
-
-function setRecallViewBox(viewBox) {
-  state.recallGraph.viewBox = [...viewBox];
-  els.recallGraphSvg.setAttribute("viewBox", state.recallGraph.viewBox.join(" "));
-}
-
-function zoomRecallGraph(scale) {
-  const [x, y, w, h] = state.recallGraph.viewBox;
-  const nextW = w * scale;
-  const nextH = h * scale;
-  setRecallViewBox([
-    x + (w - nextW) / 2,
-    y + (h - nextH) / 2,
-    nextW,
-    nextH,
-  ]);
 }
 
 // ----------------------------------------------------------------- actions
@@ -923,6 +845,18 @@ els.askResults.addEventListener("click", async event => {
 });
 
 els.sessions.addEventListener("click", event => {
+  const toggle = event.target.closest(".session-group-toggle[data-project-key]");
+  if (toggle) {
+    const key = toggle.dataset.projectKey;
+    if (state.expandedSessionGroups.has(key)) {
+      state.expandedSessionGroups.delete(key);
+    } else {
+      state.expandedSessionGroups.add(key);
+    }
+    saveExpandedSessionGroups();
+    renderSessionsRail();
+    return;
+  }
   const copy = event.target.closest(".copy-button[data-session-id]");
   if (copy) {
     event.preventDefault();
@@ -937,6 +871,9 @@ els.sessions.addEventListener("click", event => {
     activateTab("spine");
   }
 });
+
+els.expandAllSessionsButton.addEventListener("click", expandAllSessionGroups);
+els.collapseAllSessionsButton.addEventListener("click", collapseAllSessionGroups);
 
 els.sessionIdentity.addEventListener("click", event => {
   const button = event.target.closest(".id-chip[data-copy-value]");
@@ -960,18 +897,6 @@ els.recallForm.addEventListener("submit", async event => {
 
 els.clearRecallButton.addEventListener("click", clearRecall);
 
-els.fitRecallGraphButton.addEventListener("click", () => {
-  setRecallViewBox(state.recallGraph.baseViewBox);
-});
-
-els.resetRecallGraphButton.addEventListener("click", () => {
-  if (state.recallResult) {
-    renderRecallGraph(state.recallResult);
-  } else {
-    clearRecallGraph();
-  }
-});
-
 els.toggleRecallButton.addEventListener("click", () => {
   const collapsed = !els.recallPanel.classList.contains("collapsed");
   els.recallPanel.classList.toggle("collapsed", collapsed);
@@ -986,9 +911,9 @@ function clearRecall() {
   els.recallForm.reset();
   els.recallMeta.textContent = "";
   els.recallStage.hidden = true;
-  els.memoryCards.innerHTML = "";
-  clearRecallGraph();
-  state.recallResult = null;
+  window.BlackBoxConstellation?.destroy();
+  els.constellation.innerHTML = "";
+  els.memoryDetail.innerHTML = "";
 }
 
 els.captureForm.addEventListener("submit", async event => {
@@ -1021,10 +946,15 @@ els.captureForm.addEventListener("submit", async event => {
 
 els.searchForm.addEventListener("submit", async event => {
   event.preventDefault();
-  await runSearchFromForm(event.currentTarget);
+  const query = (new FormData(event.currentTarget).get("query") || "").trim();
+  if (!query) return;
+  try {
+    const results = await api(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
+    renderSearch(results);
+  } catch (err) {
+    els.searchResults.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
+  }
 });
-
-bindCommandEnterSearch(els.searchForm.elements.query);
 
 els.copySessionButton.addEventListener("click", () => {
   const session = state.sessions.find(item => item.id === state.activeSessionId);
@@ -1185,28 +1115,6 @@ async function openSearchResult(row) {
   requestAnimationFrame(() => locateOnSpine(row.dataset.eventId));
 }
 
-function bindCommandEnterSearch(input) {
-  if (!input) return;
-  input.addEventListener("keydown", event => {
-    if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
-    event.preventDefault();
-    els.searchForm.requestSubmit();
-  });
-}
-
-async function runSearchFromForm(form) {
-  const query = (new FormData(form).get("query") || "").trim();
-  if (!query) return;
-  els.searchMeta.textContent = "searching…";
-  try {
-    const results = await api(`/api/search?q=${encodeURIComponent(query)}&limit=20`);
-    renderSearch(results);
-  } catch (err) {
-    els.searchMeta.textContent = "search failed";
-    els.searchResults.innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
-  }
-}
-
 els.summarizeButton.addEventListener("click", async () => {
   if (!state.activeSessionId) return;
   const button = els.summarizeButton;
@@ -1255,63 +1163,53 @@ els.exportSummaryButton.addEventListener("click", async () => {
   }
 });
 
-els.recallGraphSvg.addEventListener("click", event => {
-  const nodeEl = event.target.closest(".recall-node[data-node-id]");
-  if (!nodeEl) return;
-  const node = state.recallGraph.nodes.find(item => item.id === nodeEl.dataset.nodeId);
-  renderRecallDetail(node);
-  els.recallGraphSvg.querySelectorAll(".recall-node").forEach(item =>
-    item.classList.toggle("selected", item.dataset.nodeId === nodeEl.dataset.nodeId));
-  if (node?.type === "item" && node.item?.eventId) {
-    const card = els.memoryCards.querySelector(`.mem[data-event-id="${CSS.escape(node.item.eventId)}"]`);
-    if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }
-});
-
-els.recallGraphSvg.addEventListener("keydown", event => {
-  if (event.key !== "Enter") return;
-  const nodeEl = event.target.closest(".recall-node[data-node-id]");
-  if (nodeEl) nodeEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-});
-
-els.recallGraphSvg.addEventListener("wheel", event => {
-  if (!state.recallGraph.nodes.length) return;
-  event.preventDefault();
-  zoomRecallGraph(event.deltaY < 0 ? 0.86 : 1.16);
-}, { passive: false });
-
-let recallDrag = null;
-els.recallGraphSvg.addEventListener("pointerdown", event => {
-  if (!state.recallGraph.nodes.length || event.target.closest(".recall-node")) return;
-  recallDrag = {
-    x: event.clientX,
-    y: event.clientY,
-    viewBox: [...state.recallGraph.viewBox],
-  };
-  els.recallGraphSvg.setPointerCapture(event.pointerId);
-});
-
-els.recallGraphSvg.addEventListener("pointermove", event => {
-  if (!recallDrag) return;
-  const rect = els.recallGraphSvg.getBoundingClientRect();
-  const [, , w, h] = recallDrag.viewBox;
-  const dx = (event.clientX - recallDrag.x) / rect.width * w;
-  const dy = (event.clientY - recallDrag.y) / rect.height * h;
-  setRecallViewBox([
-    recallDrag.viewBox[0] - dx,
-    recallDrag.viewBox[1] - dy,
-    recallDrag.viewBox[2],
-    recallDrag.viewBox[3],
-  ]);
-});
-
-els.recallGraphSvg.addEventListener("pointerup", () => {
-  recallDrag = null;
-});
-
 window.addEventListener("resize", () => {
-  if (!els.recallStage.hidden && state.recallResult) renderRecallGraph(state.recallResult);
+  if (!els.recallStage.hidden) window.BlackBoxConstellation?.redraw();
 });
+
+// ----------------------------------------------------------------- query bar (P3)
+// Enhances the existing search input with KQL-lite token highlighting + autocomplete.
+// Purely additive: the input keeps name="query"; the submit path below (els.searchForm
+// submit handler) is the ONLY submit path and is left untouched. The query bar attaches
+// input/keyup/focus listeners on its own dispatch channel and never preventDefaults the
+// submit, so plain free-text search behaves identically (n=1-9,19-24).
+
+// Resolve value suggestions over /api/search/values for a (field, prefix). Honours an
+// AbortSignal so a superseded request is cancelled; degrades to [] on any failure so a
+// suggestion miss never surfaces in the submit handler's error path.
+function fetchSearchValues(field, prefix, signal) {
+  if (typeof window.fetch !== "function") return Promise.resolve([]);
+  const url =
+    `/api/search/values?field=${encodeURIComponent(field)}` +
+    `&prefix=${encodeURIComponent(prefix || "")}&limit=20`;
+  return window
+    .fetch(url, { headers: { Accept: "application/json" }, signal })
+    .then(response => (response.ok ? response.json() : []))
+    .then(values => (Array.isArray(values) ? values : []))
+    .catch(() => []);
+}
+
+// Load the field catalogue once at init and hand it to the query bar so the bar does not
+// have to lazy-fetch it itself. Failures degrade to [] — the bar falls back to its own
+// lazy /api/search/fields fetch, so autocomplete still works.
+function attachQueryBar(fields) {
+  if (!window.BlackBoxQueryBar || !document.querySelector("#queryInput")) return;
+  // attach(form, options): the named input + .qb-overlay sibling resolve from els.searchForm;
+  // `pop` wires the cursor-context suggestion layer, which consumes fetchValues. Returns null
+  // if the input/overlay are missing — we discard the return (no destroy needed at page scope).
+  window.BlackBoxQueryBar.attach(els.searchForm, {
+    fields,
+    fetchValues: fetchSearchValues,
+    pop: document.querySelector("#qbPop"),
+  });
+}
+
+if (window.BlackBoxQueryBar && document.querySelector("#queryInput")) {
+  fetch("/api/search/fields", { headers: { Accept: "application/json" } })
+    .then(response => (response.ok ? response.json() : []))
+    .catch(() => [])
+    .then(fields => attachQueryBar(Array.isArray(fields) ? fields : []));
+}
 
 // ----------------------------------------------------------------- boot
 Promise.all([loadStatus(), loadAskStatus(), loadExportTargets()])

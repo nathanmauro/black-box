@@ -24,6 +24,14 @@ spring:
           mcp-endpoint: /mcp
   mustache:
     check-template-location: false
+  # Local dev recorder: never serve stale UI assets. no-store forces the browser to refetch
+  # index.html/app.js/graph.js/styles.css each load, so a rebuilt jar shows up on a plain refresh
+  # (no hard-refresh needed) and new JS can never run against a cached old DOM.
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-store: true
 
 server:
   port: ${SBA_PORT:8766}
@@ -53,10 +61,11 @@ sba:
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
   summary:
-    # local = LM Studio/OpenAI-compatible local model. external = run a configured CLI wrapper and
-    # pipe the assembled session transcript to stdin, falling back to local when the command fails.
-    backend: ${SBA_SUMMARY_BACKEND:local}
-    external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:}
+    # Black Box owns session summaries. Default to Codex cloud via the bundled wrapper so Cockpit and
+    # other hooks do not create competing local-model summary paths. Set backend=local explicitly to
+    # use the LM Studio/OpenAI-compatible local model.
+    backend: ${SBA_SUMMARY_BACKEND:external}
+    external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:scripts/summarize-with-codex.sh}
     timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   exports:
     # Export is opt-in through the API/UI. Obsidian is only the shipped example target.
@@ -76,7 +85,7 @@ sba:
     timeout: 5s
   ask:
     memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
-    vector-field: ${SBA_ASK_VECTOR_FIELD:embedding}
+    vector-field: ${SBA_ASK_VECTOR_FIELD:vector}
     embedding-enabled: ${SBA_ASK_EMBEDDING_ENABLED:true}
     embedding-base-url: ${SBA_ASK_EMBEDDING_URL:http://localhost:11434}
     embedding-path: ${SBA_ASK_EMBEDDING_PATH:/api/embeddings}

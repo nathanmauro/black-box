@@ -6,4 +6,5 @@ sba-agentic.db-*
 .idea/
 .claude/
 .firecrawl/
+.jaws/
 *.iml

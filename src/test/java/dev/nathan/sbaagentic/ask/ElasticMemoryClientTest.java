@@ -26,6 +26,9 @@ class ElasticMemoryClientTest {
                 .contains("text^4")
                 .contains("title^3")
                 .contains("source_path^2")
+                .contains("sourcePath^2")
+                .contains("corpus")
+                .contains("project")
                 .contains("\"highlight\"");
     }
 
@@ -44,5 +47,37 @@ class ElasticMemoryClientTest {
                 .contains("\"query_vector\":[0.1,0.2,0.3]")
                 .contains("\"k\":5")
                 .contains("\"num_candidates\"");
+    }
+
+    @Test
+    void defaultsToAskMyHistoryAgentMemoryVectorField() {
+        SbaProperties properties = new SbaProperties();
+
+        assertThat(properties.getAsk().getVectorField()).isEqualTo("vector");
+    }
+
+    @Test
+    void mapsChronicleMetadataFromAskMyHistoryHits() {
+        var response = java.util.Map.of(
+                "hits", java.util.Map.of(
+                        "hits", java.util.List.of(java.util.Map.of(
+                                "_id", "chronicle-1",
+                                "_score", 9.5,
+                                "_source", java.util.Map.of(
+                                        "corpus", "chronicle",
+                                        "project", "chronicle",
+                                        "sourcePath", "/Users/nathan/.codex/memories/extensions/chronicle/resources/summary.md",
+                                        "ts", "2026-06-06T04:51:00.000Z",
+                                        "title", "Memory summary",
+                                        "text", "Chronicle memory text")))));
+
+        var hits = ElasticMemoryClient.mapHits(response);
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.getFirst().source()).isEqualTo("chronicle");
+        assertThat(hits.getFirst().sourcePath()).endsWith("summary.md");
+        assertThat(hits.getFirst().timestamp()).isEqualTo("2026-06-06T04:51:00.000Z");
+        assertThat(hits.getFirst().title()).isEqualTo("Memory summary");
+        assertThat(hits.getFirst().text()).isEqualTo("Chronicle memory text");
     }
 }

@@ -125,8 +125,8 @@ public class SbaProperties {
     }
 
     public static class Summary {
-        private String backend = "local";
-        private String externalCommand = "";
+        private String backend = "external";
+        private String externalCommand = "scripts/summarize-with-codex.sh";
         private Duration timeout = Duration.ofMinutes(10);
 
         public String getBackend() {
@@ -292,7 +292,7 @@ public class SbaProperties {
 
     public static class Ask {
         private String memoryIndex = "agent-memory";
-        private String vectorField = "embedding";
+        private String vectorField = "vector";
         private List<String> searchFields = new ArrayList<>(List.of(
                 "text^4",
                 "content^4",
@@ -300,7 +300,10 @@ public class SbaProperties {
                 "title^3",
                 "source_path^2",
                 "path^2",
+                "sourcePath^2",
                 "source",
+                "corpus",
+                "project",
                 "session_id",
                 "sessionId",
                 "client_session_id",

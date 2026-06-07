@@ -18,7 +18,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
 
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:file:agentic-controller-test?mode=memory&cache=shared",
@@ -210,5 +212,83 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.answer").value("Answer not found in memory."))
                 .andExpect(jsonPath("$.citations").isArray())
                 .andExpect(jsonPath("$.citations.length()").value(0));
+    }
+
+    /**
+     * With Elasticsearch off (SBA_ELASTICSEARCH_ENABLED=false, the test default), {@code _field_caps}
+     * is never consulted, so {@code /api/search/fields} must serve the curated fallback list so the
+     * query bar always has fields to autocomplete. Each entry carries
+     * {@code {name,type,searchable,aggregatable}}: the keyword-family fields are aggregatable, the
+     * analyzed {@code text}/{@code title} fields are searchable but not aggregatable.
+     */
+    @Test
+    void searchFieldsReturnsCuratedFallbackWhenElasticsearchOff() throws Exception {
+        mockMvc.perform(get("/api/search/fields"))
+                .andExpect(status().isOk())
+                // Keyword-family fields: searchable + aggregatable (value-enumerable).
+                .andExpect(jsonPath("$[?(@.name == 'source')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'source')].searchable").value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.name == 'source')].aggregatable").value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.name == 'eventType')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'toolName')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'cwd')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'clientSessionId')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'sessionId')].type").value(hasItem("keyword")))
+                .andExpect(jsonPath("$[?(@.name == 'turnId')].type").value(hasItem("keyword")))
+                // Analyzed text fields: searchable but NOT aggregatable (value autocomplete yields none).
+                .andExpect(jsonPath("$[?(@.name == 'title')].type").value(hasItem("text")))
+                .andExpect(jsonPath("$[?(@.name == 'title')].aggregatable").value(hasItem(false)))
+                .andExpect(jsonPath("$[?(@.name == 'text')].type").value(hasItem("text")))
+                .andExpect(jsonPath("$[?(@.name == 'text')].searchable").value(hasItem(true)))
+                .andExpect(jsonPath("$[?(@.name == 'text')].aggregatable").value(hasItem(false)));
+    }
+
+    /**
+     * With Elasticsearch off, {@code /api/search/values} falls back to the SQLite
+     * {@code DISTINCT ... LIKE 'prefix%'} path. Seeding a {@code claude}-sourced event and querying
+     * {@code field=source&prefix=cl} must return the distinct, prefix-matching {@code source} value,
+     * proving the case-insensitive prefix path returns real stored data (not the curated field list).
+     */
+    @Test
+    void searchValuesReturnsDistinctSqliteValuesWhenElasticsearchOff() throws Exception {
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "search-values-session",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "Seed a claude-sourced event so value autocomplete has a prefix match.",
+                                  "observedAt": "2026-05-21T12:10:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/search/values").param("field", "source").param("prefix", "cl"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(hasItem("claude")));
+    }
+
+    /**
+     * An unknown / unwhitelisted field must NOT 500 and must NOT leak SQL: the repository maps the
+     * logical field name through a fixed switch (never interpolating user input as a column), so a
+     * crafted, injection-shaped field resolves to no column and yields an empty list at HTTP 200.
+     */
+    @Test
+    void searchValuesUnknownFieldReturnsEmptyWithoutSqlLeak() throws Exception {
+        mockMvc.perform(get("/api/search/values")
+                        .param("field", "bogus_field")
+                        .param("prefix", "x"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(empty()));
+
+        // SQL-injection-shaped field name: still no 500, still an empty array, no leaked column data.
+        mockMvc.perform(get("/api/search/values")
+                        .param("field", "source); DROP TABLE agent_events;--")
+                        .param("prefix", ""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(empty()))
+                .andExpect(jsonPath("$.length()").value(is(0)));
     }
 }
