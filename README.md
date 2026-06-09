@@ -2,12 +2,12 @@
 
 **A local flight recorder for machine minds.** Your coding agents reason out loud all day — deciding, weighing alternatives, leaving loose ends — and then forget it the moment the session ends. Black Box is the recorder they write that reasoning into, and the one place a *different* agent can fly back into mid-task to recall what was already decided.
 
-`Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first storage` · `Codex summaries`
+`Java 21` · `Spring Boot` · `SQLite` · `MCP` · `local-first storage` · `Codex summaries` · `hybrid ASK`
 
-<!-- Still captured from ./scripts/demo.sh — swap in an animated hero.gif of the live recall when you record one. -->
-![Black Box recalling prior intent: a fresh Claude session fires the amber recall beam and a structured Decision that Codex committed yesterday — its rationale, alternatives, open loops, and 0.80 confidence — comes straight back from the local recorder.](docs/assets/hero.png)
+<!-- Still captured from a synthetic demo database seeded with the ./scripts/demo.sh Acme auth story. -->
+![Black Box recall workspace showing three synthetic Acme auth sessions, live storage gauges, and a recalled Codex handoff with the revoke-on-logout open loop.](docs/assets/hero.png)
 
-> Captured from `./scripts/demo.sh`. Run the demo, then record the recall moment to replace this still with a GIF.
+> Captured from a throwaway demo database seeded with the `./scripts/demo.sh` Acme auth story. Run the demo, then record the recall moment to replace this still with a GIF.
 
 ## The clever bit
 
@@ -39,6 +39,12 @@ Sanity check:
 ```bash
 curl -fsS http://localhost:8766/api/status | jq
 ```
+
+The web surface now has three workspaces:
+
+- **Sessions** — grouped session rail, event spine, search, summaries, and opt-in summary export.
+- **Recall** — structured decision/handoff recall by repo or topic.
+- **ASK** — hybrid retrieval over the `agent-memory` Elasticsearch index, with citations back to source memories.
 
 ## Privacy
 
@@ -84,6 +90,12 @@ Configuration is environment variables; defaults live in `src/main/resources/app
 | `SBA_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch base URL |
 | `SBA_ELASTICSEARCH_INDEX` | `sba-agentic-events` | Elasticsearch index name |
 | `SBA_ELASTICSEARCH_REPLICAS` | `0` | Replica count for newly created Elasticsearch indices; keep `0` for the shipped single-node local Compose setup |
+| `SBA_ASK_MEMORY_INDEX` | `agent-memory` | Elasticsearch index used by the ASK workspace |
+| `SBA_ASK_VECTOR_FIELD` | `vector` | Dense vector field used for ASK vector retrieval |
+| `SBA_ASK_EMBEDDING_ENABLED` | `true` | Enables ASK query embeddings for hybrid retrieval |
+| `SBA_ASK_EMBEDDING_BASE_URL` | `http://localhost:11434` | Ollama-compatible embedding server base URL |
+| `SBA_ASK_EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model used for ASK queries |
+| `SBA_ASK_EMBEDDING_DIMENSIONS` | `768` | Expected vector dimensions for ASK retrieval |
 
 The hook bridge also reads:
 
@@ -181,7 +193,12 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/sessions?limit=40` | Recent sessions |
 | `GET /api/sessions/{id}/events?limit=100` | A session's events (newest first) |
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
+| `GET /api/search/fields` | Search field metadata for the query bar |
+| `GET /api/search/values?field=<field>&prefix=<prefix>&limit=20` | Field value suggestions for the query bar |
 | `GET /api/status` | Storage counts + local AI / Elasticsearch health |
+| `GET /api/ask/status` | ASK dependency status for memory search, embeddings, and answer synthesis |
+| `GET /api/ask/retrieve?q=<question>&limit=10` | Retrieval-only ASK results with citations |
+| `POST /api/ask` | Synthesized answer with citations; body `{ question, limit }` |
 | `POST /api/sessions/{id}/summarize` | Summarizes a session through the configured Black Box summary backend (Codex cloud by default) |
 | `POST /api/sessions/summarize?source=codex&clientSessionId=<id>` | Summarizes the same session by hook/client ids |
 | `POST /api/sessions/summarize-missing?limit=10` | Backfills recent sessions missing summaries, capped per call |
