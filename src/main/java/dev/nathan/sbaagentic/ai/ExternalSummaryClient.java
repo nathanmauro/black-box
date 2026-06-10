@@ -36,6 +36,11 @@ public class ExternalSummaryClient {
             try (var stdin = process.getOutputStream()) {
                 stdin.write((transcript == null ? "" : transcript).getBytes(StandardCharsets.UTF_8));
             }
+            catch (IOException brokenPipe) {
+                // The command may exit or close stdin before the transcript is fully
+                // written (fast failure, or a command that never reads stdin). The
+                // exit code and stdout below decide the outcome, not this write.
+            }
 
             Duration timeout = properties.getTimeout() == null ? Duration.ofMinutes(10) : properties.getTimeout();
             boolean finished = process.waitFor(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
