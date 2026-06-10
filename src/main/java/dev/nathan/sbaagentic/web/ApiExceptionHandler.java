@@ -2,6 +2,9 @@ package dev.nathan.sbaagentic.web;
 
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     /** A typed API error. {@code error} is always present so callers can branch on it unambiguously. */
     public record ApiError(ErrorBody error) {
@@ -60,6 +65,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
         // Deliberately generic: the detail is logged server-side, never returned to the caller.
+        log.error("Unhandled API exception", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR, "internal_error",
                         "The recorder hit an unexpected error handling this request."));
