@@ -40,8 +40,9 @@ Or run the app manually:
 
 ```bash
 mvn spring-boot:run
-open http://localhost:8766
 ```
+
+Then open `http://localhost:8766` in your browser.
 
 Sanity check:
 
@@ -59,7 +60,7 @@ macOS launchd is managed by the repo script:
 ./scripts/deploy-local.sh
 ```
 
-This is macOS-only. The script builds `target/sba-agentic-0.1.0.jar`, restarts the launchd service, and waits for `/api/status`. Use `scripts/black-box.plist.template` when installing the LaunchAgent for the first time: copy it to `~/Library/LaunchAgents/<label>.plist`, replace the placeholders, then bootstrap it.
+This is macOS-only. The script builds `target/sba-agentic-0.1.0.jar`, restarts the launchd service, and waits for `/api/status`. It targets the launchd label `com.nathan.sba-agentic` by default — set `SBA_LAUNCHD_LABEL` to the label you used in your own plist. Use `scripts/black-box.plist.template` when installing the LaunchAgent for the first time: copy it to `~/Library/LaunchAgents/<label>.plist`, replace the placeholders, then bootstrap it.
 
 ```bash
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist
