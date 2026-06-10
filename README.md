@@ -34,6 +34,18 @@ mvn spring-boot:run
 open http://localhost:8766
 ```
 
+If you run Black Box as the local launchd packaged-jar service, deploy through the
+repo script instead of running `mvn package` alone:
+
+```bash
+./scripts/deploy-local.sh
+```
+
+The script rebuilds the jar, restarts the launchd service, and waits for `/api/status`.
+That restart matters: rebuilding `target/sba-agentic-0.1.0-SNAPSHOT.jar` while an old
+Java process is still serving it can leave hot endpoints working while cold endpoints
+fail later with missing classes.
+
 Sanity check:
 
 ```bash
