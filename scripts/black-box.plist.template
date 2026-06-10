@@ -1,0 +1,43 @@
+<!--
+  Black Box launchd template.
+
+  Copy to ~/Library/LaunchAgents/@LABEL@.plist, replace placeholders, then:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/@LABEL@.plist
+
+  To remove:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/@LABEL@.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@JAVA_BIN@</string>
+    <string>-jar</string>
+    <string>@JAR_PATH@</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SBA_PORT</key>
+    <string>@PORT@</string>
+    <key>SBA_DATASOURCE_URL</key>
+    <string>jdbc:sqlite:@DB_PATH@</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/black-box.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/black-box.err.log</string>
+</dict>
+</plist>

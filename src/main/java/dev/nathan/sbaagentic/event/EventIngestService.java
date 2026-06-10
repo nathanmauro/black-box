@@ -20,16 +20,19 @@ public class EventIngestService {
     private final SbaProperties properties;
     private final List<EventIndexSink> indexSinks;
     private final SessionFinalizationService finalizationService;
+    private final RedactionService redactionService;
 
     public EventIngestService(
             EventRepository repository,
             SbaProperties properties,
             List<EventIndexSink> indexSinks,
-            SessionFinalizationService finalizationService) {
+            SessionFinalizationService finalizationService,
+            RedactionService redactionService) {
         this.repository = repository;
         this.properties = properties;
         this.indexSinks = indexSinks;
         this.finalizationService = finalizationService;
+        this.redactionService = redactionService;
     }
 
     public IngestResponse ingest(EventIngestRequest request) {
@@ -60,8 +63,8 @@ public class EventIngestService {
     }
 
     private EventIngestRequest normalize(EventIngestRequest request) {
-        String text = truncate(blankToNull(request.text()));
-        Map<String, Object> metadata = request.metadata() == null ? Map.of() : request.metadata();
+        String text = truncate(blankToNull(redactionService.redact(request.text())));
+        Map<String, Object> metadata = redactMetadata(request.metadata());
         return new EventIngestRequest(
                 request.source().trim().toLowerCase(Locale.ROOT),
                 request.clientSessionId().trim(),
@@ -71,10 +74,18 @@ public class EventIngestService {
                 text,
                 blankToNull(request.cwd()),
                 blankToNull(request.toolName()),
-                request.toolInput(),
-                request.toolOutput(),
+                redactionService.redactDeep(request.toolInput()),
+                redactionService.redactDeep(request.toolOutput()),
                 metadata,
                 request.observedAt());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> redactMetadata(Map<String, Object> metadata) {
+        if (metadata == null) {
+            return Map.of();
+        }
+        return (Map<String, Object>) redactionService.redactDeep(metadata);
     }
 
     private TitleCandidate titleFor(EventIngestRequest request) {

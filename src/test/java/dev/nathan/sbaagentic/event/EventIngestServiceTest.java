@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.event;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -83,5 +84,43 @@ class EventIngestServiceTest {
                 repository.findSession("codex", "session-final").orElseThrow().summary())
                 .contains("Black Box should summarize this after finalization.")
                 .contains("[Stop] Final lifecycle event reached Black Box."));
+    }
+
+    @Test
+    void ingestRedactsSecretsBeforePersistenceAndTitleDerivation() {
+        IngestResponse response = ingestService.ingest(new EventIngestRequest(
+                "codex",
+                "session-redaction",
+                "turn-1",
+                "UserPromptSubmit",
+                "user",
+                "password=supersecretvalue\nUse the captured tool output.",
+                "/tmp/project",
+                "shell",
+                Map.of("command", "Authorization: Bearer sk-proj-abc123def456ghi789jkl"),
+                Map.of(
+                        "stdout", "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB",
+                        "nested", Map.of("list", List.of("xoxb-1234567890-abcdefghij"))),
+                Map.of("rawHook", Map.of("prompt", "api_key=abcdefghi")),
+                Instant.parse("2026-05-21T12:02:00Z")));
+
+        AgentEvent event = repository.eventsForSession(response.sessionId(), 10).stream()
+                .filter(candidate -> candidate.id().equals(response.eventId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(event.text()).isEqualTo("password=[REDACTED]\nUse the captured tool output.");
+        assertThat(event.toolInputJson())
+                .contains("\"command\":\"Authorization: Bearer [REDACTED]\"")
+                .doesNotContain("sk-proj");
+        assertThat(event.toolOutputJson())
+                .contains("[REDACTED]")
+                .doesNotContain("ghp_")
+                .doesNotContain("xoxb-");
+        assertThat(event.metadata().toString())
+                .contains("[REDACTED]")
+                .doesNotContain("abcdefghi");
+        assertThat(repository.findSession("codex", "session-redaction").orElseThrow().title())
+                .isEqualTo("password=[REDACTED]");
     }
 }

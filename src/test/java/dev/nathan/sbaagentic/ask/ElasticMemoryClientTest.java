@@ -66,7 +66,7 @@ class ElasticMemoryClientTest {
                                 "_source", java.util.Map.of(
                                         "corpus", "chronicle",
                                         "project", "chronicle",
-                                        "sourcePath", "/Users/nathan/.codex/memories/extensions/chronicle/resources/summary.md",
+                                        "sourcePath", "/home/user/agent-memory/notes/summary.md",
                                         "ts", "2026-06-06T04:51:00.000Z",
                                         "title", "Memory summary",
                                         "text", "Chronicle memory text")))));

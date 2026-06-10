@@ -70,8 +70,9 @@
       <nav class="stage-tabs" role="tablist" aria-label="Black Box workspace">
         <button class="stage-tab active" id="tab-spine" type="button" role="tab" aria-selected="true" aria-controls="panel-spine" data-tab="spine">Sessions</button>
         <button class="stage-tab" id="tab-recall" type="button" role="tab" aria-selected="false" aria-controls="panel-recall" data-tab="recall">Recall</button>
-        <button class="stage-tab" id="tab-ask" type="button" role="tab" aria-selected="false" aria-controls="panel-ask" data-tab="ask">ASK</button>
+        <button class="stage-tab" id="tab-ask" type="button" role="tab" aria-selected="false" aria-controls="panel-ask" data-tab="ask" hidden>ASK</button>
       </nav>
+      <p class="ask-availability-note readout" id="askAvailabilityNotice" hidden>ASK workspace hidden — needs the optional agent-memory Elasticsearch index.</p>
 
       <section class="tab-panel active" id="panel-spine" role="tabpanel" aria-labelledby="tab-spine" data-tab-panel="spine" data-panel="spine">
         <section class="panel spine-panel search-panel">

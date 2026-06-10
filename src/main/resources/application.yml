@@ -71,13 +71,14 @@ sba:
     external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:scripts/summarize-with-codex.sh}
     timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   exports:
-    # Export is opt-in through the API/UI. Obsidian is only the shipped example target.
+    # Export is opt-in through the API/UI. The Obsidian target stays listed, but writes are disabled
+    # until a directory is configured.
     targets:
       - id: obsidian
         label: Obsidian
         type: markdown-file
         enabled: true
-        directory: ${SBA_EXPORT_OBSIDIAN_DIR:${user.home}/Notes/obsidian/99 System/Black Box Summaries}
+        directory: ${SBA_EXPORT_OBSIDIAN_DIR:}
         template: classpath:/exports/summary-markdown.mustache
         subdirectory-template: "{{month}}"
         filename-template: "{{date}}-{{slug}}-{{shortId}}.md"

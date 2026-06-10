@@ -14,8 +14,10 @@ Codex may ask you to trust the local hook the next time a session starts here. A
 
 The current local setup uses hooks as a low-noise event capture layer, not as a blocking control plane:
 
-- Codex has a global hook file at `~/.codex/hooks.json` that runs `/Users/nathan/.local/bin/cockpit-agent-hook --client codex` for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop`.
-- Claude Code has a global user setting at `~/.claude/settings.json` that runs `/Users/nathan/.local/bin/cockpit-agent-hook --client claude` for the same capture lifecycle.
+The `cockpit-agent-hook` command referenced below is an example of a private, external hook binary; any command that POSTs the documented event JSON to `/api/events` works, and the in-repo reference implementation is `scripts/hooks/sba-agent-hook.sh`.
+
+- Codex has a global hook file at `~/.codex/hooks.json` that runs `/ABSOLUTE/PATH/TO/cockpit-agent-hook --client codex` for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop`.
+- Claude Code has a global user setting at `~/.claude/settings.json` that runs `/ABSOLUTE/PATH/TO/cockpit-agent-hook --client claude` for the same capture lifecycle.
 - This repo also has a Claude-local provenance hook at `.claude/settings.local.json` for edit tools only (`Write`, `Edit`, `MultiEdit`, and `NotebookEdit`). It calls `.claude/hooks/post-tool-call.py`, which posts changed file paths to the local provenance webserver when that server is available.
 - The Black Box/Cockpit capture hooks use a 5 second client timeout. The repo-local provenance hook does not currently declare a Claude-level timeout, but its HTTP call uses a 0.5 second timeout and only runs after edit tools.
 - The hook events are visible in Black Box as captured `SessionStart`, `UserPromptSubmit`, and `PostToolUse` rows. They can also make search results noisy because command output becomes indexed event text.

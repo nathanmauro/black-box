@@ -38,7 +38,9 @@ public class ElasticMemoryClient implements MemoryRetriever {
             return AskComponentStatus.disabled("elasticsearch disabled");
         }
         try {
-            restClient.get().uri("/").retrieve().toBodilessEntity();
+            // HEAD the memory index itself: a reachable cluster without the index is still an
+            // unavailable ASK dependency, and the UI hides the workspace off this signal.
+            restClient.head().uri("/{index}", ask.getMemoryIndex()).retrieve().toBodilessEntity();
             return AskComponentStatus.available(ask.getMemoryIndex());
         }
         catch (RestClientException ex) {

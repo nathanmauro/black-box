@@ -181,8 +181,6 @@ public class SbaProperties {
             target.setId("obsidian");
             target.setLabel("Obsidian");
             target.setType("markdown-file");
-            target.setDirectory(System.getProperty("user.home")
-                    + "/Notes/obsidian/99 System/Black Box Summaries");
             return target;
         }
 
