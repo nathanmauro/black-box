@@ -33,7 +33,8 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEMO_DB="/tmp/black-box-demo.db"
 DATASOURCE_URL="jdbc:sqlite:${DEMO_DB}"
-PORT="8766"
+# Override with SBA_DEMO_PORT when a real recorder already owns 8766.
+PORT="${SBA_DEMO_PORT:-8766}"
 BASE_URL="http://localhost:${PORT}"
 LOG_FILE="/tmp/black-box-demo.log"
 STARTUP_TIMEOUT_SECONDS=90
@@ -69,11 +70,11 @@ banner() {
   # Print a framed banner so the proof is impossible to miss in the scrollback.
   local line
   printf '\n%s' "$BOLD"
-  printf '┏%.0s' {1..72}; printf '\n'
+  printf '┏'; printf '━%.0s' {1..71}; printf '\n'
   for line in "$@"; do
-    printf '┃ %-70s\n' "$line"
+    printf '┃ %s\n' "$line"
   done
-  printf '┗%.0s' {1..72}; printf '\n'
+  printf '┗'; printf '━%.0s' {1..71}; printf '\n'
   printf '%s\n' "$RESET"
 }
 
