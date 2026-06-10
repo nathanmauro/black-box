@@ -29,7 +29,7 @@ public class ExternalSummaryClient {
         }
 
         try {
-            Process process = new ProcessBuilder("/bin/zsh", "-lc", command).start();
+            Process process = new ProcessBuilder("/bin/sh", "-c", command).start();
             CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> read(process.getInputStream()));
             CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> read(process.getErrorStream()));
 

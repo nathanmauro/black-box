@@ -6,7 +6,7 @@ trap 'rm -f "$prompt_file"' EXIT
 
 cat > "$prompt_file"
 
-claude_bin="${SBA_SUMMARY_CLAUDE_BIN:-/Users/nathan/.local/bin/claude}"
+claude_bin="${SBA_SUMMARY_CLAUDE_BIN:-claude}"
 
 {
   cat <<'PROMPT'

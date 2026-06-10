@@ -4,10 +4,11 @@ services:
     container_name: sba-agentic-elasticsearch
     environment:
       discovery.type: single-node
+      # xpack security is disabled; this topology is for localhost development only.
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms1g -Xmx1g"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - sba-agentic-elasticsearch:/usr/share/elasticsearch/data
     healthcheck:
@@ -26,7 +27,7 @@ services:
       SERVER_HOST: 0.0.0.0
       XPACK_SECURITY_ENABLED: "false"
     ports:
-      - "5601:5601"
+      - "127.0.0.1:5601:5601"
     depends_on:
       elasticsearch:
         condition: service_healthy
