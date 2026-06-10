@@ -29,12 +29,17 @@ public class ExternalSummaryClient {
         }
 
         try {
-            Process process = new ProcessBuilder("/bin/zsh", "-lc", command).start();
+            Process process = new ProcessBuilder("/bin/sh", "-c", command).start();
             CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> read(process.getInputStream()));
             CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> read(process.getErrorStream()));
 
             try (var stdin = process.getOutputStream()) {
                 stdin.write((transcript == null ? "" : transcript).getBytes(StandardCharsets.UTF_8));
+            }
+            catch (IOException brokenPipe) {
+                // The command may exit or close stdin before the transcript is fully
+                // written (fast failure, or a command that never reads stdin). The
+                // exit code and stdout below decide the outcome, not this write.
             }
 
             Duration timeout = properties.getTimeout() == null ? Duration.ofMinutes(10) : properties.getTimeout();

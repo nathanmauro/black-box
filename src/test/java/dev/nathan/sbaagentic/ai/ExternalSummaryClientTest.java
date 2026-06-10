@@ -29,4 +29,24 @@ class ExternalSummaryClientTest {
 
         assertThat(client.summarize("anything")).isEmpty();
     }
+
+    @Test
+    void posixShellCommandWorks() {
+        SbaProperties properties = new SbaProperties();
+        properties.getSummary().setExternalCommand("printf 'posix-ok'");
+        ExternalSummaryClient client = new ExternalSummaryClient(properties);
+
+        Optional<String> summary = client.summarize("ignored");
+
+        assertThat(summary).contains("posix-ok");
+    }
+
+    @Test
+    void missingCommandFailsCleanly() {
+        SbaProperties properties = new SbaProperties();
+        properties.getSummary().setExternalCommand("/definitely/not/a/real/sba-summary-command");
+        ExternalSummaryClient client = new ExternalSummaryClient(properties);
+
+        assertThat(client.summarize("anything")).isEmpty();
+    }
 }

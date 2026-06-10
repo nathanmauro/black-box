@@ -1,0 +1,18 @@
+# Black Box systemd user unit template.
+#
+# Copy to ~/.config/systemd/user/black-box.service, edit the jar path, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now black-box
+
+[Unit]
+Description=Black Box — local flight recorder for coding agents
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env java -jar /path/to/black-box/target/sba-agentic-0.1.0.jar
+Environment=SBA_PORT=8766
+Environment=SBA_DATASOURCE_URL=jdbc:sqlite:%h/.local/share/black-box/black-box.db
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

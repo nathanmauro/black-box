@@ -112,7 +112,7 @@ public class SummaryExportService {
     private Path exportRoot(SbaProperties.Target target) {
         String configured = target.getDirectory();
         if (configured == null || configured.isBlank()) {
-            throw new ResponseStatusException(INTERNAL_SERVER_ERROR,
+            throw new ResponseStatusException(BAD_REQUEST,
                     "Export directory is not configured for target: " + target.getId());
         }
         if (configured.equals("~")) {

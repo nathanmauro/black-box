@@ -11,6 +11,7 @@ const state = {
   spineEventIds: new Set(),
   expandedSessionGroups: new Set(),
   sessionGroupStateLoaded: false,
+  askAvailable: false,
 };
 
 const SESSION_GROUP_STORAGE_KEY = "blackbox.sessions.expandedGroups.v1";
@@ -27,6 +28,9 @@ const els = {
   expandAllSessionsButton: document.querySelector("#expandAllSessionsButton"),
   collapseAllSessionsButton: document.querySelector("#collapseAllSessionsButton"),
   captureForm: document.querySelector("#captureForm"),
+  askTab: document.querySelector("#tab-ask"),
+  askPanel: document.querySelector("#panel-ask"),
+  askAvailabilityNotice: document.querySelector("#askAvailabilityNotice"),
   askForm: document.querySelector("#askForm"),
   askMeta: document.querySelector("#askMeta"),
   askResults: document.querySelector("#askResults"),
@@ -106,18 +110,19 @@ function num(value) {
 
 // --------------------------------------------------------------------- tabs
 function activateTab(tab) {
-  state.activeTab = tab;
+  const nextTab = tab === "ask" && !state.askAvailable ? "spine" : tab;
+  state.activeTab = nextTab;
   els.stageTabs.querySelectorAll("[data-tab]").forEach(button => {
-    const active = button.dataset.tab === tab;
+    const active = button.dataset.tab === nextTab;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
   els.tabPanels.forEach(panel => {
-    const active = panel.dataset.tabPanel === tab;
+    const active = panel.dataset.tabPanel === nextTab;
     panel.classList.toggle("active", active);
     panel.hidden = !active;
   });
-  if (tab === "recall" && !els.recallStage.hidden) {
+  if (nextTab === "recall" && !els.recallStage.hidden) {
     requestAnimationFrame(() => window.BlackBoxConstellation?.redraw());
   }
 }
@@ -152,12 +157,31 @@ async function loadStatus(pulse = false) {
 async function loadAskStatus() {
   try {
     const status = await api("/api/ask/status");
+    const available = status.elasticsearch?.available === true;
+    setAskAvailability(available);
+    if (!available) return;
     const mode = status.retrievalMode || "unavailable";
     const chat = status.chat?.available ? "chat ok" : "chat degraded";
     els.askMeta.textContent = `${mode} · ${status.memoryIndex || "agent-memory"} · ${chat}`;
-  } catch (err) {
-    els.askMeta.textContent = `ask status failed: ${err.message}`;
+  } catch (_) {
+    setAskAvailability(false);
   }
+}
+
+function setAskAvailability(available) {
+  state.askAvailable = available;
+  els.askTab.hidden = !available;
+  els.askTab.setAttribute("aria-hidden", String(!available));
+  els.askAvailabilityNotice.hidden = available;
+  if (!available) {
+    els.askMeta.textContent = "";
+    els.askPanel.classList.remove("active");
+    els.askPanel.hidden = true;
+    if (state.activeTab === "ask") activateTab("spine");
+    return;
+  }
+  els.askTab.removeAttribute("aria-hidden");
+  activateTab(state.activeTab);
 }
 
 async function loadExportTargets() {
@@ -273,12 +297,15 @@ function sessionProjectGroupKey(session) {
   return formatProjectPath(session?.cwd) || NO_PROJECT_GROUP_KEY;
 }
 
+const HOME_DIR_PATTERN = /^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/;
+
 function formatProjectPath(path) {
   const value = String(path || "").trim();
   if (!value) return "";
-  if (value === "/Users/nathan") return "~";
-  if (value.startsWith("/Users/nathan/")) return `~/${value.slice("/Users/nathan/".length)}`;
-  return value;
+  const match = value.match(HOME_DIR_PATTERN);
+  if (!match) return value;
+  const rest = value.slice(match[1].length);
+  return rest ? `~${rest}` : "~";
 }
 
 function loadExpandedSessionGroups(groups) {
@@ -790,6 +817,7 @@ function locateOnSpine(eventId) {
 
 // ----------------------------------------------------------------- actions
 els.stageTabs.addEventListener("click", event => {
+  loadAskStatus();
   const button = event.target.closest("[data-tab]");
   if (button) activateTab(button.dataset.tab);
 });
@@ -881,7 +909,7 @@ els.sessionIdentity.addEventListener("click", event => {
 });
 
 els.refreshButton.addEventListener("click", async () => {
-  try { await Promise.all([loadStatus(), loadSessions(false)]); }
+  try { await Promise.all([loadStatus(), loadAskStatus(), loadSessions(false)]); }
   catch (err) { console.error(err); }
 });
 

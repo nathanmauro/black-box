@@ -35,7 +35,10 @@ import static org.hamcrest.Matchers.is;
         "sba.exports.targets[1].label=Team Wiki",
         "sba.exports.targets[1].type=markdown-file",
         "sba.exports.targets[1].directory=target/test-team-wiki-export",
-        "sba.exports.targets[1].filename-template={{source}}-{{slug}}-{{shortId}}.md"
+        "sba.exports.targets[1].filename-template={{source}}-{{slug}}-{{shortId}}.md",
+        "sba.exports.targets[2].id=unconfigured",
+        "sba.exports.targets[2].label=Unconfigured",
+        "sba.exports.targets[2].type=markdown-file"
 })
 @AutoConfigureMockMvc
 class AgenticControllerTest {
@@ -178,6 +181,40 @@ class AgenticControllerTest {
                 .contains("black_box_session_id: \"" + sessionId + "\"")
                 .contains("client_session_id: \"configured-export-session\"")
                 .contains("## Summary");
+    }
+
+    @Test
+    void exportSummaryToUnconfiguredTargetReturnsCleanClientError() throws Exception {
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "unconfigured-export-session",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "Export should fail cleanly when the target has no directory.",
+                                  "metadata": { "title": "Unconfigured export smoke" },
+                                  "observedAt": "2026-05-21T12:35:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        String body = mockMvc.perform(post("/api/sessions/summarize")
+                        .param("source", "codex")
+                        .param("clientSessionId", "unconfigured-export-session"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String sessionId = objectMapper.readTree(body).get("id").asText();
+
+        mockMvc.perform(post("/api/sessions/{sessionId}/exports/unconfigured", sessionId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.status").value(400))
+                .andExpect(jsonPath("$.error.type").value("request_failed"))
+                .andExpect(jsonPath("$.error.message")
+                        .value("Export directory is not configured for target: unconfigured"));
     }
 
     @Test

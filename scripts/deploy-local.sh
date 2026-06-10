@@ -3,12 +3,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+OS_NAME="$(uname -s)"
+
+if [[ "$OS_NAME" != "Darwin" ]]; then
+  echo "deploy-local.sh manages a macOS launchd service. On Linux use scripts/black-box.service (systemd) — see that file's header." >&2
+  exit 1
+fi
 
 LABEL="${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}"
 DOMAIN="${SBA_LAUNCHD_DOMAIN:-gui/$(id -u)}"
 PORT="${SBA_PORT:-8766}"
 STATUS_URL="${SBA_STATUS_URL:-http://localhost:${PORT}/api/status}"
-JAR="${SBA_JAR_PATH:-$REPO_ROOT/target/sba-agentic-0.1.0-SNAPSHOT.jar}"
+JAR="${SBA_JAR_PATH:-$REPO_ROOT/target/sba-agentic-0.1.0.jar}"
 
 RUN_TESTS=0
 for arg in "$@"; do
@@ -27,7 +33,7 @@ Environment overrides:
   SBA_LAUNCHD_DOMAIN  default: gui/\$(id -u)
   SBA_PORT            default: 8766
   SBA_STATUS_URL      default: http://localhost:\$SBA_PORT/api/status
-  SBA_JAR_PATH        default: target/sba-agentic-0.1.0-SNAPSHOT.jar
+  SBA_JAR_PATH        default: target/sba-agentic-0.1.0.jar
 USAGE
       exit 0
       ;;
@@ -51,7 +57,11 @@ describe_state() {
     echo "No java -jar process found for $JAR"
   fi
   if [[ -f "$JAR" ]]; then
-    stat -f 'Jar modified: %Sm %N' -t '%Y-%m-%d %H:%M:%S %z' "$JAR"
+    if [[ "$OS_NAME" == "Darwin" ]]; then
+      stat -f 'Jar modified: %Sm %N' -t '%Y-%m-%d %H:%M:%S %z' "$JAR"
+    else
+      stat --format='Jar modified: %y %n' "$JAR"
+    fi
   else
     echo "Jar not found yet: $JAR"
   fi

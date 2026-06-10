@@ -245,6 +245,10 @@ h1, h2 { margin: 0; font-weight: 600; }
 
 .rail { display: grid; gap: 22px; position: sticky; top: 92px; }
 .stage { display: grid; gap: 22px; }
+.ask-availability-note {
+  margin: -12px 2px 0;
+  color: var(--faint-text);
+}
 
 /* ------------------------------------------------------------------- panels */
 .panel {

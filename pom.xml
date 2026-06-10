@@ -13,7 +13,7 @@
 
     <groupId>dev.nathan</groupId>
     <artifactId>sba-agentic</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <name>sba-agentic</name>
     <description>Local Spring Boot agentic control plane for Claude Code, Codex, local AI, and Elasticsearch.</description>
 

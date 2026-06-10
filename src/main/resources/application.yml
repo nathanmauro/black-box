@@ -35,6 +35,9 @@ spring:
 
 server:
   port: ${SBA_PORT:8766}
+  # Localhost-only by default: there is no authentication layer. Set SBA_BIND_ADDRESS=0.0.0.0
+  # to expose Black Box on a network at your own risk.
+  address: ${SBA_BIND_ADDRESS:127.0.0.1}
 
 management:
   endpoints:
@@ -61,20 +64,21 @@ sba:
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
   summary:
-    # Black Box owns session summaries. Default to Codex cloud via the bundled wrapper so Cockpit and
-    # other hooks do not create competing local-model summary paths. Set backend=local explicitly to
-    # use the LM Studio/OpenAI-compatible local model.
-    backend: ${SBA_SUMMARY_BACKEND:external}
+    # external (Codex/Claude CLI subprocess) is opt-in and sends transcript text to that CLI's
+    # backend; `local` uses an OpenAI-compatible local server and degrades to a compacted-transcript
+    # summary when no model server is running.
+    backend: ${SBA_SUMMARY_BACKEND:local}
     external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:scripts/summarize-with-codex.sh}
     timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   exports:
-    # Export is opt-in through the API/UI. Obsidian is only the shipped example target.
+    # Export is opt-in through the API/UI. The Obsidian target stays listed, but writes are disabled
+    # until a directory is configured.
     targets:
       - id: obsidian
         label: Obsidian
         type: markdown-file
         enabled: true
-        directory: ${SBA_EXPORT_OBSIDIAN_DIR:${user.home}/Notes/obsidian/99 System/Black Box Summaries}
+        directory: ${SBA_EXPORT_OBSIDIAN_DIR:}
         template: classpath:/exports/summary-markdown.mustache
         subdirectory-template: "{{month}}"
         filename-template: "{{date}}-{{slug}}-{{shortId}}.md"
@@ -98,3 +102,6 @@ sba:
     answer-max-tokens: ${SBA_ASK_ANSWER_MAX_TOKENS:640}
   ingestion:
     max-text-length: 20000
+    # Secret-looking values (private key blocks, bearer/API keys, AWS credentials, and password/token
+    # assignments) are replaced with [REDACTED] before persistence.
+    redact-enabled: ${SBA_REDACT_ENABLED:true}

@@ -1,3 +1,5 @@
+> Internal development handoff notes — not user documentation.
+
 # Black Box Frontend Overhaul — START HERE (session handoff)
 
 **Last updated:** 2026-06-05 · **Branch:** `frontend-overhaul` · **State:** P1 + P2 + **P3 shipped, live, verified from the served jar, and committed** (P3 = `0258d81`). Verify baseline clean for the next phase. Nothing pushed.
@@ -23,14 +25,14 @@
 
 The app runs as a **launchd service**, serving static files **from inside a packaged jar** (NOT from `src/` or `target/classes`). Editing source files does **nothing** until you rebuild the jar and restart the service.
 
-- **Service:** `com.nathan.sba-agentic` (LaunchAgent at `~/Library/LaunchAgents/com.nathan.sba-agentic.plist`) → `java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar` on port `8766`.
+- **Service:** `${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}` (LaunchAgent at `~/Library/LaunchAgents/${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}.plist`) → `java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar` on port `8766`.
 - **It auto-respawns** (launchd KeepAlive). Do **not** plain-`kill` it — it comes back on the *old* jar. Use `kickstart -k`.
 
 **Deploy a frontend or backend change (the full loop):**
 ```bash
-cd /Users/nathan/Developer/proj/sba-agentic
+cd /path/to/black-box
 mvn -q -DskipTests package                                  # rebuild jar (copies new static into the jar)
-launchctl kickstart -k "gui/$(id -u)/com.nathan.sba-agentic" # kill+restart with the new jar
+launchctl kickstart -k "gui/$(id -u)/${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}" # kill+restart with the new jar
 curl -s --retry 40 --retry-delay 1 --retry-all-errors --retry-connrefused \
   -o /dev/null -w "api/status: %{http_code}\n" http://localhost:8766/api/status   # wait for boot
 ```
@@ -68,7 +70,7 @@ Working tree vs `main` (`git diff --stat`): `app.js` +72, `index.html` +5/-2, `s
 - **`src/main/resources/static/index.html`** — `#searchForm` query bar markup (`#queryInput` `name="query"`, `#queryOverlay` `<pre class="qb-overlay">`, `#qbPop` listbox); loads `/querybar.js`.
 - **`src/main/resources/static/styles.css`** — query-bar Instrument styling: `.qb-*` token-coloring family (each KQL-lite token its own machined hue; amber reserved for the wildcard "live match" signal), red error underline, deep-screen suggestion popover. (Note: an additive `.token-*`/`.query-suggestions` "acceptance API" alias block also exists but is currently inert — the live runtime vocabulary is `.qb-*`.)
 
-**Deploy + verify (T10, done):** `mvn -q -DskipTests package` → `launchctl kickstart -k gui/$(id -u)/com.nathan.sba-agentic` → wait for `/api/status`. Verified from the **served jar**: `curl /` → `querybar` count = 1; `/api/search/fields` = `200`; `/api/search/values?field=source&prefix=` = `["claude","cli","cockpit","codex","manual"]` (prefix-filterable); free-text `?q=` returns results (row-5 no-regression); Enter submits both inside and outside the ~120ms debounce window (submit handler at `app.js:619` reads `FormData` live and is on an independent event channel from the debounced suggestion fetch; Enter only `preventDefault`s on a highlighted popover row). `mvn test` → 38 tests green.
+**Deploy + verify (T10, done):** `mvn -q -DskipTests package` → `launchctl kickstart -k gui/$(id -u)/${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}` → wait for `/api/status`. Verified from the **served jar**: `curl /` → `querybar` count = 1; `/api/search/fields` = `200`; `/api/search/values?field=source&prefix=` = `["claude","cli","cockpit","codex","manual"]` (prefix-filterable); free-text `?q=` returns results (row-5 no-regression); Enter submits both inside and outside the ~120ms debounce window (submit handler at `app.js:619` reads `FormData` live and is on an independent event channel from the debounced suggestion fetch; Enter only `preventDefault`s on a highlighted popover row). `mvn test` → 38 tests green.
 
 ---
 
@@ -95,7 +97,7 @@ Resolved during the P3 commit (don't re-flag these as open):
 1. **Deploy = rebuild jar + `kickstart -k`.** The running jar serves embedded static; source edits are invisible until you repackage. (§2)
 2. **Don't rebuild the jar while a workflow is mid-edit** on `styles.css`/`app.js` — you'd package a half-written file. Wait for the workflow to finish.
 3. **Verify-baseline false positives:** phase verify lenses diff against `HEAD`. **P1+P2 are now committed**, so `HEAD` includes them and P3's verify starts clean. Keep the habit: **commit a checkpoint between phases** so lenses don't false-flag prior-phase changes as "out of scope" or treat intentional selector removals as regressions (an uncommitted baseline already caused one bad auto-fix during P2 — dead CSS re-added, since cleaned).
-4. **launchd respawn:** never plain-`kill`; use `launchctl kickstart -k gui/$(id -u)/com.nathan.sba-agentic`.
+4. **launchd respawn:** never plain-`kill`; use `launchctl kickstart -k gui/$(id -u)/${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}`.
 5. **SQLite WAL is live** (other agents may be writing via MCP). Restarts are ~2–4s; fine, but be quick.
 6. **Latent nit:** constellation glyphs are colored per `kind` (decision/handoff). Recall only returns those two kinds today, but an unknown kind would render a colorless diamond — add a fallback `.constellation-glyph` fill if that ever changes.
 
