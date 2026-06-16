@@ -1,0 +1,65 @@
+package dev.nathan.sbaagentic.search;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+class QueryFacetsTest {
+
+    @Test
+    void parsesFacetsAndFreeText() {
+        QueryFacets f = QueryFacets.parse("source:codex kind:Decision rebase main");
+        assertThat(f.source()).isEqualTo("codex");
+        assertThat(f.eventType()).isEqualTo("Decision");
+        assertThat(f.toolName()).isNull();
+        assertThat(f.freeText()).containsExactly("rebase", "main");
+        assertThat(f.hasAnyFacet()).isTrue();
+    }
+
+    @Test
+    void quotedFreeTextStaysTogether() {
+        QueryFacets f = QueryFacets.parse("tool:Edit \"ask history\"");
+        assertThat(f.toolName()).isEqualTo("Edit");
+        assertThat(f.freeText()).containsExactly("ask history");
+        assertThat(f.freeTextPhrase()).isEqualTo("ask history");
+    }
+
+    @Test
+    void quotedFacetValueStaysTogether() {
+        QueryFacets f = QueryFacets.parse("project:\"sba agentic\" recall");
+        assertThat(f.cwd()).isEqualTo("sba agentic");
+        assertThat(f.freeText()).containsExactly("recall");
+    }
+
+    @Test
+    void aliasesMapToColumns() {
+        QueryFacets f = QueryFacets.parse("agent:claude event_type:Handoff tool_name:Bash cwd:proj");
+        assertThat(f.source()).isEqualTo("claude");
+        assertThat(f.eventType()).isEqualTo("Handoff");
+        assertThat(f.toolName()).isEqualTo("Bash");
+        assertThat(f.cwd()).isEqualTo("proj");
+    }
+
+    @Test
+    void lastFacetWins() {
+        QueryFacets f = QueryFacets.parse("source:claude source:codex");
+        assertThat(f.source()).isEqualTo("codex");
+    }
+
+    @Test
+    void plainQueryIsAllFreeText() {
+        QueryFacets f = QueryFacets.parse("recall bug");
+        assertThat(f.hasAnyFacet()).isFalse();
+        assertThat(f.freeText()).containsExactly("recall", "bug");
+        assertThat(f.freeTextPhrase()).isEqualTo("recall bug");
+    }
+
+    @Test
+    void nullAndBlankAreEmpty() {
+        assertThat(QueryFacets.parse(null).hasAnyFacet()).isFalse();
+        assertThat(QueryFacets.parse(null).freeText()).isEmpty();
+        assertThat(QueryFacets.parse("   ").freeText()).isEmpty();
+    }
+}

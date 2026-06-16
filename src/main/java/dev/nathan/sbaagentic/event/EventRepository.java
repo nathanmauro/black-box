@@ -12,6 +12,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.nathan.sbaagentic.search.QueryFacets;
 import dev.nathan.sbaagentic.session.AgentSession;
 import dev.nathan.sbaagentic.session.TitleRank;
 
@@ -215,19 +216,70 @@ public class EventRepository {
     }
 
     public List<AgentEvent> searchEvents(String query, int limit) {
-        String like = "%" + query.toLowerCase() + "%";
-        return jdbcTemplate.query("""
-                SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
-                  FROM agent_events
-                 WHERE lower(coalesce(text, '')) LIKE ?
-                    OR lower(coalesce(tool_name, '')) LIKE ?
-                    OR lower(coalesce(event_type, '')) LIKE ?
-                    OR lower(coalesce(source, '')) LIKE ?
-                    OR lower(coalesce(metadata_json, '')) LIKE ?
-                 ORDER BY observed_at DESC
-                 LIMIT ?
-                """, this::mapEvent, like, like, like, like, like, limit);
+        QueryFacets facets = QueryFacets.parse(query);
+
+        // No field:value tokens — keep the original behaviour exactly: the whole query is one
+        // case-insensitive substring matched across the event's text columns, newest first.
+        if (!facets.hasAnyFacet()) {
+            String like = "%" + (query == null ? "" : query).toLowerCase() + "%";
+            return jdbcTemplate.query("""
+                    SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
+                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
+                      FROM agent_events
+                     WHERE lower(coalesce(text, '')) LIKE ?
+                        OR lower(coalesce(tool_name, '')) LIKE ?
+                        OR lower(coalesce(event_type, '')) LIKE ?
+                        OR lower(coalesce(source, '')) LIKE ?
+                        OR lower(coalesce(metadata_json, '')) LIKE ?
+                     ORDER BY observed_at DESC
+                     LIMIT ?
+                    """, this::mapEvent, like, like, like, like, like, limit);
+        }
+
+        // Facet-aware path: equality on each present keyword facet (parameterised — values never
+        // interpolated), an optional join to agent_sessions for the project/cwd facet, and any
+        // remaining free text matched as one substring across the event columns.
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
+                .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
+                .append("e.observed_at\n")
+                .append("  FROM agent_events e\n");
+        boolean joinSessions = facets.cwd() != null;
+        if (joinSessions) {
+            sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
+        }
+        sql.append(" WHERE 1=1\n");
+        if (facets.source() != null) {
+            sql.append("   AND lower(e.source) = lower(?)\n");
+            args.add(facets.source());
+        }
+        if (facets.eventType() != null) {
+            sql.append("   AND lower(e.event_type) = lower(?)\n");
+            args.add(facets.eventType());
+        }
+        if (facets.toolName() != null) {
+            sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
+            args.add(facets.toolName());
+        }
+        if (joinSessions) {
+            sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
+            args.add("%" + facets.cwd() + "%");
+        }
+        String freePhrase = facets.freeTextPhrase();
+        if (!freePhrase.isBlank()) {
+            String like = "%" + freePhrase.toLowerCase() + "%";
+            sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+            args.add(like);
+            args.add(like);
+            args.add(like);
+        }
+        sql.append(" ORDER BY e.observed_at DESC\n")
+                .append(" LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
     }
 
     /** A whitelisted enumerable column resolved to its physical table and column name. */
