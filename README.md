@@ -50,7 +50,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface has Sessions and Recall workspaces. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
+The web surface has Sessions, Projects, and Recall workspaces. Sessions uses a project-first, fuzzy-filtered rail with a no-project/manual/system bucket, compact collapsible event rows, bounded summary previews, and a right-side outline for files edited, files read, tools used, and event shape. Projects groups sessions by derived working directory, shows a project-level Hybrid Storyline over decisions, handoffs, assistant output, and notable tool results, and can build a bounded meld preview/export bundle from selected sessions. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
 
 ## Run as a service
 
@@ -277,6 +277,11 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/recall?scope=<repo-or-topic>&withinHours=168&kinds=decision,handoff` | Structured recalled decisions/handoffs |
 | `GET /api/sessions?limit=40` | Recent sessions |
 | `GET /api/sessions/{id}/events?limit=100` | A session's events (newest first) |
+| `GET /api/projects` | Derived project groups with session/event counts |
+| `GET /api/projects/{projectKey}/sessions?limit=100` | Sessions in a derived project group |
+| `GET /api/projects/{projectKey}/timeline?limit=50&offset=0` | Project-level Hybrid Storyline blocks |
+| `GET /api/projects/{projectKey}/melds` | Saved melds for the project; currently empty until durable meld persistence lands |
+| `POST /api/projects/{projectKey}/melds/preview` | Builds a bounded selected-session meld bundle; `executionMode=direct` explicitly calls the configured summary backend |
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
 | `GET /api/search/fields` | Search field metadata for the query bar |
 | `GET /api/search/values?field=<field>&prefix=<prefix>&limit=20` | Field value suggestions for the query bar |

@@ -2,6 +2,8 @@ package dev.nathan.sbaagentic.web;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -327,5 +329,283 @@ class AgenticControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value(empty()))
                 .andExpect(jsonPath("$.length()").value(is(0)));
+    }
+
+    @Test
+    void projectsReadModelGroupsSessionsAndBuildsTimeline() throws Exception {
+        String cwd = "/tmp/black-box-projects-alpha";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "projects-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Use SQLite source of truth",
+                                  "cwd": "/tmp/black-box-projects-alpha",
+                                  "metadata": {
+                                    "kind": "decision",
+                                    "decision": "Use SQLite source of truth",
+                                    "rationale": "Raw events must remain authoritative."
+                                  },
+                                  "observedAt": "2026-05-21T11:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "projects-alpha-one",
+                                  "eventType": "AssistantMessage",
+                                  "role": "assistant",
+                                  "text": "Implemented the reader",
+                                  "cwd": "/tmp/black-box-projects-alpha",
+                                  "observedAt": "2026-05-21T11:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "projects-alpha-two",
+                                  "eventType": "PostToolUse",
+                                  "role": "agent",
+                                  "text": "Compiled project read model",
+                                  "cwd": "/tmp/black-box-projects-alpha/",
+                                  "toolName": "bash",
+                                  "toolOutput": { "stdout": "build ok" },
+                                  "observedAt": "2026-05-21T11:02:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "projects-alpha-two",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "User prompt should not become storyline",
+                                  "cwd": "/tmp/black-box-projects-alpha/",
+                                  "observedAt": "2026-05-21T11:03:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        String projectsBody = mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode project = projectByCanonicalKey(objectMapper.readTree(projectsBody), cwd);
+        org.assertj.core.api.Assertions.assertThat(project).isNotNull();
+        String projectKey = project.get("projectKey").asText();
+        org.assertj.core.api.Assertions.assertThat(project.get("label").asText()).isEqualTo(cwd);
+        org.assertj.core.api.Assertions.assertThat(project.get("sessionCount").asInt()).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(project.get("eventCount").asInt()).isEqualTo(4);
+        org.assertj.core.api.Assertions.assertThat(project.get("savedMeldCount").asInt()).isZero();
+
+        mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-one')].eventCount").value(hasItem(2)))
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-two')].eventCount").value(hasItem(2)));
+
+        String timelineBody = mockMvc.perform(get("/api/projects/{projectKey}/timeline", projectKey)
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.projectKey").value(projectKey))
+                .andExpect(jsonPath("$.items.length()").value(3))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode items = objectMapper.readTree(timelineBody).get("items");
+        org.assertj.core.api.Assertions.assertThat(textValues(items, "blockType"))
+                .contains("decision", "assistant", "tool");
+        org.assertj.core.api.Assertions.assertThat(textValues(items, "headline"))
+                .contains("Use SQLite source of truth", "Implemented the reader", "Compiled project read model")
+                .doesNotContain("User prompt should not become storyline");
+
+        mockMvc.perform(get("/api/projects/{projectKey}/melds", projectKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(empty()));
+    }
+
+    @Test
+    void projectMeldPreviewBuildsBoundedExportBundle() throws Exception {
+        String cwd = "/tmp/black-box-meld-preview-alpha";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-preview-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Keep export bundle mode local by default",
+                                  "cwd": "/tmp/black-box-meld-preview-alpha",
+                                  "metadata": {
+                                    "kind": "decision",
+                                    "decision": "Keep export bundle mode local by default"
+                                  },
+                                  "observedAt": "2026-05-20T10:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-preview-alpha-one",
+                                  "eventType": "AssistantMessage",
+                                  "role": "assistant",
+                                  "text": "Added a deterministic bundle builder.",
+                                  "cwd": "/tmp/black-box-meld-preview-alpha",
+                                  "observedAt": "2026-05-20T10:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "meld-preview-alpha-two",
+                                  "eventType": "PostToolUse",
+                                  "role": "agent",
+                                  "text": "Read the project service",
+                                  "cwd": "/tmp/black-box-meld-preview-alpha/",
+                                  "toolName": "Read",
+                                  "toolInput": { "file_path": "src/main/java/dev/nathan/sbaagentic/project/ProjectService.java" },
+                                  "toolOutput": { "result": "ok" },
+                                  "observedAt": "2026-05-20T10:02:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        JsonNode project = projectByCanonicalKey(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                cwd);
+        String projectKey = project.get("projectKey").asText();
+        JsonNode sessions = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        List<String> sessionIds = textValues(sessions, "id");
+
+        mockMvc.perform(post("/api/projects/{projectKey}/melds/preview", projectKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "sessionIds", sessionIds,
+                                "executionMode", "export_bundle"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("bundle"))
+                .andExpect(jsonPath("$.executionMode").value("export_bundle"))
+                .andExpect(jsonPath("$.provider").value("local"))
+                .andExpect(jsonPath("$.model").value("context-bundle"))
+                .andExpect(jsonPath("$.projectKey").value(projectKey))
+                .andExpect(jsonPath("$.sessionCount").value(2))
+                .andExpect(jsonPath("$.evidenceCount").value(3))
+                .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("# Project Meld Bundle")))
+                .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("Keep export bundle mode local by default")))
+                .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("ProjectService.java")))
+                .andExpect(jsonPath("$.degradationNotes").isArray());
+    }
+
+    @Test
+    void projectMeldPreviewRejectsCrossProjectSessionSelection() throws Exception {
+        String cwd = "/tmp/black-box-meld-cross-alpha";
+        String otherCwd = "/tmp/black-box-meld-cross-beta";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-cross-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Alpha decision",
+                                  "cwd": "/tmp/black-box-meld-cross-alpha",
+                                  "observedAt": "2026-05-20T11:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-cross-beta-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Beta decision",
+                                  "cwd": "/tmp/black-box-meld-cross-beta",
+                                  "observedAt": "2026-05-20T11:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        JsonNode projects = objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        String projectKey = projectByCanonicalKey(projects, cwd).get("projectKey").asText();
+        String otherProjectKey = projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
+        String foreignSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .get(0)
+                .get("id")
+                .asText();
+
+        mockMvc.perform(post("/api/projects/{projectKey}/melds/preview", projectKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "sessionIds", List.of(foreignSessionId),
+                                "executionMode", "export_bundle"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.message")
+                        .value(org.hamcrest.Matchers.containsString("Selected sessions must belong to this project")));
+    }
+
+    private JsonNode projectByCanonicalKey(JsonNode projects, String canonicalKey) {
+        for (JsonNode project : projects) {
+            if (canonicalKey.equals(project.path("canonicalKey").asText())) {
+                return project;
+            }
+        }
+        return null;
+    }
+
+    private List<String> textValues(JsonNode items, String fieldName) {
+        java.util.ArrayList<String> values = new java.util.ArrayList<>();
+        for (JsonNode item : items) {
+            values.add(item.path(fieldName).asText());
+        }
+        return values;
     }
 }

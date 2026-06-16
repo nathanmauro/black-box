@@ -7,23 +7,39 @@ const state = {
   activeTab: "spine",
   activeSessionId: null,
   activeEvents: [],
+  projects: [],
+  activeProjectKey: null,
+  projectSessions: [],
+  projectTimeline: [],
+  selectedProjectSessionIds: new Set(),
+  projectMeld: null,
   activeToolFilter: "all",
   spineEventIds: new Set(),
+  expandedEventIds: new Set(),
   expandedSessionGroups: new Set(),
   sessionGroupStateLoaded: false,
+  sessionQuery: "",
+  railCollapsed: false,
+  outlineCollapsed: false,
   askAvailable: false,
 };
 
 const SESSION_GROUP_STORAGE_KEY = "blackbox.sessions.expandedGroups.v1";
+const RAIL_COLLAPSED_STORAGE_KEY = "blackbox.rail.collapsed.v1";
+const OUTLINE_COLLAPSED_STORAGE_KEY = "blackbox.sessionOutline.collapsed.v1";
 const NO_PROJECT_GROUP_KEY = "__no_project__";
 const NO_PROJECT_GROUP_LABEL = "No project / manual / system";
 
 const els = {
   readouts: document.querySelector("#readouts"),
+  deck: document.querySelector(".deck"),
+  projectRail: document.querySelector("#projectRail"),
   stageTabs: document.querySelector(".stage-tabs"),
   tabPanels: document.querySelectorAll("[data-tab-panel]"),
   sessions: document.querySelector("#sessions"),
   sessionCount: document.querySelector("#sessionCount"),
+  sessionSearchInput: document.querySelector("#sessionSearchInput"),
+  toggleRailButton: document.querySelector("#toggleRailButton"),
   refreshButton: document.querySelector("#refreshButton"),
   expandAllSessionsButton: document.querySelector("#expandAllSessionsButton"),
   collapseAllSessionsButton: document.querySelector("#collapseAllSessionsButton"),
@@ -38,6 +54,24 @@ const els = {
   searchForm: document.querySelector("#searchForm"),
   searchResults: document.querySelector("#searchResults"),
   searchMeta: document.querySelector("#searchMeta"),
+  projectList: document.querySelector("#projectList"),
+  projectCount: document.querySelector("#projectCount"),
+  projectSessions: document.querySelector("#projectSessions"),
+  projectTimeline: document.querySelector("#projectTimeline"),
+  projectsMeta: document.querySelector("#projectsMeta"),
+  projectTimelineMeta: document.querySelector("#projectTimelineMeta"),
+  projectMeldTray: document.querySelector("#projectMeldTray"),
+  projectMeldForm: document.querySelector("#projectMeldForm"),
+  projectMeldMode: document.querySelector("#projectMeldMode"),
+  projectMeldProvider: document.querySelector("#projectMeldProvider"),
+  projectMeldModel: document.querySelector("#projectMeldModel"),
+  projectMeldSelectedCount: document.querySelector("#projectMeldSelectedCount"),
+  projectMeldStatus: document.querySelector("#projectMeldStatus"),
+  projectMeldPreviewButton: document.querySelector("#projectMeldPreviewButton"),
+  projectMeldOutput: document.querySelector("#projectMeldOutput"),
+  projectMeldOutputTitle: document.querySelector("#projectMeldOutputTitle"),
+  projectMeldText: document.querySelector("#projectMeldText"),
+  copyProjectMeldButton: document.querySelector("#copyProjectMeldButton"),
   recallPanel: document.querySelector("#recallPanel"),
   recallBody: document.querySelector("#recallBody"),
   recallForm: document.querySelector("#recallForm"),
@@ -55,10 +89,22 @@ const els = {
   toolFilter: document.querySelector("#toolFilter"),
   toolFilterMeta: document.querySelector("#toolFilterMeta"),
   summary: document.querySelector("#summary"),
+  summaryPreview: document.querySelector("#summaryPreview"),
+  summaryOpenButton: document.querySelector("#summaryOpenButton"),
+  summaryDialog: document.querySelector("#summaryDialog"),
+  summaryDialogText: document.querySelector("#summaryDialogText"),
+  summaryCloseButton: document.querySelector("#summaryCloseButton"),
   summarizeButton: document.querySelector("#summarizeButton"),
   exportTargetSelect: document.querySelector("#exportTargetSelect"),
   exportSummaryButton: document.querySelector("#exportSummaryButton"),
   summaryExportStatus: document.querySelector("#summaryExportStatus"),
+  sessionOutline: document.querySelector("#sessionOutline"),
+  outlineBody: document.querySelector("#outlineBody"),
+  toggleOutlineButton: document.querySelector("#toggleOutlineButton"),
+  outlinePopout: document.querySelector("#outlinePopout"),
+  outlinePopoutTitle: document.querySelector("#outlinePopoutTitle"),
+  outlinePopoutBody: document.querySelector("#outlinePopoutBody"),
+  outlinePopoutCloseButton: document.querySelector("#outlinePopoutCloseButton"),
 };
 
 async function api(path, options = {}) {
@@ -209,7 +255,7 @@ function serviceGauge(label, health, okValue) {
 
 // ------------------------------------------------------------------ sessions
 async function loadSessions(selectFirst = false) {
-  state.sessions = await api("/api/sessions?limit=40");
+  state.sessions = await api("/api/sessions?limit=250");
   els.sessionCount.textContent = `${state.sessions.length}`;
   if (!state.sessions.length) {
     state.activeEvents = [];
@@ -220,6 +266,8 @@ async function loadSessions(selectFirst = false) {
     els.toolFilter.innerHTML = "";
     els.toolFilter.setAttribute("aria-disabled", "true");
     els.toolFilterMeta.textContent = "";
+    renderSummaryCard(null);
+    renderSessionOutline([]);
     els.sessions.innerHTML = `<p class="empty">No sessions yet. Run ./scripts/demo.sh or connect a hook.</p>`;
     els.spine.innerHTML = `<p class="empty">The recorder is idle. Capture an event to lay down the first trace.</p>`;
     return;
@@ -237,11 +285,15 @@ async function loadSessions(selectFirst = false) {
 }
 
 function renderSessionsRail(groups = groupSessionsByProject(state.sessions)) {
+  if (!groups.length) {
+    els.sessions.innerHTML = `<p class="empty">No matching sessions. Try a project name, file path, source, or session title.</p>`;
+    return;
+  }
   els.sessions.innerHTML = groups.map(renderSessionGroup).join("");
 }
 
 function renderSessionGroup(group) {
-  const expanded = state.expandedSessionGroups.has(group.key);
+  const expanded = Boolean(state.sessionQuery) || state.expandedSessionGroups.has(group.key);
   const active = group.sessions.some(session => session.id === state.activeSessionId) ? "active" : "";
   const rows = group.sessions.map(renderSessionRow).join("");
   return `<section class="session-group ${active}" data-project-key="${escapeHtml(group.key)}">
@@ -273,39 +325,129 @@ function renderSessionRow(session) {
 }
 
 function groupSessionsByProject(sessions) {
+  const query = normalizeSearch(state.sessionQuery);
+  const projectByKey = new Map(state.projects.map(project => [project.projectKey, project]));
+  const projectOrder = new Map(state.projects.map((project, index) => [project.projectKey, index]));
   const groupsByKey = new Map();
   for (const session of sessions) {
     const key = sessionProjectGroupKey(session);
+    const canonical = canonicalProjectKey(session?.cwd);
+    const project = projectByKey.get(key);
+    const label = project?.label || (canonical === NO_PROJECT_GROUP_KEY ? NO_PROJECT_GROUP_LABEL : formatProjectPath(canonical));
+    const score = sessionProjectScore(query, session, project, label, canonical);
+    if (query && score <= 0) continue;
     if (!groupsByKey.has(key)) {
       groupsByKey.set(key, {
         key,
-        label: key === NO_PROJECT_GROUP_KEY ? NO_PROJECT_GROUP_LABEL : key,
-        noProject: key === NO_PROJECT_GROUP_KEY,
+        label,
+        canonical,
+        project,
+        noProject: canonical === NO_PROJECT_GROUP_KEY,
         sessions: [],
+        score: 0,
+        order: projectOrder.has(key) ? projectOrder.get(key) : Number.MAX_SAFE_INTEGER,
       });
     }
-    groupsByKey.get(key).sessions.push(session);
+    const group = groupsByKey.get(key);
+    group.sessions.push(session);
+    group.score = Math.max(group.score, score);
   }
   const groups = [...groupsByKey.values()];
-  return [
-    ...groups.filter(group => !group.noProject),
-    ...groups.filter(group => group.noProject),
-  ];
+  return groups.sort((a, b) => {
+    if (a.noProject !== b.noProject) return a.noProject ? 1 : -1;
+    if (query && b.score !== a.score) return b.score - a.score;
+    if (a.order !== b.order) return a.order - b.order;
+    return b.sessions[0]?.lastSeenAt?.localeCompare(a.sessions[0]?.lastSeenAt || "") || 0;
+  });
 }
 
 function sessionProjectGroupKey(session) {
-  return formatProjectPath(session?.cwd) || NO_PROJECT_GROUP_KEY;
+  return projectKeyFromCanonical(canonicalProjectKey(session?.cwd));
 }
 
 const HOME_DIR_PATTERN = /^(\/Users\/[^/]+|\/home\/[^/]+)(?=\/|$)/;
 
+function canonicalProjectKey(path) {
+  let value = String(path || "").trim();
+  if (!value) return NO_PROJECT_GROUP_KEY;
+  while (value.length > 1 && value.endsWith("/")) value = value.slice(0, -1);
+  return value || "/";
+}
+
+function projectKeyFromCanonical(canonical) {
+  const bytes = new TextEncoder().encode(canonicalProjectKey(canonical));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return window.btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
 function formatProjectPath(path) {
   const value = String(path || "").trim();
-  if (!value) return "";
+  if (!value || value === NO_PROJECT_GROUP_KEY) return "";
   const match = value.match(HOME_DIR_PATTERN);
   if (!match) return value;
   const rest = value.slice(match[1].length);
   return rest ? `~${rest}` : "~";
+}
+
+function sessionProjectScore(query, session, project, label, canonical) {
+  if (!query) return 1;
+  return Math.max(
+    fuzzyScore(query, label),
+    fuzzyScore(query, canonical),
+    fuzzyScore(query, project?.canonicalKey || ""),
+    fuzzyScore(query, session.title || ""),
+    fuzzyScore(query, session.clientSessionId || ""),
+    fuzzyScore(query, session.source || ""),
+    fuzzyScore(query, session.cwd || "")
+  );
+}
+
+function normalizeSearch(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function fuzzyScore(query, value) {
+  const q = normalizeSearch(query);
+  const v = normalizeSearch(value);
+  if (!q || !v) return 0;
+  if (v.includes(q)) return 100 + q.length;
+  const tokens = q.split(/[^a-z0-9/._~]+/).filter(Boolean);
+  if (!tokens.length) return 0;
+  let score = 0;
+  for (const token of tokens) {
+    const tokenScore = fuzzyTokenScore(token, v);
+    if (tokenScore <= 0) return 0;
+    score += tokenScore;
+  }
+  return score;
+}
+
+function fuzzyTokenScore(token, value) {
+  if (value.includes(token)) return 30 + token.length;
+  if (token.length < 3) return 0;
+  let cursor = 0;
+  let subsequence = 0;
+  for (const char of token) {
+    const found = value.indexOf(char, cursor);
+    if (found < 0) return 0;
+    subsequence += found === cursor ? 3 : 1;
+    cursor = found + 1;
+  }
+  return subsequence;
+}
+
+// Display-only: collapse any home-directory prefix (start or mid-string) to ~.
+// Copy payloads intentionally keep full paths.
+const HOME_PATH_GLOBAL_PATTERN = /(?:\/Users|\/home)\/[A-Za-z0-9._-]+/g;
+
+function tildify(value) {
+  return String(value ?? "").replace(HOME_PATH_GLOBAL_PATTERN, "~");
+}
+
+function looksLikeJson(value) {
+  const trimmed = String(value ?? "").trim();
+  return trimmed.startsWith("{") || trimmed.startsWith("[");
 }
 
 function loadExpandedSessionGroups(groups) {
@@ -367,12 +509,11 @@ async function selectSession(sessionId, options = {}) {
   const session = state.sessions.find(s => s.id === sessionId);
   if (session) {
     els.spineTitle.textContent = session.title;
-    const where = session.cwd ? ` · ${session.cwd}` : "";
+    const where = session.cwd ? ` · ${formatProjectPath(session.cwd)}` : "";
     els.spineMeta.textContent = `${session.source}${where} · ${session.eventCount} events`;
     els.sessionIdentity.innerHTML = renderSessionIdentity(session);
     els.copySessionButton.disabled = false;
-    els.summary.hidden = !session.summary;
-    els.summary.textContent = session.summary || "";
+    renderSummaryCard(session);
     setSummaryExportState(session);
   }
   els.summarizeButton.disabled = false;
@@ -385,6 +526,7 @@ async function selectSession(sessionId, options = {}) {
   state.activeEvents = events;
   refreshToolFilter(events);
   renderFilteredSpine();
+  renderSessionOutline(events);
 }
 
 function setSummaryExportState(session) {
@@ -395,6 +537,28 @@ function setSummaryExportState(session) {
   els.summaryExportStatus.hidden = true;
   els.summaryExportStatus.textContent = "";
   els.summaryExportStatus.classList.remove("error");
+}
+
+function renderSummaryCard(session) {
+  const summary = session?.summary || "";
+  els.summary.hidden = !summary;
+  if (!summary) {
+    els.summaryPreview.textContent = "";
+    els.summaryDialogText.textContent = "";
+    return;
+  }
+  els.summaryPreview.textContent = summary;
+  els.summaryDialogText.textContent = summary;
+}
+
+function openSummaryDialog() {
+  if (els.summary.hidden || !els.summaryDialogText.textContent.trim()) return;
+  els.summaryDialog.hidden = false;
+  els.summaryCloseButton.focus();
+}
+
+function closeSummaryDialog() {
+  els.summaryDialog.hidden = true;
 }
 
 function eventLimitFor(session) {
@@ -536,8 +700,8 @@ function renderNode(event, i) {
 
   let body = "";
   if (cls === "decision") {
-    const headline = escapeHtml(meta.decision || firstLine(event.text) || "Decision");
-    const rationale = meta.rationale ? `<div class="mem-rationale" style="color:var(--muted);font-size:13px">${escapeHtml(meta.rationale)}</div>` : "";
+    const headline = escapeHtml(tildify(meta.decision || firstLine(event.text) || "Decision"));
+    const rationale = meta.rationale ? `<div class="mem-rationale" style="color:var(--muted);font-size:13px">${escapeHtml(tildify(meta.rationale))}</div>` : "";
     const loops = loopList(meta.openLoops);
     const conf = (meta.confidence != null) ? `<span>confidence <b>${escapeHtml(formatConf(meta.confidence))}</b></span>` : "";
     const alts = altsDetails(meta.alternatives);
@@ -545,29 +709,108 @@ function renderNode(event, i) {
       `<div class="node-text">${headline}</div>${rationale}${loops}` +
       (conf ? `<div class="node-meta-line">${conf}</div>` : "") + alts;
   } else if (cls === "handoff") {
-    const headline = escapeHtml(meta.contextSummary || firstLine(event.text) || "Handoff");
+    const headline = escapeHtml(tildify(meta.contextSummary || firstLine(event.text) || "Handoff"));
     const loops = loopList(meta.openLoops);
     const to = meta.toAgent ? `<span>→ <b>${escapeHtml(meta.toAgent)}</b></span>` : "";
-    const next = meta.nextAction ? `<div class="node-meta-line">next: ${escapeHtml(meta.nextAction)}</div>` : "";
+    const next = meta.nextAction ? `<div class="node-meta-line">next: ${escapeHtml(tildify(meta.nextAction))}</div>` : "";
     body = head("Handoff", srcTick(event.source)) +
       `<div class="node-text">${headline}</div>${loops}` +
       (to ? `<div class="node-meta-line">${to}</div>` : "") + next;
   } else if (cls === "tool") {
-    const toolName = event.toolName ? `<span class="node-tool">${escapeHtml(event.toolName)}</span>` : "";
-    const text = event.text ? `<div class="node-text">${escapeHtml(clamp(event.text, 400))}</div>` : "";
-    body = head(event.eventType || "Tool", toolName + srcTick(event.source)) + text + ioDetails(event);
+    const card = toolCallCard(event);
+    const toolName = !card && event.toolName ? `<span class="node-tool">${escapeHtml(event.toolName)}</span>` : "";
+    // Raw JSON text on tool events duplicates the card's input/output; only prose survives.
+    const text = event.text && !looksLikeJson(event.text)
+      ? `<div class="node-text">${escapeHtml(clamp(tildify(event.text), 400))}</div>`
+      : "";
+    body = head(toolDisplayName(event), toolName + srcTick(event.source)) + text + card;
   } else if (cls === "error") {
+    const card = toolCallCard(event);
+    const fallback = card ? "Failure" : (event.text || event.toolOutputJson || "Failure");
+    const headline = event.text && !looksLikeJson(event.text) ? event.text : fallback;
     body = head(event.eventType || "Error", srcTick(event.source)) +
-      `<div class="node-text">${escapeHtml(clamp(event.text || event.toolOutputJson || "Failure", 600))}</div>` + ioDetails(event);
+      `<div class="node-text">${escapeHtml(clamp(tildify(headline), 600))}</div>` + card;
   } else {
     body = head(event.eventType || "Event", srcTick(event.source)) +
-      `<div class="node-text">${escapeHtml(clamp(event.text || event.toolInputJson || "", 800))}</div>`;
+      `<div class="node-text">${escapeHtml(clamp(tildify(event.text || event.toolInputJson || ""), 800))}</div>`;
   }
 
-  return `<article class="node node--${cls}" data-event-id="${escapeHtml(event.id)}" style="--i:${i}">
+  const expanded = state.expandedEventIds.has(event.id);
+  const summary = eventSummary(event, cls);
+  return `<article class="node node--${cls} ${expanded ? "is-expanded" : "is-collapsed"}" data-event-id="${escapeHtml(event.id)}" style="--i:${i}">
     <div class="node-rail"><span class="node-dot" style="--dot:${dotSize(event)}px"></span></div>
-    <div class="node-body">${body}</div>
+    <div class="node-card">
+      <button type="button" class="node-summary" data-toggle-event="${escapeHtml(event.id)}" aria-expanded="${String(expanded)}">
+        <span class="node-summary-type">${escapeHtml(summary.type)}</span>
+        <span class="node-summary-text">${escapeHtml(tildify(summary.text))}</span>
+        <span class="node-summary-time">${escapeHtml(time)}</span>
+      </button>
+      <div class="node-body" ${expanded ? "" : "hidden"}>${body}</div>
+    </div>
   </article>`;
+}
+
+function eventSummary(event, cls = classify(event)) {
+  if (cls === "tool") return toolActionSummary(event);
+  const meta = event.metadata || {};
+  if (cls === "decision") {
+    return { type: "Decision", text: meta.decision || firstLine(event.text) || "Decision" };
+  }
+  if (cls === "handoff") {
+    return { type: "Handoff", text: meta.contextSummary || firstLine(event.text) || "Handoff" };
+  }
+  if (cls === "error") {
+    return { type: "Error", text: firstLine(event.text || event.toolOutputJson || event.eventType || "Failure") };
+  }
+  return { type: event.eventType || "Event", text: firstLine(event.text || event.toolInputJson || "") || "Event" };
+}
+
+function toolDisplayName(event) {
+  return toolActionSummary(event).type;
+}
+
+function toolActionSummary(event) {
+  const tool = event.toolName || event.eventType || "Tool";
+  const args = parseToolArgs(event.toolInputJson);
+  const pKey = args ? primaryArgKey(args) : null;
+  const primary = pKey ? String(args[pKey]).trim() : "";
+  const verb = toolVerb(tool, pKey);
+  const target = primary || firstLine(event.text || event.toolInputJson || event.toolOutputJson || "");
+  return {
+    type: verb,
+    text: target || tool,
+    tool,
+    target,
+  };
+}
+
+function toolVerb(tool, primaryKey = "") {
+  const value = String(tool || "").toLowerCase();
+  if (/multiedit|edit|write|patch/.test(value)) return "Edit";
+  if (/read|cat|sed|open/.test(value)) return "Read";
+  if (/grep|search|rg|find/.test(value)) return "Search";
+  if (/glob|list|ls/.test(value)) return "List";
+  if (/bash|shell|exec|command/.test(value)) return "Run";
+  if (/web|fetch|curl|http/.test(value)) return "Fetch";
+  if (/file_path|filepath|target_file|path/.test(primaryKey)) return "Use";
+  return tool || "Tool";
+}
+
+function toggleNode(eventId) {
+  if (state.expandedEventIds.has(eventId)) {
+    state.expandedEventIds.delete(eventId);
+  } else {
+    state.expandedEventIds.add(eventId);
+  }
+  const node = els.spine.querySelector(`.node[data-event-id="${CSS.escape(eventId)}"]`);
+  if (!node) return;
+  const expanded = state.expandedEventIds.has(eventId);
+  node.classList.toggle("is-expanded", expanded);
+  node.classList.toggle("is-collapsed", !expanded);
+  const button = node.querySelector(".node-summary");
+  const body = node.querySelector(".node-body");
+  if (button) button.setAttribute("aria-expanded", String(expanded));
+  if (body) body.hidden = !expanded;
 }
 
 function srcTick(source) {
@@ -578,7 +821,7 @@ function srcTick(source) {
 function loopList(loops) {
   if (!Array.isArray(loops) || !loops.length) return "";
   return `<div class="node-loops">` +
-    loops.map(l => `<div class="loop">${escapeHtml(l)}</div>`).join("") + `</div>`;
+    loops.map(l => `<div class="loop">${escapeHtml(tildify(l))}</div>`).join("") + `</div>`;
 }
 
 function altsDetails(alts) {
@@ -586,12 +829,117 @@ function altsDetails(alts) {
   return `<details><summary>considered ${alts.length}</summary><pre>${escapeHtml(alts.join("\n"))}</pre></details>`;
 }
 
-function ioDetails(event) {
-  const parts = [];
-  if (event.toolInputJson) parts.push("input  " + event.toolInputJson);
-  if (event.toolOutputJson) parts.push("output " + event.toolOutputJson);
-  if (!parts.length) return "";
-  return `<details><summary>tool i/o</summary><pre>${escapeHtml(clamp(parts.join("\n\n"), 4000))}</pre></details>`;
+// ------------------------------------------------------------ tool call cards
+// Order matters: the first key present with a non-empty string value becomes the
+// prominent "primary argument" — the shell command for Bash, the path for Read, etc.
+const PRIMARY_ARG_KEYS = [
+  "command", "cmd", "script", "file_path", "filePath", "target_file", "path",
+  "url", "query", "pattern", "prompt", "question", "text", "content", "input",
+];
+
+function parseToolArgs(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function primaryArgKey(args) {
+  for (const key of PRIMARY_ARG_KEYS) {
+    if (typeof args[key] === "string" && args[key].trim()) return key;
+  }
+  return Object.keys(args).find(key => typeof args[key] === "string" && args[key].trim()) || null;
+}
+
+function prettyJson(raw) {
+  if (!raw) return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch (_) {
+    return raw;
+  }
+}
+
+function toolCallCard(event) {
+  if (!event.toolInputJson && !event.toolOutputJson) return "";
+  const args = parseToolArgs(event.toolInputJson);
+  const pKey = args ? primaryArgKey(args) : null;
+  const actions = [];
+  const sections = [];
+
+  if (args) {
+    if (pKey) {
+      const value = String(args[pKey]);
+      const long = value.length > 360 || value.split("\n").length > 6;
+      actions.push(cardButton("Copy", "primary", event.id, `Copy ${pKey}`));
+      if (long) {
+        actions.push(`<button type="button" class="tool-card-button" data-expand-target="primary" title="Show the full ${escapeHtml(pKey)}">Expand</button>`);
+      }
+      sections.push(`<pre class="tool-card-primary${long ? " clamped" : ""}" data-expandable="primary">${escapeHtml(clamp(tildify(value), 4000))}</pre>`);
+    }
+    actions.push(cardButton("JSON", "input", event.id, "Copy input as JSON"));
+    const rest = Object.entries(args).filter(([key]) => key !== pKey);
+    if (rest.length) {
+      sections.push(`<dl class="tool-card-params">${rest.map(([key, value]) => renderToolParam(key, value)).join("")}</dl>`);
+    }
+  } else if (event.toolInputJson) {
+    actions.push(cardButton("Copy", "primary", event.id, "Copy input"));
+    sections.push(`<pre class="tool-card-primary">${escapeHtml(clamp(tildify(event.toolInputJson), 4000))}</pre>`);
+  }
+
+  if (event.toolOutputJson) {
+    sections.push(`<details class="tool-card-output">
+      <summary>output · ${num(event.toolOutputJson.length)} chars</summary>
+      <div class="tool-card-output-body">
+        ${cardButton("Copy output", "output", event.id, "Copy tool output")}
+        <pre>${escapeHtml(clamp(tildify(prettyJson(event.toolOutputJson)), 4000))}</pre>
+      </div>
+    </details>`);
+  }
+
+  const argLabel = pKey ? `<span class="tool-card-key">${escapeHtml(pKey)}</span>` : "";
+  return `<div class="tool-card" data-event-id="${escapeHtml(event.id)}">
+    <div class="tool-card-head">
+      <span class="tool-card-name">${escapeHtml(event.toolName || event.eventType || "tool")}</span>
+      ${argLabel}
+      <div class="tool-card-actions">${actions.join("")}</div>
+    </div>
+    ${sections.join("")}
+  </div>`;
+}
+
+function cardButton(label, kind, eventId, title) {
+  return `<button type="button" class="tool-card-button" data-copy-kind="${escapeHtml(kind)}" data-event-id="${escapeHtml(eventId)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+}
+
+function renderToolParam(key, value) {
+  const label = `<dt>${escapeHtml(key)}</dt>`;
+  if (value !== null && typeof value === "object") {
+    return `<div class="tool-param tool-param--block">${label}<dd><pre>${escapeHtml(clamp(tildify(JSON.stringify(value, null, 2)), 2000))}</pre></dd></div>`;
+  }
+  const text = tildify(value);
+  if (text.length > 220 || text.includes("\n")) {
+    return `<div class="tool-param tool-param--block">${label}<dd><pre>${escapeHtml(clamp(text, 2000))}</pre></dd></div>`;
+  }
+  return `<div class="tool-param">${label}<dd><code>${escapeHtml(text)}</code></dd></div>`;
+}
+
+// Copy payloads resolve from state by event id, so the buttons always copy the FULL
+// value even when the on-screen rendering is clamped for display.
+function toolCopyValue(eventId, kind) {
+  const event = state.activeEvents.find(item => item.id === eventId);
+  if (!event) return null;
+  if (kind === "primary") {
+    const args = parseToolArgs(event.toolInputJson);
+    const key = args ? primaryArgKey(args) : null;
+    return key ? String(args[key]) : (event.toolInputJson || "");
+  }
+  if (kind === "input") return prettyJson(event.toolInputJson);
+  if (kind === "output") return prettyJson(event.toolOutputJson);
+  return null;
 }
 
 function clamp(value, max) {
@@ -607,9 +955,9 @@ function formatConf(c) {
 function highlightText(highlight, field, fallback, max = 320) {
   const fragments = highlight?.[field];
   if (Array.isArray(fragments) && fragments.length) {
-    return sanitizeHighlight(clamp(fragments.join(" … "), max));
+    return sanitizeHighlight(clamp(tildify(fragments.join(" … ")), max));
   }
-  return escapeHtml(clamp(fallback, max));
+  return escapeHtml(clamp(tildify(fallback), max));
 }
 
 function sanitizeHighlight(value) {
@@ -702,8 +1050,8 @@ function renderAskCitation(citation) {
       <strong>${escapeHtml(citation.title || "(untitled memory)")}</strong>
       <span class="readout">${escapeHtml(relativeTime(citation.timestamp))}</span>
     </div>
-    <div class="ask-citation-source">${escapeHtml(source)}</div>
-    <div class="ask-citation-snippet">${escapeHtml(citation.snippet || "")}</div>
+    <div class="ask-citation-source">${escapeHtml(tildify(source))}</div>
+    <div class="ask-citation-snippet">${escapeHtml(tildify(citation.snippet || ""))}</div>
     <div class="ask-citation-actions">${memoryAction}${sourceAction}${copySource}</div>
   </article>`;
 }
@@ -713,6 +1061,409 @@ function sourcePathHref(path) {
   if (path.startsWith("/")) return `file://${path}`;
   if (/^https?:\/\//i.test(path)) return path;
   return "";
+}
+
+// ---------------------------------------------------------------- projects
+async function loadProjects(selectFirst = false) {
+  state.projects = await api("/api/projects");
+  els.projectCount.textContent = `${state.projects.length}`;
+  if (!state.projects.length) {
+    state.activeProjectKey = null;
+    state.projectSessions = [];
+    state.projectTimeline = [];
+    state.selectedProjectSessionIds = new Set();
+    state.projectMeld = null;
+    els.projectList.innerHTML = `<p class="empty">No project traces yet.</p>`;
+    els.projectSessions.innerHTML = "";
+    renderProjectMeldTray();
+    renderProjectMeldOutput();
+    els.projectTimeline.innerHTML = `<p class="empty">Project storyline is idle.</p>`;
+    els.projectsMeta.textContent = "Derived from recorded working directories.";
+    els.projectTimelineMeta.textContent = "";
+    if (state.sessions.length) renderSessionsRail();
+    return;
+  }
+
+  const shouldSelect = selectFirst || (state.activeTab === "projects" && (!state.activeProjectKey ||
+    !state.projects.some(project => project.projectKey === state.activeProjectKey)));
+  renderProjectList();
+  if (shouldSelect) {
+    await selectProject(state.projects[0].projectKey, { renderList: false });
+  } else {
+    renderProjectList();
+    if (!state.activeProjectKey) {
+      els.projectsMeta.textContent = `${num(state.projects.length)} projects · select a project to load its storyline`;
+      els.projectTimelineMeta.textContent = "";
+    }
+  }
+  if (state.sessions.length) renderSessionsRail();
+}
+
+async function selectProject(projectKey, options = {}) {
+  const { renderList = true } = options;
+  state.activeProjectKey = projectKey;
+  state.selectedProjectSessionIds = new Set();
+  if (renderList) renderProjectList();
+  const project = state.projects.find(item => item.projectKey === projectKey);
+  if (project) {
+    els.projectsMeta.textContent =
+      `${num(project.sessionCount)} sessions · ${num(project.eventCount)} events · ${project.label}`;
+  } else {
+    els.projectsMeta.textContent = "Loading project.";
+  }
+  els.projectSessions.innerHTML = `<p class="empty">Loading sessions...</p>`;
+  state.projectMeld = null;
+  els.projectMeldStatus.textContent = "";
+  renderProjectMeldOutput();
+  renderProjectMeldTray();
+  els.projectTimeline.innerHTML = `<p class="empty">Loading storyline...</p>`;
+  const [sessions, timeline] = await Promise.all([
+    api(`/api/projects/${encodeURIComponent(projectKey)}/sessions?limit=100`),
+    api(`/api/projects/${encodeURIComponent(projectKey)}/timeline?limit=80`),
+  ]);
+  state.projectSessions = sessions;
+  state.projectTimeline = timeline.items || [];
+  reconcileProjectSessionSelection(sessions);
+  renderProjectList();
+  renderProjectSessions(sessions);
+  renderProjectMeldTray();
+  renderProjectTimeline(timeline);
+}
+
+function renderProjectList() {
+  els.projectList.innerHTML = state.projects.map(renderProjectRow).join("");
+}
+
+function renderProjectRow(project) {
+  const active = project.projectKey === state.activeProjectKey ? "active" : "";
+  const melds = Number(project.savedMeldCount || 0);
+  const meldMeta = melds ? `<span>${num(melds)} melds</span>` : "";
+  return `<button type="button" class="project-row ${active}" data-project-key="${escapeHtml(project.projectKey)}">
+    <span class="project-row-title">${escapeHtml(project.label || project.canonicalKey || "Project")}</span>
+    <span class="project-row-meta">
+      <span>${num(project.sessionCount || 0)} ses</span>
+      <span>${num(project.eventCount || 0)} ev</span>
+      ${meldMeta}
+      <span>${escapeHtml(relativeTime(project.lastSeenAt))}</span>
+    </span>
+  </button>`;
+}
+
+function renderProjectSessions(sessions) {
+  if (!sessions.length) {
+    els.projectSessions.innerHTML = `<p class="empty">No sessions in this project.</p>`;
+    return;
+  }
+  els.projectSessions.innerHTML = sessions.map(session => {
+    const src = (session.source || "unknown").toLowerCase();
+    const selected = state.selectedProjectSessionIds.has(session.id);
+    return `<article class="project-session ${selected ? "selected" : ""}" data-session-id="${escapeHtml(session.id)}">
+      <label class="project-session-pick">
+        <input type="checkbox" data-project-session-check="${escapeHtml(session.id)}" ${selected ? "checked" : ""}>
+        <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
+        <span class="project-session-title">${escapeHtml(session.title || session.clientSessionId)}</span>
+      </label>
+      <span class="readout">${num(session.eventCount || 0)} ev · ${escapeHtml(relativeTime(session.lastSeenAt))}</span>
+      <button type="button" class="project-session-open" data-open-project-session="${escapeHtml(session.id)}" title="Open session" aria-label="Open session">↗</button>
+    </article>`;
+  }).join("");
+}
+
+function reconcileProjectSessionSelection(sessions) {
+  const ids = new Set(sessions.map(session => session.id));
+  const selected = [...state.selectedProjectSessionIds].filter(id => ids.has(id));
+  if (!selected.length) {
+    selected.push(...sessions.slice(0, Math.min(3, sessions.length)).map(session => session.id));
+  }
+  state.selectedProjectSessionIds = new Set(selected);
+}
+
+function renderProjectMeldTray() {
+  const selected = state.selectedProjectSessionIds.size;
+  els.projectMeldSelectedCount.textContent = `${num(selected)} selected`;
+  els.projectMeldPreviewButton.disabled = !state.activeProjectKey || selected === 0;
+  if (!state.activeProjectKey) {
+    els.projectMeldStatus.textContent = "select a project";
+  } else if (selected === 0) {
+    els.projectMeldStatus.textContent = "select sessions";
+  } else if (!els.projectMeldStatus.textContent) {
+    els.projectMeldStatus.textContent = "";
+  }
+}
+
+function renderProjectMeldOutput() {
+  if (!state.projectMeld) {
+    els.projectMeldOutput.hidden = true;
+    els.projectMeldOutputTitle.textContent = "Project meld";
+    els.projectMeldText.textContent = "";
+    return;
+  }
+  const output = state.projectMeld.executionMode === "direct"
+    ? state.projectMeld.preview
+    : state.projectMeld.bundle;
+  const notes = Array.isArray(state.projectMeld.degradationNotes) && state.projectMeld.degradationNotes.length
+    ? `\n\nDegradation notes:\n${state.projectMeld.degradationNotes.map(note => `- ${note}`).join("\n")}`
+    : "";
+  els.projectMeldOutput.hidden = false;
+  els.projectMeldOutputTitle.textContent = state.projectMeld.executionMode === "direct"
+    ? "Direct meld preview"
+    : "Exportable meld bundle";
+  els.projectMeldText.textContent = `${output || ""}${notes}`;
+}
+
+async function previewProjectMeld() {
+  if (!state.activeProjectKey || !state.selectedProjectSessionIds.size) return;
+  const data = new FormData(els.projectMeldForm);
+  const body = {
+    sessionIds: [...state.selectedProjectSessionIds],
+    executionMode: data.get("executionMode") || "export_bundle",
+    provider: (data.get("provider") || "").trim(),
+    model: (data.get("model") || "").trim(),
+  };
+  els.projectMeldPreviewButton.disabled = true;
+  els.projectMeldStatus.textContent = body.executionMode === "direct" ? "running preview" : "building bundle";
+  try {
+    state.projectMeld = await api(`/api/projects/${encodeURIComponent(state.activeProjectKey)}/melds/preview`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    els.projectMeldStatus.textContent =
+      `${num(state.projectMeld.sessionCount || 0)} sessions · ${num(state.projectMeld.evidenceCount || 0)} evidence · ${num(state.projectMeld.bundleChars || 0)} chars`;
+    renderProjectMeldOutput();
+  } catch (err) {
+    state.projectMeld = null;
+    renderProjectMeldOutput();
+    els.projectMeldStatus.textContent = `meld failed: ${err.message}`;
+  } finally {
+    renderProjectMeldTray();
+  }
+}
+
+function renderProjectTimeline(timeline) {
+  const items = timeline.items || [];
+  const total = Number(timeline.count || items.length);
+  els.projectTimelineMeta.textContent = `${num(items.length)} / ${num(total)} blocks`;
+  if (!items.length) {
+    els.projectTimeline.innerHTML = `<p class="empty">No storyline blocks for this project.</p>`;
+    return;
+  }
+  els.projectTimeline.innerHTML = items.map(renderProjectBlock).join("");
+}
+
+function renderProjectBlock(block, i) {
+  const type = block.blockType || "event";
+  const src = (block.source || "unknown").toLowerCase();
+  const headline = escapeHtml(tildify(block.headline || block.eventType || "Event"));
+  const bodyText = block.text && block.text !== block.headline
+    ? `<div class="project-block-text">${escapeHtml(clamp(tildify(block.text), 640))}</div>`
+    : "";
+  const session = block.sessionId
+    ? `<button type="button" class="project-block-session" data-session-id="${escapeHtml(block.sessionId)}">${escapeHtml(block.sessionTitle || compactId(block.sessionId))}</button>`
+    : "";
+  return `<article class="project-block project-block--${escapeHtml(type)}" data-event-id="${escapeHtml(block.id)}" style="--i:${i}">
+    <div class="project-block-head">
+      <span class="project-block-type">${escapeHtml(type)}</span>
+      <span class="src src--${escapeHtml(src)}">${escapeHtml(src)}</span>
+      ${session}
+      <span class="project-block-time">${escapeHtml(relativeTime(block.observedAt))}</span>
+    </div>
+    <div class="project-block-title">${headline}</div>
+    ${bodyText}
+    ${projectBlockDetails(block)}
+  </article>`;
+}
+
+function projectBlockDetails(block) {
+  const parts = [];
+  if (block.toolName) parts.push(`tool ${block.toolName}`);
+  if (block.toolInputJson) parts.push("input\n" + prettyJson(block.toolInputJson));
+  if (block.toolOutputJson) parts.push("output\n" + prettyJson(block.toolOutputJson));
+  if (block.metadata && Object.keys(block.metadata).length) {
+    parts.push("metadata\n" + JSON.stringify(block.metadata, null, 2));
+  }
+  if (!parts.length) return "";
+  return `<details class="project-block-raw"><summary>raw evidence</summary><pre>${escapeHtml(clamp(tildify(parts.join("\n\n")), 5000))}</pre></details>`;
+}
+
+// --------------------------------------------------------------- outline/toc
+function renderSessionOutline(events) {
+  const outline = buildSessionOutline(events);
+  if (!events.length) {
+    els.outlineBody.innerHTML = `<p class="empty">Open a session to build an outline.</p>`;
+    return;
+  }
+  els.outlineBody.innerHTML = `
+    <div class="session-minimap" aria-label="Event minimap">
+      ${eventsForReading(events).map(renderMinimapTick).join("")}
+    </div>
+    ${outline.map(renderOutlineSection).join("")}`;
+}
+
+function buildSessionOutline(events) {
+  const edited = uniqueOutlineItems(events.flatMap(event => fileOutlineItems(event, "edited")));
+  const read = uniqueOutlineItems(events.flatMap(event => fileOutlineItems(event, "read")));
+  const tools = [...toolCounts(events)].map(([tool, count]) => ({
+    label: tool,
+    meta: `${num(count)} uses`,
+    eventId: firstEventForTool(events, tool)?.id || "",
+  }));
+  const eventKinds = Object.entries(events.reduce((acc, event) => {
+    const kind = classify(event);
+    acc[kind] = (acc[kind] || 0) + 1;
+    return acc;
+  }, {})).map(([kind, count]) => ({
+    label: kind,
+    meta: `${num(count)} events`,
+    eventId: events.find(event => classify(event) === kind)?.id || "",
+  }));
+  return [
+    { key: "edited", title: "Files edited", items: edited },
+    { key: "read", title: "Files read", items: read },
+    { key: "tools", title: "Tools used", items: tools },
+    { key: "events", title: "Event shape", items: eventKinds },
+  ];
+}
+
+function eventsForReading(events) {
+  return [...events].reverse();
+}
+
+function renderMinimapTick(event) {
+  const cls = classify(event);
+  const title = eventSummary(event, cls).text;
+  return `<button type="button" class="minimap-tick minimap-tick--${escapeHtml(cls)}" data-event-id="${escapeHtml(event.id)}" title="${escapeHtml(tildify(title))}"></button>`;
+}
+
+function renderOutlineSection(section) {
+  const visible = section.items.slice(0, 5);
+  const overflow = Math.max(0, section.items.length - visible.length);
+  const rows = visible.length
+    ? visible.map(renderOutlineItem).join("")
+    : `<p class="outline-empty">None</p>`;
+  return `<section class="outline-section" data-outline-section="${escapeHtml(section.key)}">
+    <button type="button" class="outline-section-head" data-outline-popout="${escapeHtml(section.key)}">
+      <span>${escapeHtml(section.title)}</span>
+      <strong>${num(section.items.length)}</strong>
+    </button>
+    <div class="outline-list">${rows}</div>
+    ${overflow ? `<button type="button" class="outline-more" data-outline-popout="${escapeHtml(section.key)}">${num(overflow)} more</button>` : ""}
+  </section>`;
+}
+
+function renderOutlineItem(item) {
+  const target = item.eventId ? ` data-event-id="${escapeHtml(item.eventId)}"` : "";
+  return `<button type="button" class="outline-item"${target}>
+    <span>${escapeHtml(tildify(item.label))}</span>
+    <small>${escapeHtml(item.meta || "")}</small>
+  </button>`;
+}
+
+function fileOutlineItems(event, mode) {
+  if (!event.toolName) return [];
+  const tool = event.toolName.toLowerCase();
+  const edited = /multiedit|edit|write|patch/.test(tool);
+  const read = /read|grep|search|glob|list|ls|cat|sed/.test(tool);
+  if (mode === "edited" && !edited) return [];
+  if (mode === "read" && !read) return [];
+  return toolPaths(event).map(path => ({
+    label: path,
+    meta: event.toolName,
+    eventId: event.id,
+  }));
+}
+
+function toolPaths(event) {
+  const args = parseToolArgs(event.toolInputJson);
+  if (!args) return [];
+  const paths = [];
+  for (const key of ["file_path", "filePath", "target_file", "targetFile", "path", "cwd"]) {
+    if (typeof args[key] === "string" && args[key].trim()) paths.push(args[key].trim());
+  }
+  if (Array.isArray(args.files)) {
+    for (const file of args.files) {
+      if (typeof file === "string" && file.trim()) paths.push(file.trim());
+    }
+  }
+  const primary = primaryArgKey(args);
+  if (!paths.length && primary && /path|file/i.test(primary)) {
+    paths.push(String(args[primary]).trim());
+  }
+  return paths;
+}
+
+function uniqueOutlineItems(items) {
+  const seen = new Set();
+  const unique = [];
+  for (const item of items) {
+    const key = normalizeSearch(`${item.label}\u0000${item.meta}`);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(item);
+  }
+  return unique;
+}
+
+function firstEventForTool(events, tool) {
+  return eventsForReading(events).find(event => event.toolName === tool);
+}
+
+function openOutlinePopout(sectionKey) {
+  const section = buildSessionOutline(state.activeEvents).find(item => item.key === sectionKey);
+  if (!section) return;
+  els.outlinePopoutTitle.textContent = section.title;
+  els.outlinePopoutBody.innerHTML = section.items.length
+    ? section.items.map(renderOutlineItem).join("")
+    : `<p class="empty">No matching outline entries.</p>`;
+  els.outlinePopout.hidden = false;
+  els.outlinePopoutCloseButton.focus();
+}
+
+function closeOutlinePopout() {
+  els.outlinePopout.hidden = true;
+}
+
+function applyRailState() {
+  els.deck.classList.toggle("rail-collapsed", state.railCollapsed);
+  els.projectRail.classList.toggle("collapsed", state.railCollapsed);
+  els.toggleRailButton.textContent = state.railCollapsed ? "Open" : "Rail";
+  els.toggleRailButton.title = state.railCollapsed ? "Expand sidebar" : "Collapse sidebar";
+  els.toggleRailButton.setAttribute("aria-label", state.railCollapsed ? "Expand sidebar" : "Collapse sidebar");
+  els.toggleRailButton.setAttribute("aria-expanded", String(!state.railCollapsed));
+}
+
+function toggleRail() {
+  state.railCollapsed = !state.railCollapsed;
+  saveBoolean(RAIL_COLLAPSED_STORAGE_KEY, state.railCollapsed);
+  applyRailState();
+}
+
+function applyOutlineState() {
+  els.sessionOutline.classList.toggle("collapsed", state.outlineCollapsed);
+  els.toggleOutlineButton.textContent = state.outlineCollapsed ? "Open" : "TOC";
+  els.toggleOutlineButton.title = state.outlineCollapsed ? "Expand outline" : "Collapse outline";
+  els.toggleOutlineButton.setAttribute("aria-label", state.outlineCollapsed ? "Expand outline" : "Collapse outline");
+  els.toggleOutlineButton.setAttribute("aria-expanded", String(!state.outlineCollapsed));
+}
+
+function toggleOutline() {
+  state.outlineCollapsed = !state.outlineCollapsed;
+  saveBoolean(OUTLINE_COLLAPSED_STORAGE_KEY, state.outlineCollapsed);
+  applyOutlineState();
+}
+
+function loadBoolean(key, fallback = false) {
+  try {
+    const value = window.localStorage?.getItem(key);
+    if (value === "true") return true;
+    if (value === "false") return false;
+  } catch (_) { /* localStorage may be unavailable */ }
+  return fallback;
+}
+
+function saveBoolean(key, value) {
+  try {
+    window.localStorage?.setItem(key, String(Boolean(value)));
+  } catch (_) { /* localStorage may be unavailable */ }
 }
 
 // ----------------------------------------------------------------- recall
@@ -819,7 +1570,14 @@ function locateOnSpine(eventId) {
 els.stageTabs.addEventListener("click", event => {
   loadAskStatus();
   const button = event.target.closest("[data-tab]");
-  if (button) activateTab(button.dataset.tab);
+  if (button) {
+    activateTab(button.dataset.tab);
+    if (button.dataset.tab === "projects") {
+      loadProjects(false).catch(err => {
+        els.projectsMeta.textContent = `projects failed: ${err.message}`;
+      });
+    }
+  }
 });
 
 els.askForm.addEventListener("submit", async event => {
@@ -900,6 +1658,60 @@ els.sessions.addEventListener("click", event => {
   }
 });
 
+els.projectList.addEventListener("click", event => {
+  const row = event.target.closest(".project-row[data-project-key]");
+  if (row) {
+    selectProject(row.dataset.projectKey).catch(err => {
+      els.projectsMeta.textContent = `project failed: ${err.message}`;
+    });
+  }
+});
+
+els.projectSessions.addEventListener("click", async event => {
+  const checkbox = event.target.closest("[data-project-session-check]");
+  if (checkbox) {
+    const sessionId = checkbox.dataset.projectSessionCheck;
+    if (checkbox.checked) {
+      state.selectedProjectSessionIds.add(sessionId);
+    } else {
+      state.selectedProjectSessionIds.delete(sessionId);
+    }
+    state.projectMeld = null;
+    els.projectMeldStatus.textContent = "";
+    renderProjectSessions(state.projectSessions);
+    renderProjectMeldTray();
+    renderProjectMeldOutput();
+    return;
+  }
+  const open = event.target.closest("[data-open-project-session]");
+  if (!open) return;
+  await selectSession(open.dataset.openProjectSession);
+  activateTab("spine");
+});
+
+els.projectMeldForm.addEventListener("submit", event => {
+  event.preventDefault();
+  previewProjectMeld();
+});
+
+els.copyProjectMeldButton.addEventListener("click", async () => {
+  if (!els.projectMeldText.textContent) return;
+  await copyValue(els.projectMeldText.textContent, els.copyProjectMeldButton);
+});
+
+els.projectTimeline.addEventListener("click", async event => {
+  const row = event.target.closest(".project-block-session[data-session-id]");
+  if (!row) return;
+  await selectSession(row.dataset.sessionId);
+  activateTab("spine");
+});
+
+els.sessionSearchInput.addEventListener("input", event => {
+  state.sessionQuery = event.currentTarget.value;
+  renderSessionsRail();
+});
+
+els.toggleRailButton.addEventListener("click", toggleRail);
 els.expandAllSessionsButton.addEventListener("click", expandAllSessionGroups);
 els.collapseAllSessionsButton.addEventListener("click", collapseAllSessionGroups);
 
@@ -909,7 +1721,7 @@ els.sessionIdentity.addEventListener("click", event => {
 });
 
 els.refreshButton.addEventListener("click", async () => {
-  try { await Promise.all([loadStatus(), loadAskStatus(), loadSessions(false)]); }
+  try { await Promise.all([loadStatus(), loadAskStatus(), loadSessions(false), loadProjects(false)]); }
   catch (err) { console.error(err); }
 });
 
@@ -964,7 +1776,7 @@ els.captureForm.addEventListener("submit", async event => {
       }),
     });
     event.currentTarget.elements.text.value = "";
-    await Promise.all([loadStatus(true), loadSessions(true)]);
+    await Promise.all([loadStatus(true), loadSessions(true), loadProjects(false)]);
   } catch (err) {
     console.error(err);
   } finally {
@@ -994,6 +1806,64 @@ els.toolFilter.addEventListener("click", event => {
   if (!button) return;
   state.activeToolFilter = button.dataset.filter;
   renderFilteredSpine();
+});
+
+els.summaryOpenButton.addEventListener("click", openSummaryDialog);
+els.summaryCloseButton.addEventListener("click", closeSummaryDialog);
+els.summaryDialog.addEventListener("click", event => {
+  if (event.target === els.summaryDialog) closeSummaryDialog();
+});
+
+els.toggleOutlineButton.addEventListener("click", toggleOutline);
+els.outlineBody.addEventListener("click", event => {
+  const popout = event.target.closest("[data-outline-popout]");
+  if (popout) {
+    openOutlinePopout(popout.dataset.outlinePopout);
+    return;
+  }
+  const minimap = event.target.closest(".minimap-tick[data-event-id]");
+  const item = event.target.closest(".outline-item[data-event-id]");
+  const target = minimap || item;
+  if (target) locateOnSpine(target.dataset.eventId);
+});
+els.outlinePopout.addEventListener("click", event => {
+  if (event.target === els.outlinePopout) closeOutlinePopout();
+  const item = event.target.closest(".outline-item[data-event-id]");
+  if (item) {
+    closeOutlinePopout();
+    locateOnSpine(item.dataset.eventId);
+  }
+});
+els.outlinePopoutCloseButton.addEventListener("click", closeOutlinePopout);
+
+els.spine.addEventListener("click", async event => {
+  const nodeToggle = event.target.closest(".node-summary[data-toggle-event]");
+  if (nodeToggle) {
+    toggleNode(nodeToggle.dataset.toggleEvent);
+    return;
+  }
+  const copy = event.target.closest(".tool-card-button[data-copy-kind]");
+  if (copy) {
+    event.preventDefault();
+    const value = toolCopyValue(copy.dataset.eventId, copy.dataset.copyKind);
+    if (value != null) await copyValue(value, copy);
+    return;
+  }
+  const toggle = event.target.closest(".tool-card-button[data-expand-target]");
+  if (toggle) {
+    const card = toggle.closest(".tool-card");
+    const block = card?.querySelector(`[data-expandable="${toggle.dataset.expandTarget}"]`);
+    if (block) {
+      const clamped = block.classList.toggle("clamped");
+      toggle.textContent = clamped ? "Expand" : "Collapse";
+    }
+  }
+});
+
+window.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  if (!els.summaryDialog.hidden) closeSummaryDialog();
+  if (!els.outlinePopout.hidden) closeOutlinePopout();
 });
 
 async function copySessionIds(session, button) {
@@ -1117,7 +1987,7 @@ function renderSearchHit(hit, i) {
       <span>${title}</span>
     </div>
     <div class="result-body">${body}</div>
-    <div class="result-foot">${escapeHtml(event.eventType || "Event")}${where ? ` · ${escapeHtml(where)}` : ""}</div>
+    <div class="result-foot">${escapeHtml(event.eventType || "Event")}${where ? ` · ${escapeHtml(tildify(where))}` : ""}</div>
   </article>`;
 }
 
@@ -1152,13 +2022,13 @@ els.summarizeButton.addEventListener("click", async () => {
   try {
     const session = await api(`/api/sessions/${encodeURIComponent(state.activeSessionId)}/summarize`, { method: "POST" });
     els.spineTitle.textContent = session.title;
-    els.summary.hidden = !session.summary;
-    els.summary.textContent = session.summary || "";
+    renderSummaryCard(session);
     setSummaryExportState(session);
     await loadSessions(false);
   } catch (err) {
     els.summary.hidden = false;
-    els.summary.textContent = `Summarize failed: ${err.message}`;
+    els.summaryPreview.textContent = `Summarize failed: ${err.message}`;
+    els.summaryDialogText.textContent = `Summarize failed: ${err.message}`;
   } finally {
     button.textContent = original;
     button.disabled = false;
@@ -1240,8 +2110,12 @@ if (window.BlackBoxQueryBar && document.querySelector("#queryInput")) {
 }
 
 // ----------------------------------------------------------------- boot
-Promise.all([loadStatus(), loadAskStatus(), loadExportTargets()])
-  .then(() => loadSessions(true))
+state.railCollapsed = loadBoolean(RAIL_COLLAPSED_STORAGE_KEY, false);
+state.outlineCollapsed = loadBoolean(OUTLINE_COLLAPSED_STORAGE_KEY, false);
+applyRailState();
+applyOutlineState();
+
+Promise.all([loadStatus(), loadAskStatus(), loadExportTargets(), loadProjects(false), loadSessions(true)])
   .catch(error => {
   els.readouts.innerHTML = gauge("recorder", "degraded", "unreachable");
   els.spine.innerHTML = `<p class="empty">Could not reach the recorder: ${escapeHtml(error.message)}</p>`;

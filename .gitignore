@@ -5,6 +5,9 @@ sba-agentic.db-*
 .DS_Store
 .idea/
 .claude/
+.codex/
 .firecrawl/
 .jaws/
+.superpowers/
+graphify-out/
 *.iml

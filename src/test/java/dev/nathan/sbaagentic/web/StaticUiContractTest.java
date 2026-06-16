@@ -15,8 +15,24 @@ class StaticUiContractTest {
 
         assertThat(html)
                 .contains("data-tab=\"spine\"")
+                .contains("data-tab=\"projects\"")
                 .contains("data-tab=\"recall\"")
                 .contains("data-tab=\"ask\"")
+                .contains("id=\"projectRail\"")
+                .contains("id=\"toggleRailButton\"")
+                .contains("id=\"sessionSearchInput\"")
+                .contains("id=\"projectList\"")
+                .contains("id=\"projectSessions\"")
+                .contains("id=\"projectTimeline\"")
+                .contains("id=\"projectMeldTray\"")
+                .contains("id=\"projectMeldForm\"")
+                .contains("id=\"projectMeldOutput\"")
+                .contains("id=\"projectMeldSelectedCount\"")
+                .contains("id=\"summaryPreview\"")
+                .contains("id=\"summaryDialog\"")
+                .contains("id=\"sessionOutline\"")
+                .contains("id=\"outlineBody\"")
+                .contains("id=\"outlinePopout\"")
                 .contains("id=\"askForm\"")
                 .contains("id=\"retrieveButton\"")
                 .contains("id=\"askResults\"")
@@ -29,11 +45,13 @@ class StaticUiContractTest {
                 .contains("<script src=\"/app.js\"></script>")
                 .contains("data-panel=\"recall\"")
                 .contains("data-panel=\"ask\"")
+                .contains("data-panel=\"projects\"")
                 .contains("data-panel=\"spine\"");
 
         assertThat(html).doesNotContain("data-tab=\"search\"");
         assertThat(html).doesNotContain("data-panel=\"search\"");
         assertThat(html.indexOf("data-tab=\"spine\"")).isLessThan(html.indexOf("data-tab=\"recall\""));
+        assertThat(html.indexOf("data-tab=\"projects\"")).isLessThan(html.indexOf("data-tab=\"recall\""));
         assertThat(html.indexOf("data-tab=\"recall\"")).isLessThan(html.indexOf("data-tab=\"ask\""));
         assertThat(html)
                 .contains("class=\"stage-tab active\"")
@@ -54,6 +72,20 @@ class StaticUiContractTest {
                 .contains("BlackBoxConstellation.render")
                 .contains("BlackBoxQueryBar.attach")
                 .contains("queryInput")
+                .contains("/api/projects")
+                .contains("/melds/preview")
+                .contains("loadProjects")
+                .contains("renderProjectTimeline")
+                .contains("previewProjectMeld")
+                .contains("renderProjectMeldTray")
+                .contains("selectedProjectSessionIds")
+                .contains("toggleRail")
+                .contains("renderSessionOutline")
+                .contains("renderSummaryCard")
+                .contains("toolActionSummary")
+                .contains("toggleNode")
+                .contains("openOutlinePopout")
+                .contains("sessionSearchInput")
                 .contains("activeTab: \"spine\"")
                 .contains("groupSessionsByProject")
                 .contains("formatProjectPath")
@@ -76,5 +108,25 @@ class StaticUiContractTest {
                 .contains("color: var(--paper)")
                 .contains(".qb-overlay")
                 .contains("opacity: 0.72");
+    }
+
+    @Test
+    void staticCssDefinesProjectsWorkspace() throws Exception {
+        String css = Files.readString(Path.of("src/main/resources/static/styles.css"));
+
+        assertThat(css)
+                .contains(".project-workspace")
+                .contains(".project-list")
+                .contains(".project-timeline")
+                .contains(".project-meld-tray")
+                .contains(".project-meld-output")
+                .contains(".project-block")
+                .contains(".rail.collapsed")
+                .contains(".summary-dialog")
+                .contains(".session-workspace")
+                .contains(".session-outline")
+                .contains(".session-minimap")
+                .contains(".node.is-collapsed")
+                .contains("@media (max-width: 720px)");
     }
 }
