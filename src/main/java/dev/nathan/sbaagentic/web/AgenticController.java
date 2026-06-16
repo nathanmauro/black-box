@@ -20,6 +20,12 @@ import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.exporting.SummaryExportService;
+import dev.nathan.sbaagentic.project.ProjectService;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
+import dev.nathan.sbaagentic.project.ProjectMeldService;
+import dev.nathan.sbaagentic.project.ProjectSummary;
+import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
@@ -45,6 +51,8 @@ public class AgenticController {
     private final SearchService searchService;
     private final SessionSummaryService summaryService;
     private final SummaryExportService summaryExportService;
+    private final ProjectService projectService;
+    private final ProjectMeldService projectMeldService;
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
     private final AskService askService;
@@ -56,6 +64,8 @@ public class AgenticController {
             SearchService searchService,
             SessionSummaryService summaryService,
             SummaryExportService summaryExportService,
+            ProjectService projectService,
+            ProjectMeldService projectMeldService,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient,
             AskService askService) {
@@ -65,6 +75,8 @@ public class AgenticController {
         this.searchService = searchService;
         this.summaryService = summaryService;
         this.summaryExportService = summaryExportService;
+        this.projectService = projectService;
+        this.projectMeldService = projectMeldService;
         this.localAiClient = localAiClient;
         this.elasticIndexClient = elasticIndexClient;
         this.askService = askService;
@@ -96,6 +108,38 @@ public class AgenticController {
     @GetMapping("/sessions")
     public List<AgentSession> sessions(@RequestParam(defaultValue = "25") int limit) {
         return repository.recentSessions(safeLimit(limit));
+    }
+
+    @GetMapping("/projects")
+    public List<ProjectSummary> projects() {
+        return projectService.projects();
+    }
+
+    @GetMapping("/projects/{projectKey}/sessions")
+    public List<AgentSession> projectSessions(
+            @PathVariable String projectKey,
+            @RequestParam(defaultValue = "100") int limit) {
+        return projectService.sessions(projectKey, safeLimit(limit));
+    }
+
+    @GetMapping("/projects/{projectKey}/timeline")
+    public ProjectTimelineResponse projectTimeline(
+            @PathVariable String projectKey,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
+        return projectService.timeline(projectKey, safeLimit(limit), safeOffset(offset));
+    }
+
+    @GetMapping("/projects/{projectKey}/melds")
+    public List<Object> projectMelds(@PathVariable String projectKey) {
+        return projectService.melds(projectKey);
+    }
+
+    @PostMapping("/projects/{projectKey}/melds/preview")
+    public ProjectMeldPreviewResponse previewProjectMeld(
+            @PathVariable String projectKey,
+            @RequestBody ProjectMeldPreviewRequest request) {
+        return projectMeldService.preview(projectKey, request);
     }
 
     @GetMapping("/sessions/{sessionId}/events")
@@ -194,5 +238,9 @@ public class AgenticController {
 
     private static int safeValueLimit(int limit) {
         return Math.max(1, Math.min(limit, 50));
+    }
+
+    private static int safeOffset(int offset) {
+        return Math.max(0, offset);
     }
 }

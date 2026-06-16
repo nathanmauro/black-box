@@ -26,6 +26,8 @@ flowchart LR
         DB[("SQLite<br/>agent_sessions · agent_events<br/>SOURCE OF TRUTH")]
         RECALL["ContextService<br/>recall structured intent"]
         SEARCH["SearchService<br/>free-text search"]
+        PROJECTS["ProjectService<br/>derived project timelines"]
+        MELDS["ProjectMeldService<br/>bounded meld bundles"]
         SUM["SessionSummaryService<br/>summarize (AI or compacted fallback)"]
     end
 
@@ -52,12 +54,16 @@ flowchart LR
 
     DB --> RECALL
     DB --> SEARCH
+    DB --> PROJECTS
+    DB --> MELDS
     DB --> SUM
     SUM -. when enabled .-> AI
     ES -. optional hits .-> SEARCH
 
     RECALL --> MCPR & HTTPR
     SEARCH --> MCPR & HTTPR & UI
+    PROJECTS --> HTTPR & UI
+    MELDS --> HTTPR & UI
     RECALL --> UI
 
     MCPR -->|"prior decision flies back into context"| CC
@@ -72,8 +78,10 @@ flowchart LR
 - **SQLite — the source of truth.** Two tables (`agent_sessions`, `agent_events`) created from `schema.sql`. This is the only canonical store. Nothing else has to be running for the core write + query loop to work.
 - **`ContextService` (recall).** The read side of the signature loop. `recallContext` / `GET /api/recall` return *structured* prior intent for a repo or topic within a time window — the decision, rationale, alternatives, open loops, confidence, and (for handoffs) the next action — not raw transcript text.
 - **`SearchService`.** Free-text search over captured events for `searchSessions` / `GET /api/search`. SQLite-backed by default; folds in Elasticsearch hits when that index is enabled.
+- **`ProjectService`.** Derives project groups from normalized `agent_sessions.cwd`, exposes URL-safe project keys, and builds a read-only Hybrid Storyline from structured decisions, handoffs, assistant output, and notable tool results. Raw `cwd` values and events are not rewritten.
+- **`ProjectMeldService`.** Builds a deterministic, bounded context bundle from selected sessions in one derived project. Export-bundle mode returns local text without model execution; direct mode is an explicit request that sends the bundle through the configured summary backend. Durable saved meld storage remains separate future work.
 - **`SessionSummaryService`.** Summarizes a session on demand. Uses the optional local model when configured; otherwise falls back to a compacted transcript so the feature works with AI off.
-- **Web control surface.** Reads the same `/api/*` endpoints to browse sessions, timelines, search, status, and recalled intent. (Owned separately under `src/main/resources/static/`.)
+- **Web control surface.** Reads the same `/api/*` endpoints to browse sessions, project timelines, meld bundles, search, status, and recalled intent. The Sessions workspace uses a project-first rail, compact collapsible trace rows, a bounded summary popup, and a derived outline/minimap over files, tools, and event shape. (Owned separately under `src/main/resources/static/`.)
 
 ## Optional sinks
 

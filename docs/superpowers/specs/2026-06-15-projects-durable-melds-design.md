@@ -1,7 +1,7 @@
 # Projects and Durable Melds Design
 
 Date: 2026-06-15
-Status: Approved design, pending implementation plan
+Status: Approved design; Phase 1 Projects, Phase 1.5 session workbench, and Phase 2 meld preview/export implemented
 
 ## Summary
 
@@ -14,6 +14,21 @@ events.
 
 The selected approach is "Projects + Durable Melds": a scoped v1 that is useful now and
 keeps runway for a later full project-intelligence system.
+
+## Implementation Status
+
+- Phase 1 is implemented: `GET /api/projects`, project sessions, project timeline, empty
+  meld list placeholder, and a read-only Projects tab.
+- Phase 1.5 is implemented: the Sessions workspace now uses a project-first, collapsible,
+  fuzzy-filtered rail; session event cards default collapsed; summaries open in a bounded
+  popup; and a right-side session outline shows files edited, files read, tools used, and
+  event shape.
+- Phase 2 is implemented: selected project sessions can build a bounded map-reduce-style
+  context bundle locally, or run an explicit direct preview through the configured summary
+  backend.
+- Durable saved melds and alias/merge controls remain future phases.
+- The v1 project key is a URL-safe encoded form of the normalized `cwd`; historical `cwd`
+  values and raw events are not rewritten.
 
 ## Goals
 
@@ -80,6 +95,12 @@ The Projects tab has three working areas:
 
 - **Project list:** derived project groups from `cwd`, with counts for sessions, events,
   and saved melds. Alias/merge controls appear only where path cleanup is needed.
+- **Session workbench:** the main Sessions rail groups recent sessions by derived project
+  key, keeps no-`cwd` sessions in a no-project/manual/system bucket, and supports fuzzy
+  filtering across project paths and session titles.
+- **Session outline:** the session trace has a compact right-side outline/minimap for files
+  edited, files read, tools used, and event shape so long sessions can be scanned without
+  expanding every raw event.
 - **Hybrid Storyline:** paginated project timeline blocks ordered by observed time. Each
   block can expand to source sessions, raw events, tool JSON, and provenance.
 - **Meld tray:** selected sessions, provider/model choice, direct-run vs export-bundle
@@ -145,8 +166,7 @@ Initial endpoints:
 - `GET /api/projects/{projectKey}/sessions`
 - `GET /api/projects/{projectKey}/timeline`
 - `GET /api/projects/{projectKey}/melds`
-- `POST /api/melds/preview`
-- `POST /api/melds/export-bundle`
+- `POST /api/projects/{projectKey}/melds/preview`
 - `POST /api/melds`
 
 The exact URL encoding for `projectKey` should be implementation-owned; the design only
@@ -196,7 +216,8 @@ Roll out in four phases:
 1. **Read-only Projects tab:** project list, session list, Hybrid Storyline timeline,
    raw event expansion, and project counts.
 2. **Meld preview and export bundle:** map-reduce bundle construction, direct preview,
-   export bundle, and failure states without persistence.
+   export bundle, and failure states without persistence. Implemented as
+   `POST /api/projects/{projectKey}/melds/preview`.
 3. **Durable saved melds:** persistence, provenance, timeline display, and source links.
 4. **Alias/merge seam:** minimal alias table and UI only for path cleanup.
 

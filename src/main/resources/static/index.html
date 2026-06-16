@@ -27,14 +27,18 @@
   </header>
 
   <main class="deck">
-    <aside class="rail">
+    <aside class="rail" id="projectRail" aria-label="Project and session navigation">
       <section class="panel channels">
         <div class="panel-head">
-          <span class="eyebrow">sessions</span>
+          <span class="eyebrow">projects</span>
           <span class="readout" id="sessionCount"></span>
+          <button id="toggleRailButton" class="ghost small-ghost" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">Rail</button>
           <button id="expandAllSessionsButton" class="ghost small-ghost" title="Expand all session groups" aria-label="Expand all session groups">Expand</button>
           <button id="collapseAllSessionsButton" class="ghost small-ghost" title="Collapse all session groups" aria-label="Collapse all session groups">Collapse</button>
           <button id="refreshButton" class="ghost" title="Refresh" aria-label="Refresh">↻</button>
+        </div>
+        <div class="rail-search">
+          <input id="sessionSearchInput" type="search" autocomplete="off" placeholder="Fuzzy session or project">
         </div>
         <div id="sessions" class="channel-list"></div>
       </section>
@@ -69,6 +73,7 @@
     <section class="stage">
       <nav class="stage-tabs" role="tablist" aria-label="Black Box workspace">
         <button class="stage-tab active" id="tab-spine" type="button" role="tab" aria-selected="true" aria-controls="panel-spine" data-tab="spine">Sessions</button>
+        <button class="stage-tab" id="tab-projects" type="button" role="tab" aria-selected="false" aria-controls="panel-projects" data-tab="projects">Projects</button>
         <button class="stage-tab" id="tab-recall" type="button" role="tab" aria-selected="false" aria-controls="panel-recall" data-tab="recall">Recall</button>
         <button class="stage-tab" id="tab-ask" type="button" role="tab" aria-selected="false" aria-controls="panel-ask" data-tab="ask" hidden>ASK</button>
       </nav>
@@ -108,9 +113,101 @@
             <div id="toolFilter" class="filter-strip" role="group" aria-label="Filter by tool use type"></div>
             <span class="readout" id="toolFilterMeta"></span>
           </div>
-          <div id="summary" class="summary" hidden></div>
+          <div id="summary" class="summary summary-compact" hidden>
+            <div class="summary-head">
+              <span class="eyebrow">summary</span>
+              <button id="summaryOpenButton" type="button" class="ghost small-ghost">Open</button>
+            </div>
+            <div id="summaryPreview" class="summary-preview"></div>
+          </div>
           <div id="summaryExportStatus" class="summary-export-status readout" hidden></div>
-          <div id="spine" class="spine"></div>
+          <div class="session-workspace">
+            <div id="spine" class="spine"></div>
+            <aside id="sessionOutline" class="session-outline" aria-label="Session outline">
+              <div class="outline-head">
+                <span class="eyebrow">outline</span>
+                <button id="toggleOutlineButton" type="button" class="ghost small-ghost" title="Collapse outline" aria-label="Collapse outline" aria-expanded="true">TOC</button>
+              </div>
+              <div id="outlineBody" class="outline-body"></div>
+            </aside>
+          </div>
+          <div id="summaryDialog" class="dialog-backdrop" hidden>
+            <section class="summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summaryDialogTitle">
+              <div class="dialog-head">
+                <h3 id="summaryDialogTitle">Session summary</h3>
+                <button id="summaryCloseButton" type="button" class="ghost" title="Close summary" aria-label="Close summary">×</button>
+              </div>
+              <div id="summaryDialogText" class="summary-dialog-text"></div>
+            </section>
+          </div>
+          <div id="outlinePopout" class="dialog-backdrop" hidden>
+            <section class="outline-popout" role="dialog" aria-modal="true" aria-labelledby="outlinePopoutTitle">
+              <div class="dialog-head">
+                <h3 id="outlinePopoutTitle">Session outline</h3>
+                <button id="outlinePopoutCloseButton" type="button" class="ghost" title="Close outline" aria-label="Close outline">×</button>
+              </div>
+              <div id="outlinePopoutBody" class="outline-popout-body"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <section class="tab-panel" id="panel-projects" role="tabpanel" aria-labelledby="tab-projects" data-tab-panel="projects" data-panel="projects" hidden>
+        <section class="panel project-panel">
+          <div class="panel-head">
+            <div class="spine-heading">
+              <h2>Projects</h2>
+              <p class="readout" id="projectsMeta">Derived from recorded working directories.</p>
+            </div>
+            <span class="readout" id="projectTimelineMeta"></span>
+          </div>
+          <div class="project-workspace">
+            <section class="project-list-shell" aria-label="Projects">
+              <div class="project-column-head">
+                <span class="eyebrow">projects</span>
+                <span class="readout" id="projectCount"></span>
+              </div>
+              <div id="projectList" class="project-list"></div>
+            </section>
+            <section class="project-storyline" aria-label="Project storyline">
+              <div id="projectSessions" class="project-sessions"></div>
+              <section id="projectMeldTray" class="project-meld-tray" aria-label="Project meld preview">
+                <form id="projectMeldForm" class="project-meld-form">
+                  <div class="project-meld-head">
+                    <span class="eyebrow">meld</span>
+                    <span class="readout" id="projectMeldSelectedCount">0 selected</span>
+                    <span class="readout" id="projectMeldStatus"></span>
+                  </div>
+                  <div class="project-meld-controls">
+                    <label class="field">
+                      <span>mode</span>
+                      <select name="executionMode" id="projectMeldMode">
+                        <option value="export_bundle">Export bundle</option>
+                        <option value="direct">Direct preview</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>provider</span>
+                      <input name="provider" id="projectMeldProvider" autocomplete="off" placeholder="auto">
+                    </label>
+                    <label class="field">
+                      <span>model</span>
+                      <input name="model" id="projectMeldModel" autocomplete="off" placeholder="auto">
+                    </label>
+                    <button id="projectMeldPreviewButton" type="submit" class="action">Preview</button>
+                  </div>
+                </form>
+                <div id="projectMeldOutput" class="project-meld-output" hidden>
+                  <div class="project-meld-output-head">
+                    <strong id="projectMeldOutputTitle">Project meld</strong>
+                    <button id="copyProjectMeldButton" type="button" class="ghost small-ghost">Copy</button>
+                  </div>
+                  <pre id="projectMeldText"></pre>
+                </div>
+              </section>
+              <div id="projectTimeline" class="project-timeline"></div>
+            </section>
+          </div>
         </section>
       </section>
 
