@@ -40,6 +40,101 @@ export type SearchResponse = {
   elasticHealth?: ElasticHealth;
 };
 
+export type RecalledItem = {
+  eventId: string;
+  kind: string;
+  source: string;
+  clientSessionId?: string | null;
+  repo?: string | null;
+  observedAt?: string | null;
+  headline?: string | null;
+  rationale?: string | null;
+  alternatives?: string[] | null;
+  confidence?: number | null;
+  openLoops?: string[] | null;
+  nextAction?: string | null;
+  toAgent?: string | null;
+};
+
+export type RecallResult = {
+  scope?: string | null;
+  withinHours: number;
+  kinds: string[];
+  count: number;
+  items: RecalledItem[];
+};
+
+export type ProjectSummary = {
+  projectKey: string;
+  canonicalKey: string;
+  label: string;
+  sessionCount: number;
+  eventCount: number;
+  savedMeldCount: number;
+  firstSeenAt?: string | null;
+  lastSeenAt?: string | null;
+};
+
+export type ProjectTimelineBlock = {
+  id: string;
+  sourceType?: string | null;
+  blockType?: string | null;
+  headline?: string | null;
+  text?: string | null;
+  eventType?: string | null;
+  role?: string | null;
+  source: string;
+  clientSessionId?: string | null;
+  sessionId?: string | null;
+  sessionTitle?: string | null;
+  cwd?: string | null;
+  toolName?: string | null;
+  toolInputJson?: string | null;
+  toolOutputJson?: string | null;
+  metadata?: unknown;
+  observedAt?: string | null;
+};
+
+export type ProjectTimelineResponse = {
+  projectKey: string;
+  canonicalKey: string;
+  label: string;
+  limit: number;
+  offset: number;
+  count: number;
+  items: ProjectTimelineBlock[];
+};
+
+export type ProjectMeld = Record<string, unknown>;
+
+export type ProjectMeldSessionRef = {
+  id: string;
+  source: string;
+  clientSessionId: string;
+  title: string;
+  cwd?: string | null;
+  eventCount: number;
+  startedAt?: string | null;
+  lastSeenAt?: string | null;
+};
+
+export type ProjectMeldPreviewResponse = {
+  status: string;
+  executionMode?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  projectKey: string;
+  canonicalKey: string;
+  title?: string | null;
+  preview?: string | null;
+  bundle?: string | null;
+  sessions: ProjectMeldSessionRef[];
+  sessionCount: number;
+  evidenceCount: number;
+  bundleChars: number;
+  degradationNotes?: string[] | null;
+};
+
 export type FieldInfo = {
   name: string;
   type?: string;
@@ -108,6 +203,36 @@ export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[
 
 export function search(q: string, limit = 80): Promise<SearchResponse> {
   return getJson(`/api/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`);
+}
+
+export function getRecall(scope: string, withinHours: number, kinds: string[]): Promise<RecallResult> {
+  const params = new URLSearchParams({
+    withinHours: String(withinHours),
+  });
+  if (scope.trim()) params.set("scope", scope.trim());
+  if (kinds.length) params.set("kinds", kinds.join(","));
+  return getJson(`/api/recall?${params.toString()}`);
+}
+
+export function getProjects(): Promise<ProjectSummary[]> {
+  return getJson("/api/projects");
+}
+
+export function getProjectSessions(key: string): Promise<AgentSession[]> {
+  return getJson(`/api/projects/${encodeURIComponent(key)}/sessions`);
+}
+
+export function getProjectTimeline(key: string, limit = 250, offset = 0): Promise<ProjectTimelineResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return getJson(`/api/projects/${encodeURIComponent(key)}/timeline?${params.toString()}`);
+}
+
+export function getProjectMelds(key: string): Promise<ProjectMeld[]> {
+  return getJson(`/api/projects/${encodeURIComponent(key)}/melds`);
+}
+
+export function previewProjectMeld(key: string, sessionIds: string[]): Promise<ProjectMeldPreviewResponse> {
+  return postJson(`/api/projects/${encodeURIComponent(key)}/melds/preview`, { sessionIds });
 }
 
 export function searchFields(): Promise<FieldInfo[]> {
