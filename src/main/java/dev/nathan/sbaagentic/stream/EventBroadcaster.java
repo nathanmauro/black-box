@@ -35,6 +35,13 @@ public class EventBroadcaster implements EventIndexSink {
         emitter.onTimeout(() -> emitters.remove(emitter));
         emitter.onError(ex -> emitters.remove(emitter));
         emitters.add(emitter);
+        // Flush the response immediately so the browser fires `open` (and the UI shows "live")
+        // right away, instead of staying "connecting" until the first real event is published.
+        try {
+            emitter.send(SseEmitter.event().comment("connected"));
+        } catch (IOException ex) {
+            emitters.remove(emitter);
+        }
         return emitter;
     }
 
