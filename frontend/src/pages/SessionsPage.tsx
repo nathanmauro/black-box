@@ -95,13 +95,15 @@ export default function SessionsPage() {
           {(session) => (
             <>
               <header class="detail-header">
-                <div>
+                <div class="detail-title-block">
                   <div class="detail-kicker">
                     <SourceDot source={session().source} label />
                     <span>{session().eventCount.toLocaleString()} events</span>
                     <span>{timeAgo(session().lastSeenAt)}</span>
                   </div>
-                  <h1>{session().title || session().clientSessionId}</h1>
+                  <h1 title={session().title || session().clientSessionId}>
+                    {session().title || session().clientSessionId}
+                  </h1>
                   <p>{truncatePath(session().cwd)}</p>
                 </div>
                 <div class="detail-summary">
