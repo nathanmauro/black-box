@@ -369,6 +369,51 @@ public class EventRepository {
         return new StorageStats(sessions == null ? 0 : sessions, events == null ? 0 : events);
     }
 
+    public DashboardStats dashboardStats() {
+        StorageStats totals = stats();
+        return new DashboardStats(
+                totals.sessions(),
+                totals.events(),
+                countBy("""
+                        SELECT source AS name, COUNT(*) AS count
+                          FROM agent_events
+                         GROUP BY source
+                         ORDER BY count DESC, name ASC
+                        """),
+                countBy("""
+                        SELECT event_type AS name, COUNT(*) AS count
+                          FROM agent_events
+                         GROUP BY event_type
+                         ORDER BY count DESC, name ASC
+                        """),
+                countBy("""
+                        SELECT source AS name, COUNT(*) AS count
+                          FROM agent_sessions
+                         GROUP BY source
+                         ORDER BY count DESC, name ASC
+                        """),
+                dailyCounts("""
+                        SELECT date(observed_at) AS day, COUNT(*) AS count
+                          FROM agent_events
+                         WHERE date(observed_at) >= date('now', ?)
+                           AND date(observed_at) <= date('now')
+                         GROUP BY date(observed_at)
+                         ORDER BY day ASC
+                        """, "-13 days"));
+    }
+
+    private List<DashboardStats.BreakdownCount> countBy(String sql, Object... args) {
+        return jdbcTemplate.query(sql,
+                (rs, rowNum) -> new DashboardStats.BreakdownCount(rs.getString("name"), rs.getLong("count")),
+                args);
+    }
+
+    private List<DashboardStats.DailyCount> dailyCounts(String sql, Object... args) {
+        return jdbcTemplate.query(sql,
+                (rs, rowNum) -> new DashboardStats.DailyCount(rs.getString("day"), rs.getLong("count")),
+                args);
+    }
+
     private AgentSession mapSession(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         return new AgentSession(
                 rs.getString("id"),

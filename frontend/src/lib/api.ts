@@ -193,6 +193,25 @@ export type ApiStatus = {
   [key: string]: unknown;
 };
 
+export type DashboardBreakdown = {
+  name: string;
+  count: number;
+};
+
+export type DashboardDailyCount = {
+  day: string;
+  count: number;
+};
+
+export type DashboardStats = {
+  totalSessions: number;
+  totalEvents: number;
+  eventsBySource: DashboardBreakdown[];
+  eventsByKind: DashboardBreakdown[];
+  sessionsBySource: DashboardBreakdown[];
+  recentActivity: DashboardDailyCount[];
+};
+
 export function getSessions(limit = 250): Promise<AgentSession[]> {
   return getJson(`/api/sessions?limit=${encodeURIComponent(limit)}`);
 }
@@ -254,6 +273,10 @@ export function ask(question: string, limit?: number): Promise<AskResponse> {
 
 export function getStatus(): Promise<ApiStatus> {
   return getJson("/api/status");
+}
+
+export function getDashboardStats(): Promise<DashboardStats> {
+  return getJson("/api/stats");
 }
 
 async function getJson<T>(path: string): Promise<T> {

@@ -6,6 +6,7 @@ import ProjectsPage from "./pages/ProjectsPage";
 import RecallPage from "./pages/RecallPage";
 import SessionsPage from "./pages/SessionsPage";
 import SearchPage from "./pages/SearchPage";
+import StatsPage from "./pages/StatsPage";
 import "./theme.css";
 
 const root = document.getElementById("root");
@@ -24,6 +25,7 @@ render(
       <Route path="/recall" component={RecallPage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:projectKey" component={ProjectsPage} />
+      <Route path="/stats" component={StatsPage} />
     </Router>
   ),
   root,

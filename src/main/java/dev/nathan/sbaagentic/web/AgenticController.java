@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.event.AgentEvent;
+import dev.nathan.sbaagentic.event.DashboardStats;
 import dev.nathan.sbaagentic.event.EventIngestRequest;
 import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
@@ -216,6 +217,11 @@ public class AgenticController {
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
                 "elasticsearch", elasticIndexClient.health());
+    }
+
+    @GetMapping("/stats")
+    public DashboardStats stats() {
+        return repository.dashboardStats();
     }
 
     @GetMapping("/health/local-ai")

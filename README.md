@@ -50,7 +50,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface has Sessions, Projects, and Recall workspaces. Sessions uses a project-first, fuzzy-filtered rail with a no-project/manual/system bucket, compact collapsible event rows, bounded summary previews, and a right-side outline for files edited, files read, tools used, and event shape. Projects groups sessions by derived working directory, shows a project-level Hybrid Storyline over decisions, handoffs, assistant output, and notable tool results, and can build a bounded meld preview/export bundle from selected sessions. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
+The web surface has Sessions, Projects, Recall, and Stats workspaces. Sessions uses a project-first, fuzzy-filtered rail with a no-project/manual/system bucket, compact collapsible event rows, bounded summary previews, and a right-side outline for files edited, files read, tools used, and event shape. Projects groups sessions by derived working directory, shows a project-level Hybrid Storyline over decisions, handoffs, assistant output, and notable tool results, and can build a bounded meld preview/export bundle from selected sessions. Stats shows store totals, source and event-kind breakdowns, and recent daily activity. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
 
 ## Run as a service
 
@@ -286,6 +286,7 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/search/fields` | Search field metadata for the query bar |
 | `GET /api/search/values?field=<field>&prefix=<prefix>&limit=20` | Field value suggestions for the query bar |
 | `GET /api/status` | Storage counts + local AI / Elasticsearch health |
+| `GET /api/stats` | Store totals, source/kind breakdowns, and recent daily activity |
 | `GET /api/ask/status` | ASK dependency status for memory search, embeddings, and answer synthesis |
 | `GET /api/ask/retrieve?q=<question>&limit=10` | Retrieval-only ASK results with citations |
 | `POST /api/ask` | Synthesized answer with citations; body `{ question, limit }` |

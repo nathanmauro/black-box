@@ -61,6 +61,9 @@ export default function App(props: AppProps) {
             <A href="/projects" class="nav-pill">
               Projects
             </A>
+            <A href="/stats" class="nav-pill">
+              Stats
+            </A>
           </nav>
           <div class="header-actions">
             <SourceChips />

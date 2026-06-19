@@ -719,6 +719,174 @@ a {
   text-transform: uppercase;
 }
 
+/* ---- stats ------------------------------------------------------------- */
+.stats-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stats-hero {
+  padding: 18px 0 4px;
+}
+.stats-hero h1 {
+  margin: 4px 0;
+  color: var(--text-bright);
+  font-size: 28px;
+  letter-spacing: 0;
+}
+.stats-hero p:not(.eyebrow) {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 680px;
+}
+.stats-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stats-error button {
+  height: 28px;
+  padding: 0 10px;
+  color: var(--text-bright);
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+  border-radius: var(--radius);
+}
+.stats-total-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.stats-total-card,
+.stats-panel,
+.stats-empty {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.stats-total-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 110px;
+  padding: 16px;
+}
+.stats-total-card span {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.stats-total-card strong {
+  color: var(--text-bright);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.stats-panel {
+  min-width: 0;
+  padding: 14px;
+}
+.stats-panel--wide {
+  grid-column: 1 / -1;
+}
+.stats-panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.stats-panel-title > span:last-child {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.stats-breakdown-list,
+.stats-daily-list {
+  display: grid;
+  gap: 10px;
+}
+.stats-breakdown-row,
+.stats-daily-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.8fr) minmax(120px, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.stats-breakdown-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.stats-breakdown-label strong,
+.stats-daily-row time {
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-breakdown-row > strong,
+.stats-daily-row > strong {
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.stats-bar-track {
+  height: 7px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.stats-bar-track span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+  border-radius: inherit;
+}
+.stats-empty {
+  display: grid;
+  place-items: center;
+  min-height: 300px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.stats-empty h2 {
+  margin: 5px 0;
+  color: var(--text-bright);
+}
+.stats-skeleton {
+  min-height: 180px;
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 6%, transparent), transparent),
+    var(--bg-surface);
+  background-size: 220px 100%, 100% 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  animation: stats-sheen 1.2s linear infinite;
+}
+.stats-skeleton--total {
+  min-height: 110px;
+}
+@keyframes stats-sheen {
+  from { background-position: -220px 0, 0 0; }
+  to { background-position: calc(100% + 220px) 0, 0 0; }
+}
+
 /* ---- projects ---------------------------------------------------------- */
 .projects-page {
   display: grid;
@@ -980,6 +1148,10 @@ a {
   .recall-form { grid-template-columns: 1fr; }
   .recall-window,
   .recall-kinds { flex-wrap: wrap; }
+  .stats-total-grid,
+  .stats-grid { grid-template-columns: 1fr; }
+  .stats-breakdown-row,
+  .stats-daily-row { grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) auto; }
   .projects-page { grid-template-columns: 1fr; height: auto; }
   .project-detail-grid { grid-template-columns: 1fr; }
   .project-detail-header { align-items: flex-start; flex-direction: column; }

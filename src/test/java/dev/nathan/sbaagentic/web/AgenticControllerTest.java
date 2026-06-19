@@ -2,6 +2,8 @@ package dev.nathan.sbaagentic.web;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
@@ -329,6 +331,67 @@ class AgenticControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value(empty()))
                 .andExpect(jsonPath("$.length()").value(is(0)));
+    }
+
+    @Test
+    void statsDashboardReturnsTotalsBreakdownsAndRecentActivity() throws Exception {
+        String suffix = Long.toString(System.nanoTime());
+        String codexSource = "stats-codex-" + suffix;
+        String claudeSource = "stats-claude-" + suffix;
+        String codexSession = "stats-dashboard-one-" + suffix;
+        String claudeSession = "stats-dashboard-two-" + suffix;
+        String decisionKind = "StatsDecision" + suffix;
+        String handoffKind = "StatsHandoff" + suffix;
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "%s",
+                                  "clientSessionId": "%s",
+                                  "eventType": "%s",
+                                  "role": "agent",
+                                  "text": "Stats dashboard decision",
+                                  "observedAt": "%sT10:00:00Z"
+                                }
+                                """.formatted(codexSource, codexSession, decisionKind, LocalDate.now(ZoneOffset.UTC))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "%s",
+                                  "clientSessionId": "%s",
+                                  "eventType": "%s",
+                                  "role": "agent",
+                                  "text": "Stats dashboard handoff",
+                                  "observedAt": "%sT10:05:00Z"
+                                }
+                                """.formatted(claudeSource, claudeSession, handoffKind, LocalDate.now(ZoneOffset.UTC))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalSessions").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.totalEvents").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
+                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(codexSource)).value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(claudeSource)).value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(decisionKind)).value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(handoffKind)).value(hasItem(1)))
+                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(codexSource)).value(hasItem(1)))
+                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(claudeSource)).value(hasItem(1)))
+                .andExpect(jsonPath("$.recentActivity[?(@.day == '%s')].count".formatted(LocalDate.now(ZoneOffset.UTC)))
+                        .value(hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(2))));
+
+        mockMvc.perform(post("/api/sessions/summarize")
+                        .param("source", codexSource)
+                        .param("clientSessionId", codexSession))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/sessions/summarize")
+                        .param("source", claudeSource)
+                        .param("clientSessionId", claudeSession))
+                .andExpect(status().isOk());
     }
 
     @Test
