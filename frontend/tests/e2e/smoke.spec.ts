@@ -59,3 +59,39 @@ test("live feed receives a newly ingested event over SSE", async ({ page, reques
   expect(res.ok()).toBeTruthy();
   await expect(page.getByText(marker)).toBeVisible({ timeout: 10_000 });
 });
+
+test("stats shows headline totals and activity breakdowns", async ({ page }) => {
+  await page.goto("/stats");
+  await expect(page.getByRole("heading", { name: "Activity shape across Black Box" })).toBeVisible();
+
+  const totals = page.getByLabel("Headline totals");
+  await expect(totals).toBeVisible();
+  await expect(totals.getByText("Total sessions")).toBeVisible();
+  await expect(totals.getByText("Total events")).toBeVisible();
+  await expect(page.getByText("events by source")).toBeVisible();
+  await page.screenshot({ path: `${SHOT_DIR}/stats.png`, fullPage: true });
+});
+
+test("projects shows a project row with a storyline timeline", async ({ page }) => {
+  await page.goto("/projects");
+  const projectRow = page.getByRole("button", { name: /black-box-e2e/ });
+  await expect(projectRow).toBeVisible();
+  await projectRow.click();
+  await expect(page.getByRole("heading", { name: /black-box-e2e/ })).toBeVisible();
+  await expect(page.getByText("storyline timeline")).toBeVisible();
+  await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
+  await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
+});
+
+test("recall query returns grouped structured results", async ({ page }) => {
+  await page.goto("/recall");
+  await expect(page.getByRole("heading", { name: "Ask what agents already decided" })).toBeVisible();
+
+  await page.getByPlaceholder(/a topic/).fill("UI rewrite");
+  await page.getByRole("button", { name: "Run recall" }).click();
+  const decisionCard = page.getByRole("article").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" });
+  await expect(decisionCard).toBeVisible();
+  await expect(decisionCard.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
+  await expect(decisionCard.getByText("open loops")).toBeVisible();
+  await page.screenshot({ path: `${SHOT_DIR}/recall.png`, fullPage: true });
+});
