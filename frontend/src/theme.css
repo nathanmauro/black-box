@@ -920,6 +920,181 @@ a {
   to { background-position: calc(100% + 220px) 0, 0 0; }
 }
 
+/* ---- graph -------------------------------------------------------------- */
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.graph-hero {
+  padding: 18px 0 4px;
+}
+.graph-hero h1 {
+  margin: 4px 0;
+  color: var(--text-bright);
+  font-size: 28px;
+  letter-spacing: 0;
+}
+.graph-hero p:not(.eyebrow) {
+  margin: 0;
+  color: var(--text-dim);
+  max-width: 720px;
+}
+.graph-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.graph-error button {
+  height: 28px;
+  padding: 0 10px;
+  color: var(--text-bright);
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--border));
+  border-radius: var(--radius);
+}
+.graph-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.graph-stat,
+.graph-stage,
+.graph-empty {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.graph-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 96px;
+  padding: 14px;
+}
+.graph-stat > span {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.graph-stat strong {
+  color: var(--text-bright);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.graph-kind-strip,
+.graph-source-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.graph-kind-strip > span,
+.graph-source-strip > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.graph-stage {
+  position: relative;
+  min-height: min(68vh, 720px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-hover) 55%, transparent), transparent 42%),
+    var(--bg-surface);
+}
+.graph-svg {
+  display: block;
+  width: 100%;
+  min-height: min(68vh, 720px);
+}
+.graph-edges line {
+  stroke: color-mix(in srgb, var(--text-dim) 34%, transparent);
+  stroke-width: 1.1;
+}
+.graph-node {
+  --node-color: var(--source-unknown);
+}
+.graph-node-shape {
+  fill: color-mix(in srgb, var(--node-color) 34%, var(--bg));
+  stroke: var(--node-color);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--node-color) 34%, transparent));
+}
+.graph-node--origin .graph-node-shape {
+  fill: color-mix(in srgb, var(--accent) 30%, var(--bg));
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+.graph-node--cluster .graph-node-shape {
+  fill: color-mix(in srgb, var(--node-color) 24%, var(--bg-hover));
+}
+.graph-node-count {
+  fill: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.graph-label {
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--bg) 92%, transparent);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+  pointer-events: none;
+}
+.graph-label--origin {
+  fill: var(--text-bright);
+  font-size: 13px;
+  font-weight: 600;
+}
+.graph-label--cluster {
+  fill: var(--text-bright);
+  font-size: 12px;
+}
+.graph-label--leaf {
+  font-size: 11px;
+}
+.graph-empty {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.graph-empty h2 {
+  margin: 5px 0;
+  color: var(--text-bright);
+}
+.graph-skeleton {
+  min-height: 180px;
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 6%, transparent), transparent),
+    var(--bg-surface);
+  background-size: 220px 100%, 100% 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  animation: stats-sheen 1.2s linear infinite;
+}
+.graph-skeleton--stat {
+  min-height: 96px;
+}
+.graph-skeleton--stage {
+  min-height: min(68vh, 720px);
+}
+
 /* ---- projects ---------------------------------------------------------- */
 .projects-page {
   display: grid;
@@ -1182,7 +1357,8 @@ a {
   .recall-window,
   .recall-kinds { flex-wrap: wrap; }
   .stats-total-grid,
-  .stats-grid { grid-template-columns: 1fr; }
+  .stats-grid,
+  .graph-summary { grid-template-columns: 1fr; }
   .stats-breakdown-row,
   .stats-daily-row { grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) auto; }
   .projects-page { grid-template-columns: 1fr; height: auto; }

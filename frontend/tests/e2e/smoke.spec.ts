@@ -49,7 +49,7 @@ test("live feed receives a newly ingested event over SSE", async ({ page, reques
   const res = await request.post("/api/events", {
     data: {
       source: "claude",
-      clientSessionId: "live-check",
+      clientSessionId: marker,
       eventType: "Observation",
       text: marker,
       cwd: "/tmp/live",
@@ -72,6 +72,14 @@ test("stats shows headline totals and activity breakdowns", async ({ page }) => 
   await page.screenshot({ path: `${SHOT_DIR}/stats.png`, fullPage: true });
 });
 
+test("graph shows the seeded recall constellation", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("heading", { name: "Map recalled intent by project" })).toBeVisible();
+  await expect(page.locator(".graph-node--leaf").first()).toBeVisible();
+  await expect(page.locator(".graph-label--leaf").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })).toBeVisible();
+  await page.screenshot({ path: `${SHOT_DIR}/graph.png`, fullPage: true });
+});
+
 test("projects shows a project row with a storyline timeline", async ({ page }) => {
   await page.goto("/projects");
   const projectRow = page.getByRole("button", { name: /black-box-e2e/ });
@@ -79,7 +87,7 @@ test("projects shows a project row with a storyline timeline", async ({ page }) 
   await projectRow.click();
   await expect(page.getByRole("heading", { name: /black-box-e2e/ })).toBeVisible();
   await expect(page.getByText("storyline timeline")).toBeVisible();
-  await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
+  await expect(page.locator(".project-timeline-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first()).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 

@@ -1,6 +1,7 @@
 import { render } from "solid-js/web";
 import { Route, Router } from "@solidjs/router";
 import App from "./App";
+import GraphPage from "./pages/GraphPage";
 import OverviewPage from "./pages/OverviewPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import RecallPage from "./pages/RecallPage";
@@ -26,6 +27,7 @@ render(
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:projectKey" component={ProjectsPage} />
       <Route path="/stats" component={StatsPage} />
+      <Route path="/graph" component={GraphPage} />
     </Router>
   ),
   root,
