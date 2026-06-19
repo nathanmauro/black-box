@@ -35,8 +35,7 @@ public class ProjectService {
                 repository.timelineBlocks(canonicalKey, limit, offset));
     }
 
-    public List<Object> melds(String projectKey) {
-        ProjectKeyCodec.decode(projectKey);
-        return List.of();
+    public List<ProjectSavedMeld> melds(String projectKey) {
+        return repository.savedMeldsForProject(ProjectKeyCodec.decode(projectKey));
     }
 }

@@ -24,7 +24,9 @@ import dev.nathan.sbaagentic.exporting.SummaryExportService;
 import dev.nathan.sbaagentic.project.ProjectService;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
+import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldService;
+import dev.nathan.sbaagentic.project.ProjectSavedMeld;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
@@ -132,8 +134,13 @@ public class AgenticController {
     }
 
     @GetMapping("/projects/{projectKey}/melds")
-    public List<Object> projectMelds(@PathVariable String projectKey) {
+    public List<ProjectSavedMeld> projectMelds(@PathVariable String projectKey) {
         return projectService.melds(projectKey);
+    }
+
+    @PostMapping("/melds")
+    public ProjectSavedMeld saveProjectMeld(@RequestBody ProjectMeldSaveRequest request) {
+        return projectMeldService.save(request);
     }
 
     @PostMapping("/projects/{projectKey}/melds/preview")

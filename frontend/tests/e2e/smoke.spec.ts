@@ -88,6 +88,16 @@ test("projects shows a project row with a storyline timeline", async ({ page }) 
   await expect(page.getByRole("heading", { name: /black-box-e2e/ })).toBeVisible();
   await expect(page.getByText("storyline timeline")).toBeVisible();
   await expect(page.locator(".project-timeline-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first()).toBeVisible();
+  await page.getByLabel("Select UI rewrite kickoff").check();
+  await page.getByLabel("Select Frontend build").check();
+  await page.getByRole("button", { name: "Preview meld" }).click();
+  await expect(page.getByText("# Project Meld Bundle")).toBeVisible();
+  await page.getByRole("button", { name: "Save meld" }).click();
+  await expect(page.getByText("Saved meld.")).toBeVisible();
+  const savedMeld = page.locator(".saved-meld-card").filter({ hasText: "Project meld:" }).first();
+  await expect(savedMeld).toBeVisible();
+  await expect(savedMeld.getByRole("link", { name: "UI rewrite kickoff" })).toBeVisible();
+  await expect(savedMeld.getByRole("link", { name: "Frontend build" })).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 

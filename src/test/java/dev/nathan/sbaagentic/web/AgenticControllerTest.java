@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -52,6 +53,9 @@ class AgenticControllerTest {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void ingestAndListSessions() throws Exception {
@@ -592,6 +596,254 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("Keep export bundle mode local by default")))
                 .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("ProjectService.java")))
                 .andExpect(jsonPath("$.degradationNotes").isArray());
+    }
+
+    @Test
+    void projectMeldSavePersistsAndRoundTripsThroughProjectMeldList() throws Exception {
+        String cwd = "/tmp/black-box-meld-save-alpha";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-save-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Save durable melds separately from raw events",
+                                  "cwd": "/tmp/black-box-meld-save-alpha",
+                                  "metadata": {
+                                    "kind": "decision",
+                                    "decision": "Save durable melds separately from raw events"
+                                  },
+                                  "observedAt": "2026-05-20T12:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "meld-save-alpha-two",
+                                  "eventType": "Handoff",
+                                  "role": "assistant",
+                                  "text": "Next action is to wire source links.",
+                                  "cwd": "/tmp/black-box-meld-save-alpha/",
+                                  "metadata": {
+                                    "kind": "handoff",
+                                    "contextSummary": "Next action is to wire source links."
+                                  },
+                                  "observedAt": "2026-05-20T12:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        JsonNode project = projectByCanonicalKey(objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()), cwd);
+        org.assertj.core.api.Assertions.assertThat(project).isNotNull();
+        String projectKey = project.get("projectKey").asText();
+        List<String> sessionIds = textValues(objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()), "id");
+
+        String saveBody = mockMvc.perform(post("/api/melds")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "projectKey", projectKey,
+                                "title", "Durable source-link meld",
+                                "body", "This saved meld preserves provenance for both source sessions.",
+                                "provider", "local",
+                                "model", "context-bundle",
+                                "executionMode", "export_bundle",
+                                "savedFromPreview", true,
+                                "sessionIds", sessionIds,
+                                "metadata", Map.of("bundleChars", 120)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.projectKey").value(projectKey))
+                .andExpect(jsonPath("$.canonicalKey").value(cwd))
+                .andExpect(jsonPath("$.title").value("Durable source-link meld"))
+                .andExpect(jsonPath("$.body").value("This saved meld preserves provenance for both source sessions."))
+                .andExpect(jsonPath("$.provider").value("local"))
+                .andExpect(jsonPath("$.model").value("context-bundle"))
+                .andExpect(jsonPath("$.promptVersion").value("project-meld-v1"))
+                .andExpect(jsonPath("$.executionMode").value("export_bundle"))
+                .andExpect(jsonPath("$.savedFromPreview").value(true))
+                .andExpect(jsonPath("$.sessions.length()").value(2))
+                .andExpect(jsonPath("$.sessions[0].id").value(sessionIds.get(0)))
+                .andExpect(jsonPath("$.sessions[1].id").value(sessionIds.get(1)))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String meldId = objectMapper.readTree(saveBody).get("id").asText();
+
+        mockMvc.perform(get("/api/projects/{projectKey}/melds", projectKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(meldId))
+                .andExpect(jsonPath("$[0].sessions[0].id").value(sessionIds.get(0)))
+                .andExpect(jsonPath("$[0].sessions[1].id").value(sessionIds.get(1)));
+    }
+
+    @Test
+    void projectMeldSaveRejectsCrossProjectSelectionWithoutWritingMeld() throws Exception {
+        String cwd = "/tmp/black-box-meld-save-cross-alpha";
+        String otherCwd = "/tmp/black-box-meld-save-cross-beta";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-save-cross-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Alpha save input",
+                                  "cwd": "/tmp/black-box-meld-save-cross-alpha",
+                                  "observedAt": "2026-05-20T13:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-save-cross-beta-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Beta save input",
+                                  "cwd": "/tmp/black-box-meld-save-cross-beta",
+                                  "observedAt": "2026-05-20T13:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        JsonNode projects = objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        String projectKey = projectByCanonicalKey(projects, cwd).get("projectKey").asText();
+        String otherProjectKey = projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
+        String localSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .get(0)
+                .get("id")
+                .asText();
+        String foreignSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .get(0)
+                .get("id")
+                .asText();
+        Long before = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM session_melds", Long.class);
+
+        mockMvc.perform(post("/api/melds")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "projectKey", projectKey,
+                                "title", "Rejected cross-project meld",
+                                "body", "This should not be saved.",
+                                "provider", "local",
+                                "model", "context-bundle",
+                                "executionMode", "export_bundle",
+                                "savedFromPreview", true,
+                                "sessionIds", List.of(localSessionId, foreignSessionId)))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.message")
+                        .value(org.hamcrest.Matchers.containsString("Selected sessions must belong to this project")));
+
+        Long after = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM session_melds", Long.class);
+        org.assertj.core.api.Assertions.assertThat(after).isEqualTo(before);
+        mockMvc.perform(get("/api/projects/{projectKey}/melds", projectKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").value(empty()));
+    }
+
+    @Test
+    void projectTimelineSurfacesSavedMeldWithSourceSessionLinks() throws Exception {
+        String cwd = "/tmp/black-box-meld-timeline-alpha";
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "meld-timeline-alpha-one",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "Timeline should show observed decisions before saved synthesis.",
+                                  "cwd": "/tmp/black-box-meld-timeline-alpha",
+                                  "observedAt": "2026-05-20T14:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "meld-timeline-alpha-two",
+                                  "eventType": "AssistantMessage",
+                                  "role": "assistant",
+                                  "text": "The second session provides implementation context.",
+                                  "cwd": "/tmp/black-box-meld-timeline-alpha",
+                                  "observedAt": "2026-05-20T14:01:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        JsonNode project = projectByCanonicalKey(objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()), cwd);
+        String projectKey = project.get("projectKey").asText();
+        List<String> sessionIds = textValues(objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()), "id");
+
+        mockMvc.perform(post("/api/melds")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "projectKey", projectKey,
+                                "title", "Timeline synthesis meld",
+                                "body", "Saved synthesis belongs beside raw storyline evidence.",
+                                "provider", "local",
+                                "model", "context-bundle",
+                                "executionMode", "export_bundle",
+                                "savedFromPreview", true,
+                                "sessionIds", sessionIds))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/projects/{projectKey}/timeline", projectKey).param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(3))
+                .andExpect(jsonPath("$.items[2].sourceType").value("saved_meld"))
+                .andExpect(jsonPath("$.items[2].blockType").value("synthesis"))
+                .andExpect(jsonPath("$.items[2].headline").value("Timeline synthesis meld"))
+                .andExpect(jsonPath("$.items[2].text").value("Saved synthesis belongs beside raw storyline evidence."))
+                .andExpect(jsonPath("$.items[2].source").value("meld"))
+                .andExpect(jsonPath("$.items[2].sourceSessions.length()").value(2))
+                .andExpect(jsonPath("$.items[2].sourceSessions[0].id").value(sessionIds.get(0)))
+                .andExpect(jsonPath("$.items[2].sourceSessions[1].id").value(sessionIds.get(1)));
     }
 
     @Test

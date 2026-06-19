@@ -37,3 +37,26 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_session_observed
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
     ON agent_events (source, event_type, observed_at DESC);
+
+CREATE TABLE IF NOT EXISTS session_melds (
+    id TEXT PRIMARY KEY,
+    project_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    execution_mode TEXT NOT NULL,
+    saved_from_preview INTEGER NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_meld_inputs (
+    meld_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    input_order INTEGER NOT NULL,
+    included_summary INTEGER NOT NULL,
+    metadata_json TEXT,
+    PRIMARY KEY (meld_id, session_id)
+);

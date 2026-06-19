@@ -3,7 +3,10 @@ import {
   getProjectTimeline,
   getRecall,
   previewProjectMeld,
+  saveProjectMeld,
+  type ProjectMeldSaveRequest,
   type ProjectMeldPreviewResponse,
+  type ProjectSavedMeld,
   type ProjectTimelineResponse,
   type RecallResult,
 } from "./api";
@@ -87,6 +90,46 @@ describe("Phase 2 API helpers", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ sessionIds: ["s1", "s2"] }),
+      }),
+    );
+  });
+
+  it("posts durable meld saves to the top-level meld endpoint", async () => {
+    const request: ProjectMeldSaveRequest = {
+      projectKey: "proj-key",
+      title: "Saved meld",
+      body: "Saved synthesis",
+      provider: "local",
+      model: "context-bundle",
+      executionMode: "export_bundle",
+      savedFromPreview: true,
+      sessionIds: ["s1", "s2"],
+      metadata: { bundleChars: 42 },
+    };
+    const payload: ProjectSavedMeld = {
+      id: "meld-1",
+      projectKey: "proj-key",
+      canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+      title: "Saved meld",
+      body: "Saved synthesis",
+      provider: "local",
+      model: "context-bundle",
+      promptVersion: "project-meld-v1",
+      executionMode: "export_bundle",
+      savedFromPreview: true,
+      metadata: { bundleChars: 42 },
+      createdAt: "2026-06-19T15:00:00Z",
+      sessions: [],
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(saveProjectMeld(request)).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/melds",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(request),
       }),
     );
   });

@@ -9,9 +9,13 @@ import {
   getProjectSessions,
   getProjectTimeline,
   previewProjectMeld,
+  saveProjectMeld,
   type AgentEvent,
   type AgentSession,
+  type ProjectMeld,
+  type ProjectMeldSaveRequest,
   type ProjectMeldPreviewResponse,
+  type ProjectMeldSessionRef,
   type ProjectSummary,
   type ProjectTimelineBlock,
   type ProjectTimelineResponse,
@@ -32,6 +36,9 @@ export default function ProjectsPage() {
   const [preview, setPreview] = createSignal<ProjectMeldPreviewResponse | null>(null);
   const [previewError, setPreviewError] = createSignal<string | null>(null);
   const [previewLoading, setPreviewLoading] = createSignal(false);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [saveLoading, setSaveLoading] = createSignal(false);
+  const [savedMeldId, setSavedMeldId] = createSignal<string | null>(null);
   const [projects] = createResource(async () => getProjects(), { initialValue: [] as ProjectSummary[] });
   const selectedKey = createMemo(() => params.projectKey || projects()[0]?.projectKey || "");
   const selectedProject = createMemo(() => projects().find((project) => project.projectKey === selectedKey()));
@@ -43,25 +50,27 @@ export default function ProjectsPage() {
     async (input) => (input ? sourceFilter.matches(await getProjectSessions(input.projectKey)) : []),
     { initialValue: [] as AgentSession[] },
   );
-  const [timeline] = createResource(
+  const [timeline, { refetch: refetchTimeline }] = createResource(
     projectKeyWithFilter,
     async (input) => (input ? filterTimeline(await getProjectTimeline(input.projectKey, TIMELINE_LIMIT, 0)) : emptyTimeline()),
     { initialValue: emptyTimeline() },
   );
-  const [melds] = createResource(
+  const [melds, { refetch: refetchMelds }] = createResource(
     selectedKey,
     async (projectKey) => (projectKey ? getProjectMelds(projectKey) : []),
-    { initialValue: [] },
+    { initialValue: [] as ProjectMeld[] },
   );
   const timelineItems = createMemo(() => timeline().items);
   const selectedCount = createMemo(() => selectedSessionIds().size);
-  const previewText = createMemo(() => preview()?.bundle || preview()?.preview || "");
+  const previewText = createMemo(() => previewBody(preview()));
 
   createEffect(() => {
     selectedKey();
     setSelectedSessionIds(new Set<string>());
     setPreview(null);
     setPreviewError(null);
+    setSaveError(null);
+    setSavedMeldId(null);
   });
 
   const projectVirtualizer = createVirtualizer({
@@ -107,12 +116,56 @@ export default function ProjectsPage() {
     if (!projectKey || !sessionIds.length) return;
     setPreviewLoading(true);
     setPreviewError(null);
+    setSaveError(null);
+    setSavedMeldId(null);
     try {
       setPreview(await previewProjectMeld(projectKey, sessionIds));
     } catch (err) {
       setPreviewError(err instanceof Error ? err.message : String(err));
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function savePreview() {
+    const resolved = preview();
+    if (!resolved) return;
+    const sessionIds = (resolved.sessions || []).map((session) => session.id).filter(Boolean);
+    const body = previewBody(resolved);
+    if (!sessionIds.length) {
+      setSaveError("Saved melds require at least one source session.");
+      return;
+    }
+    if (!body.trim()) {
+      setSaveError("Saved melds require preview text.");
+      return;
+    }
+    const request: ProjectMeldSaveRequest = {
+      projectKey: resolved.projectKey,
+      title: resolved.title || "Meld preview",
+      body,
+      provider: resolved.provider || "local",
+      model: resolved.model || "context-bundle",
+      executionMode: resolved.executionMode || "export_bundle",
+      savedFromPreview: true,
+      sessionIds,
+      metadata: {
+        sessionCount: resolved.sessionCount,
+        evidenceCount: resolved.evidenceCount,
+        bundleChars: resolved.bundleChars,
+        degradationNotes: resolved.degradationNotes || [],
+      },
+    };
+    setSaveLoading(true);
+    setSaveError(null);
+    try {
+      const saved = await saveProjectMeld(request);
+      setSavedMeldId(saved.id);
+      await Promise.all([refetchMelds(), refetchTimeline()]);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaveLoading(false);
     }
   }
 
@@ -198,14 +251,19 @@ export default function ProjectsPage() {
                             {(row) => {
                               const block = () => timelineItems()[row.index];
                               return (
-                                <div class="project-timeline-row" style={{ transform: `translateY(${row.start}px)` }}>
-                                  <div class="timeline-block-label">
-                                    <span>{block().blockType || block().sourceType || "event"}</span>
-                                    <span>{block().sessionTitle || block().clientSessionId}</span>
-                                  </div>
-                                  <EventRenderer event={timelineBlockToEvent(block())} />
-                                </div>
-                              );
+	                                  <div class="project-timeline-row" style={{ transform: `translateY(${row.start}px)` }}>
+	                                    <div class="timeline-block-label">
+	                                      <span>{block().blockType || block().sourceType || "event"}</span>
+	                                      <span>{block().sessionTitle || block().clientSessionId || block().headline}</span>
+	                                    </div>
+	                                    <Show
+	                                      when={block().sourceType === "saved_meld"}
+	                                      fallback={<EventRenderer event={timelineBlockToEvent(block())} />}
+	                                    >
+	                                      <SavedMeldTimelineCard block={block()} />
+	                                    </Show>
+	                                  </div>
+	                                );
                             }}
                           </For>
                         </div>
@@ -274,13 +332,30 @@ export default function ProjectsPage() {
                               {resolved().sessionCount.toLocaleString()} sessions · {resolved().evidenceCount.toLocaleString()} evidence
                             </span>
                           </div>
-                          <pre>{previewText()}</pre>
-                          <For each={resolved().degradationNotes || []}>{(note) => <p class="meld-note">{note}</p>}</For>
-                        </section>
-                      )}
-                    </Show>
-                  </div>
-                </aside>
+	                          <pre>{previewText()}</pre>
+	                          <div class="meld-preview-actions">
+	                            <button
+	                              type="button"
+	                              class="secondary-action meld-save-button"
+	                              disabled={saveLoading() || Boolean(savedMeldId())}
+	                              onClick={() => void savePreview()}
+	                            >
+	                              {savedMeldId() ? "Saved" : saveLoading() ? "Saving..." : "Save meld"}
+	                            </button>
+	                          </div>
+	                          <For each={resolved().degradationNotes || []}>{(note) => <p class="meld-note">{note}</p>}</For>
+	                        </section>
+	                      )}
+	                    </Show>
+	                    <Show when={saveError()}>
+	                      {(message) => <p class="inline-error">Save failed: {message()}</p>}
+	                    </Show>
+	                    <Show when={savedMeldId()}>
+	                      <p class="meld-save-status">Saved meld.</p>
+	                    </Show>
+	                    <SavedMeldList melds={melds()} />
+	                  </div>
+	                </aside>
               </div>
             </>
           )}
@@ -295,6 +370,63 @@ function Metric(props: { label: string; value: number }) {
     <span>
       <strong>{props.value.toLocaleString()}</strong> {props.label}
     </span>
+  );
+}
+
+function SavedMeldTimelineCard(props: { block: ProjectTimelineBlock }) {
+  const metadata = createMemo(() => metadataRecord(props.block.metadata));
+  return (
+    <article class="saved-meld-card">
+      <div class="saved-meld-card-head">
+        <strong>{props.block.headline || "Saved meld"}</strong>
+        <time>{timeAgo(props.block.observedAt || new Date(0).toISOString())}</time>
+      </div>
+      <div class="saved-meld-provenance">
+        <span>{metadataValue(metadata(), "provider", "local")}</span>
+        <span>{metadataValue(metadata(), "model", "context-bundle")}</span>
+        <span>{metadataValue(metadata(), "executionMode", "export_bundle")}</span>
+      </div>
+      <p>{props.block.text}</p>
+      <SourceSessionLinks sessions={props.block.sourceSessions || []} />
+    </article>
+  );
+}
+
+function SavedMeldList(props: { melds: ProjectMeld[] }) {
+  return (
+    <Show when={props.melds.length}>
+      <section class="saved-meld-list">
+        <div class="saved-meld-list-head">
+          <span class="eyebrow">saved melds</span>
+          <span>{props.melds.length.toLocaleString()}</span>
+        </div>
+        <For each={props.melds}>
+          {(meld) => (
+            <article class="saved-meld-row">
+              <strong>{meld.title}</strong>
+              <small>
+                {meld.provider} · {meld.model} · {timeAgo(meld.createdAt)}
+              </small>
+              <p>{meld.body}</p>
+              <SourceSessionLinks sessions={meld.sessions || []} />
+            </article>
+          )}
+        </For>
+      </section>
+    </Show>
+  );
+}
+
+function SourceSessionLinks(props: { sessions: ProjectMeldSessionRef[] }) {
+  return (
+    <Show when={props.sessions.length}>
+      <div class="meld-source-links">
+        <span>source sessions</span>
+        <For each={props.sessions}>
+          {(session) => <a href={`/sessions/${encodeURIComponent(session.id)}`}>{session.title || session.clientSessionId}</a>}
+        </For>
+      </div>
+    </Show>
   );
 }
 
@@ -315,6 +447,19 @@ function emptyTimeline(): ProjectTimelineResponse {
     count: 0,
     items: [],
   };
+}
+
+function previewBody(response: ProjectMeldPreviewResponse | null): string {
+  return response?.preview || response?.bundle || "";
+}
+
+function metadataRecord(metadata: unknown): Record<string, unknown> {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {};
+}
+
+function metadataValue(metadata: Record<string, unknown>, key: string, fallback: string): string {
+  const value = metadata[key];
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
 
 function timelineBlockToEvent(block: ProjectTimelineBlock): AgentEvent {

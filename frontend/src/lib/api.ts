@@ -93,6 +93,7 @@ export type ProjectTimelineBlock = {
   toolOutputJson?: string | null;
   metadata?: unknown;
   observedAt?: string | null;
+  sourceSessions?: ProjectMeldSessionRef[] | null;
 };
 
 export type ProjectTimelineResponse = {
@@ -105,8 +106,6 @@ export type ProjectTimelineResponse = {
   items: ProjectTimelineBlock[];
 };
 
-export type ProjectMeld = Record<string, unknown>;
-
 export type ProjectMeldSessionRef = {
   id: string;
   source: string;
@@ -116,6 +115,37 @@ export type ProjectMeldSessionRef = {
   eventCount: number;
   startedAt?: string | null;
   lastSeenAt?: string | null;
+};
+
+export type ProjectSavedMeld = {
+  id: string;
+  projectKey: string;
+  canonicalKey: string;
+  title: string;
+  body: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+  executionMode: string;
+  savedFromPreview: boolean;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  sessions: ProjectMeldSessionRef[];
+};
+
+export type ProjectMeld = ProjectSavedMeld;
+
+export type ProjectMeldSaveRequest = {
+  projectKey: string;
+  title: string;
+  body: string;
+  provider: string;
+  model: string;
+  executionMode: string;
+  savedFromPreview: boolean;
+  sessionIds: string[];
+  promptVersion?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type ProjectMeldPreviewResponse = {
@@ -254,6 +284,10 @@ export function previewProjectMeld(key: string, sessionIds: string[]): Promise<P
   return postJson(`/api/projects/${encodeURIComponent(key)}/melds/preview`, { sessionIds });
 }
 
+export function saveProjectMeld(request: ProjectMeldSaveRequest): Promise<ProjectSavedMeld> {
+  return postJson("/api/melds", request);
+}
+
 export function searchFields(): Promise<FieldInfo[]> {
   return getJson("/api/search/fields");
 }
@@ -297,8 +331,9 @@ async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     try {
-      const payload = (await response.json()) as { message?: string; error?: string };
-      detail = payload.message || payload.error || detail;
+      const payload = (await response.json()) as { message?: string; error?: string | { message?: string } };
+      const nestedError = typeof payload.error === "object" ? payload.error?.message : payload.error;
+      detail = payload.message || nestedError || detail;
     } catch {
       const text = await response.text().catch(() => "");
       if (text) detail = text;

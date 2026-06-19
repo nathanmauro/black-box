@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { previewProjectMeld } from "../../lib/api";
+import { previewProjectMeld, saveProjectMeld } from "../../lib/api";
 import ProjectsPage from "../ProjectsPage";
 
 const navigate = vi.fn();
@@ -63,15 +63,66 @@ vi.mock("../../lib/api", async (importOriginal) => {
           sessionId: "s1",
           sessionTitle: "Session A",
           cwd: "/Users/nathan/Developer/proj/sba-agentic",
-          metadata: { decision: "Keep Projects derived from cwd", confidence: 0.9 },
-          observedAt: "2026-06-16T20:00:00Z",
-        },
-      ],
-    })),
-    getProjectMelds: vi.fn(async () => []),
+            metadata: { decision: "Keep Projects derived from cwd", confidence: 0.9 },
+            observedAt: "2026-06-16T20:00:00Z",
+          },
+          {
+            id: "meld-1",
+            sourceType: "saved_meld",
+            blockType: "synthesis",
+            headline: "Saved durable meld",
+            text: "Saved synthesis belongs beside raw storyline evidence.",
+            eventType: "SavedMeld",
+            role: "synthesis",
+            source: "meld",
+            metadata: { provider: "local", model: "context-bundle", executionMode: "export_bundle" },
+            observedAt: "2026-06-16T21:00:00Z",
+            sourceSessions: [
+              {
+                id: "s1",
+                source: "codex",
+                clientSessionId: "client-1",
+                title: "Session A",
+                cwd: "/Users/nathan/Developer/proj/sba-agentic",
+                eventCount: 24,
+                startedAt: "2026-06-16T19:00:00Z",
+                lastSeenAt: "2026-06-16T20:00:00Z",
+              },
+            ],
+          },
+        ],
+      })),
+    getProjectMelds: vi.fn(async () => [
+      {
+        id: "meld-1",
+        projectKey: "proj-key",
+        canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+        title: "Saved durable meld",
+        body: "Saved synthesis belongs beside raw storyline evidence.",
+        provider: "local",
+        model: "context-bundle",
+        promptVersion: "project-meld-v1",
+        executionMode: "export_bundle",
+        savedFromPreview: true,
+        metadata: {},
+        createdAt: "2026-06-16T21:00:00Z",
+        sessions: [
+          {
+            id: "s1",
+            source: "codex",
+            clientSessionId: "client-1",
+            title: "Session A",
+            cwd: "/Users/nathan/Developer/proj/sba-agentic",
+            eventCount: 24,
+            startedAt: "2026-06-16T19:00:00Z",
+            lastSeenAt: "2026-06-16T20:00:00Z",
+          },
+        ],
+      },
+    ]),
     previewProjectMeld: vi.fn(async () => ({
       status: "preview",
-      executionMode: "bundle",
+      executionMode: "export_bundle",
       provider: "codex",
       model: "default",
       projectKey: "proj-key",
@@ -79,11 +130,37 @@ vi.mock("../../lib/api", async (importOriginal) => {
       title: "Meld preview",
       preview: "Preview summary",
       bundle: "Bundle text for selected sessions",
-      sessions: [],
+      sessions: [
+        {
+          id: "s1",
+          source: "codex",
+          clientSessionId: "client-1",
+          title: "Session A",
+          cwd: "/Users/nathan/Developer/proj/sba-agentic",
+          eventCount: 24,
+          startedAt: "2026-06-16T19:00:00Z",
+          lastSeenAt: "2026-06-16T20:00:00Z",
+        },
+      ],
       sessionCount: 1,
       evidenceCount: 3,
       bundleChars: 34,
       degradationNotes: [],
+    })),
+    saveProjectMeld: vi.fn(async () => ({
+      id: "meld-2",
+      projectKey: "proj-key",
+      canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+      title: "Meld preview",
+      body: "Preview summary",
+      provider: "codex",
+      model: "default",
+      promptVersion: "project-meld-v1",
+      executionMode: "export_bundle",
+      savedFromPreview: true,
+      metadata: {},
+      createdAt: "2026-06-16T21:05:00Z",
+      sessions: [],
     })),
   };
 });
@@ -99,6 +176,24 @@ describe("ProjectsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preview meld" }));
 
     expect(previewProjectMeld).toHaveBeenCalledWith("proj-key", ["s1"]);
-    expect(await screen.findByText("Bundle text for selected sessions")).toBeInTheDocument();
+    expect(await screen.findByText("Preview summary")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save meld" }));
+
+    expect(saveProjectMeld).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectKey: "proj-key",
+        title: "Meld preview",
+        body: "Preview summary",
+        provider: "codex",
+        model: "default",
+        executionMode: "export_bundle",
+        savedFromPreview: true,
+        sessionIds: ["s1"],
+      }),
+    );
+    expect(await screen.findByText("Saved meld.")).toBeInTheDocument();
+    expect(await screen.findByText("Saved durable meld")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Session A" }).length).toBeGreaterThan(0);
   });
 });
