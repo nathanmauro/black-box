@@ -26,7 +26,7 @@ for arg in "$@"; do
       cat <<USAGE
 Usage: scripts/deploy-local.sh [--with-tests]
 
-Build the packaged jar, restart the local launchd service, and wait for /api/status.
+Clean-build the frontend bundle and packaged jar, restart the local launchd service, and wait for /api/status.
 
 Environment overrides:
   SBA_LAUNCHD_LABEL   default: com.nathan.sba-agentic
@@ -73,9 +73,9 @@ echo "Before deploy:"
 describe_state
 
 if [[ "$RUN_TESTS" -eq 1 ]]; then
-  mvn -q package
+  mvn -q clean -Pfrontend package
 else
-  mvn -q -DskipTests package
+  mvn -q clean -Pfrontend -DskipTests package
 fi
 
 echo "Restarting launchd service: $DOMAIN/$LABEL"

@@ -75,7 +75,7 @@ systemctl --user daemon-reload && systemctl --user enable --now black-box
 Docker is local/dev oriented:
 
 ```bash
-mvn -DskipTests package
+mvn clean -DskipTests package
 docker build -t black-box .
 docker run --rm -p 127.0.0.1:8766:8766 -v black-box-data:/data black-box
 ```
@@ -325,7 +325,7 @@ ASK is an optional retrieval workspace over the external `agent-memory` Elastics
 The Maven artifact keeps the historical id `sba-agentic`; the product name is Black Box.
 
 ```bash
-mvn -DskipTests package
+mvn clean -DskipTests package
 java -jar target/sba-agentic-0.1.0.jar doctor
 java -jar target/sba-agentic-0.1.0.jar ingest --source=manual --session=test --type=ManualCapture --text='first note'
 java -jar target/sba-agentic-0.1.0.jar search 'first note'
