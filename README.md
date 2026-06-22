@@ -50,7 +50,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface has Sessions, Projects, Recall, and Stats workspaces. Sessions uses a project-first, fuzzy-filtered rail with a no-project/manual/system bucket, compact collapsible event rows, bounded summary previews, and a right-side outline for files edited, files read, tools used, and event shape. Projects groups sessions by derived working directory, shows a project-level Hybrid Storyline over decisions, handoffs, assistant output, and notable tool results, and can build a bounded meld preview/export bundle from selected sessions. Stats shows store totals, source and event-kind breakdowns, and recent daily activity. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
+The web surface now centers on Overview, Sessions, Search, and Recall. Overview is the search-first table of contents. Sessions has a static app sidebar, source chips, a local session finder that understands `source:` and `project:` facets, and a prompt-focused reader: user prompts and assistant responses are shown first, decisions/observations/handoffs are opt-in, and tool output stays hidden by default. Search provides faceted Find mode plus gated Ask mode when its optional dependencies are reachable. Projects and melds are currently parked in the UI while the core reading loop gets tightened; their backend endpoints remain available for future work.
 
 ## Run as a service
 
@@ -280,8 +280,8 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/projects` | Derived project groups with session/event counts |
 | `GET /api/projects/{projectKey}/sessions?limit=100` | Sessions in a derived project group |
 | `GET /api/projects/{projectKey}/timeline?limit=50&offset=0` | Project-level Hybrid Storyline blocks |
-| `GET /api/projects/{projectKey}/melds` | Saved melds for the project; currently empty until durable meld persistence lands |
-| `POST /api/projects/{projectKey}/melds/preview` | Builds a bounded selected-session meld bundle; `executionMode=direct` explicitly calls the configured summary backend |
+| `GET /api/projects/{projectKey}/melds` | Saved melds for the project backend; the Projects UI is currently parked |
+| `POST /api/projects/{projectKey}/melds/preview` | Builds a bounded selected-session meld bundle; the Projects UI is currently parked |
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
 | `GET /api/search/fields` | Search field metadata for the query bar |
 | `GET /api/search/values?field=<field>&prefix=<prefix>&limit=20` | Field value suggestions for the query bar |
