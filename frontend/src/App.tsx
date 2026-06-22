@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, type JSX } from "solid-js";
 import { A } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
@@ -7,6 +7,16 @@ import { createLiveStore, LiveStoreContext } from "./lib/sse";
 type AppProps = {
   children?: JSX.Element;
 };
+
+const NAV_ITEMS = [
+  { href: "/", label: "Overview", end: true },
+  { href: "/sessions", label: "Sessions" },
+  { href: "/search", label: "Search" },
+  { href: "/recall", label: "Recall" },
+  { href: "/projects", label: "Projects" },
+  { href: "/stats", label: "Stats" },
+  { href: "/graph", label: "Graph" },
+];
 
 export default function App(props: AppProps) {
   const live = createLiveStore();
@@ -20,13 +30,13 @@ export default function App(props: AppProps) {
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    onCleanup(() => window.removeEventListener("keydown", handler));
   });
 
   return (
     <LiveStoreContext.Provider value={live}>
       <div class="app-shell">
-        <header class="app-header">
+        <aside class="app-sidebar" aria-label="Application navigation">
           <A href="/" class="brand" aria-label="Black Box overview">
             <span class="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 32 32">
@@ -45,31 +55,23 @@ export default function App(props: AppProps) {
               BLACK<span>BOX</span>
             </span>
           </A>
+
           <nav class="nav-pills" aria-label="Primary">
-            <A href="/" end class="nav-pill">
-              Overview
-            </A>
-            <A href="/sessions" class="nav-pill">
-              Sessions
-            </A>
-            <A href="/search" class="nav-pill">
-              Search
-            </A>
-            <A href="/recall" class="nav-pill">
-              Recall
-            </A>
-            <A href="/projects" class="nav-pill">
-              Projects
-            </A>
-            <A href="/stats" class="nav-pill">
-              Stats
-            </A>
-            <A href="/graph" class="nav-pill">
-              Graph
-            </A>
+            <For each={NAV_ITEMS}>
+              {(item) => (
+                <A href={item.href} end={item.end} class="nav-pill">
+                  {item.label}
+                </A>
+              )}
+            </For>
           </nav>
-          <div class="header-actions">
+
+          <section class="sidebar-section" aria-label="Source filters">
+            <span class="sidebar-label">Sources</span>
             <SourceChips />
+          </section>
+
+          <div class="sidebar-footer">
             <span class={`live-pill live-pill--${live.status()}`}>
               <span class="live-dot" />
               {live.status()}
@@ -78,7 +80,7 @@ export default function App(props: AppProps) {
               <span>⌘K</span>
             </button>
           </div>
-        </header>
+        </aside>
         <main class="app-main">{props.children}</main>
         <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
       </div>
