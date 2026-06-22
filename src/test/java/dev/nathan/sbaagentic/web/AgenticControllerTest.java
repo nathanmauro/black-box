@@ -235,6 +235,15 @@ class AgenticControllerTest {
     }
 
     @Test
+    void missingStaticAndDiscoveryResourcesReturnNotFound() throws Exception {
+        mockMvc.perform(get("/app.js"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(get("/.well-known/openid-configuration/mcp"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void askRetrieveReturnsEmptyResultsWhenMemorySearchIsUnavailable() throws Exception {
         mockMvc.perform(get("/api/ask/retrieve").param("q", "history"))
                 .andExpect(status().isOk())
