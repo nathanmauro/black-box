@@ -9,10 +9,9 @@ import { createSessionsResource } from "../lib/stores";
 
 export default function SessionsPage() {
   let listRef: HTMLDivElement | undefined;
-  let timelineRef: HTMLDivElement | undefined;
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
-  const [showToolEvents, setShowToolEvents] = createSignal(false);
+  const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
   const [sessions] = createSessionsResource(2_000);
   const selectedId = () => params.sessionId || "";
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedId()));
@@ -21,11 +20,10 @@ export default function SessionsPage() {
   });
   const timelineEvents = createMemo(() => [...events()].reverse());
   const visibleEvents = createMemo(() =>
-    showToolEvents() ? timelineEvents() : timelineEvents().filter((event) => event.eventType !== "PostToolUse"),
+    timelineEvents().filter((event) => isPrimaryReaderEvent(event) || (showMemoryEvents() && isMemoryEvent(event))),
   );
-  const hiddenToolEventCount = createMemo(
-    () => timelineEvents().filter((event) => event.eventType === "PostToolUse").length,
-  );
+  const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
+  const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
   const sessionVirtualizer = createVirtualizer({
     get count() {
       return sessions().length;
@@ -33,14 +31,6 @@ export default function SessionsPage() {
     getScrollElement: () => listRef || null,
     estimateSize: () => 72,
     overscan: 12,
-  });
-  const eventVirtualizer = createVirtualizer({
-    get count() {
-      return visibleEvents().length;
-    },
-    getScrollElement: () => timelineRef || null,
-    estimateSize: () => 176,
-    overscan: 8,
   });
 
   return (
@@ -108,16 +98,16 @@ export default function SessionsPage() {
                   <small>
                     {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
                   </small>
-                  <Show when={hiddenToolEventCount() > 0}>
+                  <Show when={memoryEventCount() > 0}>
                     <label class="reading-toggle">
                       <input
                         type="checkbox"
-                        checked={showToolEvents()}
-                        onChange={(event) => setShowToolEvents(event.currentTarget.checked)}
+                        checked={showMemoryEvents()}
+                        onChange={(event) => setShowMemoryEvents(event.currentTarget.checked)}
                       />
-                      <span>Show tool events</span>
+                      <span>Show memory events</span>
                       <span aria-hidden="true" class="reading-toggle-count">
-                        {hiddenToolEventCount().toLocaleString()}
+                        {memoryEventCount().toLocaleString()}
                       </span>
                     </label>
                   </Show>
@@ -125,22 +115,18 @@ export default function SessionsPage() {
               </header>
 
               <div class="detail-body">
-                <div class="timeline-pane" ref={timelineRef}>
+                <div class="timeline-pane">
                   <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
-                    <div class="virtual-spacer" style={{ height: `${eventVirtualizer.getTotalSize()}px` }}>
-                      <For each={eventVirtualizer.getVirtualItems()}>
-                        {(row) => {
-                          const event = () => visibleEvents()[row.index];
-                          return (
-                            <div class="event-virtual-row" style={{ transform: `translateY(${row.start}px)` }}>
-                              <EventRenderer event={event()} />
-                            </div>
-                          );
-                        }}
-                      </For>
-                    </div>
+                    <For each={visibleEvents()}>
+                      {(event) => (
+                        <div id={`event-${event.id}`} class="event-flow-row">
+                          <EventRenderer event={event} />
+                        </div>
+                      )}
+                    </For>
                   </Show>
                 </div>
+                <PromptOutline prompts={promptOutline()} />
               </div>
             </>
           )}
@@ -148,6 +134,56 @@ export default function SessionsPage() {
       </section>
     </section>
   );
+}
+
+function PromptOutline(props: { prompts: AgentEvent[] }) {
+  return (
+    <div class="prompt-outline" aria-label="Prompt outline">
+      <button type="button" class="prompt-outline-trigger" aria-haspopup="true">
+        <span>Prompts</span>
+        <strong>{props.prompts.length.toLocaleString()}</strong>
+      </button>
+      <nav class="prompt-outline-panel" aria-label="User prompt outline">
+        <Show when={props.prompts.length} fallback={<p>No user prompts captured.</p>}>
+          <For each={props.prompts}>
+            {(event, index) => (
+              <a href={`#event-${event.id}`} class="prompt-outline-item">
+                <span>{index() + 1}</span>
+                <strong>{eventTitle(event)}</strong>
+                <small>{timeAgo(event.observedAt)}</small>
+              </a>
+            )}
+          </For>
+        </Show>
+      </nav>
+    </div>
+  );
+}
+
+function isPromptEvent(event: AgentEvent): boolean {
+  return event.eventType === "UserPromptSubmit" || event.role === "user";
+}
+
+function isAssistantEvent(event: AgentEvent): boolean {
+  return event.eventType === "AssistantMessage" || event.role === "assistant";
+}
+
+function isMemoryEvent(event: AgentEvent): boolean {
+  return event.eventType === "Decision" || event.eventType === "Observation" || event.eventType === "Handoff";
+}
+
+function isToolEvent(event: AgentEvent): boolean {
+  return Boolean(event.toolName || event.toolInputJson || event.toolOutputJson || event.role === "tool" || /ToolUse$/.test(event.eventType));
+}
+
+function isPrimaryReaderEvent(event: AgentEvent): boolean {
+  return !isMemoryEvent(event) && !isToolEvent(event) && (isPromptEvent(event) || isAssistantEvent(event));
+}
+
+function eventTitle(event: AgentEvent): string {
+  const text = event.text?.trim();
+  if (text) return text.length > 92 ? `${text.slice(0, 89)}...` : text;
+  return event.eventType || "User prompt";
 }
 
 function formatDate(iso: string): string {

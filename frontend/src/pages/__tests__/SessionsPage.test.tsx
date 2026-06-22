@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentSession } from "../../lib/api";
 import SessionsPage from "../SessionsPage";
@@ -38,6 +38,7 @@ const events: AgentEvent[] = [
     source: "codex",
     clientSessionId: "client-1",
     eventType: "Decision",
+    role: "assistant",
     text: "Use the calmer session layout",
     metadata: {
       decision: "Use the calmer session layout",
@@ -45,6 +46,16 @@ const events: AgentEvent[] = [
       confidence: 0.84,
     },
     observedAt: "2026-06-22T20:02:00Z",
+  },
+  {
+    id: "evt-observation",
+    sessionId: "session-1",
+    source: "codex",
+    clientSessionId: "client-1",
+    eventType: "Observation",
+    role: "assistant",
+    text: "Reader should keep memory cards behind a layer toggle.",
+    observedAt: "2026-06-22T20:01:30Z",
   },
   {
     id: "evt-assistant",
@@ -101,19 +112,27 @@ vi.mock("../../lib/api", async (importOriginal) => {
 });
 
 describe("SessionsPage", () => {
-  it("defaults to a reading-focused detail without outline or tool-event noise", async () => {
+  it("defaults to a prompt-focused reader with memory events opt-in and tools hidden", async () => {
     render(() => <SessionsPage />);
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText("Focus the session reader.")).not.toHaveLength(0));
     expect(screen.getAllByText("I made the reading view calmer.")).not.toHaveLength(0);
-    expect(screen.getByText("Use the calmer session layout")).toBeInTheDocument();
 
     expect(document.querySelector(".outline-pane")).not.toBeInTheDocument();
-    expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+    expect(document.querySelector(".timeline-pane .virtual-spacer")).not.toBeInTheDocument();
+    const promptOutline = document.querySelector(".prompt-outline");
+    expect(promptOutline).toBeInTheDocument();
+    expect(within(promptOutline as HTMLElement).getByText("Focus the session reader.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Show tool events" }));
-    await waitFor(() => expect(screen.getAllByText(/hidden-tool-output/)).not.toHaveLength(0));
-    expect(screen.getByText("tool payload").closest("details")).not.toHaveAttribute("open");
+    expect(screen.queryByText("Use the calmer session layout")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reader should keep memory cards behind a layer toggle.")).not.toBeInTheDocument();
+    expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Show tool events" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show memory events" }));
+    expect(await screen.findByText("Use the calmer session layout")).toBeInTheDocument();
+    expect(screen.getByText("Reader should keep memory cards behind a layer toggle.")).toBeInTheDocument();
+    expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
   });
 });

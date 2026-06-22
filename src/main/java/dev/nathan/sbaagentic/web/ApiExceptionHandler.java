@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -67,6 +68,15 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleMissingResource(NoResourceFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND, "not_found", "Resource not found."));
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> handleDisconnectedClient(AsyncRequestNotUsableException ex) {
+        // SSE clients disconnect normally during navigation, refresh, and browser shutdown. At that
+        // point the response is already an event stream, so returning the JSON error envelope would
+        // trigger a secondary 500 while trying to write the handler response.
+        log.debug("Streaming client disconnected before the response completed.", ex);
+        return ResponseEntity.noContent().build();
     }
 
     @ExceptionHandler(Exception.class)
