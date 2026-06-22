@@ -1,5 +1,5 @@
 import { A, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
 import { ask, askStatus, search, searchValues, type AgentEvent, type SearchResponse } from "../lib/api";
@@ -27,10 +27,12 @@ type Mode = "find" | "ask";
 
 export default function SearchPage() {
   let inputRef: HTMLInputElement | undefined;
+  let inputWrapRef: HTMLDivElement | undefined;
   const [params, setParams] = useSearchParams<{ q?: string }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
   const [mode, setMode] = createSignal<Mode>("find");
   const [meaningfulOnly, setMeaningfulOnly] = createSignal(true);
+  const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
@@ -86,14 +88,36 @@ export default function SearchPage() {
   const [suggestions] = createResource(editing, async (edit) =>
     edit ? searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []) : [],
   );
+  const showSuggestions = () => suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
+
+  createEffect(() => {
+    if (editing() === null) {
+      setSuggestionsOpen(false);
+    }
+  });
+
+  function dismissSuggestions() {
+    setSuggestionsOpen(false);
+  }
+
   function pickSuggestion(value: string) {
     const edit = editing();
     if (!edit) return;
     const tokens = draft().split(/\s+/);
     tokens[tokens.length - 1] = `${edit.key}:${/\s/.test(value) ? `"${value}"` : value}`;
     setDraft(tokens.join(" ") + " ");
+    dismissSuggestions();
     inputRef?.focus();
   }
+
+  function handleDocumentPointerDown(event: PointerEvent) {
+    if (!inputWrapRef?.contains(event.target as Node)) {
+      dismissSuggestions();
+    }
+  }
+
+  document.addEventListener("pointerdown", handleDocumentPointerDown);
+  onCleanup(() => document.removeEventListener("pointerdown", handleDocumentPointerDown));
 
   return (
     <section class="page page--search">
@@ -109,17 +133,25 @@ export default function SearchPage() {
 
         <Show when={mode() === "find"} fallback={<AskPanel />}>
           <form class="search-form" onSubmit={submit} autocomplete="off">
-            <div class="search-input-wrap">
+            <div ref={inputWrapRef} class="search-input-wrap">
               <input
                 ref={inputRef}
                 class="search-input"
                 value={draft()}
-                onInput={(event) => setDraft(event.currentTarget.value)}
+                onInput={(event) => {
+                  setDraft(event.currentTarget.value);
+                  setSuggestionsOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    dismissSuggestions();
+                  }
+                }}
                 placeholder="source:codex kind:Decision recall bug"
                 aria-label="Search query"
               />
               <button type="submit">Search</button>
-              <Show when={(suggestions()?.length ?? 0) > 0}>
+              <Show when={showSuggestions()}>
                 <ul class="suggest-popover" role="listbox">
                   <For each={suggestions()}>
                     {(value) => (
