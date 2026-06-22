@@ -746,8 +746,7 @@ a {
 .session-list-empty {
   padding: 0 12px;
 }
-.session-rows, .virtual-list, .timeline-pane { flex: 1; overflow-y: auto; min-height: 0; }
-.virtual-spacer { position: relative; width: 100%; }
+.session-rows, .timeline-pane { flex: 1; overflow-y: auto; min-height: 0; }
 .session-row {
   width: 100%;
   display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px;

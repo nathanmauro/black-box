@@ -44,17 +44,6 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   };
 });
 
-vi.mock("@tanstack/solid-virtual", () => ({
-  createVirtualizer: (options: { count: number; estimateSize: () => number }) => ({
-    getTotalSize: () => options.count * options.estimateSize(),
-    getVirtualItems: () =>
-      Array.from({ length: options.count }, (_, index) => ({
-        index,
-        start: index * options.estimateSize(),
-      })),
-  }),
-}));
-
 vi.mock("../../lib/stores", () => ({
   createSessionsResource: () => [() => sessions],
 }));
