@@ -182,7 +182,7 @@ function sessionItem(session: AgentSession, navigate: ReturnType<typeof useNavig
     meta: `${sourceLabel(session.source)} · ${truncatePath(session.cwd)} · ${timeAgo(session.lastSeenAt)}`,
     kind: "session",
     run: () => {
-      navigate(`/sessions/${encodeURIComponent(session.id)}`);
+      navigate(`/?session=${encodeURIComponent(session.id)}`);
       close();
     },
   };

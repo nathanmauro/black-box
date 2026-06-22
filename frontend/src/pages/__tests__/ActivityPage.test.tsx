@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../lib/api";
 import ActivityPage from "../ActivityPage";
 
-let params: { q?: string };
-let setParams: SetStoreFunction<{ q?: string }>;
+let params: { q?: string; session?: string; view?: string };
+let setParams: SetStoreFunction<{ q?: string; session?: string; view?: string }>;
 
 const sessions: AgentSession[] = [
   {
@@ -79,7 +79,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  [params, setParams] = createStore<{ q?: string }>({});
+  [params, setParams] = createStore<{ q?: string; session?: string; view?: string }>({});
   navigate.mockReset();
 });
 
@@ -94,7 +94,15 @@ describe("ActivityPage", () => {
     expect(within(modes).getByRole("tab", { name: "Ask" })).toBeInTheDocument();
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    const detail = document.querySelector(".session-detail-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    expect(await within(detail).findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
+
+    fireEvent.click(within(rail).getByRole("button", { name: /Cockpit cleanup/ }));
+    await waitFor(() => expect(within(detail).getByRole("heading", { name: "Cockpit cleanup" })).toBeInTheDocument());
+    expect(navigate).not.toHaveBeenCalled();
+    expect(params.session).toBe("session-2");
+
     fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "project:cockpit" } });
     await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();

@@ -7,14 +7,24 @@ import { timeAgo, truncatePath } from "../lib/format";
 import { parseQuery } from "../lib/query";
 import { createSessionsResource } from "../lib/stores";
 
-export default function SessionsPage() {
+type SessionsPageProps = {
+  selectedSessionId?: string;
+  defaultToFirst?: boolean;
+  onSelectSession?: (id: string) => void;
+  params?: unknown;
+  location?: unknown;
+  data?: unknown;
+  children?: unknown;
+};
+
+export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
   const [sessionFilter, setSessionFilter] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
   const [sessions] = createSessionsResource(2_000);
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
-  const selectedId = () => params.sessionId || "";
+  const selectedId = () => props.selectedSessionId || params.sessionId || (props.defaultToFirst ? filteredSessions()[0]?.id ?? "" : "");
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedId()));
   const [events] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
     initialValue: [] as AgentEvent[],
@@ -25,6 +35,15 @@ export default function SessionsPage() {
   );
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
   const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
+
+  function selectSession(id: string) {
+    if (props.onSelectSession) {
+      props.onSelectSession(id);
+      return;
+    }
+    navigate(`/sessions/${encodeURIComponent(id)}`);
+  }
+
   return (
     <section class="sessions-page">
       <aside class="session-list-pane">
@@ -61,7 +80,7 @@ export default function SessionsPage() {
                 <button
                   type="button"
                   classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
-                  onClick={() => navigate(`/sessions/${encodeURIComponent(session.id)}`)}
+                  onClick={() => selectSession(session.id)}
                 >
                   <SourceDot source={session.source} />
                   <span class="session-row-main">

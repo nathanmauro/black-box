@@ -12,7 +12,7 @@ const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
 ];
 
 export default function ActivityPage() {
-  const [params, setParams] = useSearchParams<{ q?: string; view?: string }>();
+  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string }>();
   const [mode, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
 
   createEffect(() => setModeSignal(modeFromParams(params)));
@@ -24,6 +24,10 @@ export default function ActivityPage() {
     } else {
       setParams({ view: next });
     }
+  }
+
+  function selectSession(id: string) {
+    setParams({ session: id });
   }
 
   return (
@@ -59,7 +63,7 @@ export default function ActivityPage() {
           when={mode() === "browse"}
           fallback={<SearchPage mode={mode() as SearchMode} showModeTabs={false} />}
         >
-          <SessionsPage />
+          <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
         </Show>
       </div>
     </section>
