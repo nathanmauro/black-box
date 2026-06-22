@@ -23,20 +23,35 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   project: [],
 };
 
-type Mode = "find" | "ask";
+export type SearchMode = "find" | "ask";
 
-export default function SearchPage() {
+type SearchPageProps = {
+  mode?: SearchMode;
+  showModeTabs?: boolean;
+  params?: unknown;
+  location?: unknown;
+  data?: unknown;
+  children?: unknown;
+};
+
+export default function SearchPage(props: SearchPageProps = {}) {
   let inputRef: HTMLInputElement | undefined;
   let inputWrapRef: HTMLDivElement | undefined;
   const [params, setParams] = useSearchParams<{ q?: string }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
-  const [mode, setMode] = createSignal<Mode>("find");
+  const [internalMode, setInternalMode] = createSignal<SearchMode>(props.mode ?? "find");
   const [meaningfulOnly, setMeaningfulOnly] = createSignal(true);
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
   createEffect(() => setDraft(params.q ?? ""));
+  createEffect(() => {
+    if (props.mode) setInternalMode(props.mode);
+  });
+  const mode = () => props.mode ?? internalMode();
+  const setMode = (next: SearchMode) => setInternalMode(next);
+  const showModeTabs = () => props.showModeTabs !== false;
 
   const [response] = createResource<SearchResponse, string>(submitted, async (q) =>
     q.trim() ? search(q, 120) : { query: "", local: [], elastic: [], elasticHealth: {} },
@@ -122,16 +137,38 @@ export default function SearchPage() {
   return (
     <section class="page page--search">
       <div class="search-head">
-        <div class="mode-tabs">
-          <button type="button" classList={{ "mode-tab": true, "mode-tab--active": mode() === "find" }}
-            onClick={() => setMode("find")}>Find</button>
-          <Show when={askReady()}>
-            <button type="button" classList={{ "mode-tab": true, "mode-tab--active": mode() === "ask" }}
-              onClick={() => setMode("ask")}>Ask</button>
-          </Show>
-        </div>
+        <Show when={showModeTabs()}>
+          <div class="mode-tabs">
+            <button
+              type="button"
+              classList={{ "mode-tab": true, "mode-tab--active": mode() === "find" }}
+              onClick={() => setMode("find")}
+            >
+              Find
+            </button>
+            <Show when={askReady()}>
+              <button
+                type="button"
+                classList={{ "mode-tab": true, "mode-tab--active": mode() === "ask" }}
+                onClick={() => setMode("ask")}
+              >
+                Ask
+              </button>
+            </Show>
+          </div>
+        </Show>
 
-        <Show when={mode() === "find"} fallback={<AskPanel />}>
+        <Show
+          when={mode() === "find"}
+          fallback={
+            <Show
+              when={askReady()}
+              fallback={<p class="empty-state">{askReady.loading ? "Checking Ask dependencies..." : "Ask is unavailable on this server."}</p>}
+            >
+              <AskPanel />
+            </Show>
+          }
+        >
           <form class="search-form" onSubmit={submit} autocomplete="off">
             <div ref={inputWrapRef} class="search-input-wrap">
               <input

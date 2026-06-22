@@ -1,6 +1,7 @@
 import { render } from "solid-js/web";
 import { Route, Router } from "@solidjs/router";
 import App from "./App";
+import ActivityPage from "./pages/ActivityPage";
 import GraphPage from "./pages/GraphPage";
 import OverviewPage from "./pages/OverviewPage";
 import ProjectsPage from "./pages/ProjectsPage";
@@ -19,7 +20,8 @@ if (!root) {
 render(
   () => (
     <Router root={App}>
-      <Route path="/" component={OverviewPage} />
+      <Route path="/" component={ActivityPage} />
+      <Route path="/overview" component={OverviewPage} />
       <Route path="/sessions" component={SessionsPage} />
       <Route path="/sessions/:sessionId" component={SessionsPage} />
       <Route path="/search" component={SearchPage} />

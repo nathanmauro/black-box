@@ -39,9 +39,11 @@ describe("App shell", () => {
     expect(within(sidebar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute("href", "/");
 
     const primaryNav = within(sidebar).getByRole("navigation", { name: "Primary" });
-    expect(within(primaryNav).getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
-    expect(within(primaryNav).getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
-    expect(within(primaryNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+    expect(within(primaryNav).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/");
+    expect(within(primaryNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
+    expect(within(primaryNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: "Search" })).not.toBeInTheDocument();
     expect(within(primaryNav).queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
     expect(within(primaryNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
     expect(within(primaryNav).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
@@ -52,6 +54,8 @@ describe("App shell", () => {
     expect(screen.getByRole("region", { name: "Current page" })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
-    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    expect(within(palette).getByRole("option", { name: /Activity/i })).toBeInTheDocument();
+    expect(within(palette).queryByRole("option", { name: /Overview/i })).not.toBeInTheDocument();
   });
 });

@@ -99,17 +99,6 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   };
 });
 
-vi.mock("@tanstack/solid-virtual", () => ({
-  createVirtualizer: (options: { count: number; estimateSize: () => number }) => ({
-    getTotalSize: () => options.count * options.estimateSize(),
-    getVirtualItems: () =>
-      Array.from({ length: options.count }, (_, index) => ({
-        index,
-        start: index * options.estimateSize(),
-      })),
-  }),
-}));
-
 vi.mock("../../lib/stores", () => ({
   createSessionsResource: () => [() => sessions],
 }));
@@ -129,6 +118,7 @@ describe("SessionsPage", () => {
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+    expect(rail.querySelector(".virtual-spacer")).not.toBeInTheDocument();
 
     fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "project:cockpit" } });
     await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());

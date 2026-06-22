@@ -9,9 +9,7 @@ type AppProps = {
 };
 
 const NAV_ITEMS = [
-  { href: "/", label: "Overview", end: true },
-  { href: "/sessions", label: "Sessions" },
-  { href: "/search", label: "Search" },
+  { href: "/", label: "Activity", end: true },
   { href: "/recall", label: "Recall" },
 ];
 

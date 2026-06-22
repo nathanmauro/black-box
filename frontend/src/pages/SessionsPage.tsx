@@ -1,6 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createMemo, createResource, createSignal, For, Show } from "solid-js";
-import { createVirtualizer } from "@tanstack/solid-virtual";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
 import { getSessionEvents, type AgentEvent } from "../lib/api";
@@ -9,7 +8,6 @@ import { parseQuery } from "../lib/query";
 import { createSessionsResource } from "../lib/stores";
 
 export default function SessionsPage() {
-  let listRef: HTMLDivElement | undefined;
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
   const [sessionFilter, setSessionFilter] = createSignal("");
@@ -27,15 +25,6 @@ export default function SessionsPage() {
   );
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
   const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
-  const sessionVirtualizer = createVirtualizer({
-    get count() {
-      return filteredSessions().length;
-    },
-    getScrollElement: () => listRef || null,
-    estimateSize: () => 72,
-    overscan: 12,
-  });
-
   return (
     <section class="sessions-page">
       <aside class="session-list-pane">
@@ -66,30 +55,24 @@ export default function SessionsPage() {
           </div>
         </div>
         <Show when={filteredSessions().length} fallback={<p class="empty-state session-list-empty">No sessions match the active filters.</p>}>
-          <div class="virtual-list" ref={listRef}>
-            <div class="virtual-spacer" style={{ height: `${sessionVirtualizer.getTotalSize()}px` }}>
-              <For each={sessionVirtualizer.getVirtualItems()}>
-                {(row) => {
-                  const session = () => filteredSessions()[row.index];
-                  return (
-                    <button
-                      type="button"
-                      classList={{ "session-row": true, "session-row--active": session()?.id === selectedId() }}
-                      style={{ transform: `translateY(${row.start}px)` }}
-                      onClick={() => navigate(`/sessions/${encodeURIComponent(session().id)}`)}
-                    >
-                      <SourceDot source={session().source} />
-                      <span class="session-row-main">
-                        <strong>{session().title || session().clientSessionId}</strong>
-                        <small>
-                          {session().eventCount.toLocaleString()} · {truncatePath(session().cwd)} · {timeAgo(session().lastSeenAt)}
-                        </small>
-                      </span>
-                    </button>
-                  );
-                }}
-              </For>
-            </div>
+          <div class="session-rows">
+            <For each={filteredSessions()}>
+              {(session) => (
+                <button
+                  type="button"
+                  classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
+                  onClick={() => navigate(`/sessions/${encodeURIComponent(session.id)}`)}
+                >
+                  <SourceDot source={session.source} />
+                  <span class="session-row-main">
+                    <strong>{session.title || session.clientSessionId}</strong>
+                    <small>
+                      {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} · {timeAgo(session.lastSeenAt)}
+                    </small>
+                  </span>
+                </button>
+              )}
+            </For>
           </div>
         </Show>
       </aside>

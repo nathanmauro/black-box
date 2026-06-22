@@ -20,9 +20,8 @@ type CommandItem = {
 };
 
 const NAV_ITEMS = [
-  { id: "nav-overview", label: "Overview", path: "/", meta: "landing TOC" },
-  { id: "nav-sessions", label: "Sessions", path: "/sessions", meta: "browse recorded sessions" },
-  { id: "nav-search", label: "Search", path: "/search", meta: "faceted find and ask" },
+  { id: "nav-activity", label: "Activity", path: "/", meta: "browse sessions, find events, or ask memory" },
+  { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
 ];
 
 export default function CommandPalette(props: CommandPaletteProps) {
@@ -71,10 +70,10 @@ export default function CommandPalette(props: CommandPaletteProps) {
           {
             id: "search-query",
             label: `Search for "${query().trim()}"`,
-            meta: "open Search",
+            meta: "open Activity Find",
             kind: "search" as const,
             run: () => {
-              navigate(`/search?q=${encodeURIComponent(query().trim())}`);
+              navigate(`/?view=find&q=${encodeURIComponent(query().trim())}`);
               close();
             },
           },

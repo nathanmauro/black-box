@@ -50,7 +50,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface now centers on Overview, Sessions, Search, and Recall. Overview is the search-first table of contents. Sessions has a static app sidebar, source chips, a local session finder that understands `source:` and `project:` facets, and a prompt-focused reader: user prompts and assistant responses are shown first, decisions/observations/handoffs are opt-in, and tool output stays hidden by default. Search provides faceted Find mode plus gated Ask mode when its optional dependencies are reachable. Projects and melds are currently parked in the UI while the core reading loop gets tightened; their backend endpoints remain available for future work.
+The web surface now centers on Activity and Recall. Activity is the main workspace: Browse shows the session rail and prompt-focused reader, Find exposes the faceted event search, and Ask appears as the synthesis path when its optional dependencies are reachable. The session browser has a static app sidebar, source chips, and a local finder that understands `source:` and `project:` facets. User prompts and assistant responses are shown first; decisions/observations/handoffs are opt-in, and tool output stays hidden by default. Projects and melds are currently parked in the UI while the core reading loop gets tightened; their backend endpoints remain available for future work.
 
 ## Run as a service
 
