@@ -328,6 +328,54 @@ a {
   letter-spacing: 0;
 }
 
+.parked-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+
+.parked-panel {
+  width: min(560px, 100%);
+  padding: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.parked-panel h1 {
+  margin: 8px 0;
+  color: var(--text-bright);
+  font-size: 30px;
+  letter-spacing: 0;
+}
+
+.parked-panel p:not(.eyebrow) {
+  margin: 0;
+  color: var(--text);
+}
+
+.parked-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.parked-actions a {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  color: var(--text-bright);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.parked-actions a:hover {
+  background: var(--bg-hover);
+}
+
 .eyebrow {
   margin: 0;
   color: var(--text-dim);
