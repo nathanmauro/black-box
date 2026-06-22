@@ -5,14 +5,17 @@ import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
 import { getSessionEvents, type AgentEvent } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
+import { parseQuery } from "../lib/query";
 import { createSessionsResource } from "../lib/stores";
 
 export default function SessionsPage() {
   let listRef: HTMLDivElement | undefined;
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
+  const [sessionFilter, setSessionFilter] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
   const [sessions] = createSessionsResource(2_000);
+  const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
   const selectedId = () => params.sessionId || "";
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedId()));
   const [events] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
@@ -26,7 +29,7 @@ export default function SessionsPage() {
   const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
   const sessionVirtualizer = createVirtualizer({
     get count() {
-      return sessions().length;
+      return filteredSessions().length;
     },
     getScrollElement: () => listRef || null,
     estimateSize: () => 72,
@@ -38,33 +41,57 @@ export default function SessionsPage() {
       <aside class="session-list-pane">
         <div class="pane-head">
           <span class="eyebrow">sessions</span>
-          <span>{sessions().length.toLocaleString()}</span>
+          <span>
+            {filteredSessions().length.toLocaleString()} / {sessions().length.toLocaleString()}
+          </span>
         </div>
-        <div class="virtual-list" ref={listRef}>
-          <div class="virtual-spacer" style={{ height: `${sessionVirtualizer.getTotalSize()}px` }}>
-            <For each={sessionVirtualizer.getVirtualItems()}>
-              {(row) => {
-                const session = () => sessions()[row.index];
-                return (
-                  <button
-                    type="button"
-                    classList={{ "session-row": true, "session-row--active": session()?.id === selectedId() }}
-                    style={{ transform: `translateY(${row.start}px)` }}
-                    onClick={() => navigate(`/sessions/${encodeURIComponent(session().id)}`)}
-                  >
-                    <SourceDot source={session().source} />
-                    <span class="session-row-main">
-                      <strong>{session().title || session().clientSessionId}</strong>
-                      <small>
-                        {session().eventCount.toLocaleString()} · {truncatePath(session().cwd)} · {timeAgo(session().lastSeenAt)}
-                      </small>
-                    </span>
-                  </button>
-                );
-              }}
-            </For>
+        <div class="session-filter-bar">
+          <label for="session-filter">Find sessions</label>
+          <div class="session-filter-row">
+            <input
+              id="session-filter"
+              value={sessionFilter()}
+              onInput={(event) => setSessionFilter(event.currentTarget.value)}
+              placeholder="source:codex project:sba-agentic prompt text"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              aria-label="Clear session filters"
+              disabled={!sessionFilter().trim()}
+              onClick={() => setSessionFilter("")}
+            >
+              Clear
+            </button>
           </div>
         </div>
+        <Show when={filteredSessions().length} fallback={<p class="empty-state session-list-empty">No sessions match the active filters.</p>}>
+          <div class="virtual-list" ref={listRef}>
+            <div class="virtual-spacer" style={{ height: `${sessionVirtualizer.getTotalSize()}px` }}>
+              <For each={sessionVirtualizer.getVirtualItems()}>
+                {(row) => {
+                  const session = () => filteredSessions()[row.index];
+                  return (
+                    <button
+                      type="button"
+                      classList={{ "session-row": true, "session-row--active": session()?.id === selectedId() }}
+                      style={{ transform: `translateY(${row.start}px)` }}
+                      onClick={() => navigate(`/sessions/${encodeURIComponent(session().id)}`)}
+                    >
+                      <SourceDot source={session().source} />
+                      <span class="session-row-main">
+                        <strong>{session().title || session().clientSessionId}</strong>
+                        <small>
+                          {session().eventCount.toLocaleString()} · {truncatePath(session().cwd)} · {timeAgo(session().lastSeenAt)}
+                        </small>
+                      </span>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
+          </div>
+        </Show>
       </aside>
 
       <section class="session-detail-pane">
@@ -134,6 +161,34 @@ export default function SessionsPage() {
       </section>
     </section>
   );
+}
+
+function filterSessions<T extends { source: string; title?: string | null; clientSessionId: string; cwd?: string | null }>(
+  sessions: T[],
+  query: string,
+): T[] {
+  const parsed = parseQuery(query);
+  const sourceFacet = parsed.facets.source?.toLowerCase();
+  const projectFacet = parsed.facets.project?.toLowerCase();
+  const textTerms = parsed.text.map((term) => term.toLowerCase());
+
+  return sessions.filter((session) => {
+    if (sourceFacet && !session.source.toLowerCase().includes(sourceFacet)) return false;
+    if (projectFacet && !normalizeSessionText(session.cwd).includes(projectFacet)) return false;
+
+    if (!textTerms.length) return true;
+    const haystack = [
+      session.title,
+      session.clientSessionId,
+      session.cwd,
+      session.source,
+    ].map(normalizeSessionText).join(" ");
+    return textTerms.every((term) => haystack.includes(term));
+  });
+}
+
+function normalizeSessionText(value: unknown): string {
+  return String(value ?? "").toLowerCase();
 }
 
 function PromptOutline(props: { prompts: AgentEvent[] }) {

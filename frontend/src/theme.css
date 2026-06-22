@@ -545,6 +545,59 @@ a {
 .sessions-page { display: grid; grid-template-columns: 340px 1fr; gap: 16px; height: 100vh; padding: 16px; }
 .session-list-pane, .session-detail-pane { display: flex; flex-direction: column; min-height: 0; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .pane-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
+.session-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.session-filter-bar label {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+.session-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+.session-filter-row input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  color: var(--text-bright);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.session-filter-row input::placeholder {
+  color: color-mix(in srgb, var(--text-dim) 76%, transparent);
+}
+.session-filter-row button {
+  height: 34px;
+  padding: 0 10px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.session-filter-row button:hover:not(:disabled) {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+.session-filter-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+.session-list-empty {
+  padding: 0 12px;
+}
 .virtual-list, .timeline-pane { flex: 1; overflow-y: auto; min-height: 0; }
 .virtual-spacer { position: relative; width: 100%; }
 .session-row {

@@ -17,6 +17,17 @@ const sessions: AgentSession[] = [
     lastSeenAt: "2026-06-22T20:10:00Z",
     eventCount: 4,
   },
+  {
+    id: "session-2",
+    source: "claude",
+    clientSessionId: "client-2",
+    title: "Cockpit cleanup",
+    cwd: "/Users/nathan/Developer/proj/cockpit",
+    summary: null,
+    startedAt: "2026-06-22T19:00:00Z",
+    lastSeenAt: "2026-06-22T19:20:00Z",
+    eventCount: 8,
+  },
 ];
 
 const events: AgentEvent[] = [
@@ -112,6 +123,25 @@ vi.mock("../../lib/api", async (importOriginal) => {
 });
 
 describe("SessionsPage", () => {
+  it("filters the session rail by text, project, and source facets", async () => {
+    render(() => <SessionsPage />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "project:cockpit" } });
+    await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
+    expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "source:codex focused" } });
+    await waitFor(() => expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument());
+    expect(within(rail).getByText("Focused session")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear session filters" }));
+    expect(await within(rail).findByText("Cockpit cleanup")).toBeInTheDocument();
+  });
+
   it("defaults to a prompt-focused reader with memory events opt-in and tools hidden", async () => {
     render(() => <SessionsPage />);
 

@@ -13,9 +13,6 @@ const NAV_ITEMS = [
   { href: "/sessions", label: "Sessions" },
   { href: "/search", label: "Search" },
   { href: "/recall", label: "Recall" },
-  { href: "/projects", label: "Projects" },
-  { href: "/stats", label: "Stats" },
-  { href: "/graph", label: "Graph" },
 ];
 
 export default function App(props: AppProps) {

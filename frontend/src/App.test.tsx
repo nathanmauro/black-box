@@ -42,6 +42,9 @@ describe("App shell", () => {
     expect(within(primaryNav).getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
     expect(within(primaryNav).getByRole("link", { name: "Sessions" })).toHaveAttribute("href", "/sessions");
     expect(within(primaryNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+    expect(within(primaryNav).queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
+    expect(within(primaryNav).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
 
     expect(within(sidebar).getByRole("group", { name: "Filter by source" })).toBeInTheDocument();
     expect(within(sidebar).getByText("down")).toBeInTheDocument();
