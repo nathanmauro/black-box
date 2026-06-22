@@ -1,27 +1,18 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { createMemo, createResource, For, Show } from "solid-js";
+import { createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
-import { parseJsonObject } from "../components/events/eventData";
 import { getSessionEvents, type AgentEvent } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
 import { createSessionsResource } from "../lib/stores";
-
-type OutlineItem = {
-  label: string;
-  meta: string;
-  eventId: string;
-};
-
-const EDIT_TOOL = /multiedit|edit|write|patch/i;
-const READ_TOOL = /read|grep|search|glob|list|ls|cat|sed/i;
 
 export default function SessionsPage() {
   let listRef: HTMLDivElement | undefined;
   let timelineRef: HTMLDivElement | undefined;
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
+  const [showToolEvents, setShowToolEvents] = createSignal(false);
   const [sessions] = createSessionsResource(2_000);
   const selectedId = () => params.sessionId || "";
   const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedId()));
@@ -29,6 +20,12 @@ export default function SessionsPage() {
     initialValue: [] as AgentEvent[],
   });
   const timelineEvents = createMemo(() => [...events()].reverse());
+  const visibleEvents = createMemo(() =>
+    showToolEvents() ? timelineEvents() : timelineEvents().filter((event) => event.eventType !== "PostToolUse"),
+  );
+  const hiddenToolEventCount = createMemo(
+    () => timelineEvents().filter((event) => event.eventType === "PostToolUse").length,
+  );
   const sessionVirtualizer = createVirtualizer({
     get count() {
       return sessions().length;
@@ -39,13 +36,12 @@ export default function SessionsPage() {
   });
   const eventVirtualizer = createVirtualizer({
     get count() {
-      return timelineEvents().length;
+      return visibleEvents().length;
     },
     getScrollElement: () => timelineRef || null,
     estimateSize: () => 176,
     overscan: 8,
   });
-  const outline = createMemo(() => buildOutline(events()));
 
   return (
     <section class="sessions-page">
@@ -112,6 +108,19 @@ export default function SessionsPage() {
                   <small>
                     {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
                   </small>
+                  <Show when={hiddenToolEventCount() > 0}>
+                    <label class="reading-toggle">
+                      <input
+                        type="checkbox"
+                        checked={showToolEvents()}
+                        onChange={(event) => setShowToolEvents(event.currentTarget.checked)}
+                      />
+                      <span>Show tool events</span>
+                      <span aria-hidden="true" class="reading-toggle-count">
+                        {hiddenToolEventCount().toLocaleString()}
+                      </span>
+                    </label>
+                  </Show>
                 </div>
               </header>
 
@@ -121,7 +130,7 @@ export default function SessionsPage() {
                     <div class="virtual-spacer" style={{ height: `${eventVirtualizer.getTotalSize()}px` }}>
                       <For each={eventVirtualizer.getVirtualItems()}>
                         {(row) => {
-                          const event = () => timelineEvents()[row.index];
+                          const event = () => visibleEvents()[row.index];
                           return (
                             <div class="event-virtual-row" style={{ transform: `translateY(${row.start}px)` }}>
                               <EventRenderer event={event()} />
@@ -132,9 +141,6 @@ export default function SessionsPage() {
                     </div>
                   </Show>
                 </div>
-                <aside class="outline-pane" aria-label="Session outline">
-                  <SessionOutline outline={outline()} />
-                </aside>
               </div>
             </>
           )}
@@ -142,87 +148,6 @@ export default function SessionsPage() {
       </section>
     </section>
   );
-}
-
-function SessionOutline(props: { outline: ReturnType<typeof buildOutline> }) {
-  return (
-    <>
-      <div class="pane-head">
-        <span class="eyebrow">outline</span>
-      </div>
-      <OutlineSection title="Files edited" items={props.outline.edited} />
-      <OutlineSection title="Files read" items={props.outline.read} />
-      <OutlineSection title="Tools used" items={props.outline.tools} />
-    </>
-  );
-}
-
-function OutlineSection(props: { title: string; items: OutlineItem[] }) {
-  return (
-    <section class="outline-section">
-      <div class="outline-section-head">
-        <span>{props.title}</span>
-        <strong>{props.items.length}</strong>
-      </div>
-      <Show when={props.items.length} fallback={<p class="outline-empty">None</p>}>
-        <For each={props.items.slice(0, 8)}>
-          {(item) => (
-            <div class="outline-item">
-              <span>{truncatePath(item.label)}</span>
-              <small>{item.meta}</small>
-            </div>
-          )}
-        </For>
-      </Show>
-    </section>
-  );
-}
-
-function buildOutline(events: AgentEvent[]) {
-  const edited = unique(events.flatMap((event) => fileItems(event, EDIT_TOOL)));
-  const read = unique(events.flatMap((event) => fileItems(event, READ_TOOL)));
-  const counts = new Map<string, { count: number; eventId: string }>();
-  for (const event of events) {
-    if (!event.toolName) continue;
-    const current = counts.get(event.toolName) || { count: 0, eventId: event.id };
-    counts.set(event.toolName, { count: current.count + 1, eventId: current.eventId });
-  }
-  const tools = [...counts.entries()]
-    .sort((a, b) => b[1].count - a[1].count)
-    .map(([label, value]) => ({ label, meta: `${value.count.toLocaleString()} uses`, eventId: value.eventId }));
-  return { edited, read, tools };
-}
-
-function fileItems(event: AgentEvent, matcher: RegExp): OutlineItem[] {
-  if (!event.toolName || !matcher.test(event.toolName)) return [];
-  return toolPaths(event).map((path) => ({ label: path, meta: event.toolName || "tool", eventId: event.id }));
-}
-
-function toolPaths(event: AgentEvent): string[] {
-  const args = parseJsonObject(event.toolInputJson);
-  if (!args) return [];
-  const paths: string[] = [];
-  for (const key of ["file_path", "filePath", "target_file", "targetFile", "path", "cwd"]) {
-    if (typeof args[key] === "string" && args[key].trim()) paths.push(args[key].trim());
-  }
-  if (Array.isArray(args.files)) {
-    for (const file of args.files) {
-      if (typeof file === "string" && file.trim()) paths.push(file.trim());
-    }
-  }
-  return paths;
-}
-
-function unique(items: OutlineItem[]): OutlineItem[] {
-  const seen = new Set<string>();
-  const result: OutlineItem[] = [];
-  for (const item of items) {
-    const key = `${item.label}\0${item.meta}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(item);
-  }
-  return result;
 }
 
 function formatDate(iso: string): string {
