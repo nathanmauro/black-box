@@ -1020,6 +1020,33 @@ a {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.reader-text {
+  line-height: 1.52;
+}
+.reader-text--collapsed {
+  max-height: 13.8rem;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, #000 78%, transparent);
+}
+.reader-text-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  margin-top: 8px;
+  padding: 0 9px;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.reader-text-toggle:hover,
+.reader-text-toggle:focus-visible {
+  color: var(--text-bright);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+}
 .confidence-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-dim); font-family: var(--font-mono); }
 .confidence-row progress, .confidence-row meter { width: 120px; height: 6px; }
 .metadata-list { margin: 6px 0 0; padding-left: 16px; color: var(--text); font-size: 12px; }

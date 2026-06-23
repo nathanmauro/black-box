@@ -1,3 +1,4 @@
+import { createSignal, Show } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -29,6 +30,9 @@ const PRIMARY_KEYS = [
   "content",
 ];
 
+const COMPACT_TEXT_CHARS = 900;
+const COMPACT_TEXT_LINES = 10;
+
 export default function EventRow(props: EventRowProps) {
   const event = () => props.event;
   const parsedInput = () => parseJsonObject(event().toolInputJson);
@@ -53,7 +57,7 @@ export default function EventRow(props: EventRowProps) {
         {event().toolName ? <span>{event().toolName}</span> : null}
         <span>seq {event().turnId || event().id.slice(0, 8)}</span>
       </div>
-      {event().text && !looksLikeJson(event().text) ? <p>{event().text}</p> : null}
+      {event().text && !looksLikeJson(event().text) ? <ReaderText text={event().text ?? ""} /> : null}
       {event().toolInputJson || event().toolOutputJson ? (
         <details class="payload-details">
           <summary>tool payload</summary>
@@ -72,6 +76,23 @@ export default function EventRow(props: EventRowProps) {
         </details>
       ) : null}
     </article>
+  );
+}
+
+function ReaderText(props: { text: string }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const compact = () => shouldCompactText(props.text);
+  const collapsed = () => compact() && !expanded();
+
+  return (
+    <>
+      <p classList={{ "reader-text": true, "reader-text--collapsed": collapsed() }}>{props.text}</p>
+      <Show when={compact()}>
+        <button type="button" class="reader-text-toggle" onClick={() => setExpanded((current) => !current)}>
+          {collapsed() ? "Show full message" : "Collapse message"}
+        </button>
+      </Show>
+    </>
   );
 }
 
@@ -102,4 +123,9 @@ function prettyJson(raw: string | null | undefined): string {
   } catch {
     return raw;
   }
+}
+
+function shouldCompactText(text: string): boolean {
+  if (text.length > COMPACT_TEXT_CHARS) return true;
+  return text.split(/\r?\n/).filter((line) => line.trim()).length > COMPACT_TEXT_LINES;
 }

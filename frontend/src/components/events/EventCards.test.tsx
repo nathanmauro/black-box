@@ -1,7 +1,8 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../lib/api";
 import DecisionCard from "./DecisionCard";
+import EventRow from "./EventRow";
 
 describe("DecisionCard", () => {
   it("renders structured decision fields without using raw JSON as the headline", () => {
@@ -28,5 +29,50 @@ describe("DecisionCard", () => {
     expect(screen.getByRole("meter")).toBeInTheDocument();
     expect(screen.getByText("Use Solid for the UI rewrite")).toBeInTheDocument();
     expect(screen.queryByText(/^\{/)).not.toBeInTheDocument();
+  });
+});
+
+describe("EventRow", () => {
+  it("collapses long primary reader messages until the user expands them", async () => {
+    const longPrompt = Array.from({ length: 18 }, (_, index) => `Requirement ${index + 1}: keep the reader focused on prompts and responses.`)
+      .join("\n\n");
+    const event: AgentEvent = {
+      id: "evt-long",
+      sessionId: "ses-1",
+      source: "codex",
+      clientSessionId: "client-1",
+      eventType: "UserPromptSubmit",
+      role: "user",
+      text: longPrompt,
+      observedAt: "2026-06-16T20:00:00Z",
+    };
+
+    const { container } = render(() => <EventRow event={event} />);
+
+    expect(container.querySelector(".reader-text")).toHaveClass("reader-text--collapsed");
+    const toggle = screen.getByRole("button", { name: "Show full message" });
+    expect(toggle).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(container.querySelector(".reader-text")).not.toHaveClass("reader-text--collapsed");
+    expect(screen.getByRole("button", { name: "Collapse message" })).toBeInTheDocument();
+  });
+
+  it("renders short primary reader messages without compaction controls", () => {
+    const event: AgentEvent = {
+      id: "evt-short",
+      sessionId: "ses-1",
+      source: "codex",
+      clientSessionId: "client-1",
+      eventType: "AssistantMessage",
+      role: "assistant",
+      text: "Short response stays direct.",
+      observedAt: "2026-06-16T20:00:00Z",
+    };
+
+    const { container } = render(() => <EventRow event={event} />);
+
+    expect(container.querySelector(".reader-text")).not.toHaveClass("reader-text--collapsed");
+    expect(screen.queryByRole("button", { name: "Show full message" })).not.toBeInTheDocument();
   });
 });
