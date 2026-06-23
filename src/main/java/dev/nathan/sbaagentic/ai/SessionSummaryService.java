@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.springframework.http.HttpStatus.NOT_FOUND;
+import static org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
 
 @Service
 public class SessionSummaryService {
@@ -56,7 +57,14 @@ public class SessionSummaryService {
 
         // Call the configured summary backend outside any transaction, then commit the summary and
         // derived title — which outranks every ingest-time title — in one atomic write.
-        String summary = summaryBackend.summarize(transcript.toString());
+        String summary;
+        try {
+            summary = summaryBackend.summarize(transcript.toString());
+        }
+        catch (IllegalStateException ex) {
+            throw new ResponseStatusException(SERVICE_UNAVAILABLE,
+                    "Summary backend failed or produced no summary", ex);
+        }
         repository.saveSummaryAndTitle(sessionId, summary, summaryBackend.title(summary), TitleRank.AI);
         return repository.findSessionById(sessionId).orElse(session);
     }
