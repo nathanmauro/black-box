@@ -55,6 +55,9 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 - Title behavior test coverage — `SessionTitleTest`: metadata title wins, first-line seeding, tool fallback, truncation, and an explicit test that later events do not retitle.
 - Recall/decision/handoff round-trip — `ContextLoopTest`: write a decision via `/api/decisions`, recall it via `/api/recall`.
 - Full suite green: 10 tests across 5 files (`mvn test`).
+- Search filter suggestion dismissal — the Search page closes the suggestion popover after selection, supports Escape/click-away dismissal, keeps applied filters removable, and has Playwright coverage in `frontend/tests/e2e/smoke.spec.ts`.
+- Activity Find result selection — embedded Activity Find results now open the selected session in the Browse reader without bouncing to standalone `/sessions/:id`; standalone Search links still deep-link normally.
+- Local deploy safety — `scripts/deploy-local.sh` unloads the launchd service before rebuilding the executable jar and restarts it before status polling, with `scripts/test-deploy-local.sh` covering command order.
 
 ## Verification checklist
 
