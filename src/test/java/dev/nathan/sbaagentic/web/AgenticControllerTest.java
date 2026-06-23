@@ -268,6 +268,29 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.citations.length()").value(0));
     }
 
+    @Test
+    void clientRequestMistakesReturnTypedClientErrorsNotInternalFailures() throws Exception {
+        mockMvc.perform(get("/api/ask"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.error.status").value(405))
+                .andExpect(jsonPath("$.error.type").value("method_not_allowed"))
+                .andExpect(jsonPath("$.error.message").value("Method GET is not supported for this endpoint."));
+
+        mockMvc.perform(get("/api/search"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.status").value(400))
+                .andExpect(jsonPath("$.error.type").value("missing_parameter"))
+                .andExpect(jsonPath("$.error.message").value("Missing required query parameter: q"));
+
+        mockMvc.perform(post("/api/ask")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.status").value(400))
+                .andExpect(jsonPath("$.error.type").value("malformed_json"))
+                .andExpect(jsonPath("$.error.message").value("Malformed JSON request body."));
+    }
+
     /**
      * With Elasticsearch off (SBA_ELASTICSEARCH_ENABLED=false, the test default), {@code _field_caps}
      * is never consulted, so {@code /api/search/fields} must serve the curated fallback list so the
