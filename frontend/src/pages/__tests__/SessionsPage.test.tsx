@@ -139,11 +139,20 @@ describe("SessionsPage", () => {
     await waitFor(() => expect(screen.getAllByText("Focus the session reader.")).not.toHaveLength(0));
     expect(screen.getAllByText("I made the reading view calmer.")).not.toHaveLength(0);
 
+    const promptTurns = document.querySelectorAll(".prompt-turn");
+    expect(promptTurns).toHaveLength(1);
+    expect(promptTurns[0]).toHaveAttribute("id", "prompt-evt-user");
+    expect(within(promptTurns[0] as HTMLElement).getAllByText("Focus the session reader.")).not.toHaveLength(0);
+    expect(within(promptTurns[0] as HTMLElement).getAllByText("I made the reading view calmer.")).not.toHaveLength(0);
+
     expect(document.querySelector(".outline-pane")).not.toBeInTheDocument();
     expect(document.querySelector(".timeline-pane .virtual-spacer")).not.toBeInTheDocument();
     const promptOutline = document.querySelector(".prompt-outline");
     expect(promptOutline).toBeInTheDocument();
-    expect(within(promptOutline as HTMLElement).getByText("Focus the session reader.")).toBeInTheDocument();
+    expect(within(promptOutline as HTMLElement).getByText("Focus the session reader.").closest("a")).toHaveAttribute(
+      "href",
+      "#prompt-evt-user",
+    );
 
     expect(screen.queryByText("Use the calmer session layout")).not.toBeInTheDocument();
     expect(screen.queryByText("Reader should keep memory cards behind a layer toggle.")).not.toBeInTheDocument();

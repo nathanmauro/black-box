@@ -17,6 +17,12 @@ type SessionsPageProps = {
   children?: unknown;
 };
 
+type PromptTurn = {
+  id: string;
+  prompt: AgentEvent | null;
+  events: AgentEvent[];
+};
+
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
@@ -33,6 +39,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const visibleEvents = createMemo(() =>
     timelineEvents().filter((event) => isPrimaryReaderEvent(event) || (showMemoryEvents() && isMemoryEvent(event))),
   );
+  const promptTurns = createMemo(() => groupPromptTurns(visibleEvents()));
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
   const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
 
@@ -146,11 +153,17 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
               <div class="detail-body">
                 <div class="timeline-pane">
                   <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
-                    <For each={visibleEvents()}>
-                      {(event) => (
-                        <div id={`event-${event.id}`} class="event-flow-row">
-                          <EventRenderer event={event} />
-                        </div>
+                    <For each={promptTurns()}>
+                      {(turn) => (
+                        <section id={turn.id} classList={{ "prompt-turn": true, "prompt-turn--preamble": !turn.prompt }}>
+                          <For each={turn.events}>
+                            {(event) => (
+                              <div id={`event-${event.id}`} class="event-flow-row">
+                                <EventRenderer event={event} />
+                              </div>
+                            )}
+                          </For>
+                        </section>
                       )}
                     </For>
                   </Show>
@@ -204,7 +217,7 @@ function PromptOutline(props: { prompts: AgentEvent[] }) {
         <Show when={props.prompts.length} fallback={<p>No user prompts captured.</p>}>
           <For each={props.prompts}>
             {(event, index) => (
-              <a href={`#event-${event.id}`} class="prompt-outline-item">
+              <a href={`#prompt-${event.id}`} class="prompt-outline-item">
                 <span>{index() + 1}</span>
                 <strong>{eventTitle(event)}</strong>
                 <small>{timeAgo(event.observedAt)}</small>
@@ -235,6 +248,24 @@ function isToolEvent(event: AgentEvent): boolean {
 
 function isPrimaryReaderEvent(event: AgentEvent): boolean {
   return !isMemoryEvent(event) && !isToolEvent(event) && (isPromptEvent(event) || isAssistantEvent(event));
+}
+
+function groupPromptTurns(events: AgentEvent[]): PromptTurn[] {
+  const turns: PromptTurn[] = [];
+  for (const event of events) {
+    if (isPromptEvent(event)) {
+      turns.push({ id: `prompt-${event.id}`, prompt: event, events: [event] });
+      continue;
+    }
+
+    const current = turns[turns.length - 1];
+    if (current) {
+      current.events.push(event);
+    } else {
+      turns.push({ id: `prompt-preamble-${event.id}`, prompt: null, events: [event] });
+    }
+  }
+  return turns;
 }
 
 function eventTitle(event: AgentEvent): string {
