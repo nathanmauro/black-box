@@ -2,15 +2,20 @@ import { test, expect } from "@playwright/test";
 
 const SHOT_DIR = "test-results/shots";
 
-test("overview is search-first and shows seeded sessions", async ({ page }) => {
+test("activity workspace is browse-first and shows seeded sessions", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
-  // Hero search is the center of gravity.
-  await expect(page.getByLabel("Search sessions and events")).toBeVisible();
-  await expect(page.getByText(/sessions ·/)).toBeVisible();
-  // Recent sessions populated from real API.
+  await expect(page.getByRole("link", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Recall", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+
+  const modes = page.getByRole("tablist", { name: "Activity mode" });
+  await expect(modes.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(modes.getByRole("tab", { name: "Find" })).toBeVisible();
+  await expect(modes.getByRole("tab", { name: "Ask" })).toBeVisible();
+
+  await expect(page.getByLabel("Find sessions")).toBeVisible();
   await expect(page.getByText("UI rewrite kickoff")).toBeVisible();
-  await page.screenshot({ path: `${SHOT_DIR}/overview.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOT_DIR}/activity.png`, fullPage: true });
 });
 
 test("faceted search filters to one source", async ({ page }) => {
@@ -22,11 +27,42 @@ test("faceted search filters to one source", async ({ page }) => {
   await page.screenshot({ path: `${SHOT_DIR}/search.png`, fullPage: true });
 });
 
+test("search facet suggestions close after selection and dismissal", async ({ page }) => {
+  await page.goto("/search");
+  const input = page.getByLabel("Search query");
+
+  await input.fill("kind:Dec");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.getByRole("listbox").getByRole("button", { name: "Decision" }).click();
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+  await expect(input).toHaveValue("kind:Decision ");
+
+  await page.getByRole("button", { name: "Search" }).click();
+  const activeFacet = page.locator(".facet-chip--active");
+  await expect(activeFacet).toContainText("Decision");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+
+  await activeFacet.click();
+  await expect(page.locator(".facet-chip--active")).toHaveCount(0);
+
+  await input.fill("kind:Han");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await input.press("Escape");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+
+  await input.fill("kind:Obs");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.mouse.click(12, 12);
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+});
+
 test("session detail renders a structured decision card", async ({ page }) => {
   await page.goto("/search?q=source%3Acodex");
   await page.getByText("Use SolidJS + Vite for the UI rewrite").first().click();
   await expect(page).toHaveURL(/\/sessions\//);
-  // Decision card surfaces rationale + open loops, not raw JSON.
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+  await page.getByLabel("Show memory events").check();
+  // Decision card surfaces rationale + open loops when memory events are explicitly enabled.
   await expect(page.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/session-detail.png`, fullPage: true });
 });
@@ -38,13 +74,14 @@ test("command palette jumps to a session", async ({ page }) => {
   await expect(input).toBeVisible();
   await input.fill("Frontend build");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/(sessions|search)/);
+  await expect(page).toHaveURL(/\/\?session=/);
+  await expect(page.getByRole("heading", { name: "Frontend build" })).toBeVisible();
 });
 
 test("live feed receives a newly ingested event over SSE", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto("/overview");
   // Wait for the SSE connection to come up.
-  await expect(page.locator(".live-pill--live")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".live-inline--live")).toBeVisible({ timeout: 10_000 });
   const marker = "LIVE-SSE-CHECK-" + Date.now();
   const res = await request.post("/api/events", {
     data: {
@@ -82,22 +119,10 @@ test("graph shows the seeded recall constellation", async ({ page }) => {
 
 test("projects shows a project row with a storyline timeline", async ({ page }) => {
   await page.goto("/projects");
-  const projectRow = page.getByRole("button", { name: /black-box-e2e/ });
-  await expect(projectRow).toBeVisible();
-  await projectRow.click();
-  await expect(page.getByRole("heading", { name: /black-box-e2e/ })).toBeVisible();
-  await expect(page.getByText("storyline timeline")).toBeVisible();
-  await expect(page.locator(".project-timeline-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first()).toBeVisible();
-  await page.getByLabel("Select UI rewrite kickoff").check();
-  await page.getByLabel("Select Frontend build").check();
-  await page.getByRole("button", { name: "Preview meld" }).click();
-  await expect(page.getByText("# Project Meld Bundle")).toBeVisible();
-  await page.getByRole("button", { name: "Save meld" }).click();
-  await expect(page.getByText("Saved meld.")).toBeVisible();
-  const savedMeld = page.locator(".saved-meld-card").filter({ hasText: "Project meld:" }).first();
-  await expect(savedMeld).toBeVisible();
-  await expect(savedMeld.getByRole("link", { name: "UI rewrite kickoff" })).toBeVisible();
-  await expect(savedMeld.getByRole("link", { name: "Frontend build" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects are parked" })).toBeVisible();
+  await expect(page.getByText("Project storylines and melds are disabled")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Sessions" })).toHaveAttribute("href", "/sessions");
+  await expect(page.getByRole("link", { name: "Open Search" })).toHaveAttribute("href", "/search");
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 
