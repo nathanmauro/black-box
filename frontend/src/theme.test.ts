@@ -19,3 +19,19 @@ describe("theme mobile layout contracts", () => {
     expect(css).toContain(".activity-workspace > .sessions-page .timeline-pane");
   });
 });
+
+describe("theme reader scrollbar contracts", () => {
+  it("keeps reader panes dark, stable, and free of horizontal scroll", () => {
+    expect(css).toContain("--scrollbar-track: transparent;");
+    expect(css).toContain("--scrollbar-thumb:");
+    expect(css).toContain("--scrollbar-thumb-hover:");
+    expect(css).toContain("scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track)");
+    expect(css).toContain("scrollbar-gutter: stable;");
+    expect(css).toContain("overflow-x: hidden;");
+    expect(css).toContain(".event-card p,");
+    expect(css).toContain(".event-rationale");
+    expect(css).toContain("white-space: pre-wrap;");
+    expect(css).toContain(".payload-details pre");
+    expect(css).toContain("overflow-wrap: anywhere;");
+  });
+});
