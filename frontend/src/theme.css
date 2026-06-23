@@ -904,16 +904,32 @@ a {
 @media (max-width: 880px) {
   .activity-page {
     min-height: auto;
-    padding: 12px;
+    padding: 10px;
+    gap: 10px;
   }
 
   .activity-header {
     grid-template-columns: 1fr;
+    gap: 10px;
     align-items: start;
   }
 
+  .activity-title p:not(.eyebrow) {
+    display: none;
+  }
+
   .activity-mode-tabs {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .activity-mode-tab {
+    min-height: 42px;
+    padding: 7px 8px;
+  }
+
+  .activity-mode-tab small {
+    display: none;
   }
 
   .activity-workspace > .sessions-page,
@@ -926,6 +942,44 @@ a {
     grid-template-columns: 1fr;
     height: auto;
     min-height: calc(100vh - 180px);
+  }
+
+  .activity-workspace > .sessions-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(188px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    height: calc(100dvh - 224px);
+    min-height: 540px;
+    overflow: hidden;
+  }
+
+  .activity-workspace > .sessions-page .session-list-pane,
+  .activity-workspace > .sessions-page .session-detail-pane {
+    min-height: 0;
+  }
+
+  .activity-workspace > .sessions-page .session-rows,
+  .activity-workspace > .sessions-page .timeline-pane {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .activity-workspace > .sessions-page .detail-header {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .activity-workspace > .sessions-page .detail-summary {
+    max-height: 118px;
+  }
+
+  .activity-workspace > .sessions-page .detail-summary p {
+    max-height: 52px;
+  }
+
+  .activity-workspace > .sessions-page .detail-body {
+    min-height: 0;
   }
 }
 
