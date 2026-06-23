@@ -28,6 +28,7 @@ export type SearchMode = "find" | "ask";
 type SearchPageProps = {
   mode?: SearchMode;
   showModeTabs?: boolean;
+  onSelectSession?: (id: string) => void;
   params?: unknown;
   location?: unknown;
   data?: unknown;
@@ -251,14 +252,14 @@ export default function SearchPage(props: SearchPageProps = {}) {
             <Show when={structured().length}>
               <div class="result-group">
                 <h2 class="result-group-title">Decisions &amp; handoffs</h2>
-                <For each={structured()}>{(event) => <ResultRow event={event} />}</For>
+                <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
               </div>
             </Show>
 
             <Show when={others().length}>
               <div class="result-group">
                 <h2 class="result-group-title">Events</h2>
-                <For each={others()}>{(event) => <ResultRow event={event} />}</For>
+                <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
               </div>
             </Show>
 
@@ -272,9 +273,15 @@ export default function SearchPage(props: SearchPageProps = {}) {
   );
 }
 
-function ResultRow(props: { event: AgentEvent }) {
+function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string) => void }) {
+  function select(event: MouseEvent) {
+    if (!props.onSelectSession) return;
+    event.preventDefault();
+    props.onSelectSession(props.event.sessionId);
+  }
+
   return (
-    <A href={`/sessions/${encodeURIComponent(props.event.sessionId)}`} class="result-row">
+    <A href={`/sessions/${encodeURIComponent(props.event.sessionId)}`} class="result-row" onClick={select}>
       <div class="result-row-meta">
         <SourceDot source={props.event.source} label />
         <span class="result-row-time">{timeAgo(props.event.observedAt)}</span>

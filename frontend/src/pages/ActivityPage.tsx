@@ -30,6 +30,11 @@ export default function ActivityPage() {
     setParams({ session: id });
   }
 
+  function openSearchResult(id: string) {
+    setModeSignal("browse");
+    setParams({ session: id, q: undefined, view: undefined });
+  }
+
   return (
     <section class="activity-page">
       <header class="activity-header">
@@ -61,7 +66,7 @@ export default function ActivityPage() {
       <div class="activity-workspace">
         <Show
           when={mode() === "browse"}
-          fallback={<SearchPage mode={mode() as SearchMode} showModeTabs={false} />}
+          fallback={<SearchPage mode={mode() as SearchMode} showModeTabs={false} onSelectSession={openSearchResult} />}
         >
           <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
         </Show>

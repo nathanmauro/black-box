@@ -38,6 +38,11 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
   return {
     ...actual,
+    A: (props: { href: string; class?: string; onClick?: (event: MouseEvent) => void; children?: Element }) => (
+      <a href={props.href} class={props.class} onClick={props.onClick}>
+        {props.children}
+      </a>
+    ),
     useNavigate: () => navigate,
     useParams: () => ({}),
     useSearchParams: () => [params, setParams],
@@ -59,7 +64,21 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getSessionEvents: vi.fn(async () => []),
     search: vi.fn(async (query: string) => ({
       query,
-      local: [],
+      local: query
+        ? [
+            {
+              id: "event-frontend-build",
+              sessionId: "session-1",
+              source: "codex",
+              clientSessionId: "client-1",
+              eventType: "UserPromptSubmit",
+              role: "user",
+              text: "Open the focused session from search.",
+              cwd: "/Users/nathan/Developer/proj/sba-agentic",
+              observedAt: "2026-06-22T20:04:00Z",
+            },
+          ]
+        : [],
       elastic: [],
       elasticHealth: {},
     })),
@@ -103,5 +122,24 @@ describe("ActivityPage", () => {
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Ask" }));
     expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
+  });
+
+  it("opens Search results inside the Activity session reader", async () => {
+    [params, setParams] = createStore<{ q?: string; session?: string; view?: string }>({
+      q: "focused",
+      view: "find",
+    });
+    render(() => <ActivityPage />);
+
+    expect(await screen.findByLabelText("Search query")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("link", { name: /Open the focused session from search/ }));
+
+    await waitFor(() => expect(params.view).toBeUndefined());
+    expect(params.q).toBeUndefined();
+    expect(params.session).toBe("session-1");
+
+    const modes = screen.getByRole("tablist", { name: "Activity mode" });
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
   });
 });

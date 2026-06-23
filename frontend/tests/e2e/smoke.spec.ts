@@ -27,6 +27,16 @@ test("faceted search filters to one source", async ({ page }) => {
   await page.screenshot({ path: `${SHOT_DIR}/search.png`, fullPage: true });
 });
 
+test("Activity Find result opens the session reader in place", async ({ page }) => {
+  await page.goto("/?view=find&q=source%3Acodex");
+  await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
+  await page.getByText("Use SolidJS + Vite for the UI rewrite").first().click();
+
+  await expect(page).toHaveURL(/\?session=/);
+  await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+});
+
 test("search facet suggestions close after selection and dismissal", async ({ page }) => {
   await page.goto("/search");
   const input = page.getByLabel("Search query");
