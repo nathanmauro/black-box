@@ -18,6 +18,28 @@ test("activity workspace is browse-first and shows seeded sessions", async ({ pa
   await page.screenshot({ path: `${SHOT_DIR}/activity.png`, fullPage: true });
 });
 
+test("project combined log opens from the session group header", async ({ page }) => {
+  await page.goto("/");
+
+  const openCombinedLog = page.getByRole("button", { name: /Open combined log/i }).first();
+  await expect(openCombinedLog).toBeVisible();
+  await openCombinedLog.click();
+
+  const combinedLog = page.getByRole("region", { name: /Project combined log/i });
+  await expect(combinedLog).toBeVisible();
+  await expect(combinedLog.getByRole("heading", { name: /Combined log/i })).toBeVisible();
+  await expect(combinedLog.locator(".combined-log-entry, .combined-log-empty").first()).toBeVisible();
+
+  const visibleTags = await combinedLog.locator(".combined-log-tag").allTextContents();
+  if (visibleTags.length === 0) {
+    await expect(combinedLog.locator(".combined-log-empty")).toBeVisible();
+  } else {
+    for (const tag of visibleTags) {
+      expect(["Decision", "Handoff", "Observation"]).toContain(tag.trim());
+    }
+  }
+});
+
 test("faceted search filters to one source", async ({ page }) => {
   await page.goto("/search?q=source%3Acodex");
   // The codex decision headline shows; the claude-only prompt should not appear here.

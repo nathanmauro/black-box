@@ -27,30 +27,31 @@ vi.mock("./lib/api", async (importOriginal) => {
 });
 
 describe("App shell", () => {
-  it("renders primary navigation and global controls in a static sidebar", async () => {
+  it("renders secondary controls in a compact utility header", async () => {
     render(() => (
       <App>
         <section aria-label="Current page">Page content</section>
       </App>
     ));
 
-    const sidebar = screen.getByRole("complementary", { name: "Application navigation" });
-    expect(sidebar).toHaveClass("app-sidebar");
-    expect(within(sidebar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute("href", "/");
+    const utilityBar = screen.getByRole("banner", { name: "Black Box utility bar" });
+    expect(utilityBar).toHaveClass("app-utility-bar");
+    expect(within(utilityBar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute("href", "/");
 
-    const primaryNav = within(sidebar).getByRole("navigation", { name: "Primary" });
-    expect(within(primaryNav).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/");
-    expect(within(primaryNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
-    expect(within(primaryNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();
-    expect(within(primaryNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
-    expect(within(primaryNav).queryByRole("link", { name: "Search" })).not.toBeInTheDocument();
-    expect(within(primaryNav).queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
-    expect(within(primaryNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
-    expect(within(primaryNav).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
+    const utilityNav = within(utilityBar).getByRole("navigation", { name: "Utility" });
+    expect(within(utilityNav).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/");
+    expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
+    expect(within(utilityNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+    expect(within(utilityNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
+    expect(within(utilityNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();
+    expect(within(utilityNav).queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(within(utilityNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
+    expect(within(utilityNav).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
 
-    expect(within(sidebar).getByRole("group", { name: "Filter by source" })).toBeInTheDocument();
-    expect(within(sidebar).getByText("down")).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
+    fireEvent.click(within(utilityBar).getByRole("button", { name: "Filter sources" }));
+    expect(within(utilityBar).getByRole("group", { name: "Filter by source" })).toBeInTheDocument();
+    expect(within(utilityBar).getByText("down")).toBeInTheDocument();
+    expect(within(utilityBar).getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Current page" })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
