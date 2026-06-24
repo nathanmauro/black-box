@@ -12,9 +12,12 @@ fi
 
 LABEL="${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}"
 DOMAIN="${SBA_LAUNCHD_DOMAIN:-gui/$(id -u)}"
+PLIST="${SBA_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/${LABEL}.plist}"
 PORT="${SBA_PORT:-8766}"
 STATUS_URL="${SBA_STATUS_URL:-http://localhost:${PORT}/api/status}"
 JAR="${SBA_JAR_PATH:-$REPO_ROOT/target/sba-agentic-0.1.0.jar}"
+status_file=""
+restore_needed=0
 
 RUN_TESTS=0
 for arg in "$@"; do
@@ -26,11 +29,12 @@ for arg in "$@"; do
       cat <<USAGE
 Usage: scripts/deploy-local.sh [--with-tests]
 
-Build the packaged jar, restart the local launchd service, and wait for /api/status.
+Clean-build the frontend bundle and packaged jar, restart the local launchd service, and wait for /api/status.
 
 Environment overrides:
   SBA_LAUNCHD_LABEL   default: com.nathan.sba-agentic
   SBA_LAUNCHD_DOMAIN  default: gui/\$(id -u)
+  SBA_LAUNCHD_PLIST   default: \$HOME/Library/LaunchAgents/\$SBA_LAUNCHD_LABEL.plist
   SBA_PORT            default: 8766
   SBA_STATUS_URL      default: http://localhost:\$SBA_PORT/api/status
   SBA_JAR_PATH        default: target/sba-agentic-0.1.0.jar
@@ -67,22 +71,50 @@ describe_state() {
   fi
 }
 
+stop_service_for_rebuild() {
+  if [[ ! -f "$PLIST" ]]; then
+    echo "LaunchAgent plist not found: $PLIST" >&2
+    exit 1
+  fi
+  echo "Stopping launchd service before rebuilding jar: $DOMAIN/$LABEL"
+  launchctl bootout "$DOMAIN" "$PLIST" 2>/dev/null || launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+  restore_needed=1
+}
+
+restore_service() {
+  echo "Starting launchd service: $DOMAIN/$LABEL"
+  launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null || true
+  launchctl kickstart -k "$DOMAIN/$LABEL"
+  restore_needed=0
+}
+
+cleanup() {
+  if [[ "$restore_needed" -eq 1 ]]; then
+    restore_service || true
+  fi
+  if [[ -n "$status_file" ]]; then
+    rm -f "$status_file"
+  fi
+}
+
+trap cleanup EXIT
+
 cd "$REPO_ROOT"
 
 echo "Before deploy:"
 describe_state
 
+stop_service_for_rebuild
+
 if [[ "$RUN_TESTS" -eq 1 ]]; then
-  mvn -q package
+  mvn -q clean -Pfrontend package
 else
-  mvn -q -DskipTests package
+  mvn -q clean -Pfrontend -DskipTests package
 fi
 
-echo "Restarting launchd service: $DOMAIN/$LABEL"
-launchctl kickstart -k "$DOMAIN/$LABEL"
+restore_service
 
 status_file="$(mktemp)"
-trap 'rm -f "$status_file"' EXIT
 
 for attempt in $(seq 1 40); do
   if curl -fsS "$STATUS_URL" >"$status_file"; then

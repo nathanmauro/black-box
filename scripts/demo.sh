@@ -198,8 +198,8 @@ jar_is_fresh_enough() {
 
 build_jar() {
   command -v mvn >/dev/null 2>&1 || die "mvn is required to build but was not found on PATH."
-  say "${DIM}   Building with: mvn -q -DskipTests package  (one-time, ~30-60s)${RESET}"
-  ( cd "${PROJECT_DIR}" && mvn -q -DskipTests package ) || die "Maven build failed."
+  say "${DIM}   Building with: mvn -q clean -DskipTests package  (one-time, ~30-60s)${RESET}"
+  ( cd "${PROJECT_DIR}" && mvn -q clean -DskipTests package ) || die "Maven build failed."
 }
 
 # Prefer an existing jar; only build when none exists, or the one we have is

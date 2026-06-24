@@ -1,276 +1,32 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Black Box — local flight recorder for machine minds</title>
-  <meta name="description" content="A local recorder that AI coding agents write their reasoning into and recall each other's prior decisions back out of, mid-task.">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" crossorigin>
-  <link rel="preload" as="font" type="font/woff2" href="/fonts/ibm-plex-mono-latin-400-normal.woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-  <header class="masthead">
-    <div class="brand">
-      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="5.5" y="8.5" width="21" height="15" fill="none" stroke="currentColor" stroke-width="2"/>
-        <path d="M5.5 16 H10 L12.5 11 L16 21 L19 13.5 L21 16 H26.5" fill="none"
-              stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-      </svg>
-      <div class="brand-text">
-        <p class="eyebrow">local flight recorder for machine minds</p>
-        <h1>BLACK<span>BOX</span></h1>
-      </div>
-    </div>
-    <div class="readouts" id="readouts" aria-live="polite"></div>
-  </header>
-
-  <main class="deck">
-    <aside class="rail" id="projectRail" aria-label="Project and session navigation">
-      <section class="panel channels">
-        <div class="panel-head">
-          <span class="eyebrow">projects</span>
-          <span class="readout" id="sessionCount"></span>
-          <button id="toggleRailButton" class="ghost small-ghost" title="Collapse sidebar" aria-label="Collapse sidebar" aria-expanded="true">Rail</button>
-          <button id="expandAllSessionsButton" class="ghost small-ghost" title="Expand all session groups" aria-label="Expand all session groups">Expand</button>
-          <button id="collapseAllSessionsButton" class="ghost small-ghost" title="Collapse all session groups" aria-label="Collapse all session groups">Collapse</button>
-          <button id="refreshButton" class="ghost" title="Refresh" aria-label="Refresh">↻</button>
-        </div>
-        <div class="rail-search">
-          <input id="sessionSearchInput" type="search" autocomplete="off" placeholder="Fuzzy session or project">
-        </div>
-        <div id="sessions" class="channel-list"></div>
-      </section>
-
-      <section class="panel utility">
-        <div class="panel-head"><span class="eyebrow">capture</span></div>
-        <form id="captureForm" class="mini-form">
-          <div class="field-row">
-            <label class="field">
-              <span>source</span>
-              <select name="source">
-                <option value="manual">manual</option>
-                <option value="claude">claude</option>
-                <option value="codex">codex</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>session</span>
-              <input name="clientSessionId" value="manual-session" autocomplete="off">
-            </label>
-          </div>
-          <label class="field">
-            <span>note</span>
-            <textarea name="text" rows="2" placeholder="A decision, observation, or handoff note."></textarea>
-          </label>
-          <button type="submit" class="action">Capture</button>
-        </form>
-      </section>
-
-    </aside>
-
-    <section class="stage">
-      <nav class="stage-tabs" role="tablist" aria-label="Black Box workspace">
-        <button class="stage-tab active" id="tab-spine" type="button" role="tab" aria-selected="true" aria-controls="panel-spine" data-tab="spine">Sessions</button>
-        <button class="stage-tab" id="tab-projects" type="button" role="tab" aria-selected="false" aria-controls="panel-projects" data-tab="projects">Projects</button>
-        <button class="stage-tab" id="tab-recall" type="button" role="tab" aria-selected="false" aria-controls="panel-recall" data-tab="recall">Recall</button>
-        <button class="stage-tab" id="tab-ask" type="button" role="tab" aria-selected="false" aria-controls="panel-ask" data-tab="ask" hidden>ASK</button>
-      </nav>
-      <p class="ask-availability-note readout" id="askAvailabilityNotice" hidden>ASK workspace hidden — needs the optional agent-memory Elasticsearch index.</p>
-
-      <section class="tab-panel active" id="panel-spine" role="tabpanel" aria-labelledby="tab-spine" data-tab-panel="spine" data-panel="spine">
-        <section class="panel spine-panel search-panel">
-          <div class="panel-head">
-            <div class="spine-heading">
-              <h2 id="spineTitle">Sessions</h2>
-              <p class="readout" id="spineMeta">Search sessions or select a trace from the rail.</p>
-              <div class="session-identity" id="sessionIdentity" aria-live="polite"></div>
-            </div>
-            <div class="spine-actions">
-              <span class="readout" id="searchMeta"></span>
-              <a class="kibana-link" href="http://localhost:5601" target="_blank" rel="noreferrer">Kibana ↗</a>
-              <button id="copySessionButton" class="icon-button" title="Copy session IDs" aria-label="Copy session IDs" disabled>⧉</button>
-              <button id="summarizeButton" class="action" disabled>Summarize</button>
-              <select id="exportTargetSelect" class="export-target-select" aria-label="Export target" disabled></select>
-              <button id="exportSummaryButton" class="action ghost-action" disabled>Export</button>
-            </div>
-          </div>
-          <form id="searchForm" class="mini-form search-form">
-            <div class="qb" id="queryBar">
-              <pre class="qb-overlay" id="queryOverlay" aria-hidden="true"></pre>
-              <input name="query" class="qb-input" id="queryInput"
-                     placeholder="field:value  AND  free text  -  e.g. source:claude AND auth"
-                     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-                     role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="qbPop">
-              <div class="qb-pop" id="qbPop" role="listbox" hidden></div>
-            </div>
-            <button type="submit" class="action">Search</button>
-          </form>
-          <div id="searchResults" class="search-results"></div>
-          <div class="spine-toolbar">
-            <span class="toolbar-label">filter</span>
-            <div id="toolFilter" class="filter-strip" role="group" aria-label="Filter by tool use type"></div>
-            <span class="readout" id="toolFilterMeta"></span>
-          </div>
-          <div id="summary" class="summary summary-compact" hidden>
-            <div class="summary-head">
-              <span class="eyebrow">summary</span>
-              <button id="summaryOpenButton" type="button" class="ghost small-ghost">Open</button>
-            </div>
-            <div id="summaryPreview" class="summary-preview"></div>
-          </div>
-          <div id="summaryExportStatus" class="summary-export-status readout" hidden></div>
-          <div class="session-workspace">
-            <div id="spine" class="spine"></div>
-            <aside id="sessionOutline" class="session-outline" aria-label="Session outline">
-              <div class="outline-head">
-                <span class="eyebrow">outline</span>
-                <button id="toggleOutlineButton" type="button" class="ghost small-ghost" title="Collapse outline" aria-label="Collapse outline" aria-expanded="true">TOC</button>
-              </div>
-              <div id="outlineBody" class="outline-body"></div>
-            </aside>
-          </div>
-          <div id="summaryDialog" class="dialog-backdrop" hidden>
-            <section class="summary-dialog" role="dialog" aria-modal="true" aria-labelledby="summaryDialogTitle">
-              <div class="dialog-head">
-                <h3 id="summaryDialogTitle">Session summary</h3>
-                <button id="summaryCloseButton" type="button" class="ghost" title="Close summary" aria-label="Close summary">×</button>
-              </div>
-              <div id="summaryDialogText" class="summary-dialog-text"></div>
-            </section>
-          </div>
-          <div id="outlinePopout" class="dialog-backdrop" hidden>
-            <section class="outline-popout" role="dialog" aria-modal="true" aria-labelledby="outlinePopoutTitle">
-              <div class="dialog-head">
-                <h3 id="outlinePopoutTitle">Session outline</h3>
-                <button id="outlinePopoutCloseButton" type="button" class="ghost" title="Close outline" aria-label="Close outline">×</button>
-              </div>
-              <div id="outlinePopoutBody" class="outline-popout-body"></div>
-            </section>
-          </div>
-        </section>
-      </section>
-
-      <section class="tab-panel" id="panel-projects" role="tabpanel" aria-labelledby="tab-projects" data-tab-panel="projects" data-panel="projects" hidden>
-        <section class="panel project-panel">
-          <div class="panel-head">
-            <div class="spine-heading">
-              <h2>Projects</h2>
-              <p class="readout" id="projectsMeta">Derived from recorded working directories.</p>
-            </div>
-            <span class="readout" id="projectTimelineMeta"></span>
-          </div>
-          <div class="project-workspace">
-            <section class="project-list-shell" aria-label="Projects">
-              <div class="project-column-head">
-                <span class="eyebrow">projects</span>
-                <span class="readout" id="projectCount"></span>
-              </div>
-              <div id="projectList" class="project-list"></div>
-            </section>
-            <section class="project-storyline" aria-label="Project storyline">
-              <div id="projectSessions" class="project-sessions"></div>
-              <section id="projectMeldTray" class="project-meld-tray" aria-label="Project meld preview">
-                <form id="projectMeldForm" class="project-meld-form">
-                  <div class="project-meld-head">
-                    <span class="eyebrow">meld</span>
-                    <span class="readout" id="projectMeldSelectedCount">0 selected</span>
-                    <span class="readout" id="projectMeldStatus"></span>
-                  </div>
-                  <div class="project-meld-controls">
-                    <label class="field">
-                      <span>mode</span>
-                      <select name="executionMode" id="projectMeldMode">
-                        <option value="export_bundle">Export bundle</option>
-                        <option value="direct">Direct preview</option>
-                      </select>
-                    </label>
-                    <label class="field">
-                      <span>provider</span>
-                      <input name="provider" id="projectMeldProvider" autocomplete="off" placeholder="auto">
-                    </label>
-                    <label class="field">
-                      <span>model</span>
-                      <input name="model" id="projectMeldModel" autocomplete="off" placeholder="auto">
-                    </label>
-                    <button id="projectMeldPreviewButton" type="submit" class="action">Preview</button>
-                  </div>
-                </form>
-                <div id="projectMeldOutput" class="project-meld-output" hidden>
-                  <div class="project-meld-output-head">
-                    <strong id="projectMeldOutputTitle">Project meld</strong>
-                    <button id="copyProjectMeldButton" type="button" class="ghost small-ghost">Copy</button>
-                  </div>
-                  <pre id="projectMeldText"></pre>
-                </div>
-              </section>
-              <div id="projectTimeline" class="project-timeline"></div>
-            </section>
-          </div>
-        </section>
-      </section>
-
-      <section class="tab-panel" id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" data-tab-panel="ask" data-panel="ask" hidden>
-        <section class="panel ask-panel">
-          <div class="panel-head">
-            <div class="spine-heading">
-              <h2>ASK</h2>
-              <p class="readout">Hybrid memory retrieval over the agent-memory index.</p>
-            </div>
-            <span class="readout" id="askMeta"></span>
-          </div>
-          <form id="askForm" class="ask-console">
-            <label class="field ask-question">
-              <span>question</span>
-              <textarea name="question" rows="4" placeholder="Ask a grounded question across memory." autocomplete="off"></textarea>
-            </label>
-            <div class="ask-actions">
-              <label class="field ask-limit">
-                <span>sources</span>
-                <input name="limit" type="number" min="1" max="50" value="6">
-              </label>
-              <button type="submit" class="action">Ask</button>
-              <button type="button" id="retrieveButton" class="action ghost-action">Retrieve</button>
-            </div>
-          </form>
-          <div id="askResults" class="ask-results"></div>
-        </section>
-      </section>
-
-      <section class="tab-panel" id="panel-recall" role="tabpanel" aria-labelledby="tab-recall" data-tab-panel="recall" data-panel="recall" hidden>
-        <section class="panel recall" id="recallPanel">
-          <div class="panel-head">
-            <span class="eyebrow">recall · read prior intent back out</span>
-            <span class="readout" id="recallMeta"></span>
-            <div class="panel-actions">
-              <button id="clearRecallButton" class="ghost small-ghost" title="Clear recall results" aria-label="Clear recall results">Clear</button>
-              <button id="toggleRecallButton" class="ghost small-ghost" title="Collapse recall" aria-label="Collapse recall" aria-expanded="true">▴</button>
-            </div>
-          </div>
-          <div id="recallBody" class="recall-body">
-            <form id="recallForm" class="recall-console">
-              <input name="scope" placeholder="repo path or topic — e.g. /tmp/acme-auth" autocomplete="off">
-              <select name="withinHours" aria-label="time window">
-                <option value="24">24h</option>
-                <option value="168" selected>7d</option>
-                <option value="720">30d</option>
-                <option value="0">all</option>
-              </select>
-              <button type="submit" class="action recall-fire">Recall</button>
-            </form>
-            <div class="recall-stage" id="recallStage" hidden>
-              <div class="constellation" id="constellation"></div>
-              <div class="memory-detail detail-panel" id="memoryDetail"></div>
-            </div>
-          </div>
-        </section>
-      </section>
-    </section>
-  </main>
-
-  <script src="/graph.js"></script>
-  <script src="/querybar.js"></script>
-  <script src="/app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Black Box is a local flight recorder for AI coding agents."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/ibm-plex-sans-latin-400-normal.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/fonts/ibm-plex-mono-latin-400-normal.woff2"
+      crossorigin
+    />
+    <title>BLACKBOX</title>
+    <script type="module" crossorigin src="/assets/index-40_wpFFf.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CLFXXlw4.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>

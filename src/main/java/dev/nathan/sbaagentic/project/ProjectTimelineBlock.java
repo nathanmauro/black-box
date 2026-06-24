@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.project;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 public record ProjectTimelineBlock(
@@ -20,5 +21,6 @@ public record ProjectTimelineBlock(
         String toolInputJson,
         String toolOutputJson,
         Map<String, Object> metadata,
-        Instant observedAt) {
+        Instant observedAt,
+        List<ProjectMeldSessionRef> sourceSessions) {
 }

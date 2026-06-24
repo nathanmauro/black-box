@@ -88,8 +88,8 @@ jar_is_fresh_enough() {
 }
 
 build_jar() {
-  say "${DIM}   Building with: mvn -q -DskipTests package${RESET}"
-  ( cd "$PROJECT_DIR" && mvn -q -DskipTests package ) || die "Maven build failed."
+  say "${DIM}   Building with: mvn -q clean -DskipTests package${RESET}"
+  ( cd "$PROJECT_DIR" && mvn -q clean -DskipTests package ) || die "Maven build failed."
 }
 
 step "Locating the Black Box recorder jar"

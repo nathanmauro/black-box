@@ -12,14 +12,6 @@ Elasticsearch and local AI summaries as optional supporting systems.
 
 Default to normal prose: concise, direct, professional, and complete.
 
-Use caveman lite only when it helps the task, mainly for execution, debugging, code edits, PR flow,
-command-output triage, and short status updates. Do not use caveman lite for strategy,
-documentation, synthesis, architecture, tradeoff analysis, explanations, user-facing copy, or
-sensitive decisions.
-
-Caveman lite means: remove filler and hedging, keep full sentences and normal grammar, and do not
-abbreviate domain terms.
-
 ## Working here
 
 - Treat this as a product repo, not the Cockpit private control-plane repo.

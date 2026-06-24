@@ -58,8 +58,8 @@ jar_is_fresh_enough() {
 build_jar() {
   command -v mvn >/dev/null 2>&1 \
     || die "mvn is required to build a demo jar. macOS: brew install maven. Debian/Ubuntu: apt install maven."
-  say "${DIM}   Building with: mvn -q -DskipTests package${RESET}"
-  ( cd "$PROJECT_DIR" && mvn -q -DskipTests package ) || die "Maven build failed."
+  say "${DIM}   Building with: mvn -q clean -DskipTests package${RESET}"
+  ( cd "$PROJECT_DIR" && mvn -q clean -DskipTests package ) || die "Maven build failed."
 }
 
 step "Locating the Black Box recorder jar"

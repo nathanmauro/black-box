@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.project;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -7,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import dev.nathan.sbaagentic.ai.SummaryBackend;
@@ -14,6 +16,7 @@ import dev.nathan.sbaagentic.session.AgentSession;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
@@ -28,6 +31,7 @@ public class ProjectMeldService {
     private static final int MAX_JSON_CHARS = 900;
     private static final String EXPORT_BUNDLE = "export_bundle";
     private static final String DIRECT = "direct";
+    private static final String PROMPT_VERSION = "project-meld-v1";
 
     private final ProjectRepository repository;
     private final SummaryBackend summaryBackend;
@@ -83,6 +87,61 @@ public class ProjectMeldService {
                 evidence.values().stream().mapToInt(List::size).sum(),
                 bundle.text().length(),
                 bundle.degradationNotes());
+    }
+
+    @Transactional
+    public ProjectSavedMeld save(ProjectMeldSaveRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "Meld save request is required");
+        }
+        String canonicalKey = ProjectKeyCodec.decode(request.projectKey());
+        List<String> sessionIds = normalizedSessionIds(request.sessionIds());
+        if (sessionIds.isEmpty()) {
+            throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");
+        }
+        if (sessionIds.size() > MAX_SELECTED_SESSIONS) {
+            throw new ResponseStatusException(BAD_REQUEST,
+                    "Select " + MAX_SELECTED_SESSIONS + " sessions or fewer");
+        }
+        List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
+        String id = UUID.randomUUID().toString();
+        String title = firstNonBlank(request.title(), "Project meld: " + ProjectKeyCodec.labelFor(canonicalKey));
+        String body = requiredText(request.body(), "Meld body is required");
+        String provider = firstNonBlank(request.provider(), "local");
+        String model = firstNonBlank(request.model(), "context-bundle");
+        String promptVersion = firstNonBlank(request.promptVersion(), PROMPT_VERSION);
+        String executionMode = executionMode(request.executionMode());
+        boolean savedFromPreview = request.savedFromPreview() == null || request.savedFromPreview();
+        Map<String, Object> metadata = request.metadata() == null ? Map.of() : Map.copyOf(request.metadata());
+        Instant createdAt = Instant.now();
+
+        repository.insertSavedMeld(
+                id,
+                canonicalKey,
+                title,
+                body,
+                provider,
+                model,
+                promptVersion,
+                executionMode,
+                savedFromPreview,
+                metadata,
+                createdAt,
+                sessions);
+        return new ProjectSavedMeld(
+                id,
+                ProjectKeyCodec.encode(canonicalKey),
+                canonicalKey,
+                title,
+                body,
+                provider,
+                model,
+                promptVersion,
+                executionMode,
+                savedFromPreview,
+                metadata,
+                createdAt,
+                sessions.stream().map(ProjectMeldService::sessionRef).toList());
     }
 
     private List<AgentSession> orderedSessions(String canonicalKey, List<String> sessionIds) {
@@ -252,6 +311,13 @@ public class ProjectMeldService {
 
     private static String firstNonBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String requiredText(String value, String message) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(BAD_REQUEST, message);
+        }
+        return value.strip();
     }
 
     private record Bundle(String text, List<String> degradationNotes) {

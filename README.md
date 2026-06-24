@@ -50,7 +50,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface has Sessions, Projects, and Recall workspaces. Sessions uses a project-first, fuzzy-filtered rail with a no-project/manual/system bucket, compact collapsible event rows, bounded summary previews, and a right-side outline for files edited, files read, tools used, and event shape. Projects groups sessions by derived working directory, shows a project-level Hybrid Storyline over decisions, handoffs, assistant output, and notable tool results, and can build a bounded meld preview/export bundle from selected sessions. The optional ASK workspace appears only when its `agent-memory` Elasticsearch index is reachable.
+The web surface now centers on Activity and Recall. Activity is the main workspace: Browse shows the session rail and prompt-focused reader, Find exposes the faceted event search, and Ask appears as the synthesis path when its optional dependencies are reachable. The session browser has a static app sidebar, source chips, and a local finder that understands `source:` and `project:` facets. User prompts and assistant responses are shown first; decisions/observations/handoffs are opt-in, and tool output stays hidden by default. Projects and melds are currently parked in the UI while the core reading loop gets tightened; their backend endpoints remain available for future work.
 
 ## Run as a service
 
@@ -75,7 +75,7 @@ systemctl --user daemon-reload && systemctl --user enable --now black-box
 Docker is local/dev oriented:
 
 ```bash
-mvn -DskipTests package
+mvn clean -DskipTests package
 docker build -t black-box .
 docker run --rm -p 127.0.0.1:8766:8766 -v black-box-data:/data black-box
 ```
@@ -280,12 +280,13 @@ All endpoints are served at `http://localhost:8766`.
 | `GET /api/projects` | Derived project groups with session/event counts |
 | `GET /api/projects/{projectKey}/sessions?limit=100` | Sessions in a derived project group |
 | `GET /api/projects/{projectKey}/timeline?limit=50&offset=0` | Project-level Hybrid Storyline blocks |
-| `GET /api/projects/{projectKey}/melds` | Saved melds for the project; currently empty until durable meld persistence lands |
-| `POST /api/projects/{projectKey}/melds/preview` | Builds a bounded selected-session meld bundle; `executionMode=direct` explicitly calls the configured summary backend |
+| `GET /api/projects/{projectKey}/melds` | Saved melds for the project backend; the Projects UI is currently parked |
+| `POST /api/projects/{projectKey}/melds/preview` | Builds a bounded selected-session meld bundle; the Projects UI is currently parked |
 | `GET /api/search?q=<text>&limit=25` | Local (and optional Elasticsearch) search hits |
 | `GET /api/search/fields` | Search field metadata for the query bar |
 | `GET /api/search/values?field=<field>&prefix=<prefix>&limit=20` | Field value suggestions for the query bar |
 | `GET /api/status` | Storage counts + local AI / Elasticsearch health |
+| `GET /api/stats` | Store totals, source/kind breakdowns, and recent daily activity |
 | `GET /api/ask/status` | ASK dependency status for memory search, embeddings, and answer synthesis |
 | `GET /api/ask/retrieve?q=<question>&limit=10` | Retrieval-only ASK results with citations |
 | `POST /api/ask` | Synthesized answer with citations; body `{ question, limit }` |
@@ -324,7 +325,7 @@ ASK is an optional retrieval workspace over the external `agent-memory` Elastics
 The Maven artifact keeps the historical id `sba-agentic`; the product name is Black Box.
 
 ```bash
-mvn -DskipTests package
+mvn clean -DskipTests package
 java -jar target/sba-agentic-0.1.0.jar doctor
 java -jar target/sba-agentic-0.1.0.jar ingest --source=manual --session=test --type=ManualCapture --text='first note'
 java -jar target/sba-agentic-0.1.0.jar search 'first note'
