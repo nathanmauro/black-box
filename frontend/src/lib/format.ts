@@ -1,11 +1,13 @@
+// Source colors mapped onto Grok's accent ramps — keep in sync with
+// the --source-* tokens in theme.css.
 const SOURCE_COLORS: Record<string, string> = {
-  claude: "#7c5cfc",
-  codex: "#34d399",
-  cursor: "#60a5fa",
-  raycast: "#f59e0b",
-  cockpit: "#e879f9",
-  cli: "#9ca3af",
-  manual: "#6b7280",
+  claude: "#8077e6",
+  codex: "#26c054",
+  cursor: "#6581e6",
+  raycast: "#ec9369",
+  cockpit: "#e78dc3",
+  cli: "#858585",
+  manual: "#636363",
 };
 
 export const SOURCES = ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"] as const;
