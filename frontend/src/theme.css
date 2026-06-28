@@ -1,33 +1,34 @@
+/* Inter — license-clean stand-in for Grok's UniversalSans (its own declared fallback). */
 @font-face {
-  font-family: "IBM Plex Sans";
+  font-family: "Inter";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  src: url("/fonts/inter-latin-400-normal.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "IBM Plex Sans";
+  font-family: "Inter";
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url("/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  src: url("/fonts/inter-latin-500-normal.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "IBM Plex Sans";
+  font-family: "Inter";
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url("/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  src: url("/fonts/inter-latin-600-normal.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "IBM Plex Sans";
+  font-family: "Inter";
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("/fonts/ibm-plex-sans-latin-700-normal.woff2") format("woff2");
+  src: url("/fonts/inter-latin-700-normal.woff2") format("woff2");
 }
 
 @font-face {
@@ -55,33 +56,55 @@
 }
 
 :root {
-  --bg: #0f1117;
-  --bg-surface: #1a1b23;
-  --bg-hover: #22232e;
-  --bg-selected: #2a2b3a;
-  --border: #2a2c37;
-  --text: #c9cdd3;
-  --text-dim: #6b7280;
-  --text-bright: #f0f1f3;
-  --accent: #7c5cfc;
-  --green: #34d399;
-  --yellow: #fbbf24;
-  --red: #f87171;
-  --blue: #60a5fa;
-  --orange: #f59e0b;
-  --radius: 6px;
+  /* Grok-derived dark theme — cool near-black surfaces, translucent layered
+     borders, near-white text scale. Extracted from grok.com's compiled CSS. */
+  --bg: #101113;            /* Grok --background (dark) */
+  --bg-surface: #18191b;    /* Grok --background-secondary (dark) */
+  --bg-hover: #1f2123;      /* white ~5% over bg */
+  --bg-selected: #26282c;   /* white ~9% over bg */
+
+  /* Grok's signature: borders are translucent white, layered by elevation. */
+  --border: rgba(255, 255, 255, 0.11);        /* --border-l2 */
+  --border-subtle: rgba(255, 255, 255, 0.06); /* --border-l1 */
+  --border-strong: rgba(255, 255, 255, 0.18); /* --border-l3 */
+
+  /* Text scale: --fg-primary / --fg-secondary / --fg-tertiary (dark). */
+  --text: #d8d9db;          /* comfortable body (between primary & secondary) */
+  --text-dim: #9e9e9e;      /* Grok --fg-secondary */
+  --text-faint: #858585;    /* Grok --fg-tertiary */
+  --text-bright: #fcfcfc;   /* Grok --fg-primary */
+
+  --accent: #8077e6;        /* Grok purple ramp (brand / interactive) */
+  --accent-contrast: #fcfcfc;
+
+  /* Status colors mapped onto Grok's accent ramps. */
+  --green: #26c054;         /* green-300 */
+  --yellow: #d89b2c;        /* warning amber */
+  --red: #f2787e;           /* red-300 / --fg-danger */
+  --blue: #6581e6;          /* blue-400 */
+  --orange: #ec9369;        /* orange-300 */
+
+  /* Radius scale — Grok rounds more than the old 6px. */
+  --radius: 9px;
+  --radius-sm: 7px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
   --scrollbar-track: transparent;
   --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 34%, transparent);
   --scrollbar-thumb-hover: color-mix(in srgb, var(--text-dim) 54%, transparent);
-  --source-claude: #7c5cfc;
-  --source-codex: #34d399;
-  --source-cursor: #60a5fa;
-  --source-raycast: #f59e0b;
-  --source-cockpit: #e879f9;
-  --source-cli: #9ca3af;
-  --source-manual: #6b7280;
-  --source-unknown: #6b7280;
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+
+  /* Source colors re-tuned to Grok ramps (same semantics, harmonized hues). */
+  --source-claude: #8077e6;   /* purple */
+  --source-codex: #26c054;    /* green */
+  --source-cursor: #6581e6;   /* blue */
+  --source-raycast: #ec9369;  /* orange */
+  --source-cockpit: #e78dc3;  /* pink */
+  --source-cli: #858585;      /* neutral-400 */
+  --source-manual: #636363;   /* neutral-500 */
+  --source-unknown: #636363;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
   --utility-bar-height: 44px;
 }
