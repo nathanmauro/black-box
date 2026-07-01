@@ -93,7 +93,9 @@ class EventStreamTest {
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                     assertThat(String.join("\n", lines))
                             .contains("event.appended")
-                            .contains("\"source\":\"codex\""));
+                            .contains("\"id\":")
+                            .contains("\"source\":\"codex\"")
+                            .contains("\"cwd\":\"/tmp/project\""));
         } finally {
             pump.cancel(true);
             reader.shutdownNow();

@@ -2,24 +2,27 @@ import { test, expect } from "@playwright/test";
 
 const SHOT_DIR = "test-results/shots";
 
-test("activity workspace is browse-first and shows seeded sessions", async ({ page }) => {
+test("activity workspace is stream-first with browse one tab away", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Stream", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Browse", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Recall", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 
   const modes = page.getByRole("tablist", { name: "Activity mode" });
-  await expect(modes.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(modes.getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
   await expect(modes.getByRole("tab", { name: "Find" })).toBeVisible();
   await expect(modes.getByRole("tab", { name: "Ask" })).toBeVisible();
 
+  await page.goto("/?view=browse");
+  await expect(modes.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Find sessions")).toBeVisible();
   await expect(page.getByText("UI rewrite kickoff")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/activity.png`, fullPage: true });
 });
 
 test("project combined log opens from the session group header", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/?view=browse");
 
   const openCombinedLog = page.getByRole("button", { name: /Open combined log/i }).first();
   await expect(openCombinedLog).toBeVisible();
@@ -54,7 +57,7 @@ test("Activity Find result opens the session reader in place", async ({ page }) 
   await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
   await page.getByText("Use SolidJS + Vite for the UI rewrite").first().click();
 
-  await expect(page).toHaveURL(/\?session=/);
+  await expect(page).toHaveURL(/session=/);
   await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
 });
@@ -106,7 +109,7 @@ test("command palette jumps to a session", async ({ page }) => {
   await expect(input).toBeVisible();
   await input.fill("Frontend build");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/\?session=/);
+  await expect(page).toHaveURL(/session=/);
   await expect(page.getByRole("heading", { name: "Frontend build" })).toBeVisible();
 });
 

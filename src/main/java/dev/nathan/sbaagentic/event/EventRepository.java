@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.event;
 
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,6 +29,19 @@ public class EventRepository {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
+
+    private static final String MEANINGFUL_EVENT_PREDICATE = """
+            (
+              lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
+              OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
+              OR e.tool_name IS NOT NULL
+              OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
+              OR lower(coalesce(e.event_type, '')) LIKE '%error%'
+              OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
+            )
+            """;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -282,6 +296,69 @@ public class EventRepository {
         return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
     }
 
+    public EventFeedResponse feed(String query, boolean meaningfulOnly, String before, String since, int limit) {
+        QueryFacets facets = QueryFacets.parse(query);
+        FeedCursor beforeCursor = parseBefore(before);
+        Instant sinceInstant = parseSince(since);
+
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
+                .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
+                .append("e.observed_at, s.cwd AS cwd, s.title AS session_title\n")
+                .append("  FROM agent_events e\n")
+                .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
+                .append(" WHERE 1=1\n");
+        if (facets.source() != null) {
+            sql.append("   AND lower(e.source) = lower(?)\n");
+            args.add(facets.source());
+        }
+        if (facets.eventType() != null) {
+            sql.append("   AND lower(e.event_type) = lower(?)\n");
+            args.add(facets.eventType());
+        }
+        if (facets.toolName() != null) {
+            sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
+            args.add(facets.toolName());
+        }
+        if (facets.cwd() != null) {
+            sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
+            args.add("%" + facets.cwd() + "%");
+        }
+        String freePhrase = facets.freeTextPhrase();
+        if (!freePhrase.isBlank()) {
+            String like = "%" + freePhrase.toLowerCase() + "%";
+            sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+            args.add(like);
+            args.add(like);
+            args.add(like);
+        }
+        if (meaningfulOnly) {
+            sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
+        }
+        if (sinceInstant != null) {
+            sql.append("   AND e.observed_at >= ?\n");
+            args.add(sinceInstant.toString());
+        }
+        if (beforeCursor != null) {
+            sql.append("   AND (e.observed_at < ? OR (e.observed_at = ? AND e.id < ?))\n");
+            args.add(beforeCursor.observedAt());
+            args.add(beforeCursor.observedAt());
+            args.add(beforeCursor.id());
+        }
+        sql.append(" ORDER BY e.observed_at DESC, e.id DESC\n")
+                .append(" LIMIT ?");
+        args.add(limit + 1);
+
+        List<EventFeedItem> fetched = jdbcTemplate.query(sql.toString(), this::mapFeedItem, args.toArray());
+        boolean hasMore = fetched.size() > limit;
+        List<EventFeedItem> kept = hasMore ? fetched.subList(0, limit) : fetched;
+        String nextBefore = hasMore && !kept.isEmpty() ? cursorFor(kept.get(kept.size() - 1)) : null;
+        return new EventFeedResponse(limit, kept.size(), List.copyOf(kept), nextBefore);
+    }
+
     /** A whitelisted enumerable column resolved to its physical table and column name. */
     private record FieldColumn(String table, String column) {
     }
@@ -442,6 +519,61 @@ public class EventRepository {
                 rs.getString("tool_output_json"),
                 fromJsonMap(rs.getString("metadata_json")),
                 Instant.parse(rs.getString("observed_at")));
+    }
+
+    private EventFeedItem mapFeedItem(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        AgentEvent event = mapEvent(rs, rowNum);
+        return new EventFeedItem(
+                event.id(),
+                event.sessionId(),
+                event.source(),
+                event.clientSessionId(),
+                event.turnId(),
+                event.eventType(),
+                event.role(),
+                event.text(),
+                event.toolName(),
+                event.toolInputJson(),
+                event.toolOutputJson(),
+                event.metadata(),
+                event.observedAt(),
+                rs.getString("cwd"),
+                rs.getString("session_title"));
+    }
+
+    private static FeedCursor parseBefore(String before) {
+        if (before == null || before.isBlank()) {
+            return null;
+        }
+        String[] parts = before.split("\\|", 2);
+        if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+            throw new IllegalArgumentException("Invalid before cursor. Expected '<observedAt>|<id>'.");
+        }
+        try {
+            return new FeedCursor(Instant.parse(parts[0]).toString(), parts[1]);
+        }
+        catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid before cursor. Expected '<observedAt>|<id>'.", ex);
+        }
+    }
+
+    private static Instant parseSince(String since) {
+        if (since == null || since.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(since);
+        }
+        catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid since timestamp.", ex);
+        }
+    }
+
+    private static String cursorFor(EventFeedItem item) {
+        return item.observedAt() + "|" + item.id();
+    }
+
+    private record FeedCursor(String observedAt, String id) {
     }
 
     private String toJson(Object value) {

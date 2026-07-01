@@ -19,7 +19,7 @@ describe("truncatePath", () => {
 
 describe("source helpers", () => {
   it("maps known sources and falls back to neutral", () => {
-    expect(sourceColor("codex")).toBe("#34d399");
+    expect(sourceColor("codex")).toBe("#26c054");
     expect(sourceColor("???")).toBe("#6b7280");
   });
 

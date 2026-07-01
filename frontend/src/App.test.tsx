@@ -10,6 +10,8 @@ vi.mock("@solidjs/router", () => ({
     </a>
   ),
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ pathname: "/" }),
+  useSearchParams: () => [{}],
 }));
 
 vi.mock("./lib/api", async (importOriginal) => {
@@ -39,7 +41,8 @@ describe("App shell", () => {
     expect(within(utilityBar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute("href", "/");
 
     const utilityNav = within(utilityBar).getByRole("navigation", { name: "Utility" });
-    expect(within(utilityNav).getByRole("link", { name: "Activity" })).toHaveAttribute("href", "/");
+    expect(within(utilityNav).getByRole("link", { name: "Stream" })).toHaveAttribute("href", "/");
+    expect(within(utilityNav).getByRole("link", { name: "Browse" })).toHaveAttribute("href", "/?view=browse");
     expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
     expect(within(utilityNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
     expect(within(utilityNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();

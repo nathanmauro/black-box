@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -83,6 +84,65 @@ class AgenticControllerTest {
         mockMvc.perform(get("/api/search").param("q", "Compiled"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.local[0].eventType").value("PostToolUse"));
+    }
+
+    @Test
+    void eventFeedEndpointReturnsEnvelopeFiltersAndClientErrors() throws Exception {
+        String key = "feed-http-" + UUID.randomUUID().toString().replace("-", "");
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "%s-decision",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "HTTP feed decision %s",
+                                  "cwd": "/tmp/%s",
+                                  "metadata": { "title": "Feed decision" },
+                                  "observedAt": "2026-07-01T12:00:00Z"
+                                }
+                                """.formatted(key, key, key)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "%s-noise",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "HTTP feed noise %s",
+                                  "cwd": "/tmp/%s",
+                                  "metadata": { "title": "Feed noise" },
+                                  "observedAt": "2026-07-01T12:01:00Z"
+                                }
+                                """.formatted(key, key, key)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/events")
+                        .param("q", key)
+                        .param("meaningful", "false")
+                        .param("limit", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.limit").value(5))
+                .andExpect(jsonPath("$.count").value(2))
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].cwd").value("/tmp/" + key))
+                .andExpect(jsonPath("$.items[0].sessionTitle").value("Feed noise"))
+                .andExpect(jsonPath("$.items[0].id").isNotEmpty());
+
+        mockMvc.perform(get("/api/events")
+                        .param("q", key)
+                        .param("meaningful", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].eventType").value("Decision"));
+
+        mockMvc.perform(get("/api/events").param("before", "not-a-cursor"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.status").value(400))
+                .andExpect(jsonPath("$.error.type").value("invalid_argument"));
     }
 
     @Test

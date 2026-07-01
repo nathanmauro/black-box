@@ -35,14 +35,7 @@ const COMPACT_TEXT_LINES = 10;
 
 export default function EventRow(props: EventRowProps) {
   const event = () => props.event;
-  const parsedInput = () => parseJsonObject(event().toolInputJson);
-  const headline = () => {
-    const input = parsedInput();
-    const key = input ? primaryArgKey(input) : null;
-    if (key && input) return truncatePath(String(input[key]));
-    if (event().text && !looksLikeJson(event().text)) return event().text || "";
-    return event().toolName || event().role || event().eventType || "Event";
-  };
+  const headline = () => eventHeadline(event());
 
   return (
     <article classList={{ "event-card": true, "event-card--muted": event().eventType === "PostToolUse" }}>
@@ -77,6 +70,14 @@ export default function EventRow(props: EventRowProps) {
       ) : null}
     </article>
   );
+}
+
+export function eventHeadline(event: AgentEvent): string {
+  const input = parseJsonObject(event.toolInputJson);
+  const key = input ? primaryArgKey(input) : null;
+  if (key && input) return truncatePath(String(input[key]));
+  if (event.text && !looksLikeJson(event.text)) return event.text || "";
+  return event.toolName || event.role || event.eventType || "Event";
 }
 
 function ReaderText(props: { text: string }) {

@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, type JSX } from "solid-js";
-import { A } from "@solidjs/router";
+import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
 import { createLiveStore, LiveStoreContext } from "./lib/sse";
@@ -8,14 +8,19 @@ type AppProps = {
   children?: JSX.Element;
 };
 
-const UTILITY_LINKS: Array<{ href: string; label: string; icon: UtilityIconKind; end?: boolean }> = [
-  { href: "/", label: "Activity", icon: "activity", end: true },
-  { href: "/recall", label: "Recall", icon: "recall" },
-  { href: "/search", label: "Search", icon: "search" },
+type UtilityLinkId = "stream" | "browse" | "recall" | "search";
+
+const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; icon: UtilityIconKind }> = [
+  { id: "stream", href: "/", label: "Stream", icon: "activity" },
+  { id: "browse", href: "/?view=browse", label: "Browse", icon: "browse" },
+  { id: "recall", href: "/recall", label: "Recall", icon: "recall" },
+  { id: "search", href: "/search", label: "Search", icon: "search" },
 ];
 
 export default function App(props: AppProps) {
   const live = createLiveStore();
+  const location = useLocation();
+  const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
 
@@ -57,7 +62,13 @@ export default function App(props: AppProps) {
             <nav class="utility-nav" aria-label="Utility">
               <For each={UTILITY_LINKS}>
                 {(item) => (
-                  <A href={item.href} end={item.end} class="utility-icon-link" aria-label={item.label} title={item.label}>
+                  <A
+                    href={item.href}
+                    activeClass=""
+                    class={utilityLinkClass(item, location.pathname, params.view)}
+                    aria-label={item.label}
+                    title={item.label}
+                  >
                     <UtilityIcon kind={item.icon} />
                   </A>
                 )}
@@ -98,13 +109,34 @@ export default function App(props: AppProps) {
   );
 }
 
-type UtilityIconKind = "activity" | "recall" | "search" | "sources";
+function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string, view: string | undefined): string {
+  const active =
+    item.id === "stream"
+      ? pathname === "/" && !view
+      : item.id === "browse"
+        ? pathname === "/" && view === "browse"
+        : pathname === item.href;
+  return active ? "utility-icon-link active" : "utility-icon-link";
+}
+
+type UtilityIconKind = "activity" | "browse" | "recall" | "search" | "sources";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
     return (
       <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
         <path d="M3 13.5h3.2l1.8-7 3.2 9 2.1-5H17" />
+      </svg>
+    );
+  }
+
+  if (props.kind === "browse") {
+    return (
+      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4 5.4h12" />
+        <path d="M4 10h12" />
+        <path d="M4 14.6h12" />
+        <path d="M7 3.8v12.4" />
       </svg>
     );
   }

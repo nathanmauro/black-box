@@ -3,10 +3,12 @@ import { createContext, createSignal, onCleanup, useContext } from "solid-js";
 export type LiveStatus = "connecting" | "live" | "down";
 
 export type EventAppended = {
+  id: string;
   sessionId: string;
   source: string;
   eventType: string;
   toolName?: string | null;
+  cwd?: string | null;
   title?: string | null;
   observedAt: string;
 };

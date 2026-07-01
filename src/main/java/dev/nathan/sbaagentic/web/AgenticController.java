@@ -16,6 +16,7 @@ import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.event.AgentEvent;
 import dev.nathan.sbaagentic.event.DashboardStats;
+import dev.nathan.sbaagentic.event.EventFeedResponse;
 import dev.nathan.sbaagentic.event.EventIngestRequest;
 import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
@@ -88,6 +89,16 @@ public class AgenticController {
     @PostMapping("/events")
     public IngestResponse ingest(@Valid @RequestBody EventIngestRequest request) {
         return ingestService.ingest(request);
+    }
+
+    @GetMapping("/events")
+    public EventFeedResponse eventFeed(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(required = false) String before,
+            @RequestParam(required = false) String since,
+            @RequestParam(defaultValue = "false") boolean meaningful) {
+        return repository.feed(q, meaningful, before, since, safeEventLimit(limit));
     }
 
     @PostMapping("/decisions")
