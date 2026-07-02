@@ -1,0 +1,52 @@
+import { A } from "@solidjs/router";
+import type { EventFeedItem } from "../../lib/api";
+import { timeAgo, truncatePath } from "../../lib/format";
+import KindBadge from "../KindBadge";
+import SourceDot from "../SourceDot";
+import { EventRenderer, eventHeadline } from "./EventRow";
+
+type StreamRowProps = {
+  item: EventFeedItem;
+  expanded: boolean;
+  onToggle: () => void;
+};
+
+export default function StreamRow(props: StreamRowProps) {
+  const item = () => props.item;
+  const headline = () => eventHeadline(item());
+
+  function toggle(event: MouseEvent) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    props.onToggle();
+  }
+
+  return (
+    <article classList={{ "stream-row-wrap": true, "stream-row-wrap--expanded": props.expanded }}>
+      <A
+        href={`/sessions/${encodeURIComponent(item().sessionId)}`}
+        class="stream-row"
+        aria-expanded={props.expanded}
+        aria-label={`${headline()} in ${truncatePath(item().cwd)}`}
+        onClick={toggle}
+      >
+        <SourceDot source={item().source} />
+        <KindBadge kind={item().eventType} />
+        <span class="stream-row-project" title={item().cwd || undefined}>
+          {truncatePath(item().cwd)}
+        </span>
+        <strong title={headline()}>{headline()}</strong>
+        <time dateTime={item().observedAt}>{timeAgo(item().observedAt)}</time>
+      </A>
+      {props.expanded ? (
+        <div class={`stream-row-expanded stream-row-expanded--${kindClass(item().eventType)}`}>
+          <EventRenderer event={item()} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function kindClass(kind: string | null | undefined): string {
+  return String(kind || "event").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}

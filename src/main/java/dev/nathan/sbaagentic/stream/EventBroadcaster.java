@@ -54,7 +54,9 @@ public class EventBroadcaster implements EventIndexSink {
                     event.eventType(),
                     event.toolName(),
                     session.title(),
-                    event.observedAt() == null ? null : event.observedAt().toString()));
+                    event.observedAt() == null ? null : event.observedAt().toString(),
+                    event.id(),
+                    session.cwd()));
             publishSessionUpdated(new StreamEvents.SessionUpdated(
                     session.id(),
                     session.source(),

@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS agent_events (
 CREATE INDEX IF NOT EXISTS idx_agent_events_session_observed
     ON agent_events (session_id, observed_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_agent_events_observed
+    ON agent_events (observed_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
     ON agent_events (source, event_type, observed_at DESC);
 

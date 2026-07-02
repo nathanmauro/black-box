@@ -26,6 +26,26 @@ export type AgentEvent = {
   observedAt: string;
 };
 
+export type EventFeedItem = AgentEvent & {
+  cwd?: string | null;
+  sessionTitle?: string | null;
+};
+
+export type EventFeedResponse = {
+  limit: number;
+  count: number;
+  items: EventFeedItem[];
+  nextBefore?: string | null;
+};
+
+export type EventFeedParams = {
+  q?: string;
+  limit?: number;
+  before?: string;
+  since?: string;
+  meaningful?: boolean;
+};
+
 export type ElasticHealth = {
   enabled?: boolean;
   available?: boolean;
@@ -252,6 +272,17 @@ export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[
 
 export function search(q: string, limit = 80): Promise<SearchResponse> {
   return getJson(`/api/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`);
+}
+
+export function getEventFeed(params: EventFeedParams = {}): Promise<EventFeedResponse> {
+  const query = new URLSearchParams();
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.before) query.set("before", params.before);
+  if (params.since) query.set("since", params.since);
+  if (params.meaningful !== undefined) query.set("meaningful", String(params.meaningful));
+  const suffix = query.toString();
+  return getJson(`/api/events${suffix ? `?${suffix}` : ""}`);
 }
 
 export function getRecall(scope: string, withinHours: number, kinds: string[]): Promise<RecallResult> {

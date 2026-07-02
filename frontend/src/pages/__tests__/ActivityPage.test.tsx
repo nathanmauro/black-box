@@ -51,6 +51,9 @@ vi.mock("@solidjs/router", async (importOriginal) => {
 
 vi.mock("../../lib/stores", () => ({
   createSessionsResource: () => [() => sessions],
+  sourceFilter: {
+    matches: <T,>(items: T[]) => items,
+  },
 }));
 
 vi.mock("../../lib/api", async (importOriginal) => {
@@ -62,6 +65,12 @@ vi.mock("../../lib/api", async (importOriginal) => {
       elasticsearch: { enabled: true, available: true },
     })),
     getSessionEvents: vi.fn(async () => []),
+    getEventFeed: vi.fn(async () => ({
+      limit: 100,
+      count: 0,
+      items: [],
+      nextBefore: null,
+    })),
     search: vi.fn(async (query: string) => ({
       query,
       local: query
@@ -86,6 +95,18 @@ vi.mock("../../lib/api", async (importOriginal) => {
   };
 });
 
+vi.mock("../../lib/sse", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/sse")>();
+  return {
+    ...actual,
+    useLiveStore: () => ({
+      status: () => "live",
+      events: () => [],
+      onSessionUpdated: () => () => undefined,
+    }),
+  };
+});
+
 beforeEach(() => {
   [params, setParams] = createStore<{ q?: string; session?: string; view?: string }>({});
   navigate.mockReset();
@@ -97,9 +118,13 @@ describe("ActivityPage", () => {
 
     expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "false");
     expect(within(modes).getByRole("tab", { name: "Find" })).toBeInTheDocument();
     expect(within(modes).getByRole("tab", { name: "Ask" })).toBeInTheDocument();
+
+    fireEvent.click(within(modes).getByRole("tab", { name: "Browse" }));
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     const detail = document.querySelector(".session-detail-pane") as HTMLElement;
@@ -134,7 +159,7 @@ describe("ActivityPage", () => {
     expect(await screen.findByLabelText("Search query")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("link", { name: /Open the focused session from search/ }));
 
-    await waitFor(() => expect(params.view).toBeUndefined());
+    await waitFor(() => expect(params.view).toBe("browse"));
     expect(params.q).toBeUndefined();
     expect(params.session).toBe("session-1");
 

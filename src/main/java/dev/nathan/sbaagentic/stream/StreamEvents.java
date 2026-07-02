@@ -14,7 +14,9 @@ public final class StreamEvents {
             String eventType,
             String toolName,
             String title,
-            String observedAt) {
+            String observedAt,
+            String id,
+            String cwd) {
     }
 
     /** The owning session's latest state after an append, named SSE event {@code session.updated}. */

@@ -26,8 +26,7 @@ class StaticUiContractTest {
                 .contains("<title>BLACKBOX</title>")
                 .contains("id=\"root\"")
                 .containsPattern("<script[^>]+type=\"module\"[^>]+src=\"/assets/index-[\\w-]+\\.js\"")
-                .containsPattern("<link[^>]+href=\"/assets/index-[\\w-]+\\.css\"")
-                .contains("ibm-plex-sans-latin-400-normal.woff2");
+                .containsPattern("<link[^>]+href=\"/assets/index-[\\w-]+\\.css\"");
     }
 
     @Test
@@ -41,6 +40,12 @@ class StaticUiContractTest {
             assertThat(names).anyMatch(name -> name.endsWith(".css"));
         }
 
-        assertThat(Files.exists(STATIC.resolve("fonts/ibm-plex-sans-latin-400-normal.woff2"))).isTrue();
+        assertThat(STATIC.resolve("fonts")).isDirectoryContaining("glob:**/inter-latin-400-normal.woff2")
+                .isDirectoryContaining("glob:**/inter-latin-500-normal.woff2")
+                .isDirectoryContaining("glob:**/inter-latin-600-normal.woff2")
+                .isDirectoryContaining("glob:**/inter-latin-700-normal.woff2")
+                .isDirectoryContaining("glob:**/ibm-plex-mono-latin-400-normal.woff2")
+                .isDirectoryContaining("glob:**/ibm-plex-mono-latin-500-normal.woff2")
+                .isDirectoryContaining("glob:**/ibm-plex-mono-latin-600-normal.woff2");
     }
 }

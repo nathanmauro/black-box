@@ -1,11 +1,13 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Match, Switch } from "solid-js";
 import SessionsPage from "./SessionsPage";
 import SearchPage, { type SearchMode } from "./SearchPage";
+import StreamPage from "./StreamPage";
 
-type ActivityMode = "browse" | SearchMode;
+type ActivityMode = "stream" | "browse" | SearchMode;
 
 const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
+  { id: "stream", label: "Stream", hint: "global event firehose" },
   { id: "browse", label: "Browse", hint: "session rail and prompt reader" },
   { id: "find", label: "Find", hint: "faceted event search" },
   { id: "ask", label: "Ask", hint: "synthesized answer with citations" },
@@ -19,8 +21,10 @@ export default function ActivityPage() {
 
   function selectMode(next: ActivityMode) {
     setModeSignal(next);
-    if (next === "browse") {
-      setParams({ q: undefined, view: undefined });
+    if (next === "stream") {
+      setParams({ view: undefined });
+    } else if (next === "browse") {
+      setParams({ view: "browse" });
     } else {
       setParams({ view: next });
     }
@@ -32,7 +36,7 @@ export default function ActivityPage() {
 
   function openSearchResult(id: string) {
     setModeSignal("browse");
-    setParams({ session: id, q: undefined, view: undefined });
+    setParams({ session: id, q: undefined, view: "browse" });
   }
 
   return (
@@ -64,12 +68,17 @@ export default function ActivityPage() {
       </header>
 
       <div class="activity-workspace">
-        <Show
-          when={mode() === "browse"}
-          fallback={<SearchPage mode={mode() as SearchMode} showModeTabs={false} onSelectSession={openSearchResult} />}
-        >
-          <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
-        </Show>
+        <Switch>
+          <Match when={mode() === "browse"}>
+            <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
+          </Match>
+          <Match when={mode() === "find" || mode() === "ask"}>
+            <SearchPage mode={mode() as SearchMode} showModeTabs={false} onSelectSession={openSearchResult} />
+          </Match>
+          <Match when={mode() === "stream"}>
+            <StreamPage />
+          </Match>
+        </Switch>
       </div>
     </section>
   );
@@ -77,6 +86,7 @@ export default function ActivityPage() {
 
 function modeFromParams(params: { q?: string; view?: string }): ActivityMode {
   if (params.view === "ask") return "ask";
-  if (params.view === "find" || params.q?.trim()) return "find";
-  return "browse";
+  if (params.view === "find") return "find";
+  if (params.view === "browse") return "browse";
+  return "stream";
 }
