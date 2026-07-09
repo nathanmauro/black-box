@@ -22,7 +22,7 @@ export default function ActivityPage() {
   const [projects] = createResource(getProjects, { initialValue: [] });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
   const selectedProject = createMemo(() => availableProjects().find((project) => project.projectKey === params.project));
-  const projectScopePending = createMemo(() => Boolean(params.project) && !selectedProject());
+  const projectScopePending = createMemo(() => Boolean(params.project) && projects.loading && !selectedProject());
 
   createEffect(() => setModeSignal(modeFromParams(params)));
   createEffect(() => {
@@ -31,6 +31,11 @@ export default function ActivityPage() {
     if (remembered && availableProjects().some((project) => project.projectKey === remembered)) {
       setParams({ project: remembered });
     }
+  });
+  createEffect(() => {
+    if (!params.project || projects.loading || selectedProject()) return;
+    rememberProjectKey(undefined);
+    setParams({ project: undefined });
   });
 
   function selectMode(next: ActivityMode) {

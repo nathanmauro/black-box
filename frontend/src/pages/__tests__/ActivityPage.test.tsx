@@ -267,4 +267,35 @@ describe("ActivityPage", () => {
 
     expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
   });
+
+  it("clears a stale URL project after projects load and falls back to all projects", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ project: "missing-key" });
+    localStorage.setItem("blackbox.activity.projectKey", "missing-key");
+
+    render(() => <ActivityPage />);
+
+    await waitFor(() => expect(params.project).toBeUndefined());
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
+    expect(await screen.findByRole("button", { name: /All projects/ })).toBeInTheDocument();
+    expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
+  });
+
+  it("falls back to all projects when project loading fails with a URL project", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-key" });
+    localStorage.setItem("blackbox.activity.projectKey", "sba-key");
+    apiMocks.getProjects.mockRejectedValue(new Error("Project load failed."));
+
+    render(() => (
+      <ErrorBoundary fallback={<p>Project resource crashed.</p>}>
+        <ActivityPage />
+      </ErrorBoundary>
+    ));
+
+    await waitFor(() => expect(params.project).toBeUndefined());
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
+    expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
+  });
 });
