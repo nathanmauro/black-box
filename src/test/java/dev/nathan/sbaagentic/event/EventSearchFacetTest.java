@@ -74,6 +74,20 @@ class EventSearchFacetTest {
     }
 
     @Test
+    void negativeFacetsExcludeMatchingRows() {
+        String codexId = seedDecisionFromCodex();
+        String claudeId = seedToolFromClaude();
+
+        List<String> noToolNoise = repository.searchEvents("NOT kind:PostToolUse UI rewrite", 50)
+                .stream().map(AgentEvent::id).toList();
+        assertThat(noToolNoise).contains(codexId).doesNotContain(claudeId);
+
+        List<String> noCodex = repository.searchEvents("-source:codex rewrite", 50)
+                .stream().map(AgentEvent::id).toList();
+        assertThat(noCodex).contains(claudeId).doesNotContain(codexId);
+    }
+
+    @Test
     void plainQueryStillMatchesAcrossColumns() {
         String codexId = seedDecisionFromCodex();
         String claudeId = seedToolFromClaude();

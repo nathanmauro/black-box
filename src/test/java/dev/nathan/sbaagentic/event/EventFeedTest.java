@@ -89,6 +89,30 @@ class EventFeedTest {
     }
 
     @Test
+    void feedHonorsNegativeFacets() {
+        String key = uniqueKey("negative");
+        SeededEvent decision = seed(key, "codex", key + "-decision", "Decision", "assistant",
+                "Negative facet target " + key, "/tmp/" + key + "/alpha", null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent tool = seed(key, "codex", key + "-tool", "PostToolUse", "assistant",
+                "Negative facet tool " + key, "/tmp/" + key + "/alpha", "Edit",
+                Instant.parse("2026-07-01T12:01:00Z"));
+        SeededEvent otherProject = seed(key, "claude", key + "-other", "Decision", "assistant",
+                "Negative facet other project " + key, "/tmp/" + key + "/beta", null,
+                Instant.parse("2026-07-01T12:02:00Z"));
+
+        assertThat(repository.feed("NOT kind:PostToolUse " + key, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .contains(decision.id(), otherProject.id())
+                .doesNotContain(tool.id());
+
+        assertThat(repository.feed("-project:" + key + "/beta " + key, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .contains(decision.id())
+                .doesNotContain(otherProject.id());
+    }
+
+    @Test
     void meaningfulFeedUsesStorylinePredicate() {
         String key = uniqueKey("meaningful");
         SeededEvent decision = seed(key, "codex", key + "-decision", "Decision", "agent",

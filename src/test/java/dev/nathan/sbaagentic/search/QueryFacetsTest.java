@@ -43,6 +43,27 @@ class QueryFacetsTest {
     }
 
     @Test
+    void parsesReadableAndTerseNegativeFacets() {
+        QueryFacets readable = QueryFacets.parse("source:codex NOT kind:PostToolUse recall");
+        assertThat(readable.source()).isEqualTo("codex");
+        assertThat(readable.excludedEventType()).isEqualTo("PostToolUse");
+        assertThat(readable.freeText()).containsExactly("recall");
+        assertThat(readable.hasAnyFacet()).isTrue();
+
+        QueryFacets terse = QueryFacets.parse("-tool:Read -project:\"/tmp/sba agentic\"");
+        assertThat(terse.excludedToolName()).isEqualTo("Read");
+        assertThat(terse.excludedCwd()).isEqualTo("/tmp/sba agentic");
+        assertThat(terse.freeText()).isEmpty();
+    }
+
+    @Test
+    void danglingNotFallsBackToFreeText() {
+        QueryFacets f = QueryFacets.parse("NOT recall bug");
+        assertThat(f.hasAnyFacet()).isFalse();
+        assertThat(f.freeText()).containsExactly("NOT", "recall", "bug");
+    }
+
+    @Test
     void lastFacetWins() {
         QueryFacets f = QueryFacets.parse("source:claude source:codex");
         assertThat(f.source()).isEqualTo("codex");

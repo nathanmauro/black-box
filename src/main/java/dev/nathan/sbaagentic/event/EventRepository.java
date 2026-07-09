@@ -259,7 +259,7 @@ public class EventRepository {
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
                 .append("e.observed_at\n")
                 .append("  FROM agent_events e\n");
-        boolean joinSessions = facets.cwd() != null;
+        boolean joinSessions = facets.cwd() != null || facets.excludedCwd() != null;
         if (joinSessions) {
             sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
         }
@@ -276,9 +276,25 @@ public class EventRepository {
             sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
             args.add(facets.toolName());
         }
-        if (joinSessions) {
+        if (facets.cwd() != null) {
             sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
             args.add("%" + facets.cwd() + "%");
+        }
+        if (facets.excludedSource() != null) {
+            sql.append("   AND lower(e.source) <> lower(?)\n");
+            args.add(facets.excludedSource());
+        }
+        if (facets.excludedEventType() != null) {
+            sql.append("   AND lower(e.event_type) <> lower(?)\n");
+            args.add(facets.excludedEventType());
+        }
+        if (facets.excludedToolName() != null) {
+            sql.append("   AND lower(coalesce(e.tool_name, '')) <> lower(?)\n");
+            args.add(facets.excludedToolName());
+        }
+        if (facets.excludedCwd() != null) {
+            sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
+            args.add("%" + facets.excludedCwd() + "%");
         }
         String freePhrase = facets.freeTextPhrase();
         if (!freePhrase.isBlank()) {
@@ -324,6 +340,22 @@ public class EventRepository {
         if (facets.cwd() != null) {
             sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
             args.add("%" + facets.cwd() + "%");
+        }
+        if (facets.excludedSource() != null) {
+            sql.append("   AND lower(e.source) <> lower(?)\n");
+            args.add(facets.excludedSource());
+        }
+        if (facets.excludedEventType() != null) {
+            sql.append("   AND lower(e.event_type) <> lower(?)\n");
+            args.add(facets.excludedEventType());
+        }
+        if (facets.excludedToolName() != null) {
+            sql.append("   AND lower(coalesce(e.tool_name, '')) <> lower(?)\n");
+            args.add(facets.excludedToolName());
+        }
+        if (facets.excludedCwd() != null) {
+            sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
+            args.add("%" + facets.excludedCwd() + "%");
         }
         String freePhrase = facets.freeTextPhrase();
         if (!freePhrase.isBlank()) {

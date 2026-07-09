@@ -139,6 +139,13 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].eventType").value("Decision"));
 
+        mockMvc.perform(get("/api/events")
+                        .param("q", "NOT kind:UserPromptSubmit " + key)
+                        .param("meaningful", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].eventType").value("Decision"));
+
         mockMvc.perform(get("/api/events").param("before", "not-a-cursor"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.status").value(400))
