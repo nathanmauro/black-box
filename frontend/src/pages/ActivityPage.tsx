@@ -1,5 +1,5 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Match, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import ProjectPicker from "../components/ProjectPicker";
 import { getProjects } from "../lib/api";
 import { readRememberedProjectKey, rememberProjectKey } from "../lib/projects";
@@ -108,13 +108,15 @@ export default function ActivityPage() {
       <div class="activity-workspace">
         <Switch>
           <Match when={mode() === "browse"}>
-            <SessionsPage
-              selectedSessionId={params.session}
-              targetEventId={params.event}
-              project={selectedProject()}
-              defaultToFirst
-              onSelectSession={selectSession}
-            />
+            <Show when={!projectScopePending()} fallback={<p class="empty-state">Resolving project scope…</p>}>
+              <SessionsPage
+                selectedSessionId={params.session}
+                targetEventId={params.event}
+                project={selectedProject()}
+                defaultToFirst
+                onSelectSession={selectSession}
+              />
+            </Show>
           </Match>
           <Match when={mode() === "find" || mode() === "ask"}>
             <SearchPage

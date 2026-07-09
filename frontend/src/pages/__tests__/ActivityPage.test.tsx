@@ -279,6 +279,22 @@ describe("ActivityPage", () => {
     expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
   });
 
+  it("defers Activity Browse fetches while a URL project is unresolved", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({
+      project: "sba-key",
+      view: "browse",
+    });
+    apiMocks.getProjects.mockImplementation(() => new Promise(() => undefined));
+
+    render(() => <ActivityPage />);
+
+    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
+    expect(apiMocks.getSessions).not.toHaveBeenCalled();
+    expect(apiMocks.getProjectSessions).not.toHaveBeenCalled();
+    expect(screen.getByText("Resolving project scope…")).toBeInTheDocument();
+    expect(document.querySelector(".sessions-page")).not.toBeInTheDocument();
+  });
+
   it("defers Activity Find searches while a URL project is unresolved", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({
       project: "sba-key",
