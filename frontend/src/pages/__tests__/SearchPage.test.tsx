@@ -1,10 +1,26 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProjectSummary } from "../../lib/api";
 import SearchPage from "../SearchPage";
 
 let params: { q?: string };
 let setParams: SetStoreFunction<{ q?: string }>;
+
+const mocks = vi.hoisted(() => ({
+  askStatus: vi.fn(),
+  search: vi.fn(),
+}));
+
+const search = mocks.search;
+const selectedProject: ProjectSummary = {
+  projectKey: "sba-key",
+  canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+  label: "~/Developer/proj/sba-agentic",
+  sessionCount: 1,
+  eventCount: 1,
+  savedMeldCount: 0,
+};
 
 vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
@@ -18,16 +34,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...actual,
-    askStatus: vi.fn(async () => ({
-      chat: { enabled: false, available: false },
-      elasticsearch: { enabled: false, available: false },
-    })),
-    search: vi.fn(async (query: string) => ({
-      query,
-      local: [],
-      elastic: [],
-      elasticHealth: {},
-    })),
+    askStatus: mocks.askStatus,
+    search: mocks.search,
     searchValues: vi.fn(async (_field: string, prefix: string) =>
       ["Decision", "Handoff", "Observation"].filter((value) =>
         value.toLowerCase().startsWith(prefix.toLowerCase()),
@@ -38,6 +46,18 @@ vi.mock("../../lib/api", async (importOriginal) => {
 
 beforeEach(() => {
   [params, setParams] = createStore<{ q?: string }>({});
+  mocks.askStatus.mockReset();
+  mocks.askStatus.mockResolvedValue({
+    chat: { enabled: false, available: false },
+    elasticsearch: { enabled: false, available: false },
+  });
+  search.mockReset();
+  search.mockImplementation(async (query: string) => ({
+    query,
+    local: [],
+    elastic: [],
+    elasticHealth: {},
+  }));
 });
 
 describe("SearchPage", () => {
@@ -80,5 +100,29 @@ describe("SearchPage", () => {
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+  });
+
+  it("passes selected project as a hidden search facet", async () => {
+    render(() => <SearchPage project={selectedProject} />);
+
+    fireEvent.input(screen.getByLabelText("Search query"), { target: { value: "kind:Decision" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    await waitFor(() =>
+      expect(search).toHaveBeenLastCalledWith("kind:Decision project:/Users/nathan/Developer/proj/sba-agentic", 120),
+    );
+  });
+
+  it("warns that Ask is not scoped by selected project", async () => {
+    mocks.askStatus.mockResolvedValue({
+      chat: { enabled: true, available: true },
+      elasticsearch: { enabled: true, available: true },
+    });
+
+    render(() => <SearchPage mode="ask" showModeTabs={false} project={selectedProject} />);
+
+    expect(await screen.findByText("Project context is not applied to Ask yet. Ask will search across all recorded memory."))
+      .toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
   });
 });

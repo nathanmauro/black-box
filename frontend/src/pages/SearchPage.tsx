@@ -2,7 +2,7 @@ import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
-import { ask, askStatus, search, searchValues, type AgentEvent, type SearchResponse } from "../lib/api";
+import { ask, askStatus, search, searchValues, type AgentEvent, type ProjectSummary, type SearchResponse } from "../lib/api";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
 import { timeAgo, truncatePath } from "../lib/format";
 
@@ -28,7 +28,8 @@ export type SearchMode = "find" | "ask";
 type SearchPageProps = {
   mode?: SearchMode;
   showModeTabs?: boolean;
-  onSelectSession?: (id: string) => void;
+  project?: ProjectSummary | null;
+  onSelectSession?: (id: string, eventId?: string) => void;
   params?: unknown;
   location?: unknown;
   data?: unknown;
@@ -46,6 +47,7 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
+  const apiQuery = createMemo(() => (props.project ? setFacet(submitted(), "project", props.project.canonicalKey) : submitted()));
   createEffect(() => setDraft(params.q ?? ""));
   createEffect(() => {
     if (props.mode) setInternalMode(props.mode);
@@ -54,8 +56,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
   const setMode = (next: SearchMode) => setInternalMode(next);
   const showModeTabs = () => props.showModeTabs !== false;
 
-  const [response] = createResource<SearchResponse, string>(submitted, async (q) =>
-    q.trim() ? search(q, 120) : { query: "", local: [], elastic: [], elasticHealth: {} },
+  const searchRequest = createMemo(() => ({ submitted: submitted(), api: apiQuery() }));
+  const [response] = createResource<SearchResponse, { submitted: string; api: string }>(searchRequest, async (request) =>
+    request.submitted.trim() ? search(request.api, 120) : { query: "", local: [], elastic: [], elasticHealth: {} },
   );
 
   // Ask mode is offered only when the backend reports the dependency is reachable.
@@ -166,7 +169,7 @@ export default function SearchPage(props: SearchPageProps = {}) {
               when={askReady()}
               fallback={<p class="empty-state">{askReady.loading ? "Checking Ask dependencies..." : "Ask is unavailable on this server."}</p>}
             >
-              <AskPanel />
+              <AskPanel project={props.project} />
             </Show>
           }
         >
@@ -285,11 +288,11 @@ export default function SearchPage(props: SearchPageProps = {}) {
   );
 }
 
-function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string) => void }) {
+function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, eventId?: string) => void }) {
   function select(event: MouseEvent) {
     if (!props.onSelectSession) return;
     event.preventDefault();
-    props.onSelectSession(props.event.sessionId);
+    props.onSelectSession(props.event.sessionId, props.event.id);
   }
 
   return (
@@ -305,7 +308,7 @@ function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string) =>
   );
 }
 
-function AskPanel() {
+function AskPanel(props: { project?: ProjectSummary | null } = {}) {
   const [question, setQuestion] = createSignal("");
   const [asked, setAsked] = createSignal("");
   const [answer] = createResource(asked, async (q) => (q.trim() ? ask(q) : null));
@@ -317,6 +320,11 @@ function AskPanel() {
         setAsked(question().trim());
       }}
     >
+      <Show when={props.project}>
+        <p class="ask-scope-note">
+          Project context is not applied to Ask yet. Ask will search across all recorded memory.
+        </p>
+      </Show>
       <textarea
         class="ask-input"
         rows="3"

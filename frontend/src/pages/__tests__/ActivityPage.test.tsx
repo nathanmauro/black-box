@@ -4,8 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../lib/api";
 import ActivityPage from "../ActivityPage";
 
-let params: { q?: string; session?: string; view?: string };
-let setParams: SetStoreFunction<{ q?: string; session?: string; view?: string }>;
+type ActivitySearchParams = { q?: string; session?: string; view?: string; project?: string; event?: string };
+
+let params: ActivitySearchParams;
+let setParams: SetStoreFunction<ActivitySearchParams>;
 
 const sessions: AgentSession[] = [
   {
@@ -71,6 +73,26 @@ vi.mock("../../lib/api", async (importOriginal) => {
       items: [],
       nextBefore: null,
     })),
+    getProjects: vi.fn(async () => [
+      {
+        projectKey: "sba-key",
+        canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+        label: "~/Developer/proj/sba-agentic",
+        sessionCount: 1,
+        eventCount: 4,
+        savedMeldCount: 0,
+        lastSeenAt: "2026-06-22T20:10:00Z",
+      },
+      {
+        projectKey: "cockpit-key",
+        canonicalKey: "/Users/nathan/Developer/proj/cockpit",
+        label: "~/Developer/proj/cockpit",
+        sessionCount: 1,
+        eventCount: 8,
+        savedMeldCount: 0,
+        lastSeenAt: "2026-06-22T19:20:00Z",
+      },
+    ]),
     search: vi.fn(async (query: string) => ({
       query,
       local: query
@@ -108,7 +130,8 @@ vi.mock("../../lib/sse", async (importOriginal) => {
 });
 
 beforeEach(() => {
-  [params, setParams] = createStore<{ q?: string; session?: string; view?: string }>({});
+  [params, setParams] = createStore<ActivitySearchParams>({});
+  localStorage.clear();
   navigate.mockReset();
 });
 
@@ -150,7 +173,7 @@ describe("ActivityPage", () => {
   });
 
   it("opens Search results inside the Activity session reader", async () => {
-    [params, setParams] = createStore<{ q?: string; session?: string; view?: string }>({
+    [params, setParams] = createStore<ActivitySearchParams>({
       q: "focused",
       view: "find",
     });
@@ -162,9 +185,27 @@ describe("ActivityPage", () => {
     await waitFor(() => expect(params.view).toBe("browse"));
     expect(params.q).toBeUndefined();
     expect(params.session).toBe("session-1");
+    expect(params.event).toBe("event-frontend-build");
 
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
     expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
+  });
+
+  it("selects a shared Activity project and stores it in the URL", async () => {
+    render(() => <ActivityPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "sba" } });
+    fireEvent.click(await screen.findByRole("option", { name: /sba-agentic/ }));
+
+    await waitFor(() => expect(params.project).toBe("sba-key"));
+  });
+
+  it("restores remembered project when the URL has none", async () => {
+    localStorage.setItem("blackbox.activity.projectKey", "sba-key");
+    render(() => <ActivityPage />);
+
+    expect(await screen.findByRole("button", { name: /sba-agentic/ })).toBeInTheDocument();
   });
 });

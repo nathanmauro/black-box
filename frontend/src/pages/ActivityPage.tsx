@@ -1,5 +1,8 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createSignal, For, Match, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, Switch } from "solid-js";
+import ProjectPicker from "../components/ProjectPicker";
+import { getProjects } from "../lib/api";
+import { readRememberedProjectKey, rememberProjectKey } from "../lib/projects";
 import SessionsPage from "./SessionsPage";
 import SearchPage, { type SearchMode } from "./SearchPage";
 import StreamPage from "./StreamPage";
@@ -14,10 +17,19 @@ const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
 ];
 
 export default function ActivityPage() {
-  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string }>();
+  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string; project?: string; event?: string }>();
   const [mode, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
+  const [projects] = createResource(getProjects, { initialValue: [] });
+  const selectedProject = createMemo(() => projects().find((project) => project.projectKey === params.project));
 
   createEffect(() => setModeSignal(modeFromParams(params)));
+  createEffect(() => {
+    if (params.project !== undefined || projects.loading) return;
+    const remembered = readRememberedProjectKey();
+    if (remembered && projects().some((project) => project.projectKey === remembered)) {
+      setParams({ project: remembered });
+    }
+  });
 
   function selectMode(next: ActivityMode) {
     setModeSignal(next);
@@ -30,13 +42,18 @@ export default function ActivityPage() {
     }
   }
 
-  function selectSession(id: string) {
-    setParams({ session: id });
+  function selectProject(projectKey: string | undefined) {
+    rememberProjectKey(projectKey);
+    setParams({ project: projectKey, session: undefined, event: undefined });
   }
 
-  function openSearchResult(id: string) {
+  function selectSession(id: string) {
+    setParams({ session: id, event: undefined });
+  }
+
+  function openSearchResult(sessionId: string, eventId?: string) {
     setModeSignal("browse");
-    setParams({ session: id, q: undefined, view: "browse" });
+    setParams({ session: sessionId, event: eventId, q: undefined, view: "browse" });
   }
 
   return (
@@ -47,6 +64,13 @@ export default function ActivityPage() {
           <h1>Activity</h1>
           <p>Browse sessions, find events, and ask recorded memory from one surface.</p>
         </div>
+
+        <ProjectPicker
+          projects={projects()}
+          selectedProjectKey={params.project}
+          loading={projects.loading}
+          onSelect={selectProject}
+        />
 
         <div class="activity-mode-tabs" role="tablist" aria-label="Activity mode">
           <For each={MODES}>
@@ -73,10 +97,10 @@ export default function ActivityPage() {
             <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
           </Match>
           <Match when={mode() === "find" || mode() === "ask"}>
-            <SearchPage mode={mode() as SearchMode} showModeTabs={false} onSelectSession={openSearchResult} />
+            <SearchPage mode={mode() as SearchMode} showModeTabs={false} project={selectedProject()} onSelectSession={openSearchResult} />
           </Match>
           <Match when={mode() === "stream"}>
-            <StreamPage />
+            <StreamPage project={selectedProject()} />
           </Match>
         </Switch>
       </div>

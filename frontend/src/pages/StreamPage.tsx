@@ -1,7 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import StreamRow from "../components/events/StreamRow";
-import { getEventFeed, searchValues, type EventFeedItem } from "../lib/api";
+import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
@@ -23,7 +23,11 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   project: [],
 };
 
-export default function StreamPage() {
+type StreamPageProps = {
+  project?: ProjectSummary | null;
+};
+
+export default function StreamPage(props: StreamPageProps = {}) {
   let inputRef: HTMLInputElement | undefined;
   let inputWrapRef: HTMLDivElement | undefined;
   let feedRef: HTMLDivElement | undefined;
@@ -45,6 +49,7 @@ export default function StreamPage() {
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   const submitted = () => params.q ?? "";
+  const apiQuery = createMemo(() => (props.project ? setFacet(submitted(), "project", props.project.canonicalKey) : submitted()));
   const parsed = createMemo(() => parseQuery(submitted()));
   const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
@@ -53,7 +58,7 @@ export default function StreamPage() {
   createEffect(() => setDraft(params.q ?? ""));
 
   createEffect(() => {
-    const q = submitted();
+    const q = apiQuery();
     const meaningful = meaningfulOnly();
     const token = ++loadToken;
     setLoading(true);
@@ -144,7 +149,7 @@ export default function StreamPage() {
     setLoadingMore(true);
     setError(null);
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: submitted(), meaningful: meaningfulOnly(), before });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), before });
       setItems((current) => dedupe([...current, ...response.items]).slice(0, MAX_ROWS));
       setNextBefore(items().length >= MAX_ROWS ? null : response.nextBefore ?? null);
     } catch (cause) {
@@ -157,7 +162,7 @@ export default function StreamPage() {
   async function refetchHead(since: string | undefined) {
     if (!since) return;
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: submitted(), meaningful: meaningfulOnly(), since });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), since });
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
       if (!fresh.length) return;

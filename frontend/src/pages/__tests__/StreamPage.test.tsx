@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EventFeedItem, EventFeedResponse } from "../../lib/api";
+import type { EventFeedItem, EventFeedResponse, ProjectSummary } from "../../lib/api";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -15,6 +15,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const getEventFeed = mocks.getEventFeed;
+const selectedProject: ProjectSummary = {
+  projectKey: "sba-key",
+  canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+  label: "~/Developer/proj/sba-agentic",
+  sessionCount: 1,
+  eventCount: 1,
+  savedMeldCount: 0,
+};
 
 vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
@@ -69,6 +77,17 @@ describe("StreamPage", () => {
     expect(row).toHaveAttribute("href", "/sessions/session-1");
     expect(within(row).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true });
+  });
+
+  it("passes selected project as a hidden stream facet", async () => {
+    render(() => <StreamPage project={selectedProject} />);
+
+    await screen.findByRole("link", { name: /Make stream default/ });
+    expect(getEventFeed).toHaveBeenCalledWith({
+      limit: 100,
+      q: "project:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
   });
 
   it("uses facet chips to narrow the URL query", async () => {
