@@ -185,6 +185,27 @@ describe("StreamPage", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: /Stale old scope row/ })).not.toBeInTheDocument());
   });
 
+  it("clears pagination while a primary stream reload is pending", async () => {
+    const primaryReload = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockReturnValueOnce(primaryReload.promise)
+      .mockResolvedValueOnce(feed([eventItem("event-stale", "Stale page row")]));
+
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Original scope row/ });
+
+    setParams({ q: "kind:Decision" });
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    await Promise.resolve();
+    expect(getEventFeed).toHaveBeenCalledTimes(2);
+
+    primaryReload.resolve(feed([eventItem("event-scoped", "New scope row")]));
+    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
+  });
+
   it("uses pending live rows for head refetch and new-count dedupe", async () => {
     const old = eventItem("event-old", "Existing row");
     const a = eventItem("event-a", "Pending row A", "2026-07-01T12:01:00Z");

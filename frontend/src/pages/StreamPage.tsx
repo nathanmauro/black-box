@@ -84,6 +84,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     const token = ++loadToken;
     setLoading(true);
     setLoadingMore(false);
+    setNextBefore(null);
     setError(null);
     getEventFeed({ limit: FEED_LIMIT, q, meaningful })
       .then((response) => {
@@ -167,7 +168,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   async function loadMore() {
     const before = nextBefore();
-    if (props.projectScopePending || !before || loadingMore() || items().length >= MAX_ROWS) return;
+    if (props.projectScopePending || loading() || !before || loadingMore() || items().length >= MAX_ROWS) return;
     const token = loadToken;
     setLoadingMore(true);
     setError(null);

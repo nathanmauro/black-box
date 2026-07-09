@@ -30,7 +30,7 @@ export default function ActivityPage() {
     const remembered = readRememberedProjectKey();
     if (!remembered) return;
     if (availableProjects().some((project) => project.projectKey === remembered)) {
-      setParams({ project: remembered });
+      setParams({ project: remembered, session: undefined, event: undefined });
     } else {
       rememberProjectKey(undefined);
     }
@@ -38,7 +38,7 @@ export default function ActivityPage() {
   createEffect(() => {
     if (!params.project || projects.loading || selectedProject()) return;
     rememberProjectKey(undefined);
-    setParams({ project: undefined });
+    setParams({ project: undefined, session: undefined, event: undefined });
   });
 
   function selectMode(next: ActivityMode) {

@@ -223,11 +223,15 @@ describe("ActivityPage", () => {
     await waitFor(() => expect(params.project).toBe("sba-key"));
   });
 
-  it("restores remembered project when the URL has none", async () => {
+  it("restores remembered project when the URL has none and clears browse state", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ session: "session-2", event: "event-old" });
     localStorage.setItem("blackbox.activity.projectKey", "sba-key");
     render(() => <ActivityPage />);
 
     expect(await screen.findByRole("button", { name: /sba-agentic/ })).toBeInTheDocument();
+    await waitFor(() => expect(params.project).toBe("sba-key"));
+    expect(params.session).toBeUndefined();
+    expect(params.event).toBeUndefined();
   });
 
   it("clears a stale remembered project when the URL has no project", async () => {
@@ -279,12 +283,14 @@ describe("ActivityPage", () => {
   });
 
   it("clears a stale URL project after projects load and falls back to all projects", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({ project: "missing-key" });
+    [params, setParams] = createStore<ActivitySearchParams>({ project: "missing-key", session: "session-2", event: "event-old" });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
 
     render(() => <ActivityPage />);
 
     await waitFor(() => expect(params.project).toBeUndefined());
+    expect(params.session).toBeUndefined();
+    expect(params.event).toBeUndefined();
     expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
     expect(await screen.findByRole("button", { name: /All projects/ })).toBeInTheDocument();
     expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
