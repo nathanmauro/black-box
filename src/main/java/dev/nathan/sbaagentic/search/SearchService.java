@@ -68,11 +68,20 @@ public class SearchService {
 
     public SearchResponse search(String query, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
+        QueryFacets facets = QueryFacets.parse(query);
         return new SearchResponse(
                 query,
                 repository.searchEvents(query, safeLimit),
-                elasticIndexClient.search(query, safeLimit),
+                elasticSearchAllowed(facets) ? elasticIndexClient.search(query, safeLimit) : List.of(),
                 elasticIndexClient.health());
+    }
+
+    private static boolean elasticSearchAllowed(QueryFacets facets) {
+        return facets.exactCwd() == null
+                && facets.excludedSource() == null
+                && facets.excludedEventType() == null
+                && facets.excludedToolName() == null
+                && facets.excludedCwd() == null;
     }
 
     /**

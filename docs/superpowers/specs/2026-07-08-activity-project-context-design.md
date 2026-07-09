@@ -1,7 +1,7 @@
 # Activity Project Context Design
 
 Date: 2026-07-08
-Status: Approved design direction; awaiting user review before implementation planning
+Status: Implemented on `feat/agent-task-queue`; Ask project scoping remains a follow-up
 Owner: Nathan
 
 ## Summary
