@@ -2,10 +2,10 @@ import { useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
-import { getProjectSessions, getSessionEvents, type AgentEvent, type AgentSession, type ProjectSummary } from "../lib/api";
+import { getProjectSessions, getSessionEvents, getSessions, type AgentEvent, type AgentSession, type ProjectSummary } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
 import { parseQuery } from "../lib/query";
-import { createSessionsResource } from "../lib/stores";
+import { sourceFilter } from "../lib/stores";
 
 type SessionsPageProps = {
   selectedSessionId?: string;
@@ -31,7 +31,11 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const [sessionFilter, setSessionFilter] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
   const [highlightedEventId, setHighlightedEventId] = createSignal<string | null>(null);
-  const [allSessions] = createSessionsResource(2_000);
+  const [allSessions] = createResource(
+    () => (props.project ? null : sourceFilter.key()),
+    async () => sourceFilter.matches(await getSessions(2_000)),
+    { initialValue: [] as AgentSession[] },
+  );
   const [projectSessions] = createResource(
     () => props.project?.projectKey,
     async (projectKey) => (projectKey ? getProjectSessions(projectKey) : []),

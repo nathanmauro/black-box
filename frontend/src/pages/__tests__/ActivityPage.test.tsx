@@ -38,9 +38,11 @@ const sessions: AgentSession[] = [
 const navigate = vi.fn();
 const apiMocks = vi.hoisted(() => ({
   askStatus: vi.fn(),
+  getSessions: vi.fn(),
   getSessionEvents: vi.fn(),
   getEventFeed: vi.fn(),
   getProjects: vi.fn(),
+  getProjectSessions: vi.fn(),
   search: vi.fn(),
   searchValues: vi.fn(),
 }));
@@ -63,6 +65,7 @@ vi.mock("@solidjs/router", async (importOriginal) => {
 vi.mock("../../lib/stores", () => ({
   createSessionsResource: () => [() => sessions],
   sourceFilter: {
+    key: () => "",
     matches: <T,>(items: T[]) => items,
   },
 }));
@@ -72,9 +75,11 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     askStatus: apiMocks.askStatus,
+    getSessions: apiMocks.getSessions,
     getSessionEvents: apiMocks.getSessionEvents,
     getEventFeed: apiMocks.getEventFeed,
     getProjects: apiMocks.getProjects,
+    getProjectSessions: apiMocks.getProjectSessions,
     search: apiMocks.search,
     searchValues: apiMocks.searchValues,
   };
@@ -101,6 +106,8 @@ beforeEach(() => {
     chat: { enabled: true, available: true },
     elasticsearch: { enabled: true, available: true },
   });
+  apiMocks.getSessions.mockReset();
+  apiMocks.getSessions.mockResolvedValue(sessions);
   apiMocks.getSessionEvents.mockReset();
   apiMocks.getSessionEvents.mockResolvedValue([]);
   apiMocks.getEventFeed.mockReset();
@@ -131,6 +138,8 @@ beforeEach(() => {
       lastSeenAt: "2026-06-22T19:20:00Z",
     },
   ]);
+  apiMocks.getProjectSessions.mockReset();
+  apiMocks.getProjectSessions.mockResolvedValue([sessions[0]]);
   apiMocks.search.mockReset();
   apiMocks.search.mockImplementation(async (query: string) => ({
     query,
@@ -223,6 +232,7 @@ describe("ActivityPage", () => {
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
     expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
+    await waitFor(() => expect(document.getElementById("event-event-frontend-build")).toHaveClass("event-flow-row--target"));
   });
 
   it("selects a shared Activity project and stores it in the URL", async () => {

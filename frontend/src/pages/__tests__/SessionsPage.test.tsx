@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
+import { getProjectSessions, getSessions } from "../../lib/api";
 import type { AgentEvent, AgentSession } from "../../lib/api";
+import { createSessionsResource } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
 const navigate = vi.fn();
@@ -100,13 +102,18 @@ vi.mock("@solidjs/router", async (importOriginal) => {
 });
 
 vi.mock("../../lib/stores", () => ({
-  createSessionsResource: () => [() => sessions],
+  createSessionsResource: vi.fn(() => [() => sessions]),
+  sourceFilter: {
+    key: vi.fn(() => ""),
+    matches: vi.fn(<T,>(items: T[]) => items),
+  },
 }));
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...actual,
+    getSessions: vi.fn(async () => sessions),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
   };
@@ -183,6 +190,10 @@ describe("SessionsPage", () => {
   });
 
   it("uses a flat session rail scoped to the selected project", async () => {
+    vi.mocked(createSessionsResource).mockClear();
+    vi.mocked(getSessions).mockClear();
+    vi.mocked(getProjectSessions).mockClear();
+
     render(() => (
       <SessionsPage
         project={{
@@ -201,6 +212,9 @@ describe("SessionsPage", () => {
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
     expect(rail.querySelector(".session-group")).not.toBeInTheDocument();
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key");
+    expect(createSessionsResource).not.toHaveBeenCalled();
+    expect(getSessions).not.toHaveBeenCalled();
   });
 
   it("reveals and highlights a target event", async () => {
