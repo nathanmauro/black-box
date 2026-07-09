@@ -41,6 +41,17 @@ beforeEach(() => {
 });
 
 describe("SearchPage", () => {
+  it("renders and removes exclude facet chips", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "NOT kind:PostToolUse" });
+    render(() => <SearchPage />);
+
+    const chip = await screen.findByRole("button", { name: "kind != PostToolUse" });
+    expect(chip).toHaveClass("facet-chip--exclude");
+
+    fireEvent.click(chip);
+    await waitFor(() => expect(params.q).toBeUndefined());
+  });
+
   it("dismisses facet suggestions after selection, Escape, and click-away", async () => {
     render(() => <SearchPage />);
 

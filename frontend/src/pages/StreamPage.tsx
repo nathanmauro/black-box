@@ -116,8 +116,8 @@ export default function StreamPage() {
     run(draft());
   }
 
-  function applyFacet(key: FacetField["key"], value: string | null) {
-    run(setFacet(submitted(), key, value));
+  function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
+    run(setFacet(submitted(), key, value, mode));
   }
 
   function dismissSuggestions() {
@@ -232,26 +232,38 @@ export default function StreamPage() {
             {(field) => (
               <div class="facet-group">
                 <span class="facet-label">{field.label}</span>
-                <Show
-                  when={parsed().facets[field.key]}
-                  fallback={
-                    <div class="facet-quick">
-                      <For each={QUICK_VALUES[field.key]}>
-                        {(value) => (
-                          <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>
-                            {value}
-                          </button>
-                        )}
-                      </For>
-                      <Show when={QUICK_VALUES[field.key].length === 0}>
-                        <span class="facet-hint">type {field.key}:...</span>
-                      </Show>
-                    </div>
-                  }
-                >
-                  <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
-                    {parsed().facets[field.key]} x
-                  </button>
+                <Show when={parsed().facets[field.key]}>
+                  {(value) => (
+                    <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
+                      {value()} x
+                    </button>
+                  )}
+                </Show>
+                <Show when={parsed().excludeFacets[field.key]}>
+                  {(value) => (
+                    <button
+                      type="button"
+                      class="facet-chip facet-chip--active facet-chip--exclude"
+                      aria-label={`${field.key} != ${value()}`}
+                      onClick={() => applyFacet(field.key, null, "exclude")}
+                    >
+                      {field.key} != {value()} x
+                    </button>
+                  )}
+                </Show>
+                <Show when={!parsed().facets[field.key] && !parsed().excludeFacets[field.key]}>
+                  <div class="facet-quick">
+                    <For each={QUICK_VALUES[field.key]}>
+                      {(value) => (
+                        <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>
+                          {value}
+                        </button>
+                      )}
+                    </For>
+                    <Show when={QUICK_VALUES[field.key].length === 0}>
+                      <span class="facet-hint">type {field.key}:...</span>
+                    </Show>
+                  </div>
                 </Show>
               </div>
             )}

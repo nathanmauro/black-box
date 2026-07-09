@@ -1,7 +1,10 @@
 export type QueryState = {
-  facets: Record<string, string>;
+  facets: Partial<Record<FacetField["key"], string>>;
+  excludeFacets: Partial<Record<FacetField["key"], string>>;
   text: string[];
 };
+
+export type FacetMode = "include" | "exclude";
 
 export type FacetField = {
   key: "source" | "kind" | "tool" | "project";
@@ -30,22 +33,42 @@ const ALIASES: Record<string, FacetField["key"]> = {
 };
 
 export function parseQuery(q: string): QueryState {
-  const facets: Record<string, string> = {};
+  const facets: Partial<Record<FacetField["key"], string>> = {};
+  const excludeFacets: Partial<Record<FacetField["key"], string>> = {};
   const text: string[] = [];
+  let negateNext = false;
+
   for (const token of tokenize(q)) {
-    const separator = token.indexOf(":");
+    if (token.toLowerCase() === "not") {
+      if (negateNext) text.push("NOT");
+      negateNext = true;
+      continue;
+    }
+
+    const leadingMinus = token.startsWith("-") && token.length > 1;
+    const negated = negateNext || leadingMinus;
+    const candidate = leadingMinus ? token.slice(1) : token;
+    const separator = candidate.indexOf(":");
     if (separator > 0) {
-      const rawField = token.slice(0, separator);
+      const rawField = candidate.slice(0, separator);
       const field = ALIASES[rawField];
-      const value = token.slice(separator + 1);
+      const value = candidate.slice(separator + 1);
       if (field && value) {
-        facets[field] = value;
+        if (negated) excludeFacets[field] = value;
+        else facets[field] = value;
+        negateNext = false;
         continue;
       }
     }
+
+    if (negateNext) {
+      text.push("NOT");
+      negateNext = false;
+    }
     if (token) text.push(token);
   }
-  return { facets, text };
+  if (negateNext) text.push("NOT");
+  return { facets, excludeFacets, text };
 }
 
 export function serializeQuery(state: QueryState): string {
@@ -54,18 +77,30 @@ export function serializeQuery(state: QueryState): string {
     const value = state.facets[field.key];
     if (value) parts.push(`${field.key}:${quoteToken(value)}`);
   }
+  for (const field of FACET_FIELDS) {
+    const value = state.excludeFacets[field.key];
+    if (value) parts.push(`NOT ${field.key}:${quoteToken(value)}`);
+  }
   for (const token of state.text) {
     if (token) parts.push(quoteToken(token));
   }
   return parts.join(" ");
 }
 
-export function setFacet(query: string, key: FacetField["key"], value: string | null): string {
+export function setFacet(
+  query: string,
+  key: FacetField["key"],
+  value: string | null,
+  mode: FacetMode = "include",
+): string {
   const parsed = parseQuery(query);
+  const target = mode === "exclude" ? parsed.excludeFacets : parsed.facets;
+  const opposite = mode === "exclude" ? parsed.facets : parsed.excludeFacets;
   if (!value) {
-    delete parsed.facets[key];
+    delete target[key];
   } else {
-    parsed.facets[key] = value;
+    target[key] = value;
+    if (opposite[key] === value) delete opposite[key];
   }
   return serializeQuery(parsed);
 }

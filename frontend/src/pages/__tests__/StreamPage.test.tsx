@@ -81,6 +81,15 @@ describe("StreamPage", () => {
     await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "source:codex", meaningful: true }));
   });
 
+  it("renders exclude chips from negative facets", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "-kind:PostToolUse" });
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Make stream default/ });
+
+    expect(screen.getByRole("button", { name: "kind != PostToolUse" })).toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "-kind:PostToolUse", meaningful: true });
+  });
+
   it("refetches when meaningful-only filtering changes", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("link", { name: /Make stream default/ });

@@ -71,14 +71,14 @@ export default function SearchPage(props: SearchPageProps = {}) {
   const parsed = createMemo(() => parseQuery(submitted()));
 
   function run(next: string) {
-    setParams({ q: next });
+    setParams({ q: next.trim() || undefined });
   }
   function submit(event: SubmitEvent) {
     event.preventDefault();
     run(draft().trim());
   }
-  function applyFacet(key: FacetField["key"], value: string | null) {
-    run(setFacet(submitted(), key, value));
+  function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
+    run(setFacet(submitted(), key, value, mode));
   }
 
   const local = () => response()?.local ?? [];
@@ -208,24 +208,36 @@ export default function SearchPage(props: SearchPageProps = {}) {
               {(field) => (
                 <div class="facet-group">
                   <span class="facet-label">{field.label}</span>
-                  <Show
-                    when={parsed().facets[field.key]}
-                    fallback={
-                      <div class="facet-quick">
-                        <For each={QUICK_VALUES[field.key]}>
-                          {(value) => (
-                            <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>{value}</button>
-                          )}
-                        </For>
-                        <Show when={QUICK_VALUES[field.key].length === 0}>
-                          <span class="facet-hint">type {field.key}:…</span>
-                        </Show>
-                      </div>
-                    }
-                  >
-                    <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
-                      {parsed().facets[field.key]} ✕
-                    </button>
+                  <Show when={parsed().facets[field.key]}>
+                    {(value) => (
+                      <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
+                        {value()} ✕
+                      </button>
+                    )}
+                  </Show>
+                  <Show when={parsed().excludeFacets[field.key]}>
+                    {(value) => (
+                      <button
+                        type="button"
+                        class="facet-chip facet-chip--active facet-chip--exclude"
+                        aria-label={`${field.key} != ${value()}`}
+                        onClick={() => applyFacet(field.key, null, "exclude")}
+                      >
+                        {field.key} != {value()} x
+                      </button>
+                    )}
+                  </Show>
+                  <Show when={!parsed().facets[field.key] && !parsed().excludeFacets[field.key]}>
+                    <div class="facet-quick">
+                      <For each={QUICK_VALUES[field.key]}>
+                        {(value) => (
+                          <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>{value}</button>
+                        )}
+                      </For>
+                      <Show when={QUICK_VALUES[field.key].length === 0}>
+                        <span class="facet-hint">type {field.key}:…</span>
+                      </Show>
+                    </div>
                   </Show>
                 </div>
               )}
