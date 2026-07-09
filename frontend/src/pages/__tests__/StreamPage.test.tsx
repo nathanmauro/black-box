@@ -85,7 +85,7 @@ describe("StreamPage", () => {
     await screen.findByRole("link", { name: /Make stream default/ });
     expect(getEventFeed).toHaveBeenCalledWith({
       limit: 100,
-      q: "project:/Users/nathan/Developer/proj/sba-agentic",
+      q: "project_exact:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
   });
@@ -108,7 +108,7 @@ describe("StreamPage", () => {
     expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
-      q: "kind:Decision project:/Users/nathan/Developer/proj/sba-agentic",
+      q: "kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
   });

@@ -109,7 +109,7 @@ describe("SearchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() =>
-      expect(search).toHaveBeenLastCalledWith("kind:Decision project:/Users/nathan/Developer/proj/sba-agentic", 120),
+      expect(search).toHaveBeenLastCalledWith("kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic", 120),
     );
   });
 
@@ -132,7 +132,7 @@ describe("SearchPage", () => {
       within(element as HTMLElement).queryByText("Project"),
     ) as HTMLElement;
     expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
-    expect(search).toHaveBeenLastCalledWith("kind:Decision project:/Users/nathan/Developer/proj/sba-agentic", 120);
+    expect(search).toHaveBeenLastCalledWith("kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic", 120);
   });
 
   it("warns that Ask is not scoped by selected project", async () => {

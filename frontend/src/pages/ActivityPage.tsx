@@ -28,8 +28,11 @@ export default function ActivityPage() {
   createEffect(() => {
     if (params.project !== undefined || projects.loading || projects.error) return;
     const remembered = readRememberedProjectKey();
-    if (remembered && availableProjects().some((project) => project.projectKey === remembered)) {
+    if (!remembered) return;
+    if (availableProjects().some((project) => project.projectKey === remembered)) {
       setParams({ project: remembered });
+    } else {
+      rememberProjectKey(undefined);
     }
   });
   createEffect(() => {

@@ -49,7 +49,7 @@ export default function SearchPage(props: SearchPageProps = {}) {
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
-  const apiQuery = createMemo(() => (props.project ? setFacet(visibleSubmitted(), "project", props.project.canonicalKey) : submitted()));
+  const apiQuery = createMemo(() => (props.project ? appendExactProjectScope(visibleSubmitted(), props.project.canonicalKey) : submitted()));
   createEffect(() => setDraft(visibleSubmitted()));
   createEffect(() => {
     const visible = visibleSubmitted();
@@ -304,6 +304,14 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
 function emptySearchResponse(): SearchResponse {
   return { query: "", local: [], elastic: [], elasticHealth: {} };
+}
+
+function appendExactProjectScope(query: string, canonicalKey: string): string {
+  return [query.trim(), `project_exact:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+}
+
+function quoteHiddenFacet(value: string): string {
+  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
 function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, eventId?: string) => void }) {

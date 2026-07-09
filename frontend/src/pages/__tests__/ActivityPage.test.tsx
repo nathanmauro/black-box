@@ -230,6 +230,16 @@ describe("ActivityPage", () => {
     expect(await screen.findByRole("button", { name: /sba-agentic/ })).toBeInTheDocument();
   });
 
+  it("clears a stale remembered project when the URL has no project", async () => {
+    localStorage.setItem("blackbox.activity.projectKey", "missing-key");
+    render(() => <ActivityPage />);
+
+    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
+    await screen.findByRole("button", { name: /All projects/ });
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
+    expect(params.project).toBeUndefined();
+  });
+
   it("defers Activity Stream fetches while a URL project is unresolved", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-key" });
     apiMocks.getProjects.mockImplementation(() => new Promise(() => undefined));

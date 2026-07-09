@@ -51,7 +51,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
-  const apiQuery = createMemo(() => (props.project ? setFacet(visibleSubmitted(), "project", props.project.canonicalKey) : submitted()));
+  const apiQuery = createMemo(() => (props.project ? appendExactProjectScope(visibleSubmitted(), props.project.canonicalKey) : submitted()));
   const parsed = createMemo(() => parseQuery(visibleSubmitted()));
   const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
@@ -344,6 +344,14 @@ function dedupe(items: EventFeedItem[]): EventFeedItem[] {
     result.push(item);
   }
   return result;
+}
+
+function appendExactProjectScope(query: string, canonicalKey: string): string {
+  return [query.trim(), `project_exact:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+}
+
+function quoteHiddenFacet(value: string): string {
+  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
 function createSignalResource<TSource, TResult>(

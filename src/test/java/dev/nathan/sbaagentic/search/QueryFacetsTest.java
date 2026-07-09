@@ -34,6 +34,19 @@ class QueryFacetsTest {
     }
 
     @Test
+    void parsesInternalExactProjectFacet() {
+        QueryFacets quoted = QueryFacets.parse("project_exact:\"/tmp/app\" kind:Decision");
+        assertThat(quoted.exactCwd()).isEqualTo("/tmp/app");
+        assertThat(quoted.eventType()).isEqualTo("Decision");
+        assertThat(quoted.freeText()).isEmpty();
+        assertThat(quoted.hasAnyFacet()).isTrue();
+
+        QueryFacets noProject = QueryFacets.parse("project_exact:__no_project__");
+        assertThat(noProject.exactCwd()).isEqualTo("__no_project__");
+        assertThat(noProject.freeText()).isEmpty();
+    }
+
+    @Test
     void aliasesMapToColumns() {
         QueryFacets f = QueryFacets.parse("agent:claude event_type:Handoff tool_name:Bash cwd:proj");
         assertThat(f.source()).isEqualTo("claude");

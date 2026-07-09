@@ -12,20 +12,23 @@ import java.util.regex.Pattern;
  * filters (e.g. {@code NOT kind:PostToolUse}) even when the optional Elasticsearch index is off.
  *
  * <p>UI field aliases map to physical columns: {@code source|agent}→source, {@code kind|event_type}→
- * event_type, {@code tool|tool_name}→tool_name, {@code project|cwd}→ session cwd. Recognised facet
- * tokens are pulled out (last one wins per field); everything else becomes free-text terms with any
- * surrounding double quotes stripped. Pure — no database access.
+ * event_type, {@code tool|tool_name}→tool_name, {@code project|cwd}→ session cwd. The internal
+ * {@code project_exact|cwd_exact} facet is reserved for picker-selected project identity and matches
+ * canonical session cwd exactly. Recognised facet tokens are pulled out (last one wins per field);
+ * everything else becomes free-text terms with any surrounding double quotes stripped. Pure — no
+ * database access.
  */
 public final class QueryFacets {
 
     private static final Pattern FACET = Pattern.compile(
-            "^(source|agent|kind|event_type|tool|tool_name|project|cwd):(.+)$",
+            "^(source|agent|kind|event_type|tool|tool_name|project|cwd|project_exact|cwd_exact):(.+)$",
             Pattern.CASE_INSENSITIVE);
 
     private final String source;
     private final String eventType;
     private final String toolName;
     private final String cwd;
+    private final String exactCwd;
     private final String excludedSource;
     private final String excludedEventType;
     private final String excludedToolName;
@@ -37,6 +40,7 @@ public final class QueryFacets {
             String eventType,
             String toolName,
             String cwd,
+            String exactCwd,
             String excludedSource,
             String excludedEventType,
             String excludedToolName,
@@ -46,6 +50,7 @@ public final class QueryFacets {
         this.eventType = eventType;
         this.toolName = toolName;
         this.cwd = cwd;
+        this.exactCwd = exactCwd;
         this.excludedSource = excludedSource;
         this.excludedEventType = excludedEventType;
         this.excludedToolName = excludedToolName;
@@ -58,6 +63,7 @@ public final class QueryFacets {
         String eventType = null;
         String toolName = null;
         String cwd = null;
+        String exactCwd = null;
         String excludedSource = null;
         String excludedEventType = null;
         String excludedToolName = null;
@@ -111,6 +117,7 @@ public final class QueryFacets {
                                 cwd = value;
                             }
                         }
+                        case "project_exact", "cwd_exact" -> exactCwd = value;
                         default -> { /* unreachable: regex restricts the field set */ }
                     }
                     negateNext = false;
@@ -130,7 +137,7 @@ public final class QueryFacets {
         if (negateNext) {
             free.add("NOT");
         }
-        return new QueryFacets(source, eventType, toolName, cwd,
+        return new QueryFacets(source, eventType, toolName, cwd, exactCwd,
                 excludedSource, excludedEventType, excludedToolName, excludedCwd, free);
     }
 
@@ -172,6 +179,7 @@ public final class QueryFacets {
                 || eventType != null
                 || toolName != null
                 || cwd != null
+                || exactCwd != null
                 || excludedSource != null
                 || excludedEventType != null
                 || excludedToolName != null
@@ -192,6 +200,10 @@ public final class QueryFacets {
 
     public String cwd() {
         return cwd;
+    }
+
+    public String exactCwd() {
+        return exactCwd;
     }
 
     public String excludedSource() {

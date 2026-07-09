@@ -43,6 +43,14 @@ public class EventRepository {
             )
             """;
 
+    private static final String SESSION_CANONICAL_CWD_SQL = """
+            CASE
+              WHEN s.cwd IS NULL OR trim(s.cwd) = '' THEN '__no_project__'
+              WHEN rtrim(trim(s.cwd), '/') = '' THEN '/'
+              ELSE rtrim(trim(s.cwd), '/')
+            END
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -259,7 +267,7 @@ public class EventRepository {
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
                 .append("e.observed_at\n")
                 .append("  FROM agent_events e\n");
-        boolean joinSessions = facets.cwd() != null || facets.excludedCwd() != null;
+        boolean joinSessions = facets.cwd() != null || facets.excludedCwd() != null || facets.exactCwd() != null;
         if (joinSessions) {
             sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
         }
@@ -279,6 +287,10 @@ public class EventRepository {
         if (facets.cwd() != null) {
             sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
             args.add("%" + facets.cwd() + "%");
+        }
+        if (facets.exactCwd() != null) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
+            args.add(facets.exactCwd());
         }
         if (facets.excludedSource() != null) {
             sql.append("   AND lower(e.source) <> lower(?)\n");
@@ -340,6 +352,10 @@ public class EventRepository {
         if (facets.cwd() != null) {
             sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
             args.add("%" + facets.cwd() + "%");
+        }
+        if (facets.exactCwd() != null) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
+            args.add(facets.exactCwd());
         }
         if (facets.excludedSource() != null) {
             sql.append("   AND lower(e.source) <> lower(?)\n");
