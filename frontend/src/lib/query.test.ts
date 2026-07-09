@@ -33,6 +33,14 @@ describe("parseQuery", () => {
       text: ["recall"],
     });
   });
+
+  it("preserves dangling NOT before text", () => {
+    expect(parseQuery("NOT recall bug")).toEqual({
+      facets: {},
+      excludeFacets: {},
+      text: ["NOT", "recall", "bug"],
+    });
+  });
 });
 
 describe("serializeQuery", () => {
@@ -56,5 +64,10 @@ describe("setFacet", () => {
   it("removes include and exclude facets independently", () => {
     expect(setFacet("source:codex NOT kind:PostToolUse", "kind", null, "exclude")).toBe("source:codex");
     expect(setFacet("source:codex NOT kind:PostToolUse", "source", null)).toBe("NOT kind:PostToolUse");
+  });
+
+  it("clears the same value from the opposite mode when setting facets", () => {
+    expect(setFacet("NOT source:codex", "source", "codex")).toBe("source:codex");
+    expect(setFacet("source:codex", "source", "codex", "exclude")).toBe("NOT source:codex");
   });
 });

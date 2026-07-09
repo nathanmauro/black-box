@@ -330,11 +330,15 @@ function filterSessions<T extends { source: string; title?: string | null; clien
   const parsed = parseQuery(query);
   const sourceFacet = parsed.facets.source?.toLowerCase();
   const projectFacet = parsed.facets.project?.toLowerCase();
+  const excludedSourceFacet = parsed.excludeFacets.source?.toLowerCase();
+  const excludedProjectFacet = parsed.excludeFacets.project?.toLowerCase();
   const textTerms = parsed.text.map((term) => term.toLowerCase());
 
   return sessions.filter((session) => {
-    if (sourceFacet && !session.source.toLowerCase().includes(sourceFacet)) return false;
+    if (sourceFacet && !normalizeSessionText(session.source).includes(sourceFacet)) return false;
+    if (excludedSourceFacet && normalizeSessionText(session.source).includes(excludedSourceFacet)) return false;
     if (projectFacet && !normalizeSessionText(session.cwd).includes(projectFacet)) return false;
+    if (excludedProjectFacet && normalizeSessionText(session.cwd).includes(excludedProjectFacet)) return false;
 
     if (!textTerms.length) return true;
     const haystack = [

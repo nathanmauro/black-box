@@ -132,6 +132,22 @@ describe("SessionsPage", () => {
     expect(await within(rail).findByText("Cockpit cleanup")).toBeInTheDocument();
   });
 
+  it("applies negative source and project facets to the session rail", async () => {
+    render(() => <SessionsPage />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "-source:codex" } });
+    await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
+    expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "NOT project:cockpit" } });
+    await waitFor(() => expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument());
+    expect(within(rail).getByText("Focused session")).toBeInTheDocument();
+  });
+
   it("defaults to a prompt-focused reader with memory events opt-in and tools hidden", async () => {
     render(() => <SessionsPage />);
 
