@@ -107,6 +107,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...actual,
+    getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
   };
 });
@@ -179,5 +180,34 @@ describe("SessionsPage", () => {
     expect(await screen.findByText("Use the calmer session layout")).toBeInTheDocument();
     expect(screen.getByText("Reader should keep memory cards behind a layer toggle.")).toBeInTheDocument();
     expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+  });
+
+  it("uses a flat session rail scoped to the selected project", async () => {
+    render(() => (
+      <SessionsPage
+        project={{
+          projectKey: "sba-key",
+          canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+          label: "~/Developer/proj/sba-agentic",
+          sessionCount: 1,
+          eventCount: 4,
+          savedMeldCount: 0,
+        }}
+        defaultToFirst
+      />
+    ));
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
+    expect(rail.querySelector(".session-group")).not.toBeInTheDocument();
+  });
+
+  it("reveals and highlights a target event", async () => {
+    render(() => <SessionsPage selectedSessionId="session-1" targetEventId="evt-decision" />);
+
+    const target = await screen.findByText("Use the calmer session layout");
+    const row = target.closest(".event-flow-row");
+    expect(row).toHaveClass("event-flow-row--target");
   });
 });

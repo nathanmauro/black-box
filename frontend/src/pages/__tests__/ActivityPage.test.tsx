@@ -198,6 +198,18 @@ describe("ActivityPage", () => {
       q: "focused",
       view: "find",
     });
+    apiMocks.getSessionEvents.mockResolvedValue([
+      {
+        id: "event-frontend-build",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "UserPromptSubmit",
+        role: "user",
+        text: "Open the focused session from search.",
+        observedAt: "2026-06-22T20:04:00Z",
+      },
+    ]);
     render(() => <ActivityPage />);
 
     expect(await screen.findByLabelText("Search query")).toBeInTheDocument();

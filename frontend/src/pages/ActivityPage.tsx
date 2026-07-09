@@ -108,7 +108,13 @@ export default function ActivityPage() {
       <div class="activity-workspace">
         <Switch>
           <Match when={mode() === "browse"}>
-            <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
+            <SessionsPage
+              selectedSessionId={params.session}
+              targetEventId={params.event}
+              project={selectedProject()}
+              defaultToFirst
+              onSelectSession={selectSession}
+            />
           </Match>
           <Match when={mode() === "find" || mode() === "ask"}>
             <SearchPage
