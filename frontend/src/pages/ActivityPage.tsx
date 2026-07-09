@@ -20,13 +20,15 @@ export default function ActivityPage() {
   const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string; project?: string; event?: string }>();
   const [mode, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
   const [projects] = createResource(getProjects, { initialValue: [] });
-  const selectedProject = createMemo(() => projects().find((project) => project.projectKey === params.project));
+  const availableProjects = createMemo(() => (projects.error ? [] : projects()));
+  const selectedProject = createMemo(() => availableProjects().find((project) => project.projectKey === params.project));
+  const projectScopePending = createMemo(() => Boolean(params.project) && !selectedProject());
 
   createEffect(() => setModeSignal(modeFromParams(params)));
   createEffect(() => {
-    if (params.project !== undefined || projects.loading) return;
+    if (params.project !== undefined || projects.loading || projects.error) return;
     const remembered = readRememberedProjectKey();
-    if (remembered && projects().some((project) => project.projectKey === remembered)) {
+    if (remembered && availableProjects().some((project) => project.projectKey === remembered)) {
       setParams({ project: remembered });
     }
   });
@@ -66,9 +68,10 @@ export default function ActivityPage() {
         </div>
 
         <ProjectPicker
-          projects={projects()}
+          projects={availableProjects()}
           selectedProjectKey={params.project}
           loading={projects.loading}
+          error={projects.error ? "Unable to load projects." : null}
           onSelect={selectProject}
         />
 
@@ -97,10 +100,16 @@ export default function ActivityPage() {
             <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
           </Match>
           <Match when={mode() === "find" || mode() === "ask"}>
-            <SearchPage mode={mode() as SearchMode} showModeTabs={false} project={selectedProject()} onSelectSession={openSearchResult} />
+            <SearchPage
+              mode={mode() as SearchMode}
+              showModeTabs={false}
+              project={selectedProject()}
+              projectScopePending={projectScopePending()}
+              onSelectSession={openSearchResult}
+            />
           </Match>
           <Match when={mode() === "stream"}>
-            <StreamPage project={selectedProject()} />
+            <StreamPage project={selectedProject()} projectScopePending={projectScopePending()} />
           </Match>
         </Switch>
       </div>

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import { ErrorBoundary } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../lib/api";
@@ -35,6 +36,14 @@ const sessions: AgentSession[] = [
 ];
 
 const navigate = vi.fn();
+const apiMocks = vi.hoisted(() => ({
+  askStatus: vi.fn(),
+  getSessionEvents: vi.fn(),
+  getEventFeed: vi.fn(),
+  getProjects: vi.fn(),
+  search: vi.fn(),
+  searchValues: vi.fn(),
+}));
 
 vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
@@ -62,58 +71,12 @@ vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
   return {
     ...actual,
-    askStatus: vi.fn(async () => ({
-      chat: { enabled: true, available: true },
-      elasticsearch: { enabled: true, available: true },
-    })),
-    getSessionEvents: vi.fn(async () => []),
-    getEventFeed: vi.fn(async () => ({
-      limit: 100,
-      count: 0,
-      items: [],
-      nextBefore: null,
-    })),
-    getProjects: vi.fn(async () => [
-      {
-        projectKey: "sba-key",
-        canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
-        label: "~/Developer/proj/sba-agentic",
-        sessionCount: 1,
-        eventCount: 4,
-        savedMeldCount: 0,
-        lastSeenAt: "2026-06-22T20:10:00Z",
-      },
-      {
-        projectKey: "cockpit-key",
-        canonicalKey: "/Users/nathan/Developer/proj/cockpit",
-        label: "~/Developer/proj/cockpit",
-        sessionCount: 1,
-        eventCount: 8,
-        savedMeldCount: 0,
-        lastSeenAt: "2026-06-22T19:20:00Z",
-      },
-    ]),
-    search: vi.fn(async (query: string) => ({
-      query,
-      local: query
-        ? [
-            {
-              id: "event-frontend-build",
-              sessionId: "session-1",
-              source: "codex",
-              clientSessionId: "client-1",
-              eventType: "UserPromptSubmit",
-              role: "user",
-              text: "Open the focused session from search.",
-              cwd: "/Users/nathan/Developer/proj/sba-agentic",
-              observedAt: "2026-06-22T20:04:00Z",
-            },
-          ]
-        : [],
-      elastic: [],
-      elasticHealth: {},
-    })),
-    searchValues: vi.fn(async () => []),
+    askStatus: apiMocks.askStatus,
+    getSessionEvents: apiMocks.getSessionEvents,
+    getEventFeed: apiMocks.getEventFeed,
+    getProjects: apiMocks.getProjects,
+    search: apiMocks.search,
+    searchValues: apiMocks.searchValues,
   };
 });
 
@@ -133,6 +96,64 @@ beforeEach(() => {
   [params, setParams] = createStore<ActivitySearchParams>({});
   localStorage.clear();
   navigate.mockReset();
+  apiMocks.askStatus.mockReset();
+  apiMocks.askStatus.mockResolvedValue({
+    chat: { enabled: true, available: true },
+    elasticsearch: { enabled: true, available: true },
+  });
+  apiMocks.getSessionEvents.mockReset();
+  apiMocks.getSessionEvents.mockResolvedValue([]);
+  apiMocks.getEventFeed.mockReset();
+  apiMocks.getEventFeed.mockResolvedValue({
+    limit: 100,
+    count: 0,
+    items: [],
+    nextBefore: null,
+  });
+  apiMocks.getProjects.mockReset();
+  apiMocks.getProjects.mockResolvedValue([
+    {
+      projectKey: "sba-key",
+      canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+      label: "~/Developer/proj/sba-agentic",
+      sessionCount: 1,
+      eventCount: 4,
+      savedMeldCount: 0,
+      lastSeenAt: "2026-06-22T20:10:00Z",
+    },
+    {
+      projectKey: "cockpit-key",
+      canonicalKey: "/Users/nathan/Developer/proj/cockpit",
+      label: "~/Developer/proj/cockpit",
+      sessionCount: 1,
+      eventCount: 8,
+      savedMeldCount: 0,
+      lastSeenAt: "2026-06-22T19:20:00Z",
+    },
+  ]);
+  apiMocks.search.mockReset();
+  apiMocks.search.mockImplementation(async (query: string) => ({
+    query,
+    local: query
+      ? [
+          {
+            id: "event-frontend-build",
+            sessionId: "session-1",
+            source: "codex",
+            clientSessionId: "client-1",
+            eventType: "UserPromptSubmit",
+            role: "user",
+            text: "Open the focused session from search.",
+            cwd: "/Users/nathan/Developer/proj/sba-agentic",
+            observedAt: "2026-06-22T20:04:00Z",
+          },
+        ]
+      : [],
+    elastic: [],
+    elasticHealth: {},
+  }));
+  apiMocks.searchValues.mockReset();
+  apiMocks.searchValues.mockResolvedValue([]);
 });
 
 describe("ActivityPage", () => {
@@ -207,5 +228,43 @@ describe("ActivityPage", () => {
     render(() => <ActivityPage />);
 
     expect(await screen.findByRole("button", { name: /sba-agentic/ })).toBeInTheDocument();
+  });
+
+  it("defers Activity Stream fetches while a URL project is unresolved", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-key" });
+    apiMocks.getProjects.mockImplementation(() => new Promise(() => undefined));
+
+    render(() => <ActivityPage />);
+
+    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
+    expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
+  });
+
+  it("defers Activity Find searches while a URL project is unresolved", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({
+      project: "sba-key",
+      q: "kind:Decision",
+      view: "find",
+    });
+    apiMocks.getProjects.mockImplementation(() => new Promise(() => undefined));
+
+    render(() => <ActivityPage />);
+
+    expect(await screen.findByLabelText("Search query")).toBeInTheDocument();
+    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
+    expect(apiMocks.search).not.toHaveBeenCalled();
+  });
+
+  it("shows a project picker error when project loading fails", async () => {
+    apiMocks.getProjects.mockRejectedValue(new Error("Project load failed."));
+    render(() => (
+      <ErrorBoundary fallback={<p>Project resource crashed.</p>}>
+        <ActivityPage />
+      </ErrorBoundary>
+    ));
+
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+
+    expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
   });
 });

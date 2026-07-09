@@ -29,6 +29,7 @@ type SearchPageProps = {
   mode?: SearchMode;
   showModeTabs?: boolean;
   project?: ProjectSummary | null;
+  projectScopePending?: boolean;
   onSelectSession?: (id: string, eventId?: string) => void;
   params?: unknown;
   location?: unknown;
@@ -47,8 +48,15 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
-  const apiQuery = createMemo(() => (props.project ? setFacet(submitted(), "project", props.project.canonicalKey) : submitted()));
-  createEffect(() => setDraft(params.q ?? ""));
+  const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
+  const apiQuery = createMemo(() => (props.project ? setFacet(visibleSubmitted(), "project", props.project.canonicalKey) : submitted()));
+  createEffect(() => setDraft(visibleSubmitted()));
+  createEffect(() => {
+    const visible = visibleSubmitted();
+    if (props.project && visible !== submitted()) {
+      setParams({ q: visible || undefined });
+    }
+  });
   createEffect(() => {
     if (props.mode) setInternalMode(props.mode);
   });
@@ -56,9 +64,13 @@ export default function SearchPage(props: SearchPageProps = {}) {
   const setMode = (next: SearchMode) => setInternalMode(next);
   const showModeTabs = () => props.showModeTabs !== false;
 
-  const searchRequest = createMemo(() => ({ submitted: submitted(), api: apiQuery() }));
-  const [response] = createResource<SearchResponse, { submitted: string; api: string }>(searchRequest, async (request) =>
-    request.submitted.trim() ? search(request.api, 120) : { query: "", local: [], elastic: [], elasticHealth: {} },
+  const searchRequest = createMemo(() => ({
+    submitted: visibleSubmitted(),
+    api: apiQuery(),
+    projectScopePending: props.projectScopePending === true,
+  }));
+  const [response] = createResource<SearchResponse, { submitted: string; api: string; projectScopePending: boolean }>(searchRequest, async (request) =>
+    !request.projectScopePending && request.submitted.trim() ? search(request.api, 120) : emptySearchResponse(),
   );
 
   // Ask mode is offered only when the backend reports the dependency is reachable.
@@ -71,7 +83,7 @@ export default function SearchPage(props: SearchPageProps = {}) {
     }
   });
 
-  const parsed = createMemo(() => parseQuery(submitted()));
+  const parsed = createMemo(() => parseQuery(visibleSubmitted()));
 
   function run(next: string) {
     setParams({ q: next.trim() || undefined });
@@ -81,7 +93,7 @@ export default function SearchPage(props: SearchPageProps = {}) {
     run(draft().trim());
   }
   function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
-    run(setFacet(submitted(), key, value, mode));
+    run(setFacet(visibleSubmitted(), key, value, mode));
   }
 
   const local = () => response()?.local ?? [];
@@ -254,38 +266,44 @@ export default function SearchPage(props: SearchPageProps = {}) {
       </div>
 
       <Show when={mode() === "find"}>
-        <Show
-          when={submitted().trim()}
-          fallback={<p class="empty-state">Search the recorded memory — try <code>source:codex kind:Decision</code> or a phrase.</p>}
-        >
-          <Show when={!response.loading} fallback={<p class="empty-state">Searching…</p>}>
-            <p class="result-summary">
-              {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()} sessions
-              <Show when={response()?.elasticHealth?.available}> · elastic</Show>
-            </p>
+        <Show when={!props.projectScopePending} fallback={<p class="empty-state">Resolving project scope…</p>}>
+          <Show
+            when={visibleSubmitted().trim()}
+            fallback={<p class="empty-state">Search the recorded memory — try <code>source:codex kind:Decision</code> or a phrase.</p>}
+          >
+            <Show when={!response.loading} fallback={<p class="empty-state">Searching…</p>}>
+              <p class="result-summary">
+                {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()} sessions
+                <Show when={response()?.elasticHealth?.available}> · elastic</Show>
+              </p>
 
-            <Show when={structured().length}>
-              <div class="result-group">
-                <h2 class="result-group-title">Decisions &amp; handoffs</h2>
-                <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
-              </div>
-            </Show>
+              <Show when={structured().length}>
+                <div class="result-group">
+                  <h2 class="result-group-title">Decisions &amp; handoffs</h2>
+                  <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                </div>
+              </Show>
 
-            <Show when={others().length}>
-              <div class="result-group">
-                <h2 class="result-group-title">Events</h2>
-                <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
-              </div>
-            </Show>
+              <Show when={others().length}>
+                <div class="result-group">
+                  <h2 class="result-group-title">Events</h2>
+                  <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                </div>
+              </Show>
 
-            <Show when={!filtered().length}>
-              <p class="empty-state">No results. Remove a facet or turn off “meaningful events only”.</p>
+              <Show when={!filtered().length}>
+                <p class="empty-state">No results. Remove a facet or turn off “meaningful events only”.</p>
+              </Show>
             </Show>
           </Show>
         </Show>
       </Show>
     </section>
   );
+}
+
+function emptySearchResponse(): SearchResponse {
+  return { query: "", local: [], elastic: [], elasticHealth: {} };
 }
 
 function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, eventId?: string) => void }) {

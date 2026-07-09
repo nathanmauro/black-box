@@ -113,6 +113,28 @@ describe("SearchPage", () => {
     );
   });
 
+  it("does not search globally while project scope is pending", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+
+    render(() => <SearchPage projectScopePending />);
+
+    await Promise.resolve();
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("removes visible positive project facets before applying hidden project scope", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+
+    render(() => <SearchPage project={selectedProject} />);
+
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    const projectGroup = Array.from(document.querySelectorAll(".facet-group")).find((element) =>
+      within(element as HTMLElement).queryByText("Project"),
+    ) as HTMLElement;
+    expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
+    expect(search).toHaveBeenLastCalledWith("kind:Decision project:/Users/nathan/Developer/proj/sba-agentic", 120);
+  });
+
   it("warns that Ask is not scoped by selected project", async () => {
     mocks.askStatus.mockResolvedValue({
       chat: { enabled: true, available: true },

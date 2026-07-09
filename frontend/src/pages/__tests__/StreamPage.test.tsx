@@ -90,6 +90,29 @@ describe("StreamPage", () => {
     });
   });
 
+  it("does not fetch globally while project scope is pending", async () => {
+    render(() => <StreamPage projectScopePending />);
+
+    await Promise.resolve();
+    expect(getEventFeed).not.toHaveBeenCalled();
+  });
+
+  it("removes visible positive project facets before applying hidden project scope", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    const projectGroup = Array.from(document.querySelectorAll(".facet-group")).find((element) =>
+      within(element as HTMLElement).queryByText("Project"),
+    ) as HTMLElement;
+    expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "kind:Decision project:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
+  });
+
   it("uses facet chips to narrow the URL query", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("link", { name: /Make stream default/ });

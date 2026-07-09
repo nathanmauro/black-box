@@ -25,6 +25,7 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
 
 type StreamPageProps = {
   project?: ProjectSummary | null;
+  projectScopePending?: boolean;
 };
 
 export default function StreamPage(props: StreamPageProps = {}) {
@@ -49,15 +50,34 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   const submitted = () => params.q ?? "";
-  const apiQuery = createMemo(() => (props.project ? setFacet(submitted(), "project", props.project.canonicalKey) : submitted()));
-  const parsed = createMemo(() => parseQuery(submitted()));
+  const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
+  const apiQuery = createMemo(() => (props.project ? setFacet(visibleSubmitted(), "project", props.project.canonicalKey) : submitted()));
+  const parsed = createMemo(() => parseQuery(visibleSubmitted()));
   const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
   const canLoadMore = createMemo(() => Boolean(nextBefore()) && items().length < MAX_ROWS);
 
-  createEffect(() => setDraft(params.q ?? ""));
+  createEffect(() => setDraft(visibleSubmitted()));
 
   createEffect(() => {
+    const visible = visibleSubmitted();
+    if (props.project && visible !== submitted()) {
+      setParams({ q: visible || undefined });
+    }
+  });
+
+  createEffect(() => {
+    if (props.projectScopePending) {
+      loadToken += 1;
+      setLoading(true);
+      setError(null);
+      setItems([]);
+      setPendingItems([]);
+      setNewCount(0);
+      setNextBefore(null);
+      setExpandedId(null);
+      return;
+    }
     const q = apiQuery();
     const meaningful = meaningfulOnly();
     const token = ++loadToken;
@@ -122,7 +142,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
-    run(setFacet(submitted(), key, value, mode));
+    run(setFacet(visibleSubmitted(), key, value, mode));
   }
 
   function dismissSuggestions() {
@@ -145,7 +165,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   async function loadMore() {
     const before = nextBefore();
-    if (!before || loadingMore() || items().length >= MAX_ROWS) return;
+    if (props.projectScopePending || !before || loadingMore() || items().length >= MAX_ROWS) return;
     setLoadingMore(true);
     setError(null);
     try {
@@ -160,7 +180,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   async function refetchHead(since: string | undefined) {
-    if (!since) return;
+    if (props.projectScopePending || !since) return;
     try {
       const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), since });
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
