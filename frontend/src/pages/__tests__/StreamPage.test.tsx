@@ -160,6 +160,31 @@ describe("StreamPage", () => {
     });
   });
 
+  it("ignores stale load-more responses after the stream query changes", async () => {
+    const stalePage = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockReturnValueOnce(stalePage.promise)
+      .mockResolvedValueOnce(feed([eventItem("event-scoped", "New scope row")]));
+
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Original scope row/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+
+    setParams({ q: "kind:Decision" });
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
+    );
+    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
+
+    stalePage.resolve(feed([eventItem("event-stale", "Stale old scope row")]));
+    await Promise.resolve();
+
+    await waitFor(() => expect(screen.queryByRole("link", { name: /Stale old scope row/ })).not.toBeInTheDocument());
+  });
+
   it("uses pending live rows for head refetch and new-count dedupe", async () => {
     const old = eventItem("event-old", "Existing row");
     const a = eventItem("event-a", "Pending row A", "2026-07-01T12:01:00Z");
@@ -210,6 +235,14 @@ function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFe
     items,
     nextBefore,
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 function eventItem(id: string, text: string, observedAt?: string): EventFeedItem {

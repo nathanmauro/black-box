@@ -75,6 +75,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
       setPendingItems([]);
       setNewCount(0);
       setNextBefore(null);
+      setLoadingMore(false);
       setExpandedId(null);
       return;
     }
@@ -82,6 +83,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     const meaningful = meaningfulOnly();
     const token = ++loadToken;
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
     getEventFeed({ limit: FEED_LIMIT, q, meaningful })
       .then((response) => {
@@ -166,23 +168,28 @@ export default function StreamPage(props: StreamPageProps = {}) {
   async function loadMore() {
     const before = nextBefore();
     if (props.projectScopePending || !before || loadingMore() || items().length >= MAX_ROWS) return;
+    const token = loadToken;
     setLoadingMore(true);
     setError(null);
     try {
       const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), before });
+      if (!isCurrentStreamRequest(token)) return;
       setItems((current) => dedupe([...current, ...response.items]).slice(0, MAX_ROWS));
       setNextBefore(items().length >= MAX_ROWS ? null : response.nextBefore ?? null);
     } catch (cause) {
+      if (!isCurrentStreamRequest(token)) return;
       setError(cause instanceof Error ? cause.message : "Unable to load more events.");
     } finally {
-      setLoadingMore(false);
+      if (isCurrentStreamRequest(token)) setLoadingMore(false);
     }
   }
 
   async function refetchHead(since: string | undefined) {
     if (props.projectScopePending || !since) return;
+    const token = loadToken;
     try {
       const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), since });
+      if (!isCurrentStreamRequest(token)) return;
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
       if (!fresh.length) return;
@@ -198,6 +205,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
     } catch {
       // Live refetch is opportunistic; the normal feed error state remains tied to explicit loads.
     }
+  }
+
+  function isCurrentStreamRequest(token: number) {
+    return token === loadToken && !props.projectScopePending;
   }
 
   function nearTop() {
