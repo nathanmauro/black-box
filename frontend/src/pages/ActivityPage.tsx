@@ -33,6 +33,9 @@ export default function ActivityPage() {
       setParams({ project: remembered, session: undefined, event: undefined });
     } else {
       rememberProjectKey(undefined);
+      if (params.session || params.event) {
+        setParams({ session: undefined, event: undefined });
+      }
     }
   });
   createEffect(() => {

@@ -235,6 +235,7 @@ describe("ActivityPage", () => {
   });
 
   it("clears a stale remembered project when the URL has no project", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ session: "session-2", event: "event-old" });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
     render(() => <ActivityPage />);
 
@@ -242,6 +243,8 @@ describe("ActivityPage", () => {
     await screen.findByRole("button", { name: /All projects/ });
     expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
     expect(params.project).toBeUndefined();
+    expect(params.session).toBeUndefined();
+    expect(params.event).toBeUndefined();
   });
 
   it("defers Activity Stream fetches while a URL project is unresolved", async () => {
