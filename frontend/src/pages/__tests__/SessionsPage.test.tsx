@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { createSignal } from "solid-js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getProjectSessions, getSessionEvents, getSessions } from "../../lib/api";
 import type { AgentEvent, AgentSession } from "../../lib/api";
-import { createSessionsResource } from "../../lib/stores";
+import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
 const navigate = vi.fn();
@@ -119,6 +120,21 @@ vi.mock("../../lib/api", async (importOriginal) => {
   };
 });
 
+beforeEach(() => {
+  navigate.mockReset();
+  vi.mocked(createSessionsResource).mockClear();
+  vi.mocked(getSessions).mockReset();
+  vi.mocked(getSessions).mockResolvedValue(sessions);
+  vi.mocked(getProjectSessions).mockReset();
+  vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
+  vi.mocked(getSessionEvents).mockReset();
+  vi.mocked(getSessionEvents).mockResolvedValue(events);
+  vi.mocked(sourceFilter.key).mockReset();
+  vi.mocked(sourceFilter.key).mockReturnValue("");
+  vi.mocked(sourceFilter.matches).mockReset();
+  vi.mocked(sourceFilter.matches).mockImplementation(<T extends { source: string }>(items: T[]) => items);
+});
+
 describe("SessionsPage", () => {
   it("filters the session rail by text, project, and source facets", async () => {
     render(() => <SessionsPage />);
@@ -190,10 +206,6 @@ describe("SessionsPage", () => {
   });
 
   it("uses a flat session rail scoped to the selected project", async () => {
-    vi.mocked(createSessionsResource).mockClear();
-    vi.mocked(getSessions).mockClear();
-    vi.mocked(getProjectSessions).mockClear();
-
     render(() => (
       <SessionsPage
         project={{
@@ -217,10 +229,68 @@ describe("SessionsPage", () => {
     expect(getSessions).not.toHaveBeenCalled();
   });
 
-  it("falls back from a stale selected session to the first project-scoped session", async () => {
-    vi.mocked(getProjectSessions).mockClear();
+  it("clears previous project sessions while the next project is loading", async () => {
+    const [project, setProject] = createSignal({
+      projectKey: "project-a",
+      canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+      label: "~/Developer/proj/sba-agentic",
+      sessionCount: 1,
+      eventCount: 4,
+      savedMeldCount: 0,
+    });
+    vi.mocked(getProjectSessions).mockImplementation((projectKey: string) => {
+      if (projectKey === "project-a") return Promise.resolve([sessions[0]]);
+      return new Promise<AgentSession[]>(() => undefined);
+    });
+
+    render(() => <SessionsPage project={project()} defaultToFirst />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    await waitFor(() => expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000));
     vi.mocked(getSessionEvents).mockClear();
 
+    setProject({
+      projectKey: "project-b",
+      canonicalKey: "/Users/nathan/Developer/proj/cockpit",
+      label: "~/Developer/proj/cockpit",
+      sessionCount: 1,
+      eventCount: 8,
+      savedMeldCount: 0,
+    });
+
+    await waitFor(() => expect(getProjectSessions).toHaveBeenCalledWith("project-b", 2_000));
+    expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument();
+    expect(getSessionEvents).not.toHaveBeenCalled();
+  });
+
+  it("applies source filtering to project-scoped sessions", async () => {
+    vi.mocked(getProjectSessions).mockResolvedValue(sessions);
+    vi.mocked(sourceFilter.matches).mockImplementation(<T extends { source: string }>(items: T[]) =>
+      items.filter((item) => item.source === "codex"),
+    );
+
+    render(() => (
+      <SessionsPage
+        project={{
+          projectKey: "sba-key",
+          canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+          label: "~/Developer/proj/sba-agentic",
+          sessionCount: 2,
+          eventCount: 12,
+          savedMeldCount: 0,
+        }}
+        defaultToFirst
+      />
+    ));
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    await waitFor(() => expect(sourceFilter.matches).toHaveBeenCalledWith(sessions));
+    expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
+  });
+
+  it("falls back from a stale selected session to the first project-scoped session", async () => {
     render(() => (
       <SessionsPage
         selectedSessionId="session-2"

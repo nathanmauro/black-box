@@ -25,12 +25,16 @@ type PromptTurn = {
   events: AgentEvent[];
 };
 
+type ProjectSessionResult = {
+  projectKey: string;
+  sessions: AgentSession[];
+};
+
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
   const [sessionFilter, setSessionFilter] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
-  const [highlightedEventId, setHighlightedEventId] = createSignal<string | null>(null);
   const [allSessions] = createResource(
     () => (props.project ? null : sourceFilter.key()),
     async () => sourceFilter.matches(await getSessions(2_000)),
@@ -38,10 +42,17 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   );
   const [projectSessions] = createResource(
     () => props.project?.projectKey,
-    async (projectKey) => (projectKey ? getProjectSessions(projectKey, 2_000) : []),
-    { initialValue: [] as AgentSession[] },
+    async (projectKey): Promise<ProjectSessionResult | null> =>
+      projectKey ? { projectKey, sessions: await getProjectSessions(projectKey, 2_000) } : null,
+    { initialValue: null as ProjectSessionResult | null },
   );
-  const sessions = createMemo(() => (props.project ? projectSessions() : allSessions()));
+  const scopedProjectSessions = createMemo(() => {
+    const projectKey = props.project?.projectKey;
+    const result = projectSessions();
+    if (!projectKey || result?.projectKey !== projectKey) return [];
+    return sourceFilter.matches(result.sessions);
+  });
+  const sessions = createMemo(() => (props.project ? scopedProjectSessions() : allSessions()));
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
   const selectedId = createMemo(() => {
     const scopedSessions = filteredSessions();
@@ -74,8 +85,6 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     queueMicrotask(() => {
       const element = document.getElementById(`event-${targetId}`);
       element?.scrollIntoView?.({ block: "center" });
-      setHighlightedEventId(targetId);
-      window.setTimeout(() => setHighlightedEventId((current) => (current === targetId ? null : current)), 2200);
     });
   });
 
@@ -198,7 +207,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                                 id={`event-${event.id}`}
                                 classList={{
                                   "event-flow-row": true,
-                                  "event-flow-row--target": highlightedEventId() === event.id || props.targetEventId === event.id,
+                                  "event-flow-row--target": props.targetEventId === event.id,
                                 }}
                               >
                                 <EventRenderer event={event} />
