@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  getProjectSessions,
   getProjectTimeline,
   getRecall,
   previewProjectMeld,
@@ -9,6 +10,7 @@ import {
   type ProjectSavedMeld,
   type ProjectTimelineResponse,
   type RecallResult,
+  type AgentSession,
 } from "./api";
 
 function stubJson<T>(payload: T) {
@@ -62,6 +64,18 @@ describe("Phase 2 API helpers", () => {
     expect(url.pathname).toBe("/api/projects/proj%2Fkey/timeline");
     expect(url.searchParams.get("limit")).toBe("125");
     expect(url.searchParams.get("offset")).toBe("25");
+  });
+
+  it("passes limit to the project sessions endpoint", async () => {
+    const payload: AgentSession[] = [];
+    const fetchMock = stubJson(payload);
+
+    await expect(getProjectSessions("proj/key", 2_000)).resolves.toEqual(payload);
+
+    const requestPath = String(fetchMock.mock.calls[0]?.[0]);
+    const url = new URL(requestPath, "http://blackbox.test");
+    expect(url.pathname).toBe("/api/projects/proj%2Fkey/sessions");
+    expect(url.searchParams.get("limit")).toBe("2000");
   });
 
   it("posts selected session ids to the project meld preview endpoint", async () => {

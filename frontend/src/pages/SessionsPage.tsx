@@ -38,13 +38,18 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   );
   const [projectSessions] = createResource(
     () => props.project?.projectKey,
-    async (projectKey) => (projectKey ? getProjectSessions(projectKey) : []),
+    async (projectKey) => (projectKey ? getProjectSessions(projectKey, 2_000) : []),
     { initialValue: [] as AgentSession[] },
   );
   const sessions = createMemo(() => (props.project ? projectSessions() : allSessions()));
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
-  const selectedId = () => props.selectedSessionId || params.sessionId || (props.defaultToFirst ? filteredSessions()[0]?.id ?? "" : "");
-  const selectedSession = createMemo(() => sessions().find((session) => session.id === selectedId()));
+  const selectedId = createMemo(() => {
+    const scopedSessions = filteredSessions();
+    const requestedId = props.selectedSessionId || params.sessionId || "";
+    if (requestedId && scopedSessions.some((session) => session.id === requestedId)) return requestedId;
+    return props.defaultToFirst ? scopedSessions[0]?.id ?? "" : "";
+  });
+  const selectedSession = createMemo(() => filteredSessions().find((session) => session.id === selectedId()));
   const [events] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
     initialValue: [] as AgentEvent[],
   });

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { getProjectSessions, getSessions } from "../../lib/api";
+import { getProjectSessions, getSessionEvents, getSessions } from "../../lib/api";
 import type { AgentEvent, AgentSession } from "../../lib/api";
 import { createSessionsResource } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
@@ -212,9 +212,34 @@ describe("SessionsPage", () => {
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
     expect(rail.querySelector(".session-group")).not.toBeInTheDocument();
-    expect(getProjectSessions).toHaveBeenCalledWith("sba-key");
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 2_000);
     expect(createSessionsResource).not.toHaveBeenCalled();
     expect(getSessions).not.toHaveBeenCalled();
+  });
+
+  it("falls back from a stale selected session to the first project-scoped session", async () => {
+    vi.mocked(getProjectSessions).mockClear();
+    vi.mocked(getSessionEvents).mockClear();
+
+    render(() => (
+      <SessionsPage
+        selectedSessionId="session-2"
+        project={{
+          projectKey: "sba-key",
+          canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+          label: "~/Developer/proj/sba-agentic",
+          sessionCount: 1,
+          eventCount: 4,
+          savedMeldCount: 0,
+        }}
+        defaultToFirst
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 2_000);
+    await waitFor(() => expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000));
+    expect(getSessionEvents).not.toHaveBeenCalledWith("session-2", expect.anything());
   });
 
   it("reveals and highlights a target event", async () => {
