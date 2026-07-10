@@ -31,6 +31,7 @@ import static org.hamcrest.Matchers.is;
 @SpringBootTest(properties = {
         "spring.datasource.url=jdbc:sqlite:file:agentic-controller-test?mode=memory&cache=shared",
         "sba.local-ai.enabled=false",
+        "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",
         "sba.ask.embedding-enabled=false",
         "sba.exports.targets[0].id=obsidian",
