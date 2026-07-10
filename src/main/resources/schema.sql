@@ -63,3 +63,50 @@ CREATE TABLE IF NOT EXISTS session_meld_inputs (
     metadata_json TEXT,
     PRIMARY KEY (meld_id, session_id)
 );
+
+CREATE TABLE IF NOT EXISTS specs (
+    id TEXT PRIMARY KEY,
+    project_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    spec_ref TEXT,
+    status TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    spec_id TEXT NOT NULL,
+    project_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    lane TEXT NOT NULL,
+    status TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT NOT NULL,
+    claimed_by TEXT,
+    blocked_reason TEXT,
+    result_handoff_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (spec_id) REFERENCES specs(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_claimable
+    ON tasks (lane, status, priority DESC, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS task_events (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT,
+    detail_json TEXT,
+    observed_at TEXT NOT NULL,
+    FOREIGN KEY (task_id) REFERENCES tasks(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_events_task
+    ON task_events (task_id, observed_at DESC);
