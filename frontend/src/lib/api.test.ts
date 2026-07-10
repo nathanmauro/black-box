@@ -20,6 +20,8 @@ import {
   type RecallResult,
   type AgentSession,
   type TaskChange,
+  type CompleteTaskRequest,
+  type UpdateTaskStatusRequest,
 } from "./api";
 
 function stubJson<T>(payload: T) {
@@ -281,5 +283,12 @@ describe("task API helpers", () => {
       "PATCH",
       "POST",
     ]);
+  });
+
+  it("narrows manual updates and requires a completion next action", () => {
+    expectTypeOf<UpdateTaskStatusRequest["status"]>()
+      .toEqualTypeOf<"blocked" | "open" | "cancelled">();
+    expectTypeOf<CompleteTaskRequest>()
+      .toMatchTypeOf<{ nextAction: string }>();
   });
 });

@@ -55,11 +55,15 @@ function snapshot(value: AgentTask): TaskSnapshot {
   return { task: value, spec };
 }
 
-function frame(value: AgentTask, transitionId = "transition-1"): TaskLifecycleFrame {
+function frame(
+  value: AgentTask,
+  transitionId = "transition-1",
+  transitionType: TaskLifecycleFrame["transitionType"] = value.status === "done" ? "task.completed" : "task.claimed",
+): TaskLifecycleFrame {
   return {
     task: value,
     transitionId,
-    transitionType: value.status === "done" ? "task.completed" : "task.claimed",
+    transitionType,
     observedAt: value.updatedAt,
   };
 }
@@ -122,6 +126,22 @@ describe("task live store", () => {
     store.close();
   });
 
+  it("preserves backend Instant sub-millisecond ordering", async () => {
+    const newer = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:02:00.000999Z" });
+    const older = task({ status: "open", updatedAt: "2026-07-10T00:02:00.000001Z" });
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(newer)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    source.emit("task.created", JSON.stringify(frame(older, "transition-sub-ms-old", "task.created")));
+
+    expect(store.tasks()).toEqual([newer]);
+    store.close();
+  });
+
   it("refreshes once after reconnect and then resumes event application", async () => {
     const open = task();
     const claimed = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:01:00Z" });
@@ -144,9 +164,44 @@ describe("task live store", () => {
     store.close();
   });
 
-  it("keeps a live event that arrives while its recovery snapshot is in flight", async () => {
+  it("queues a bounded refresh for each distinct reconnect cycle", async () => {
     const open = task();
-    const done = task({ status: "done", claimedBy: "worker-1", updatedAt: "2026-07-10T00:02:00Z" });
+    let resolveFirstRecovery: ((value: TaskSnapshot[]) => void) | undefined;
+    const firstRecovery = new Promise<TaskSnapshot[]>((resolve) => {
+      resolveFirstRecovery = resolve;
+    });
+    const loadTasks = vi.fn()
+      .mockResolvedValueOnce([snapshot(open)])
+      .mockReturnValueOnce(firstRecovery)
+      .mockResolvedValueOnce([snapshot(open)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+
+    source.onerror?.(new Event("error"));
+    source.onerror?.(new Event("error"));
+    source.onopen?.(new Event("open"));
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+
+    source.onerror?.(new Event("error"));
+    source.onerror?.(new Event("error"));
+    source.onopen?.(new Event("open"));
+    expect(loadTasks).toHaveBeenCalledTimes(2);
+
+    resolveFirstRecovery?.([snapshot(open)]);
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(3));
+
+    expect(loadTasks).toHaveBeenCalledTimes(3);
+    store.close();
+  });
+
+  it("keeps a newer sub-millisecond live event that arrives while its snapshot is in flight", async () => {
+    const open = task({ updatedAt: "2026-07-10T00:02:00.000001Z" });
+    const done = task({
+      status: "done",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:02:00.000999Z",
+    });
     let resolveRecovery: ((value: TaskSnapshot[]) => void) | undefined;
     const recovery = new Promise<TaskSnapshot[]>((resolve) => {
       resolveRecovery = resolve;
@@ -167,6 +222,33 @@ describe("task live store", () => {
     store.close();
   });
 
+  it("lets a live mutation after refresh start win an exact Instant tie", async () => {
+    const open = task({ updatedAt: "2026-07-10T00:02:00.000999Z" });
+    const claimed = task({
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:02:00.000999Z",
+    });
+    let resolveRecovery: ((value: TaskSnapshot[]) => void) | undefined;
+    const recovery = new Promise<TaskSnapshot[]>((resolve) => {
+      resolveRecovery = resolve;
+    });
+    const loadTasks = vi.fn()
+      .mockResolvedValueOnce([snapshot(open)])
+      .mockReturnValueOnce(recovery);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+
+    const refreshing = store.refresh();
+    source.emit("task.claimed", JSON.stringify(frame(claimed, "transition-exact-tie")));
+    resolveRecovery?.([snapshot(open)]);
+    await refreshing;
+
+    expect(store.tasks()).toEqual([claimed]);
+    store.close();
+  });
+
   it("treats a completed snapshot refresh as authoritative for stale rows", async () => {
     const open = task();
     const loadTasks = vi.fn()
@@ -182,20 +264,71 @@ describe("task live store", () => {
     store.close();
   });
 
-  it("ignores malformed and unknown lifecycle frames", async () => {
+  it("recovers once for malformed known frames while unknown frames stay ignored", async () => {
     const open = task();
+    const loadTasks = vi.fn(async () => [snapshot(open)]);
     const source = new FakeEventSource();
     const store = createTaskLiveStore({
-      loadTasks: async () => [snapshot(open)],
+      loadTasks,
       eventSourceFactory: () => source,
     });
     await store.refresh();
 
+    source.emit("task.surprised", JSON.stringify(frame(task({ status: "blocked" }), "unknown")));
+    await flush();
+    expect(loadTasks).toHaveBeenCalledTimes(1);
+
     source.emit("task.claimed", "{not-json");
     source.emit("task.claimed", JSON.stringify({ transitionId: "missing-task" }));
-    source.emit("task.surprised", JSON.stringify(frame(task({ status: "blocked" }), "unknown")));
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
 
     expect(store.tasks()).toEqual([open]);
+    expect(loadTasks).toHaveBeenCalledTimes(2);
+    store.close();
+  });
+
+  it("hydrates an unseen created task with its frozen spec", async () => {
+    const created = task();
+    const loadTasks = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([snapshot(created)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+
+    source.emit("task.created", JSON.stringify(frame(created, "transition-created", "task.created")));
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+    await flush();
+
+    expect(store.tasks()).toEqual([created]);
+    expect(store.snapshots()).toEqual([snapshot(created)]);
+    store.close();
+  });
+
+  it("bounds records and version metadata during long-lived task streams", async () => {
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    for (let index = 0; index < 1_500; index += 1) {
+      store.applyFrame(frame(task({
+        id: `task-${index}`,
+        status: "in_progress",
+        claimedBy: "worker-1",
+        updatedAt: `2026-07-10T00:02:${String(index % 60).padStart(2, "0")}.${String(index).padStart(6, "0")}Z`,
+      }), `transition-${index}`));
+    }
+
+    expect(store.tasks()).toHaveLength(100);
+    expect(store.diagnostics()).toEqual({
+      records: 100,
+      versions: 1_000,
+      liveMutations: 1_000,
+      transitions: 1_000,
+    });
     store.close();
   });
 

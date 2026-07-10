@@ -344,11 +344,9 @@ export type ClaimTaskRequest = {
   agent: string;
 };
 
-export type UpdateTaskStatusRequest = {
-  actor: string;
-  status: TaskStatus;
-  blockedReason?: string | null;
-};
+export type UpdateTaskStatusRequest =
+  | { actor: string; status: "blocked"; blockedReason: string }
+  | { actor: string; status: "open" | "cancelled"; blockedReason?: never };
 
 export type CompleteTaskRequest = {
   actor: string;
@@ -356,7 +354,7 @@ export type CompleteTaskRequest = {
   clientSessionId: string;
   summary: string;
   openLoops: string[];
-  nextAction?: string | null;
+  nextAction: string;
 };
 
 export type TaskFilters = {

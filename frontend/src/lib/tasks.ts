@@ -28,6 +28,10 @@ const TASK_STATUSES = new Set<TaskStatus>([
   "cancelled",
 ]);
 
+const DEFAULT_TASK_LIMIT = 100;
+const MAX_TASK_LIMIT = 250;
+const MAX_TRACKED_TASKS = 1_000;
+
 export type TaskLifecycleFrame = {
   task: AgentTask;
   transitionId: string;
@@ -50,7 +54,15 @@ export type TaskLiveStore = {
   setFilters: (filters: TaskFilters) => Promise<void>;
   refresh: () => Promise<void>;
   applyFrame: (frame: TaskLifecycleFrame) => void;
+  diagnostics: () => TaskLiveStoreDiagnostics;
   close: () => void;
+};
+
+export type TaskLiveStoreDiagnostics = {
+  records: number;
+  versions: number;
+  liveMutations: number;
+  transitions: number;
 };
 
 export type TaskLiveStoreOptions = {
@@ -70,13 +82,16 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
   const [filters, setFiltersSignal] = createSignal<TaskFilters>(normalizeFilters(options.initialFilters ?? {}));
   const [records, setRecords] = createSignal<Map<string, TaskRecord>>(new Map());
   const seenTransitions = new Set<string>();
-  const latestVersions = new Map<string, number>();
+  const latestVersions = new Map<string, string>();
   const liveMutationSequence = new Map<string, number>();
   let refreshInFlight: Promise<void> | null = null;
-  let reconnectRefreshInFlight: Promise<void> | null = null;
+  let recoveryLoop: Promise<void> | null = null;
   let mutationSequence = 0;
   let filterRevision = 0;
-  let reconnectRefreshPending = false;
+  let recoveryGeneration = 0;
+  let recoveredGeneration = 0;
+  let reconnectGapOpen = false;
+  const pendingRecoveryKeys = new Map<string, number>();
   let closed = false;
 
   const eventSourceFactory = options.eventSourceFactory ?? defaultEventSourceFactory();
@@ -88,28 +103,29 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     source.onopen = () => {
       if (closed) return;
       setStatus("live");
-      if (!reconnectRefreshPending) return;
-      reconnectRefreshPending = false;
-      void refreshAfterReconnect().catch(() => {
-        if (!closed) setStatus("down");
-      });
+      if (!reconnectGapOpen) return;
+      reconnectGapOpen = false;
+      requestAuthoritativeRecovery();
     };
     source.onerror = () => {
       if (closed) return;
       setStatus("down");
-      reconnectRefreshPending = true;
+      reconnectGapOpen = true;
     };
     for (const eventType of TASK_EVENT_TYPES) {
       source.addEventListener(eventType, (message) => {
         const frame = parseTaskLifecycleFrame(message);
-        if (!frame || frame.transitionType !== eventType) return;
+        if (!frame || frame.transitionType !== eventType) {
+          requestAuthoritativeRecovery("malformed-task-frame");
+          return;
+        }
         applyFrame(frame);
       });
     }
   }
 
   function tasks(): AgentTask[] {
-    return orderTasks([...records().values()].map(({ task }) => task)).slice(0, filters().limit ?? 100);
+    return orderTasks([...records().values()].map(({ task }) => task));
   }
 
   function snapshots(): TaskSnapshot[] {
@@ -117,34 +133,34 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     for (const record of records().values()) {
       if (record.spec) values.push({ task: record.task, spec: record.spec });
     }
-    return orderSnapshots(values).slice(0, filters().limit ?? 100);
+    return orderSnapshots(values);
   }
 
-  async function refresh(): Promise<void> {
-    if (closed) return;
+  function refresh(): Promise<void> {
+    if (closed) return Promise.resolve();
     if (refreshInFlight) return refreshInFlight;
 
     const requestedFilters = filters();
     const requestedRevision = filterRevision;
     const refreshStartedAtMutation = mutationSequence;
-    refreshInFlight = (async () => {
+    const operation = (async () => {
       const snapshot = await loadTasks(requestedFilters);
       if (closed || requestedRevision !== filterRevision) return;
-      setRecords((current) => mergeSnapshot(
+      setRecords((current) => compactState(mergeSnapshot(
         snapshot,
         current,
         latestVersions,
         liveMutationSequence,
         refreshStartedAtMutation,
         requestedFilters,
-      ));
+      ), requestedFilters));
     })();
-
-    try {
-      await refreshInFlight;
-    } finally {
-      refreshInFlight = null;
-    }
+    let tracked: Promise<void>;
+    tracked = operation.finally(() => {
+      if (refreshInFlight === tracked) refreshInFlight = null;
+    });
+    refreshInFlight = tracked;
+    return tracked;
   }
 
   async function setFilters(next: TaskFilters): Promise<void> {
@@ -162,23 +178,47 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     await refresh();
   }
 
-  async function refreshAfterReconnect(): Promise<void> {
-    if (reconnectRefreshInFlight) return reconnectRefreshInFlight;
-    reconnectRefreshInFlight = (async () => {
-      if (refreshInFlight) {
+  function requestAuthoritativeRecovery(key?: string): void {
+    if (closed || (key !== undefined && pendingRecoveryKeys.has(key))) return;
+    recoveryGeneration += 1;
+    if (key !== undefined) pendingRecoveryKeys.set(key, recoveryGeneration);
+    ensureRecoveryLoop();
+  }
+
+  function ensureRecoveryLoop(): void {
+    if (closed || recoveryLoop) return;
+    const operation = runRecoveryLoop().catch(() => {
+      if (!closed) setStatus("down");
+    });
+    let tracked: Promise<void>;
+    tracked = operation.finally(() => {
+      if (recoveryLoop !== tracked) return;
+      recoveryLoop = null;
+      if (!closed && recoveredGeneration < recoveryGeneration) ensureRecoveryLoop();
+    });
+    recoveryLoop = tracked;
+  }
+
+  async function runRecoveryLoop(): Promise<void> {
+    while (!closed && recoveredGeneration < recoveryGeneration) {
+      const targetGeneration = recoveryGeneration;
+      const activeRefresh = refreshInFlight;
+      if (activeRefresh) {
         try {
-          await refreshInFlight;
+          await activeRefresh;
         } catch {
-          // The reconnect refresh below is the bounded recovery attempt.
+          // Recovery still gets one fresh bounded attempt after an older refresh fails.
         }
-        await Promise.resolve();
       }
-      await refresh();
-    })();
-    try {
-      await reconnectRefreshInFlight;
-    } finally {
-      reconnectRefreshInFlight = null;
+      try {
+        await refresh();
+      } catch {
+        if (!closed) setStatus("down");
+      }
+      recoveredGeneration = targetGeneration;
+      for (const [key, generation] of pendingRecoveryKeys) {
+        if (generation <= recoveredGeneration) pendingRecoveryKeys.delete(key);
+      }
     }
   }
 
@@ -187,26 +227,53 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     seenTransitions.add(frame.transitionId);
     trimSeenTransitions(seenTransitions);
 
-    const version = instantValue(frame.task.updatedAt);
+    const version = instantKey(frame.task.updatedAt);
+    if (!version) return;
     const latestVersion = latestVersions.get(frame.task.id);
-    if (latestVersion !== undefined && version < latestVersion) return;
-    latestVersions.set(frame.task.id, version);
+    if (latestVersion !== undefined && compareInstantKeys(version, latestVersion) < 0) return;
+    touchMap(latestVersions, frame.task.id, version);
     mutationSequence += 1;
-    liveMutationSequence.set(frame.task.id, mutationSequence);
+    touchMap(liveMutationSequence, frame.task.id, mutationSequence);
+    const hadFrozenSpec = records().get(frame.task.id)?.spec !== undefined;
 
     setRecords((current) => {
       const next = new Map(current);
       const previous = current.get(frame.task.id);
-      const previousVersion = previous ? instantValue(previous.task.updatedAt) : Number.NEGATIVE_INFINITY;
-      if (version < previousVersion) return current;
+      const previousVersion = previous ? instantKey(previous.task.updatedAt) : null;
+      if (previousVersion && compareInstantKeys(version, previousVersion) < 0) return current;
 
       if (matchesFilters(frame.task, filters())) {
         next.set(frame.task.id, { task: frame.task, spec: previous?.spec });
       } else {
         next.delete(frame.task.id);
       }
-      return next;
+      return compactState(next, filters());
     });
+
+    if (frame.transitionType === "task.created"
+      && !hadFrozenSpec
+      && matchesFilters(frame.task, filters())) {
+      requestAuthoritativeRecovery("hydrate-created-task");
+    }
+  }
+
+  function compactState(next: Map<string, TaskRecord>, activeFilters: TaskFilters): Map<string, TaskRecord> {
+    const limit = taskLimit(activeFilters);
+    const ordered = [...next.values()].sort((left, right) => compareTasks(left.task, right.task)).slice(0, limit);
+    const compacted = new Map(ordered.map((record) => [record.task.id, record]));
+    const protectedIds = new Set(compacted.keys());
+    pruneMap(latestVersions, protectedIds, MAX_TRACKED_TASKS);
+    pruneMap(liveMutationSequence, protectedIds, MAX_TRACKED_TASKS);
+    return compacted;
+  }
+
+  function diagnostics(): TaskLiveStoreDiagnostics {
+    return {
+      records: records().size,
+      versions: latestVersions.size,
+      liveMutations: liveMutationSequence.size,
+      transitions: seenTransitions.size,
+    };
   }
 
   function close(): void {
@@ -224,6 +291,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     setFilters,
     refresh,
     applyFrame,
+    diagnostics,
     close,
   };
 
@@ -250,39 +318,47 @@ export function parseTaskLifecycleFrame(message: Event): TaskLifecycleFrame | nu
 function mergeSnapshot(
   snapshot: TaskSnapshot[],
   current: Map<string, TaskRecord>,
-  latestVersions: Map<string, number>,
+  latestVersions: Map<string, string>,
   liveMutationSequence: Map<string, number>,
   refreshStartedAtMutation: number,
   filters: TaskFilters,
 ): Map<string, TaskRecord> {
   const next = new Map<string, TaskRecord>();
   for (const item of snapshot) {
-    const snapshotVersion = instantValue(item.task.updatedAt);
+    const snapshotVersion = instantKey(item.task.updatedAt);
+    if (!snapshotVersion) continue;
     const knownVersion = latestVersions.get(item.task.id);
     const currentRecord = current.get(item.task.id);
-    if (knownVersion !== undefined && knownVersion > snapshotVersion) {
+    const changedDuringRefresh = (liveMutationSequence.get(item.task.id) ?? 0) > refreshStartedAtMutation;
+    const knownComparison = knownVersion === undefined ? 0 : compareInstantKeys(knownVersion, snapshotVersion);
+    if (knownVersion !== undefined && (knownComparison > 0 || (knownComparison === 0 && changedDuringRefresh))) {
       if (currentRecord && matchesFilters(currentRecord.task, filters)) next.set(item.task.id, currentRecord);
       continue;
     }
-    latestVersions.set(item.task.id, snapshotVersion);
+    touchMap(latestVersions, item.task.id, snapshotVersion);
     next.set(item.task.id, item);
   }
 
   for (const [id, record] of current) {
     const incoming = next.get(id);
-    if (incoming && instantValue(incoming.task.updatedAt) >= instantValue(record.task.updatedAt)) continue;
     const changedDuringRefresh = (liveMutationSequence.get(id) ?? 0) > refreshStartedAtMutation;
-    if ((incoming || changedDuringRefresh) && matchesFilters(record.task, filters)) next.set(id, record);
+    if (incoming) {
+      const comparison = compareInstants(incoming.task.updatedAt, record.task.updatedAt);
+      if (comparison > 0 || (comparison === 0 && !changedDuringRefresh)) continue;
+    }
+    if ((incoming !== undefined || changedDuringRefresh) && matchesFilters(record.task, filters)) next.set(id, record);
   }
   return next;
 }
 
 function orderTasks(tasks: AgentTask[]): AgentTask[] {
-  return tasks.sort((left, right) => (
-    right.priority - left.priority
-    || instantValue(left.createdAt) - instantValue(right.createdAt)
-    || left.id.localeCompare(right.id)
-  ));
+  return tasks.sort(compareTasks);
+}
+
+function compareTasks(left: AgentTask, right: AgentTask): number {
+  return right.priority - left.priority
+    || compareInstants(left.createdAt, right.createdAt)
+    || left.id.localeCompare(right.id);
 }
 
 function orderSnapshots(snapshots: TaskSnapshot[]): TaskSnapshot[] {
@@ -348,12 +424,59 @@ function isNullableString(value: unknown): value is string | null | undefined {
 }
 
 function isValidInstant(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  return typeof value === "string" && instantKey(value) !== null;
 }
 
-function instantValue(value: string): number {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+function instantKey(value: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/.exec(value);
+  if (!match || !isValidUtcSecond(match.slice(1, 7).map(Number))) return null;
+  const base = `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}`;
+  return `${base}.${(match[7] ?? "").padEnd(9, "0")}Z`;
+}
+
+function isValidUtcSecond(parts: number[]): boolean {
+  const [year, month, day, hour, minute, second] = parts;
+  if (year === undefined || month === undefined || day === undefined
+    || hour === undefined || minute === undefined || second === undefined) return false;
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, 0);
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+    && date.getUTCHours() === hour
+    && date.getUTCMinutes() === minute
+    && date.getUTCSeconds() === second;
+}
+
+function compareInstants(left: string, right: string): number {
+  const leftKey = instantKey(left);
+  const rightKey = instantKey(right);
+  if (leftKey === rightKey) return 0;
+  if (leftKey === null) return -1;
+  if (rightKey === null) return 1;
+  return compareInstantKeys(leftKey, rightKey);
+}
+
+function compareInstantKeys(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function taskLimit(filters: TaskFilters): number {
+  return Math.max(1, Math.min(filters.limit ?? DEFAULT_TASK_LIMIT, MAX_TASK_LIMIT));
+}
+
+function touchMap<K, V>(map: Map<K, V>, key: K, value: V): void {
+  map.delete(key);
+  map.set(key, value);
+}
+
+function pruneMap<V>(map: Map<string, V>, protectedIds: Set<string>, maximum: number): void {
+  if (map.size <= maximum) return;
+  for (const key of map.keys()) {
+    if (map.size <= maximum) break;
+    if (!protectedIds.has(key)) map.delete(key);
+  }
 }
 
 function trimSeenTransitions(seen: Set<string>): void {
