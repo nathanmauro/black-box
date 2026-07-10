@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.web;
 
 import java.lang.reflect.Method;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -16,6 +17,8 @@ import dev.nathan.sbaagentic.mcp.AgenticTools;
 import dev.nathan.sbaagentic.task.TaskChange;
 import dev.nathan.sbaagentic.task.TaskDomainException;
 import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.task.TaskEvent;
+import dev.nathan.sbaagentic.task.TaskRepository;
 import dev.nathan.sbaagentic.task.TaskSnapshot;
 import dev.nathan.sbaagentic.task.TaskSpec;
 
@@ -82,6 +85,9 @@ class TaskApiContractTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    TaskRepository taskRepository;
 
     @Autowired
     AgenticTools tools;
@@ -300,6 +306,88 @@ class TaskApiContractTest {
                 .andReturn());
         assertThat(restMcpCreated.get(0)).isEqualTo(objectMapper.valueToTree(mcpCreated.snapshot()));
         assertThat(tools.claimNextTask("empty-lane", "nobody")).isNull();
+    }
+
+    @Test
+    void actualTaskCallbacksUseRestJsonForEverySuccessfulOperation() throws Exception {
+        JsonNode created = json(callback("createSpec").call("""
+                {
+                  "projectKey":"%s",
+                  "title":"Callback JSON parity",
+                  "body":"Frozen callback specification.",
+                  "specRef":{"repo":"black-box"},
+                  "actor":"planner"
+                }
+                """.formatted(PROJECT)));
+        String specId = created.get("id").asText();
+        JsonNode restSpec = json(mockMvc.perform(get("/api/specs/{id}", specId))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(created).isEqualTo(restSpec);
+        assertSpecTimestampStrings(created);
+
+        JsonNode fetched = json(callback("getSpec").call("{\"specId\":\"%s\"}".formatted(specId)));
+        assertThat(fetched).isEqualTo(restSpec);
+        assertSpecTimestampStrings(fetched);
+
+        JsonNode enqueued = json(callback("enqueueTask").call("""
+                {
+                  "specId":"%s",
+                  "title":"Prove callback JSON parity",
+                  "lane":"codex",
+                  "priority":7,
+                  "actor":"planner"
+                }
+                """.formatted(specId)));
+        String taskId = enqueued.at("/snapshot/task/id").asText();
+        assertTaskChangeMatchesRest(enqueued);
+
+        JsonNode listed = json(callback("listTasks").call("""
+                {"projectKey":"%s","lane":"codex","status":"open"}
+                """.formatted(PROJECT)));
+        JsonNode restList = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("lane", "codex")
+                        .param("status", "open"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(listed).isEqualTo(restList);
+        assertSnapshotTimestampStrings(listed.get(0));
+
+        JsonNode claimed = json(callback("claimNextTask").call(
+                "{\"lane\":\"codex\",\"agent\":\"worker\"}"));
+        assertThat(claimed.at("/snapshot/task/id").asText()).isEqualTo(taskId);
+        assertTaskChangeMatchesRest(claimed);
+
+        JsonNode blocked = json(callback("updateTaskStatus").call("""
+                {"taskId":"%s","actor":"worker","status":"blocked","blockedReason":"waiting"}
+                """.formatted(taskId)));
+        assertTaskChangeMatchesRest(blocked);
+
+        JsonNode reopened = json(callback("updateTaskStatus").call("""
+                {"taskId":"%s","actor":"operator","status":"open"}
+                """.formatted(taskId)));
+        assertTaskChangeMatchesRest(reopened);
+        json(callback("claimNextTask").call("{\"lane\":\"codex\",\"agent\":\"worker\"}"));
+
+        JsonNode completed = json(callback("completeTask").call("""
+                {
+                  "taskId":"%s",
+                  "actor":"worker",
+                  "source":"codex",
+                  "clientSessionId":"callback-json-session",
+                  "summary":"All task callbacks use REST JSON.",
+                  "openLoops":[],
+                  "nextAction":"Proceed to the Board client."
+                }
+                """.formatted(taskId)));
+        assertTaskChangeMatchesRest(completed);
+        assertThat(completed.at("/snapshot/task/resultHandoffId").asText()).isNotBlank();
+
+        assertThat(callback("claimNextTask").call("{\"lane\":\"codex\",\"agent\":\"nobody\"}"))
+                .isEqualTo("null");
+        System.out.println("MCP_SUCCESS_TIMESTAMP_SAMPLE=" + completed.at("/event/observedAt").asText());
+        System.out.println("MCP_SUCCESS_COMPLETED=" + completed);
     }
 
     @Test
@@ -593,6 +681,46 @@ class TaskApiContractTest {
         assertThat(failure).isNotNull();
         assertThat(failure.getMessage()).doesNotContain("TaskDomainException", "java.", "\tat ");
         return json(failure.getMessage());
+    }
+
+    private void assertTaskChangeMatchesRest(JsonNode change) throws Exception {
+        String taskId = change.at("/snapshot/task/id").asText();
+        JsonNode restTasks = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("limit", "250"))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode restSnapshot = null;
+        for (JsonNode candidate : restTasks) {
+            if (taskId.equals(candidate.at("/task/id").asText())) {
+                restSnapshot = candidate;
+                break;
+            }
+        }
+        assertThat(restSnapshot).isNotNull().isEqualTo(change.get("snapshot"));
+
+        TaskEvent latestEvent = taskRepository.eventsForTask(taskId).getLast();
+        assertThat(change.get("event")).isEqualTo(objectMapper.<JsonNode>valueToTree(latestEvent));
+        assertSnapshotTimestampStrings(change.get("snapshot"));
+        assertTimestampString(change, "/event/observedAt");
+    }
+
+    private static void assertSnapshotTimestampStrings(JsonNode snapshot) {
+        assertTimestampString(snapshot, "/task/createdAt");
+        assertTimestampString(snapshot, "/task/updatedAt");
+        assertTimestampString(snapshot, "/spec/createdAt");
+        assertTimestampString(snapshot, "/spec/updatedAt");
+    }
+
+    private static void assertSpecTimestampStrings(JsonNode spec) {
+        assertTimestampString(spec, "/createdAt");
+        assertTimestampString(spec, "/updatedAt");
+    }
+
+    private static void assertTimestampString(JsonNode value, String pointer) {
+        JsonNode timestamp = value.at(pointer);
+        assertThat(timestamp.isTextual()).as(pointer + " is an ISO-8601 string").isTrue();
+        assertThat(Instant.parse(timestamp.asText())).isNotNull();
     }
 
     private static void assertTaskError(JsonNode payload, String type, String code) {

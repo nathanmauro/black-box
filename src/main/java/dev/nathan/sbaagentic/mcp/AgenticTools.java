@@ -146,7 +146,9 @@ public class AgenticTools {
         return localAiClient.health();
     }
 
-    @Tool(description = "Create a durable project-scoped spec whose frozen body is returned with every claimed task.")
+    @Tool(
+            description = "Create a durable project-scoped spec whose frozen body is returned with every claimed task.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskSpec createSpec(
             @ToolParam(description = "Project key used to group and filter the spec's tasks.") String projectKey,
             @ToolParam(description = "Human-readable spec title.") String title,
@@ -157,7 +159,9 @@ public class AgenticTools {
         return taskService.createSpec(new CreateSpecRequest(projectKey, title, body, specRef, actor));
     }
 
-    @Tool(description = "Enqueue an open task under an existing spec in one required routing lane.")
+    @Tool(
+            description = "Enqueue an open task under an existing spec in one required routing lane.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskChange enqueueTask(
             @ToolParam(description = "UUID of the frozen spec this task belongs to.") String specId,
             @ToolParam(description = "Human-readable task title.") String title,
@@ -168,14 +172,18 @@ public class AgenticTools {
                 requireUuid(specId, "Spec id"), title, lane, priority, actor));
     }
 
-    @Tool(description = "Atomically claim the highest-priority oldest open task in an exact lane. Returns empty when none exists.")
+    @Tool(
+            description = "Atomically claim the highest-priority oldest open task in an exact lane. Returns empty when none exists.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskChange claimNextTask(
             @ToolParam(description = "Required exact lane to claim from.") String lane,
             @ToolParam(description = "Agent identity that will own the claimed task.") String agent) {
         return taskService.claimNextTask(new ClaimTaskRequest(lane, agent)).orElse(null);
     }
 
-    @Tool(description = "Apply an allowed task lifecycle update: block, reset to open, or cancel.")
+    @Tool(
+            description = "Apply an allowed task lifecycle update: block, reset to open, or cancel.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskChange updateTaskStatus(
             @ToolParam(description = "UUID of the task to update.") String taskId,
             @ToolParam(description = "Agent or operator causing the transition.") String actor,
@@ -186,7 +194,9 @@ public class AgenticTools {
                 requireUuid(taskId, "Task id"), actor, requireStatus(status), blockedReason));
     }
 
-    @Tool(description = "Complete an owned in-progress task, capture a recallable Handoff, and link its event id.")
+    @Tool(
+            description = "Complete an owned in-progress task, capture a recallable Handoff, and link its event id.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskChange completeTask(
             @ToolParam(description = "UUID of the task to complete.") String taskId,
             @ToolParam(description = "Current claimant completing the task.") String actor,
@@ -205,7 +215,9 @@ public class AgenticTools {
                 nextAction));
     }
 
-    @Tool(description = "List task snapshots with optional project, lane, and status filters and a bounded limit.")
+    @Tool(
+            description = "List task snapshots with optional project, lane, and status filters and a bounded limit.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public List<TaskSnapshot> listTasks(
             @ToolParam(required = false,
                     description = "Optional exact project key; blank means all projects.") String projectKey,
@@ -225,7 +237,9 @@ public class AgenticTools {
                 .toList();
     }
 
-    @Tool(description = "Get a durable spec, including its full frozen body and optional provenance.")
+    @Tool(
+            description = "Get a durable spec, including its full frozen body and optional provenance.",
+            resultConverter = RestJsonToolCallResultConverter.class)
     public TaskSpec getSpec(
             @ToolParam(description = "UUID of the spec to retrieve.") String specId) {
         return taskService.getSpec(requireUuid(specId, "Spec id"));
