@@ -90,6 +90,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
   let filterRevision = 0;
   let recoveryGeneration = 0;
   let recoveredGeneration = 0;
+  let activeRecoverySnapshotGeneration = 0;
   let reconnectGapOpen = false;
   const pendingRecoveryKeys = new Map<string, number>();
   let closed = false;
@@ -179,7 +180,11 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
   }
 
   function requestAuthoritativeRecovery(key?: string): void {
-    if (closed || (key !== undefined && pendingRecoveryKeys.has(key))) return;
+    if (closed) return;
+    if (key !== undefined) {
+      const pendingGeneration = pendingRecoveryKeys.get(key);
+      if (pendingGeneration !== undefined && pendingGeneration > activeRecoverySnapshotGeneration) return;
+    }
     recoveryGeneration += 1;
     if (key !== undefined) pendingRecoveryKeys.set(key, recoveryGeneration);
     ensureRecoveryLoop();
@@ -187,7 +192,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
 
   function ensureRecoveryLoop(): void {
     if (closed || recoveryLoop) return;
-    const operation = runRecoveryLoop().catch(() => {
+    const operation = Promise.resolve().then(runRecoveryLoop).catch(() => {
       if (!closed) setStatus("down");
     });
     let tracked: Promise<void>;
@@ -210,6 +215,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
           // Recovery still gets one fresh bounded attempt after an older refresh fails.
         }
       }
+      activeRecoverySnapshotGeneration = targetGeneration;
       try {
         await refresh();
       } catch {

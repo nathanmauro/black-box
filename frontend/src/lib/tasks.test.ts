@@ -281,9 +281,35 @@ describe("task live store", () => {
     source.emit("task.claimed", "{not-json");
     source.emit("task.claimed", JSON.stringify({ transitionId: "missing-task" }));
     await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+    await flush();
 
     expect(store.tasks()).toEqual([open]);
     expect(loadTasks).toHaveBeenCalledTimes(2);
+    store.close();
+  });
+
+  it("queues one more malformed-frame recovery after the active snapshot point", async () => {
+    const open = task();
+    let resolveFirstRecovery: ((value: TaskSnapshot[]) => void) | undefined;
+    const firstRecovery = new Promise<TaskSnapshot[]>((resolve) => {
+      resolveFirstRecovery = resolve;
+    });
+    const loadTasks = vi.fn()
+      .mockResolvedValueOnce([snapshot(open)])
+      .mockReturnValueOnce(firstRecovery)
+      .mockResolvedValueOnce([snapshot(open)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+
+    source.emit("task.claimed", "{first-malformed-frame");
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+    source.emit("task.claimed", "{second-malformed-frame");
+
+    resolveFirstRecovery?.([snapshot(open)]);
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(3));
+
+    expect(loadTasks).toHaveBeenCalledTimes(3);
     store.close();
   });
 
@@ -302,6 +328,34 @@ describe("task live store", () => {
 
     expect(store.tasks()).toEqual([created]);
     expect(store.snapshots()).toEqual([snapshot(created)]);
+    store.close();
+  });
+
+  it("queues hydration for a second create after the active snapshot point", async () => {
+    const createdA = task({ id: "task-a", title: "Task A", updatedAt: "2026-07-10T00:01:00.000001Z" });
+    const createdB = task({ id: "task-b", title: "Task B", updatedAt: "2026-07-10T00:01:00.000002Z" });
+    let resolveFirstHydration: ((value: TaskSnapshot[]) => void) | undefined;
+    const firstHydration = new Promise<TaskSnapshot[]>((resolve) => {
+      resolveFirstHydration = resolve;
+    });
+    const loadTasks = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(firstHydration)
+      .mockResolvedValueOnce([snapshot(createdA), snapshot(createdB)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+
+    source.emit("task.created", JSON.stringify(frame(createdA, "transition-created-a", "task.created")));
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+    source.emit("task.created", JSON.stringify(frame(createdB, "transition-created-b", "task.created")));
+
+    resolveFirstHydration?.([snapshot(createdA)]);
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(3));
+    await flush();
+
+    expect(store.tasks()).toEqual([createdA, createdB]);
+    expect(store.snapshots()).toEqual([snapshot(createdA), snapshot(createdB)]);
     store.close();
   });
 
