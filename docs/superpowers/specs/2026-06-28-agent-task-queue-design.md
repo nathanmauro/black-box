@@ -1,9 +1,19 @@
 # Black Box Shared Agent Task Queue — Design
 
 - **Date:** 2026-06-28
-- **Status:** Approved direction; MVP scoped. Ready for implementation plan.
-- **Branch:** `feat/agent-task-queue`
+- **Status:** Implemented on 2026-07-10; integrated release validation remains.
+- **Historical design branch:** `feat/agent-task-queue`
+- **Implementation record:** [`../plans/2026-07-10-agent-task-queue-implementation.md`](../plans/2026-07-10-agent-task-queue-implementation.md)
 - **Repo:** `sba-agentic` (product: Black Box)
+
+## Implementation status (2026-07-10)
+
+This design is now implemented. The shipped substrate uses `specs`, `tasks`, and `task_events` in
+SQLite; seven matching REST/MCP operations; a single-statement atomic lane claim; explicit
+block/reset/cancel/complete transitions; a normal recallable Handoff on completion; best-effort
+`task.*` SSE hints; and the SolidJS `/board` route. The original reasoning below is retained as the
+decision record. Where exploratory details changed, the as-built correction is called out in place
+and the implementation record is authoritative.
 
 ## 1. Problem
 
@@ -56,7 +66,8 @@ workers pull from a shared DB** — exactly what we keep.
 
 - No message broker (Redis/NATS/Kafka). SQLite *is* the queue.
 - No runner/daemon that auto-runs agents (deferred — see §11).
-- No multi-node, no cloud, no auth model beyond what already exists.
+- No multi-node or cloud queue service, and no auth model beyond what already exists. Session
+  summary backend/privacy behavior is a separate existing boundary.
 - Not a replacement for Todoist (human reminders) or Obsidian (durable narrative). This is the
   **agent execution layer**; the prior ownership split stands (Obsidian = story/decisions,
   Todoist = personal reminders, Black Box = continuity **and now cross-agent execution state**).
@@ -67,9 +78,9 @@ Each decision below is settled. Rationale and the rejected alternative are recor
 does not re-litigate without new evidence.
 
 ### D1 — SQLite is the queue; no broker. (settled)
-**Why:** For ~5 agents on localhost, a broker is pure overhead and is *fire-and-forget* — a weaker
-durability guarantee than the SQLite file we already trust. SQLite under WAL handles ~20k claims/sec;
-the workload is single digits. **Rejected:** Redis/NATS pub/sub (adds an external dependency,
+**Why:** For a handful of agents on localhost, a broker is pure overhead and is *fire-and-forget* —
+a weaker durability guarantee than the SQLite file we already trust. The workload is single digits.
+**Rejected:** Redis/NATS pub/sub (adds an external dependency,
 reintroduces the dual-write desync problem, violates local-first + simplicity).
 
 ### D2 — Hybrid state: mutable row + append-only event log. (settled)
@@ -169,7 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_claimable ON tasks (lane, status, priority 
 CREATE TABLE IF NOT EXISTS task_events (
     id          TEXT PRIMARY KEY,
     task_id     TEXT NOT NULL,
-    type        TEXT NOT NULL,            -- task.created | task.claimed | task.blocked | task.completed | task.reset
+    type        TEXT NOT NULL,            -- task.created | task.claimed | task.blocked | task.completed | task.reset | task.cancelled
                                           --   (claim emits task.claimed with to_status='in_progress'; no separate in_progress frame in MVP)
     actor       TEXT NOT NULL,           -- the source/agent that caused the transition
     from_status TEXT,
@@ -206,8 +217,9 @@ phase-2 migration is additive, not a rename.
 - **`blocked|in_progress → open`**: manual "reset to open" (the MVP stand-in for an auto-reaper).
 - **`* → cancelled`**: terminal, owner/agent abandons the task.
 
-Every transition writes one `task_events` row and emits one SSE frame, in the same transaction as the
-`tasks` row update.
+Every transition writes one `task_events` row in the same transaction as the `tasks` row update.
+After that durable mutation returns, the service publishes one best-effort SSE frame. A disconnected
+subscriber or publish failure never rolls back committed state; clients recover from REST.
 
 ## 7. The atomic claim (the one piece of real queue machinery)
 
@@ -275,14 +287,15 @@ agent's input:
    - sets `tasks.result_handoff_id` to that handoff event's id;
    - transitions the task to `done` (+ `task_events` row + SSE).
 3. A follow-up `enqueueTask` (by B, or by a human, or by an orchestrator) creates the next task and
-   **embeds the upstream `result_handoff_id` in its spec/task body**.
+   may **embed the upstream `result_handoff_id` in its spec body**. Black Box does not enqueue the
+   follow-up automatically.
 4. Agent C calls `claimNextTask(lane)`, receives the body, and **resolves the upstream result via
    `recallContext`** (the handoff is already recallable) before executing.
 
 This walks **finish → handoff → enqueue → claim → recall → execute** with no new recall machinery —
 the queue rides on top of the loop Black Box already owns.
 
-## 10. MVP scope (what ships in `feat/agent-task-queue`)
+## 10. Implemented MVP scope
 
 1. `specs`, `tasks`, `task_events` tables via `schema.sql`.
 2. `TaskRepository` + `TaskService` (one service layer).
@@ -330,7 +343,7 @@ These only make sense **together**; do not pull one forward in isolation.
 | Lifecycle events wrongly attached to `agent_events` | high | **Resolved by D3** — dedicated `task_events` table. |
 | `spec_ref` resolved at runtime, breaking heterogeneity | high | **Resolved by D4** — provenance only; `body` is canonical and never nullable. |
 | Runner-by-proximity erodes "substrate not executor" | med | No runner in MVP. When built (phase 2), it is strictly external with its own entrypoint; Black-Box-the-server never spawns it. |
-| Oversized spec bodies bloat claim payloads | low | Soft cap (~200 KB) on `body` at create; reject larger with an error pointing at `spec_ref` provenance + a condensed body. |
+| Oversized spec bodies bloat claim payloads | low | No server-side size cap shipped in the MVP; callers should keep the frozen body bounded. A validated limit remains follow-up work. |
 | Lane starvation / priority abuse | low | Deterministic `priority DESC, created_at ASC`; explicit lane filters keep one noisy lane from hiding others. Aging deferred. |
 
 ## 14. Open phase-2 decisions (recorded, not blocking the MVP)

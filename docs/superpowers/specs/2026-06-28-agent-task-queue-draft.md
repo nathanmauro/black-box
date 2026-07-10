@@ -1,5 +1,12 @@
 # Task Queue Design for Black Box
 
+> **Superseded.** This is the original exploratory draft and does not describe the shipped API or
+> schema. The approved design is
+> [`2026-06-28-agent-task-queue-design.md`](2026-06-28-agent-task-queue-design.md); the as-built file
+> map and validation plan are in
+> [`../plans/2026-07-10-agent-task-queue-implementation.md`](../plans/2026-07-10-agent-task-queue-implementation.md).
+> This draft remains unchanged below to preserve the design history.
+
 Black Box remains a coordination *substrate* and append-only recorder. It never executes agents or owns work. All coordination happens over the existing language-neutral MCP + REST surface and the SQLite event log + SSE. No broker, no new executors.
 
 ## 1. Task table schema + lifecycle states

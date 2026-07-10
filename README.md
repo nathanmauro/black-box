@@ -20,6 +20,18 @@ Black Box owns one verb the read-only tools don't: **write + query**. Agents cal
 
 A concrete loop — the one the GIF above records: a **Codex** session commits a `Decision` — *"Use JWT access tokens with refresh-token rotation"* — with its rationale, the alternatives it rejected (server-side sessions in Redis, opaque tokens with introspection), a confidence of 0.8, and the open loop *"revoke-on-logout is not wired yet."* A fresh **Claude Code** session opens in the same repo, calls `recallContext`, and that decision — open loop included — lands in its context window before it touches a line. Two agents, two sessions, one shared record: the second reads what the first decided instead of re-deriving it.
 
+Black Box also turns that continuity loop into a coordination loop without becoming an agent runner:
+
+1. A planner creates a frozen, project-scoped spec and enqueues one or more lane-routed tasks.
+2. A worker atomically claims the highest-priority, oldest open task in its exact lane.
+3. The worker can block the task with a reason, while a human can reset stalled ownership to open.
+4. The current claimant completes the task with a normal Black Box `Handoff`.
+5. The task keeps that Handoff's event id, so the Board or a later agent can recall the result.
+
+Black Box never launches an agent, runs a command, or edits a checkout. SQLite is the queue and the
+source of truth. Server-Sent Events (SSE) only wake connected consumers; every consumer must confirm
+state with `claimNextTask` or `listTasks`.
+
 ## Quickstart
 
 One command for a cold clone:
@@ -50,7 +62,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface now centers on Activity and Recall. Activity is the main workspace: Browse shows the session rail and prompt-focused reader, Find exposes the faceted event search, and Ask appears as the synthesis path when its optional dependencies are reachable. The session browser has a static app sidebar, source chips, and a local finder that understands `source:` and `project:` facets. User prompts and assistant responses are shown first; decisions/observations/handoffs are opt-in, and tool output stays hidden by default. Projects and melds are currently parked in the UI while the core reading loop gets tightened; their backend endpoints remain available for future work.
+The web surface centers on Activity, Board, and Recall. Activity is the main reading workspace: Browse shows the session rail and prompt-focused reader, Find exposes faceted event search, and Ask appears when its optional dependencies are reachable. Board at [`/board`](http://localhost:8766/board) shows Open, In Progress, Blocked, and Done columns; project and lane filters plus the selected task are encoded in the URL. Task detail includes the frozen spec, ownership, blocker, and linked completion Handoff. The Board's only lifecycle mutation is an explicit reset of `blocked` or `in_progress` work to `open`; it never runs an agent.
 
 ## Run as a service
 
@@ -84,7 +96,9 @@ The container binds all interfaces internally, but the documented `docker run` p
 
 ## What gets captured — and what doesn't
 
-Captured events, decisions, handoffs, observations, and summaries stay in a local SQLite file. The server binds `127.0.0.1` by default and has no auth layer; the trust model is your machine and your user account. Set `SBA_BIND_ADDRESS=0.0.0.0` only if you accept exposing it on a network yourself. Automatic secret redaction is on by default: private key blocks, AWS keys, bearer/API tokens, and password/token assignments are replaced with `[REDACTED]`; set `SBA_REDACT_ENABLED=false` to opt out. Summaries default to the local model path and degrade to compacted transcripts when no local model server is running. The external CLI backend for Codex or Claude is opt-in and sends transcript text to that vendor.
+Captured events, decisions, handoffs, observations, specs, tasks, and lifecycle events stay in a local SQLite file. The server binds `127.0.0.1` by default and has no auth layer; the trust model is your machine and your user account. Set `SBA_BIND_ADDRESS=0.0.0.0` only if you accept exposing it on a network yourself. Automatic secret redaction is on by default: private key blocks, AWS keys, bearer/API tokens, and password/token assignments are replaced with `[REDACTED]`; set `SBA_REDACT_ENABLED=false` to opt out.
+
+Session summaries are the exception to the otherwise local data path: the default `external` backend invokes the bundled Codex wrapper, so transcript text can leave the machine for that vendor. Set `SBA_SUMMARY_BACKEND=local` to explicitly use LM Studio or another local OpenAI-compatible server; that path degrades to a compacted transcript when the local model is unavailable. Task coordination and recall do not require either model backend.
 
 Black Box does not capture raw sessions unless you wire the opt-in hook, does not authenticate network callers, and does not require Elasticsearch for the core write/query loop.
 
@@ -119,8 +133,9 @@ Black Box is not the first local memory for coding agents, and you should know t
 - Java 21+
 - Maven 3.9+
 - `curl` and `jq` for demos and hook bridges
-- A local OpenAI-compatible model server such as LM Studio — optional; summaries fall back to compacted transcripts when it is unavailable
-- Codex CLI or Claude CLI — optional; only used when you opt into `SBA_SUMMARY_BACKEND=external`
+- Codex CLI — used by the default external session-summary wrapper; summary transcript text can leave the machine for that vendor
+- A local OpenAI-compatible model server such as LM Studio — optional; select it explicitly with `SBA_SUMMARY_BACKEND=local`
+- Claude CLI — optional alternative external wrapper via `scripts/summarize-with-claude.sh`
 - Elasticsearch — optional; a secondary search index and ASK dependency. SQLite is always the source of truth
 
 ### Configuration
@@ -133,7 +148,7 @@ Configuration is environment variables; defaults live in `src/main/resources/app
 | `SBA_BIND_ADDRESS` | `127.0.0.1` | HTTP bind address; use `0.0.0.0` only when you accept network exposure without built-in auth |
 | `SBA_DATASOURCE_URL` | `jdbc:sqlite:sba-agentic.db` | SQLite database location |
 | `SBA_REDACT_ENABLED` | `true` | Redacts secret-looking text before persistence |
-| `SBA_SUMMARY_BACKEND` | `local` | Summary backend: local model path by default, or `external` for a Codex/Claude CLI subprocess |
+| `SBA_SUMMARY_BACKEND` | `external` | Session-summary backend: bundled Codex CLI wrapper by default; set `local` explicitly for the OpenAI-compatible local path |
 | `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command used when `SBA_SUMMARY_BACKEND=external` |
 | `SBA_SUMMARY_TIMEOUT` | `10m` | Maximum runtime for the external summary command |
 | `SBA_SUMMARY_CODEX_BIN` | `/opt/homebrew/bin/codex` | Codex executable used by the bundled external summary wrapper |
@@ -170,11 +185,11 @@ The hook bridges also read:
 | `SBA_RECALL_LIMIT` | `5` | Maximum recalled decisions/handoffs injected by the recall hook |
 | `SBA_RECALL_MAX_CHARS` | `4000` | Maximum characters printed by the recall hook |
 
-Point at a database outside the repo, choose the external summary backend, or expose the server deliberately:
+Point at a database outside the repo, choose the local summary backend, or expose the server deliberately:
 
 ```bash
 SBA_DATASOURCE_URL='jdbc:sqlite:/path/to/black-box.db' mvn spring-boot:run
-SBA_SUMMARY_BACKEND=external mvn spring-boot:run
+SBA_SUMMARY_BACKEND=local mvn spring-boot:run
 SBA_BIND_ADDRESS=0.0.0.0 mvn spring-boot:run
 ```
 
@@ -191,6 +206,13 @@ Black Box exposes a streamable HTTP MCP server at `http://localhost:8766/mcp`.
 | `searchSessions` | query | Free-text search across captured events |
 | `recentSessions` | query | List recently captured sessions |
 | `localModelStatus` | query | Health of the optional local model backend |
+| `createSpec` | write | Store a project-scoped spec with a frozen body and optional provenance |
+| `enqueueTask` | write | Add an open task to one required lane under an existing spec |
+| `claimNextTask` | write | Atomically claim the highest-priority, oldest open task in an exact lane |
+| `updateTaskStatus` | write | Block, reset to open, or cancel a task through the allowed lifecycle |
+| `completeTask` | write | Complete an owned task and atomically link a normal recallable Handoff |
+| `listTasks` | query | List full task/spec snapshots with optional project, lane, and status filters |
+| `getSpec` | query | Return a spec, including its full frozen body and optional provenance |
 
 Register with Codex:
 
@@ -207,6 +229,54 @@ claude mcp list
 ```
 
 Restart the client after registration if the tools don't appear. The MCP server name keeps the historical id `sba-agentic`; the product name is Black Box.
+
+The seven coordination tools mirror the seven REST operations exactly. Success results use the same
+JSON field names and ISO-8601 timestamps. With no eligible task, REST returns HTTP `204` with no body
+and `claimNextTask` returns JSON `null`. Task-tool failures are marked as MCP errors and carry a
+parseable envelope with `error.type`, uppercase `error.code`, `message`, and task/status fields when
+available.
+
+An MCP-oriented handoff loop looks like this; the notation is illustrative because each MCP client
+renders tool calls differently. The UUIDs are synthetic placeholders:
+
+```text
+createSpec({
+  "projectKey": "/workspace/example-app",
+  "title": "Add a health probe",
+  "body": "Implement GET /healthz and prove a 200 response.",
+  "specRef": {"repo": "example/app", "path": "specs/health.md", "sha": "abc1234"},
+  "actor": "planner"
+})
+
+enqueueTask({
+  "specId": "11111111-1111-4111-8111-111111111111",
+  "title": "Implement and verify the health probe",
+  "lane": "codex",
+  "priority": 10,
+  "actor": "planner"
+})
+
+claimNextTask({"lane": "codex", "agent": "worker-1"})
+
+completeTask({
+  "taskId": "22222222-2222-4222-8222-222222222222",
+  "actor": "worker-1",
+  "source": "codex",
+  "clientSessionId": "synthetic-session-1",
+  "summary": "Implemented GET /healthz and verified its response.",
+  "openLoops": [],
+  "nextAction": "Run the release gate."
+})
+
+recallContext({
+  "repoOrTopic": "33333333-3333-4333-8333-333333333333",
+  "withinHours": 24,
+  "kinds": ["handoff"]
+})
+```
+
+Use the `resultHandoffId` returned by `completeTask` as the final `repoOrTopic`; it is a direct recall
+key. A real caller must use the ids returned by the previous calls, not the placeholders above.
 
 ### Hook capture (local, opt-in)
 
@@ -269,6 +339,11 @@ All endpoints are served at `http://localhost:8766`.
 | `POST /api/decisions` | `{ source, clientSessionId, repo, decision, rationale, alternatives[], confidence, openLoops[] }` |
 | `POST /api/handoffs` | `{ source, clientSessionId, repo, toAgent, contextSummary, openLoops[], nextAction }` |
 | `POST /api/events` | `{ source, clientSessionId, eventType, role, text, cwd, metadata, observedAt }` |
+| `POST /api/specs` | `{ projectKey, title, body, specRef?, actor }`; creates a frozen spec |
+| `POST /api/tasks` | `{ specId, title, lane, priority, actor }`; enqueues an open task |
+| `POST /api/tasks/claim` | `{ lane, agent }`; atomically claims the next eligible task, or returns `204` |
+| `PATCH /api/tasks/{taskId}` | `{ actor, status, blockedReason? }`; target is `blocked`, `open`, or `cancelled` |
+| `POST /api/tasks/{taskId}/complete` | `{ actor, source, clientSessionId, summary, openLoops[], nextAction }`; completes and links a Handoff |
 
 **Query**
 
@@ -295,6 +370,29 @@ All endpoints are served at `http://localhost:8766`.
 | `POST /api/sessions/summarize-missing?limit=10` | Backfills recent sessions missing summaries, capped per call |
 | `GET /api/exports/targets` | Lists configured summary export targets |
 | `POST /api/sessions/{id}/exports/{targetId}` | Writes that session's existing summary to the selected export target |
+| `GET /api/tasks?projectKey=<key>&lane=<lane>&status=<status>&limit=100` | Task snapshots with full frozen specs; filters are optional and exact |
+| `GET /api/specs/{specId}` | One spec with its frozen body and optional provenance |
+
+Task list limits default to 100 and are clamped to 1–250. Claim ordering is exact lane first, then
+`priority DESC`, then creation time ascending (FIFO among equal priorities). A claim moves `open`
+directly to `in_progress` and records `claimedBy`. Blocking requires a nonblank reason; manual reset
+is allowed only from `blocked` or `in_progress` and clears ownership. Cancellation is terminal.
+Completion is allowed only from `in_progress`, and only when `actor` equals the current claimant.
+
+REST task failures use a stable typed envelope:
+
+```json
+{
+  "error": {
+    "status": 409,
+    "type": "claimant_mismatch",
+    "message": "Only the current claimant may complete task ..."
+  }
+}
+```
+
+The task-specific types are `validation_failed`, `spec_not_found`, `task_not_found`,
+`invalid_transition`, `claimant_mismatch`, `concurrent_modification`, and `handoff_failed`.
 
 Examples:
 
@@ -316,6 +414,74 @@ curl -fsS -H 'Content-Type: application/json' -X POST http://localhost:8766/api/
 curl -fsS 'http://localhost:8766/api/recall?scope=/repos/black-box&withinHours=168&kinds=decision,handoff' | jq
 ```
 
+The following copyable REST example exercises create → enqueue → atomic claim → block → manual
+reset → re-claim → complete → Handoff recall against a running Black Box. It uses a synthetic
+machine-neutral project key and creates only isolated example records in the configured database:
+
+```bash
+set -euo pipefail
+BASE_URL="${BASE_URL:-http://localhost:8766}"
+
+SPEC_JSON="$(curl -fsS -H 'Content-Type: application/json' \
+  -X POST "$BASE_URL/api/specs" \
+  --data '{
+    "projectKey": "/workspace/example-app",
+    "title": "Document the health probe",
+    "body": "Add GET /healthz, verify HTTP 200, and record the result.",
+    "specRef": {"repo": "example/app", "path": "specs/health.md", "sha": "abc1234"},
+    "actor": "rest-demo"
+  }')"
+SPEC_ID="$(printf '%s' "$SPEC_JSON" | jq -r '.id')"
+
+TASK_JSON="$(curl -fsS -H 'Content-Type: application/json' \
+  -X POST "$BASE_URL/api/tasks" \
+  --data "$(jq -n --arg specId "$SPEC_ID" '{
+    specId: $specId,
+    title: "Implement the health probe",
+    lane: "rest-demo",
+    priority: 10,
+    actor: "rest-demo"
+  }')")"
+TASK_ID="$(printf '%s' "$TASK_JSON" | jq -r '.snapshot.task.id')"
+
+curl -fsS -H 'Content-Type: application/json' \
+  -X POST "$BASE_URL/api/tasks/claim" \
+  --data '{"lane":"rest-demo","agent":"worker-demo"}' | jq
+
+curl -fsS -H 'Content-Type: application/json' \
+  -X PATCH "$BASE_URL/api/tasks/$TASK_ID" \
+  --data '{"actor":"worker-demo","status":"blocked","blockedReason":"waiting for fixture review"}' | jq
+
+curl -fsS -H 'Content-Type: application/json' \
+  -X PATCH "$BASE_URL/api/tasks/$TASK_ID" \
+  --data '{"actor":"board","status":"open"}' | jq
+
+curl -fsS -H 'Content-Type: application/json' \
+  -X POST "$BASE_URL/api/tasks/claim" \
+  --data '{"lane":"rest-demo","agent":"worker-demo"}' | jq
+
+DONE_JSON="$(curl -fsS -H 'Content-Type: application/json' \
+  -X POST "$BASE_URL/api/tasks/$TASK_ID/complete" \
+  --data '{
+    "actor": "worker-demo",
+    "source": "manual",
+    "clientSessionId": "synthetic-rest-demo",
+    "summary": "Implemented and verified GET /healthz.",
+    "openLoops": [],
+    "nextAction": "Run the release gate."
+  }')"
+HANDOFF_ID="$(printf '%s' "$DONE_JSON" | jq -r '.snapshot.task.resultHandoffId')"
+
+curl -fsS --get "$BASE_URL/api/recall" \
+  --data-urlencode "scope=$HANDOFF_ID" \
+  --data-urlencode 'withinHours=24' \
+  --data-urlencode 'kinds=handoff' | jq
+```
+
+The MVP deliberately has no agent executor, leases, heartbeats, automatic reaper, dependency DAG,
+capability registry, multi-node broker, authentication layer, or priority aging. An external
+orchestrator may listen for the SSE hint, but it must perform the authoritative claim itself.
+
 ### Advanced/optional: ASK
 
 ASK is an optional retrieval workspace over the external `agent-memory` Elasticsearch index. The tab stays hidden unless that index is reachable; when available, ASK can retrieve cited memory hits and synthesize answers using the configured local embedding and answer paths. See the `SBA_ASK_*` entries in the configuration table.
@@ -336,7 +502,15 @@ java -jar target/sba-agentic-0.1.0.jar summarize-missing --limit=10
 
 The CLI reads the same environment variables as the server — set `SBA_DATASOURCE_URL` to share a database between them.
 
-Session summaries are owned by Black Box. The default backend is the local path: use a local OpenAI-compatible model server when available, or fall back to compacted transcripts when it is not. Set `SBA_SUMMARY_BACKEND=external` only when you explicitly want a Codex or Claude CLI subprocess to summarize transcript text through that vendor; the bundled wrappers are `scripts/summarize-with-codex.sh` (the default external command) and `scripts/summarize-with-claude.sh` (point `SBA_SUMMARY_EXTERNAL_COMMAND` at it). External summary failures fail closed. The bundled Codex wrapper disables hooks and ignores Codex user/project rules while summarizing. It also runs with a temporary auth-only `CODEX_HOME`, so the summary worker does not load separate MCP, skills, plugins, memory, or agent-continuity surfaces.
+Session summaries are owned by Black Box. The default `external` backend runs
+`scripts/summarize-with-codex.sh`, which sends transcript text through the Codex CLI vendor path;
+point `SBA_SUMMARY_EXTERNAL_COMMAND` at `scripts/summarize-with-claude.sh` to use that alternative
+external wrapper. External summary failures fail closed. The bundled Codex wrapper disables hooks and
+ignores Codex user/project rules while summarizing. It also runs with a temporary auth-only
+`CODEX_HOME`, so the summary worker does not load separate MCP, skills, plugins, memory, or
+agent-continuity surfaces. Set `SBA_SUMMARY_BACKEND=local` to explicitly use the configured local
+OpenAI-compatible server; that path falls back to a compacted transcript when the local model is
+unavailable.
 
 Summary export is opt-in. The shipped example target is Obsidian, implemented as a configurable `markdown-file` target that uses the bundled Mustache template at `classpath:/exports/summary-markdown.mustache`. Writes are disabled until `SBA_EXPORT_OBSIDIAN_DIR` or a custom target directory is configured:
 
@@ -361,6 +535,9 @@ SQLite is the canonical store. Tables are created from `src/main/resources/schem
 
 - `agent_sessions` — one row per `(source, clientSessionId)`; carries the session title (seeded from `metadata.title`, then the first prompt, then a tool/event fallback, truncated to 96 chars — later events do not retitle an existing session today).
 - `agent_events` — individual prompts, tool events, manual notes, observations, and the structured `Decision` / `Handoff` events whose fields live in `metadata`.
+- `specs` — durable project-scoped work definitions; `body` is the frozen language-neutral source and `spec_ref` is optional provenance only.
+- `tasks` — the current queue projection used by claims, filters, and the Board.
+- `task_events` — immutable lifecycle transitions; task events do not create synthetic agent sessions.
 
 Delete the database file (`sba-agentic.db` by default) only to wipe local captured history.
 
