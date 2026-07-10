@@ -2,6 +2,8 @@ package dev.nathan.sbaagentic.task;
 
 import java.util.Locale;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public enum SpecStatus {
     ACTIVE("active"),
     DONE("done"),
@@ -13,6 +15,7 @@ public enum SpecStatus {
         this.value = value;
     }
 
+    @JsonValue
     public String value() {
         return value;
     }

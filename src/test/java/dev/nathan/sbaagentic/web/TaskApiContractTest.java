@@ -1,0 +1,525 @@
+package dev.nathan.sbaagentic.web;
+
+import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import dev.nathan.sbaagentic.mcp.AgenticTools;
+import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.task.TaskDomainException;
+import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.task.TaskSnapshot;
+import dev.nathan.sbaagentic.task.TaskSpec;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest(properties = {
+        "spring.datasource.url=jdbc:sqlite:target/task-api-contract-test.db",
+        "sba.local-ai.enabled=false",
+        "sba.summary.backend=local",
+        "sba.elasticsearch.enabled=false",
+        "sba.ask.embedding-enabled=false"
+})
+@AutoConfigureMockMvc
+class TaskApiContractTest {
+
+    private static final String PROJECT = "/repos/task-api-contract";
+    private static final Set<String> EXISTING_TOOLS = Set.of(
+            "recentSessions",
+            "searchSessions",
+            "recallContext",
+            "captureDecision",
+            "captureHandoff",
+            "captureObservation",
+            "localModelStatus");
+    private static final Set<String> TASK_TOOLS = Set.of(
+            "createSpec",
+            "enqueueTask",
+            "claimNextTask",
+            "updateTaskStatus",
+            "completeTask",
+            "listTasks",
+            "getSpec");
+
+    @Autowired
+    MockMvc mockMvc;
+
+    @Autowired
+    ObjectMapper objectMapper;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    AgenticTools tools;
+
+    @Autowired
+    @Qualifier("agenticToolCallbacks")
+    ToolCallbackProvider toolCallbackProvider;
+
+    @BeforeEach
+    void resetDatabase() {
+        jdbcTemplate.update("DELETE FROM task_events");
+        jdbcTemplate.update("DELETE FROM tasks");
+        jdbcTemplate.update("DELETE FROM specs");
+        jdbcTemplate.update("DELETE FROM agent_events");
+        jdbcTemplate.update("DELETE FROM agent_sessions");
+    }
+
+    @Test
+    void isolatedRestTranscriptCreatesEnqueuesClaimsCompletesAndRecalls() throws Exception {
+        MvcResult create = mockMvc.perform(post("/api/specs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "projectKey": "%s",
+                                  "title": "REST queue contract",
+                                  "body": "Frozen specification body available without a checkout.",
+                                  "specRef": {"repo":"black-box","path":"docs/spec.md","sha":"abc123"},
+                                  "actor": "planner"
+                                }
+                                """.formatted(PROJECT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("active"))
+                .andExpect(jsonPath("$.body").value("Frozen specification body available without a checkout."))
+                .andReturn();
+        JsonNode createdSpec = json(create);
+
+        MvcResult enqueue = mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "specId": "%s",
+                                  "title": "Expose task contracts",
+                                  "lane": "codex",
+                                  "priority": 9,
+                                  "actor": "planner"
+                                }
+                                """.formatted(createdSpec.get("id").asText())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshot.task.status").value("open"))
+                .andExpect(jsonPath("$.snapshot.spec.body")
+                        .value("Frozen specification body available without a checkout."))
+                .andExpect(jsonPath("$.event.type").value("task.created"))
+                .andReturn();
+        JsonNode enqueued = json(enqueue);
+
+        MvcResult claim = mockMvc.perform(post("/api/tasks/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"lane":"codex","agent":"worker-1"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshot.task.status").value("in_progress"))
+                .andExpect(jsonPath("$.snapshot.task.claimedBy").value("worker-1"))
+                .andExpect(jsonPath("$.snapshot.spec.body")
+                        .value("Frozen specification body available without a checkout."))
+                .andExpect(jsonPath("$.event.type").value("task.claimed"))
+                .andReturn();
+        JsonNode claimed = json(claim);
+
+        MvcResult complete = mockMvc.perform(post(
+                                "/api/tasks/{taskId}/complete",
+                                claimed.at("/snapshot/task/id").asText())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actor":"worker-1",
+                                  "source":"codex",
+                                  "clientSessionId":"rest-transcript-session",
+                                  "summary":"REST and MCP task contracts are exposed.",
+                                  "openLoops":["Board client remains"],
+                                  "nextAction":"Build the typed Board client."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.snapshot.task.status").value("done"))
+                .andExpect(jsonPath("$.snapshot.task.resultHandoffId").isNotEmpty())
+                .andExpect(jsonPath("$.event.type").value("task.completed"))
+                .andReturn();
+        JsonNode completed = json(complete);
+        String handoffId = completed.at("/snapshot/task/resultHandoffId").asText();
+
+        MvcResult recall = mockMvc.perform(get("/api/recall")
+                        .param("scope", PROJECT)
+                        .param("kinds", "handoff"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].eventId").value(handoffId))
+                .andExpect(jsonPath("$.items[0].clientSessionId").value("rest-transcript-session"))
+                .andReturn();
+
+        mockMvc.perform(post("/api/tasks/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lane\":\"codex\",\"agent\":\"worker-2\"}"))
+                .andExpect(status().isNoContent())
+                .andExpect(jsonPath("$").doesNotExist());
+
+        System.out.println("REST_TRANSCRIPT POST /api/specs 200 " + create.getResponse().getContentAsString());
+        System.out.println("REST_TRANSCRIPT POST /api/tasks 200 " + enqueue.getResponse().getContentAsString());
+        System.out.println("REST_TRANSCRIPT POST /api/tasks/claim 200 " + claim.getResponse().getContentAsString());
+        System.out.println("REST_TRANSCRIPT POST /api/tasks/{id}/complete 200 "
+                + complete.getResponse().getContentAsString());
+        System.out.println("REST_TRANSCRIPT GET /api/recall 200 " + recall.getResponse().getContentAsString());
+
+        assertThat(enqueued.at("/snapshot/task/id").asText())
+                .isEqualTo(claimed.at("/snapshot/task/id").asText());
+    }
+
+    @Test
+    void restAndMcpExposeEquivalentFieldsAndCanonicalState() throws Exception {
+        JsonNode restSpec = json(mockMvc.perform(post("/api/specs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(specJson(PROJECT, "REST spec", "REST frozen body")))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(objectMapper.<JsonNode>valueToTree(tools.getSpec(restSpec.get("id").asText())))
+                .isEqualTo(restSpec);
+
+        TaskSpec mcpSpec = tools.createSpec(
+                PROJECT + "/mcp",
+                "MCP spec",
+                "MCP frozen body",
+                Map.of("repo", "black-box"),
+                "planner");
+        assertThat(json(mockMvc.perform(get("/api/specs/{id}", mcpSpec.id()))
+                        .andExpect(status().isOk())
+                        .andReturn()))
+                .isEqualTo(objectMapper.valueToTree(mcpSpec));
+
+        JsonNode restCreated = json(mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(enqueueJson(restSpec.get("id").asText(), "parity task", "codex", 5)))
+                .andExpect(status().isOk())
+                .andReturn());
+        List<TaskSnapshot> mcpOpen = tools.listTasks(PROJECT, "codex", "open", 50);
+        assertThat(mcpOpen).singleElement();
+        assertThat(objectMapper.<JsonNode>valueToTree(mcpOpen.getFirst()))
+                .isEqualTo(restCreated.get("snapshot"));
+
+        TaskChange mcpClaimed = tools.claimNextTask("codex", "worker");
+        assertThat(mcpClaimed.snapshot().spec().body()).isEqualTo("REST frozen body");
+        JsonNode restInProgress = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("lane", "codex")
+                        .param("status", "in_progress"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].spec.body").value("REST frozen body"))
+                .andReturn());
+        assertThat(restInProgress.get(0))
+                .isEqualTo(objectMapper.valueToTree(mcpClaimed.snapshot()));
+
+        JsonNode restBlocked = json(mockMvc.perform(patch(
+                                "/api/tasks/{id}", mcpClaimed.snapshot().task().id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actor\":\"worker\",\"status\":\"blocked\",\"blockedReason\":\"waiting\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.event.type").value("task.blocked"))
+                .andReturn());
+        assertThat(objectMapper.<JsonNode>valueToTree(
+                tools.listTasks(PROJECT, "codex", "blocked", 50).getFirst()))
+                .isEqualTo(restBlocked.get("snapshot"));
+
+        TaskChange mcpReset = tools.updateTaskStatus(
+                mcpClaimed.snapshot().task().id(), "operator", "open", null);
+        JsonNode restOpen = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("status", "open"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(restOpen.get(0)).isEqualTo(objectMapper.valueToTree(mcpReset.snapshot()));
+
+        JsonNode restClaimed = json(mockMvc.perform(post("/api/tasks/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lane\":\"codex\",\"agent\":\"worker\"}"))
+                .andExpect(status().isOk())
+                .andReturn());
+        TaskChange mcpCompleted = tools.completeTask(
+                restClaimed.at("/snapshot/task/id").asText(),
+                "worker",
+                "codex",
+                "mcp-parity-session",
+                "Completed through MCP.",
+                List.of("none"),
+                "Inspect the linked Handoff.");
+        JsonNode restDone = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("status", "done"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(restDone.get(0)).isEqualTo(objectMapper.valueToTree(mcpCompleted.snapshot()));
+        assertThat(mcpCompleted.snapshot().task().resultHandoffId()).isNotBlank();
+
+        TaskChange mcpCreated = tools.enqueueTask(
+                mcpSpec.id(), "MCP-created task", "claude", 2, "planner");
+        JsonNode restMcpCreated = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT + "/mcp")
+                        .param("lane", "claude"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(restMcpCreated.get(0)).isEqualTo(objectMapper.valueToTree(mcpCreated.snapshot()));
+        assertThat(tools.claimNextTask("empty-lane", "nobody")).isNull();
+    }
+
+    @Test
+    void listFiltersAreExplicitAndLimitsAreBoundedIdentically() throws Exception {
+        TaskSpec bulkSpec = tools.createSpec(PROJECT, "bulk", "body", null, "planner");
+        for (int i = 0; i < 251; i++) {
+            tools.enqueueTask(bulkSpec.id(), "bulk-" + i, "codex", 0, "planner");
+        }
+        TaskSpec otherSpec = tools.createSpec(PROJECT + "/other", "other", "body", null, "planner");
+        TaskChange other = tools.enqueueTask(otherSpec.id(), "other", "claude", 10_000, "planner");
+
+        JsonNode restBounded = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("lane", "codex")
+                        .param("status", "open")
+                        .param("limit", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(250))
+                .andReturn());
+        assertThat(restBounded)
+                .isEqualTo(objectMapper.valueToTree(tools.listTasks(PROJECT, "codex", "open", 999)));
+
+        JsonNode unfiltered = json(mockMvc.perform(get("/api/tasks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(100))
+                .andReturn());
+        assertThat(ids(unfiltered)).contains(other.snapshot().task().id());
+
+        JsonNode filtered = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("limit", "250"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(ids(filtered)).doesNotContain(other.snapshot().task().id());
+
+        mockMvc.perform(get("/api/tasks").param("limit", "0"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+        assertThat(tools.listTasks(null, null, null, 0)).hasSize(1);
+    }
+
+    @Test
+    void malformedAndDomainFailuresReturnStableErrorsWithoutPartialWrites() throws Exception {
+        mockMvc.perform(post("/api/specs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(specJson(PROJECT, "bad", " ")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM specs", Integer.class)).isZero();
+
+        mockMvc.perform(get("/api/specs/not-a-uuid"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"))
+                .andExpect(jsonPath("$.error.message").value("Spec id must be a UUID"));
+
+        String missingSpec = UUID.randomUUID().toString();
+        mockMvc.perform(get("/api/specs/{id}", missingSpec))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.type").value("spec_not_found"));
+
+        mockMvc.perform(get("/api/tasks").param("status", "running"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+        mockMvc.perform(get("/api/tasks").param("limit", "not-an-int"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("invalid_argument"));
+
+        mockMvc.perform(post("/api/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(enqueueJson(missingSpec, "missing spec", "codex", 1)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.type").value("spec_not_found"));
+
+        TaskSpec spec = tools.createSpec(PROJECT, "errors", "body", null, "planner");
+        TaskChange created = tools.enqueueTask(spec.id(), "error task", "codex", 1, "planner");
+        String taskId = created.snapshot().task().id();
+        int eventsBefore = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM task_events WHERE task_id = ?", Integer.class, taskId);
+
+        MvcResult invalidTransition = mockMvc.perform(patch("/api/tasks/{id}", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actor\":\"worker\",\"status\":\"blocked\",\"blockedReason\":\"waiting\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.type").value("invalid_transition"))
+                .andReturn();
+        assertThat(invalidTransition.getResponse().getContentAsString())
+                .doesNotContain("TaskDomainException", "java.", "\tat ");
+        TaskDomainException mcpTransition = catchThrowableOfType(
+                () -> tools.updateTaskStatus(taskId, "worker", "blocked", "waiting"),
+                TaskDomainException.class);
+        assertThat(mcpTransition.code()).isEqualTo(TaskErrorCode.INVALID_TRANSITION);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM task_events WHERE task_id = ?", Integer.class, taskId))
+                .isEqualTo(eventsBefore);
+
+        mockMvc.perform(patch("/api/tasks/{id}", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actor\":\"worker\",\"status\":\"not-real\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+        mockMvc.perform(post("/api/tasks/claim")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lane\":\"codex\",\"agent\":\"owner\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult ownership = mockMvc.perform(post("/api/tasks/{id}/complete", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actor":"intruder",
+                                  "source":"codex",
+                                  "clientSessionId":"intruder-session",
+                                  "summary":"Should not complete.",
+                                  "nextAction":"None."
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.type").value("claimant_mismatch"))
+                .andReturn();
+        assertThat(ownership.getResponse().getContentAsString())
+                .doesNotContain("TaskDomainException", "java.", "\tat ");
+        TaskDomainException mcpOwnership = catchThrowableOfType(
+                () -> tools.completeTask(
+                        taskId, "intruder", "codex", "intruder-session", "No", null, "No"),
+                TaskDomainException.class);
+        assertThat(mcpOwnership.code()).isEqualTo(TaskErrorCode.CLAIMANT_MISMATCH);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM tasks WHERE id = ?", String.class, taskId)).isEqualTo("in_progress");
+
+        String missingTask = UUID.randomUUID().toString();
+        mockMvc.perform(patch("/api/tasks/{id}", missingTask)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"actor\":\"operator\",\"status\":\"cancelled\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.type").value("task_not_found"));
+        mockMvc.perform(post("/api/specs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("malformed_json"));
+
+        TaskDomainException malformedMcpId = catchThrowableOfType(
+                () -> tools.getSpec("not-a-uuid"), TaskDomainException.class);
+        assertThat(malformedMcpId.code()).isEqualTo(TaskErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    void existingToolsRemainSourceCompatibleAndFourteenToolsAreRegistered() throws Exception {
+        Set<String> registered = Arrays.stream(toolCallbackProvider.getToolCallbacks())
+                .map(callback -> callback.getToolDefinition().name())
+                .collect(Collectors.toSet());
+        assertThat(registered).hasSize(14).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS);
+
+        assertThat(AgenticTools.class.getConstructor(
+                dev.nathan.sbaagentic.event.EventRepository.class,
+                dev.nathan.sbaagentic.context.ContextService.class,
+                dev.nathan.sbaagentic.search.SearchService.class,
+                dev.nathan.sbaagentic.ai.LocalAiClient.class)).isNotNull();
+
+        Method recent = AgenticTools.class.getMethod("recentSessions", int.class);
+        Method search = AgenticTools.class.getMethod("searchSessions", String.class, int.class);
+        Method recall = AgenticTools.class.getMethod(
+                "recallContext", String.class, int.class, List.class);
+        Method decision = AgenticTools.class.getMethod(
+                "captureDecision",
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                List.class,
+                double.class,
+                List.class);
+        Method handoff = AgenticTools.class.getMethod(
+                "captureHandoff",
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                List.class,
+                String.class);
+        Method observation = AgenticTools.class.getMethod(
+                "captureObservation", String.class, String.class, String.class, String.class);
+        Method modelStatus = AgenticTools.class.getMethod("localModelStatus");
+        assertThat(List.of(recent, search, recall, decision, handoff, observation, modelStatus))
+                .allSatisfy(method -> assertThat(method.getAnnotation(org.springframework.ai.tool.annotation.Tool.class))
+                        .isNotNull());
+
+        ToolCallback claim = Arrays.stream(toolCallbackProvider.getToolCallbacks())
+                .filter(callback -> callback.getToolDefinition().name().equals("claimNextTask"))
+                .findFirst()
+                .orElseThrow();
+        String emptyClaim = claim.call("{\"lane\":\"empty\",\"agent\":\"nobody\"}");
+        assertThat(emptyClaim).isEqualTo("null");
+        System.out.println("MCP_EMPTY_CLAIM_RESULT=" + emptyClaim);
+
+        ToolCallback list = Arrays.stream(toolCallbackProvider.getToolCallbacks())
+                .filter(callback -> callback.getToolDefinition().name().equals("listTasks"))
+                .findFirst()
+                .orElseThrow();
+        JsonNode listSchema = objectMapper.readTree(list.getToolDefinition().inputSchema());
+        assertThat(listSchema.get("required").toString()).isEqualTo("[\"limit\"]");
+        assertThat(list.call("{\"limit\":5}")).isEqualTo("[]");
+    }
+
+    private JsonNode json(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private static Set<String> ids(JsonNode array) {
+        return array.findValuesAsText("id").stream().collect(Collectors.toSet());
+    }
+
+    private static String specJson(String projectKey, String title, String body) {
+        return """
+                {
+                  "projectKey":"%s",
+                  "title":"%s",
+                  "body":"%s",
+                  "actor":"planner"
+                }
+                """.formatted(projectKey, title, body);
+    }
+
+    private static String enqueueJson(String specId, String title, String lane, int priority) {
+        return """
+                {
+                  "specId":"%s",
+                  "title":"%s",
+                  "lane":"%s",
+                  "priority":%d,
+                  "actor":"planner"
+                }
+                """.formatted(specId, title, lane, priority);
+    }
+}

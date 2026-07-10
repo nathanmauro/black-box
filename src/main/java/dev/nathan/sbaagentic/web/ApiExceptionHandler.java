@@ -1,6 +1,10 @@
 package dev.nathan.sbaagentic.web;
 
+import java.util.Locale;
 import java.util.stream.Collectors;
+
+import dev.nathan.sbaagentic.task.TaskDomainException;
+import dev.nathan.sbaagentic.task.TaskErrorCode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +19,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -61,6 +66,18 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "validation_failed", message));
     }
 
+    @ExceptionHandler(TaskDomainException.class)
+    public ResponseEntity<ApiError> handleTaskDomain(TaskDomainException ex) {
+        HttpStatus status = switch (ex.code()) {
+            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case SPEC_NOT_FOUND, TASK_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case INVALID_TRANSITION, CLAIMANT_MISMATCH, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
+            case HANDOFF_FAILED -> HttpStatus.BAD_GATEWAY;
+        };
+        String type = ex.code().name().toLowerCase(Locale.ROOT);
+        return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));
+    }
+
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
         String method = ex.getMethod() == null ? "The requested method" : "Method " + ex.getMethod();
@@ -73,6 +90,13 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleMissingParameter(MissingServletRequestParameterException ex) {
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "missing_parameter",
                 "Missing required query parameter: " + ex.getParameterName()));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String name = ex.getName() == null ? "request value" : ex.getName();
+        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "invalid_argument",
+                "Invalid value for " + name + "."));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

@@ -2,6 +2,8 @@ package dev.nathan.sbaagentic.task;
 
 import java.util.Locale;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public enum TaskEventType {
     CREATED("task.created"),
     CLAIMED("task.claimed"),
@@ -16,6 +18,7 @@ public enum TaskEventType {
         this.value = value;
     }
 
+    @JsonValue
     public String value() {
         return value;
     }

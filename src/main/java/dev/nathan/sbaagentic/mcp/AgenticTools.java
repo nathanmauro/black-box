@@ -1,6 +1,8 @@
 package dev.nathan.sbaagentic.mcp;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
@@ -12,9 +14,23 @@ import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.task.ClaimTaskRequest;
+import dev.nathan.sbaagentic.task.CompleteTaskRequest;
+import dev.nathan.sbaagentic.task.CreateSpecRequest;
+import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.task.TaskDomainException;
+import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.task.TaskQuery;
+import dev.nathan.sbaagentic.task.TaskService;
+import dev.nathan.sbaagentic.task.TaskSnapshot;
+import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.task.UpdateTaskStatusRequest;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,16 +47,29 @@ public class AgenticTools {
     private final ContextService contextService;
     private final SearchService searchService;
     private final LocalAiClient localAiClient;
+    private final TaskService taskService;
 
+    @Autowired
+    public AgenticTools(
+            EventRepository repository,
+            ContextService contextService,
+            SearchService searchService,
+            LocalAiClient localAiClient,
+            TaskService taskService) {
+        this.repository = repository;
+        this.contextService = contextService;
+        this.searchService = searchService;
+        this.localAiClient = localAiClient;
+        this.taskService = taskService;
+    }
+
+    /** Preserves source compatibility for callers that only use the original seven tools. */
     public AgenticTools(
             EventRepository repository,
             ContextService contextService,
             SearchService searchService,
             LocalAiClient localAiClient) {
-        this.repository = repository;
-        this.contextService = contextService;
-        this.searchService = searchService;
-        this.localAiClient = localAiClient;
+        this(repository, contextService, searchService, localAiClient, null);
     }
 
     @Tool(description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input.")
@@ -115,5 +144,134 @@ public class AgenticTools {
     @Tool(description = "Check the local AI backend status for LM Studio or another OpenAI-compatible local model server.")
     public Object localModelStatus() {
         return localAiClient.health();
+    }
+
+    @Tool(description = "Create a durable project-scoped spec whose frozen body is returned with every claimed task.")
+    public TaskSpec createSpec(
+            @ToolParam(description = "Project key used to group and filter the spec's tasks.") String projectKey,
+            @ToolParam(description = "Human-readable spec title.") String title,
+            @ToolParam(description = "Canonical frozen spec body; agents receive this without resolving files.") String body,
+            @ToolParam(required = false,
+                    description = "Optional provenance object such as repo, path, and sha.") Map<String, Object> specRef,
+            @ToolParam(description = "Agent or source creating the spec.") String actor) {
+        return taskService.createSpec(new CreateSpecRequest(projectKey, title, body, specRef, actor));
+    }
+
+    @Tool(description = "Enqueue an open task under an existing spec in one required routing lane.")
+    public TaskChange enqueueTask(
+            @ToolParam(description = "UUID of the frozen spec this task belongs to.") String specId,
+            @ToolParam(description = "Human-readable task title.") String title,
+            @ToolParam(description = "Required exact routing lane, for example codex or claude.") String lane,
+            @ToolParam(description = "Higher values are claimed first; equal values are FIFO.") int priority,
+            @ToolParam(description = "Agent or source enqueuing the task.") String actor) {
+        return taskService.enqueueTask(new EnqueueTaskRequest(
+                requireUuid(specId, "Spec id"), title, lane, priority, actor));
+    }
+
+    @Tool(description = "Atomically claim the highest-priority oldest open task in an exact lane. Returns empty when none exists.")
+    public TaskChange claimNextTask(
+            @ToolParam(description = "Required exact lane to claim from.") String lane,
+            @ToolParam(description = "Agent identity that will own the claimed task.") String agent) {
+        return taskService.claimNextTask(new ClaimTaskRequest(lane, agent)).orElse(null);
+    }
+
+    @Tool(description = "Apply an allowed task lifecycle update: block, reset to open, or cancel.")
+    public TaskChange updateTaskStatus(
+            @ToolParam(description = "UUID of the task to update.") String taskId,
+            @ToolParam(description = "Agent or operator causing the transition.") String actor,
+            @ToolParam(description = "Target status: blocked, open (reset), or cancelled.") String status,
+            @ToolParam(required = false,
+                    description = "Required nonblank reason when target status is blocked.") String blockedReason) {
+        return taskService.updateTaskStatus(new UpdateTaskStatusRequest(
+                requireUuid(taskId, "Task id"), actor, requireStatus(status), blockedReason));
+    }
+
+    @Tool(description = "Complete an owned in-progress task, capture a recallable Handoff, and link its event id.")
+    public TaskChange completeTask(
+            @ToolParam(description = "UUID of the task to complete.") String taskId,
+            @ToolParam(description = "Current claimant completing the task.") String actor,
+            @ToolParam(description = "Source client for the completion Handoff, for example codex.") String source,
+            @ToolParam(description = "Real source client session id for the completion Handoff.") String clientSessionId,
+            @ToolParam(description = "What was completed and where the work stands.") String summary,
+            @ToolParam(required = false, description = "Optional remaining open loops.") List<String> openLoops,
+            @ToolParam(description = "Required next action for the receiving agent.") String nextAction) {
+        return taskService.completeTask(new CompleteTaskRequest(
+                requireUuid(taskId, "Task id"),
+                actor,
+                source,
+                clientSessionId,
+                summary,
+                openLoops,
+                nextAction));
+    }
+
+    @Tool(description = "List task snapshots with optional project, lane, and status filters and a bounded limit.")
+    public List<TaskSnapshot> listTasks(
+            @ToolParam(required = false,
+                    description = "Optional exact project key; blank means all projects.") String projectKey,
+            @ToolParam(required = false,
+                    description = "Optional exact lane; blank means all lanes.") String lane,
+            @ToolParam(required = false,
+                    description = "Optional status: open, in_progress, blocked, done, or cancelled.") String status,
+            @ToolParam(description = "Maximum snapshots to return, clamped to 1 through 250.") int limit) {
+        return taskService.listTasks(new TaskQuery(
+                        optionalFilter(projectKey),
+                        optionalFilter(lane),
+                        optionalStatus(status)))
+                .stream()
+                .limit(safeTaskLimit(limit))
+                .toList();
+    }
+
+    @Tool(description = "Get a durable spec, including its full frozen body and optional provenance.")
+    public TaskSpec getSpec(
+            @ToolParam(description = "UUID of the spec to retrieve.") String specId) {
+        return taskService.getSpec(requireUuid(specId, "Spec id"));
+    }
+
+    private static int safeTaskLimit(int limit) {
+        return Math.max(1, Math.min(limit, 250));
+    }
+
+    private static String optionalFilter(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static TaskStatus optionalStatus(String value) {
+        return value == null || value.isBlank() ? null : parseStatus(value);
+    }
+
+    private static TaskStatus requireStatus(String value) {
+        if (value == null || value.isBlank()) {
+            throw validation("Task status is required");
+        }
+        return parseStatus(value);
+    }
+
+    private static TaskStatus parseStatus(String value) {
+        try {
+            return TaskStatus.fromValue(value);
+        }
+        catch (IllegalArgumentException ex) {
+            throw validation("Unknown task status: " + value);
+        }
+    }
+
+    private static String requireUuid(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw validation(label + " is required");
+        }
+        String normalized = value.strip();
+        try {
+            UUID.fromString(normalized);
+            return normalized;
+        }
+        catch (IllegalArgumentException ex) {
+            throw validation(label + " must be a UUID");
+        }
+    }
+
+    private static TaskDomainException validation(String message) {
+        return new TaskDomainException(TaskErrorCode.VALIDATION_FAILED, message, null, null, null);
     }
 }
