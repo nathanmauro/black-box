@@ -8,11 +8,12 @@ type AppProps = {
   children?: JSX.Element;
 };
 
-type UtilityLinkId = "stream" | "browse" | "recall" | "search";
+type UtilityLinkId = "stream" | "browse" | "board" | "recall" | "search";
 
 const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; icon: UtilityIconKind }> = [
   { id: "stream", href: "/", label: "Stream", icon: "activity" },
   { id: "browse", href: "/?view=browse", label: "Browse", icon: "browse" },
+  { id: "board", href: "/board", label: "Board", icon: "board" },
   { id: "recall", href: "/recall", label: "Recall", icon: "recall" },
   { id: "search", href: "/search", label: "Search", icon: "search" },
 ];
@@ -119,7 +120,7 @@ function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string
   return active ? "utility-icon-link active" : "utility-icon-link";
 }
 
-type UtilityIconKind = "activity" | "browse" | "recall" | "search" | "sources";
+type UtilityIconKind = "activity" | "browse" | "board" | "recall" | "search" | "sources";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
@@ -137,6 +138,16 @@ function UtilityIcon(props: { kind: UtilityIconKind }) {
         <path d="M4 10h12" />
         <path d="M4 14.6h12" />
         <path d="M7 3.8v12.4" />
+      </svg>
+    );
+  }
+
+  if (props.kind === "board") {
+    return (
+      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <rect x="3.2" y="4" width="5.6" height="12" rx="1" />
+        <rect x="11.2" y="4" width="5.6" height="7.5" rx="1" />
+        <path d="M5.2 7h1.6M13.2 7h1.6M5.2 10h1.6" />
       </svg>
     );
   }

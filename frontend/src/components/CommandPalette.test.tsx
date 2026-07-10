@@ -39,6 +39,17 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("offers the coordination Board as a first-class navigation command", async () => {
+    const onClose = vi.fn();
+    render(() => <CommandPalette open onClose={onClose} />);
+
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or search..."), { target: { value: "board" } });
+    fireEvent.click(await screen.findByRole("option", { name: /Board/ }));
+
+    expect(navigate).toHaveBeenCalledWith("/board");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("opens session picks in the Activity browse view", async () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);

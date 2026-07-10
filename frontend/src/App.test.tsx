@@ -45,6 +45,7 @@ describe("App shell", () => {
     expect(within(utilityNav).getByRole("link", { name: "Browse" })).toHaveAttribute("href", "/?view=browse");
     expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
     expect(within(utilityNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+    expect(within(utilityNav).getByRole("link", { name: "Board" })).toHaveAttribute("href", "/board");
     expect(within(utilityNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
@@ -60,6 +61,7 @@ describe("App shell", () => {
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
     expect(within(palette).getByRole("option", { name: /Activity/i })).toBeInTheDocument();
+    expect(within(palette).getByRole("option", { name: /Board/i })).toBeInTheDocument();
     expect(within(palette).queryByRole("option", { name: /Overview/i })).not.toBeInTheDocument();
   });
 });

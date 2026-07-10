@@ -21,6 +21,7 @@ type CommandItem = {
 
 const NAV_ITEMS = [
   { id: "nav-activity", label: "Activity", path: "/", meta: "browse sessions, find events, or ask memory" },
+  { id: "nav-board", label: "Board", path: "/board", meta: "inspect the live agent task queue" },
   { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
 ];
 
