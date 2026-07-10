@@ -78,6 +78,10 @@ public class EventBroadcaster implements EventIndexSink {
         send("session.updated", payload);
     }
 
+    public void publishTaskChanged(StreamEvents.TaskChanged payload) {
+        send(payload.transitionType(), payload);
+    }
+
     private void send(String name, Object payload) {
         for (SseEmitter emitter : emitters) {
             try {
