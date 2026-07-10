@@ -13,23 +13,24 @@ const host = appUrl.hostname === "localhost" ? "127.0.0.1" : appUrl.hostname;
 const tempDir = process.env.SBA_E2E_TEMP_DIR
   || path.join(os.tmpdir(), `black-box-saga-e2e-${randomUUID()}`);
 const dbPath = process.env.SBA_E2E_DB_PATH || path.join(tempDir, "black-box-saga-e2e.db");
+const runToken = process.env.SBA_E2E_RUN_TOKEN || randomUUID();
 assertSafeE2ePaths(tempDir, dbPath);
 // Playwright reloads its config in child processes. Export the first path so every process shares
 // one run directory instead of creating unused siblings that cannot be cleaned by the web server.
 process.env.SBA_E2E_TEMP_DIR = tempDir;
 process.env.SBA_E2E_DB_PATH = dbPath;
+process.env.SBA_E2E_RUN_TOKEN = runToken;
 const serverCommand = [
   "sh -c '",
-  "child=; ",
+  "set -eu; child=; owned=0; ",
   "cleanup() { ",
   "  code=$?; trap - EXIT INT TERM; ",
   "  if [ -n \"$child\" ] && kill -0 \"$child\" 2>/dev/null; then kill \"$child\" 2>/dev/null || true; wait \"$child\" 2>/dev/null || true; fi; ",
-  "  rm -rf \"$SBA_E2E_TEMP_DIR\"; ",
-  "  printf \"BLACK_BOX_E2E_DB_CLEANED=%s\\n\" \"$SBA_E2E_DB_PATH\"; ",
+  "  if [ \"$owned\" = 1 ]; then node frontend/src/e2e/e2ePreflight.mjs cleanup || code=$?; fi; ",
   "  exit \"$code\"; ",
   "}; ",
   "trap cleanup EXIT INT TERM; ",
-  "mkdir -m 700 \"$SBA_E2E_TEMP_DIR\"; ",
+  "node frontend/src/e2e/e2ePreflight.mjs prepare; owned=1; ",
   "printf \"BLACK_BOX_E2E_DB=%s\\n\" \"$SBA_E2E_DB_PATH\"; ",
   "mvn -q -Pfrontend -DskipTests package; ",
   "java -jar target/sba-agentic-0.1.0.jar & child=$!; wait \"$child\"",
@@ -76,6 +77,7 @@ export default defineConfig({
     env: {
       SBA_E2E_DB_PATH: dbPath,
       SBA_E2E_TEMP_DIR: tempDir,
+      SBA_E2E_RUN_TOKEN: runToken,
       SBA_PORT: port,
       SBA_BIND_ADDRESS: host,
       SBA_DATASOURCE_URL: `jdbc:sqlite:${dbPath}`,
