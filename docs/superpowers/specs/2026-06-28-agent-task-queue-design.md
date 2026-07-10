@@ -55,9 +55,11 @@ workers pull from a shared DB** — exactly what we keep.
 - **Simplicity is king.** Prefer reusing existing patterns (event log, SSE, `@Transactional`
   JdbcTemplate, `ON CONFLICT` upserts, `schema.sql` + `ensureSchema()`) over new abstractions.
 - **Local-first, single node.** One machine, one SQLite file (`sba-agentic.db`, WAL), `localhost:8766`.
-- **Substrate, not executor.** Black Box records and surfaces tasks. It **never launches agents,
-  never spawns processes, never mutates a file or an agent's internals.** Agents pull; Black Box
-  does not push work.
+- **Substrate, not executor.** Black Box records and surfaces tasks. Its coordination path **never
+  launches worker agents, spawns worker processes, executes task commands, or mutates a checkout or
+  an agent's internals.** Agents pull; Black Box does not push work. Configured external session
+  summarization is a separate existing path that may invoke a Codex or Claude CLI command through
+  `/bin/sh -c` and transmit transcript text.
 - **Language-neutral interface only.** Heterogeneous agents interoperate solely over **MCP +
   REST**. Anything an agent needs to act must travel through that interface as plain data — no
   assumption of a shared runtime, git client, or filesystem layout.

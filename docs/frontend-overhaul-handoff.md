@@ -18,8 +18,9 @@ into `src/main/resources/static/` by `npm run build` and by the Maven `-Pfronten
 - The coordination Board is in place at `/board`: project/lane filters and selected task are
   shareable URL state; Open, In Progress, Blocked, and Done columns update from task SSE frames;
   cancelled work is disclosed separately; detail shows the frozen spec and linked Handoff.
-- The Board never runs agents. Its only lifecycle write is an explicit reset from `blocked` or
-  `in_progress` to `open`, followed by an authoritative REST refresh.
+- The Board never launches worker agents or executes task commands. Its only lifecycle write is an
+  explicit reset from `blocked` or `in_progress` to `open`, followed by an authoritative REST
+  refresh.
 - Playwright simulated-use coverage lives in `frontend/tests/e2e/smoke.spec.ts` and drives the real
   packaged app, not the Vite dev server.
 

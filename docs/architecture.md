@@ -7,9 +7,12 @@ loops:
 - **coordination:** create a frozen spec, enqueue lane-routed work, atomically claim it, record its
   lifecycle, complete it with a normal Handoff, then recall that result.
 
-The server never launches agents, runs commands, edits a checkout, or acknowledges work on an
-agent's behalf. Workers and orchestrators remain external clients. The core loops require only the
-Spring Boot process and SQLite; SSE is a best-effort wake hint, not a queue or durability boundary.
+The task-coordination path never launches worker agents, executes task commands, edits a checkout,
+or acknowledges work on an agent's behalf. Workers and orchestrators remain external clients. The
+core loops require only the Spring Boot process and SQLite; SSE is a best-effort wake hint, not a
+queue or durability boundary. Configured session summarization is a separate explicit path and may
+invoke a Codex or Claude CLI command through `/bin/sh -c`, with the transcript privacy boundary
+described below.
 
 ## System shape
 
@@ -166,19 +169,22 @@ instead of inventing local state.
 SQLite is the only canonical store. Elasticsearch is disabled by default and is only a secondary
 index for new events; it is not used by atomic claims or the Board.
 
-Session summarization has a separate privacy boundary. The default `external` backend invokes the
-bundled Codex CLI wrapper, so transcript text can leave the machine for that vendor. Set
-`SBA_SUMMARY_BACKEND=local` to explicitly choose LM Studio or another OpenAI-compatible local
-server; local failures degrade to compacted transcript output. These summary paths are not involved
-in task coordination or structured recall.
+Session summarization has a separate privacy and process boundary. The `external` backend passes
+the configured `SBA_SUMMARY_EXTERNAL_COMMAND` to `/bin/sh -c`; the default command is the bundled
+Codex CLI wrapper, and the bundled Claude wrapper is an optional alternative. Transcript text can
+therefore leave the machine for the selected vendor. Set `SBA_SUMMARY_BACKEND=local` to explicitly
+choose LM Studio or another OpenAI-compatible local server; local failures degrade to compacted
+transcript output. Neither summary path launches workers, executes queued task commands, or
+participates in task coordination or structured recall.
 
 ## MVP non-goals
 
-The shipped coordination MVP intentionally has no embedded agent runner, process spawning, command
-execution, file mutation, lease, heartbeat, automatic reaper, dependency DAG, capability registry,
-multi-node broker, authentication layer, priority aging, or automatic follow-up enqueue. Manual
-reset is the recovery mechanism for abandoned ownership. Those additions must preserve SQLite as
-the truth and keep execution outside the Black Box server.
+The shipped coordination MVP intentionally adds no embedded worker runner, worker-process spawning,
+task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency DAG,
+capability registry, multi-node broker, authentication layer, priority aging, or automatic
+follow-up enqueue. Manual reset is the recovery mechanism for abandoned ownership. Those additions
+must preserve SQLite as the truth and keep task execution outside the Black Box server. The
+separately configured session-summary subprocess described above is not a worker or task executor.
 
 The implemented design and file map are recorded in
 [`docs/superpowers/specs/2026-06-28-agent-task-queue-design.md`](superpowers/specs/2026-06-28-agent-task-queue-design.md)

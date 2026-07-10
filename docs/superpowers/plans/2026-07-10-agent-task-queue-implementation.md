@@ -14,7 +14,8 @@ create spec → enqueue → atomic lane claim → block/reset or complete → Ha
 ```
 
 SQLite remains authoritative. MCP and REST are equivalent adapters. SSE wakes clients but never
-owns delivery. The Board observes and manually releases stalled ownership without launching work.
+owns delivery. The Board observes and manually releases stalled ownership without launching a
+worker agent or executing a task command.
 
 ## Safety contract
 
@@ -25,7 +26,11 @@ owns delivery. The Board observes and manually releases stalled ownership withou
 - Complete only when the actor is the current claimant and the task is `in_progress`.
 - Capture completion as a normal Handoff with the real source session; roll back if capture fails.
 - Never create a synthetic session for ordinary task lifecycle events.
-- Never launch an agent, execute a command, mutate a checkout, or auto-enqueue follow-up work.
+- Never let task coordination or the Board launch a worker agent, execute a task command, mutate a
+  checkout, or auto-enqueue follow-up work.
+- Keep configured session summarization as a separate explicit boundary: its `external` backend may
+  invoke a Codex or Claude CLI command through `/bin/sh -c` and transmit transcript text, but it is
+  never a worker or queued-task execution path.
 
 ## Implemented work
 

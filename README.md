@@ -28,9 +28,11 @@ Black Box also turns that continuity loop into a coordination loop without becom
 4. The current claimant completes the task with a normal Black Box `Handoff`.
 5. The task keeps that Handoff's event id, so the Board or a later agent can recall the result.
 
-Black Box never launches an agent, runs a command, or edits a checkout. SQLite is the queue and the
-source of truth. Server-Sent Events (SSE) only wake connected consumers; every consumer must confirm
-state with `claimNextTask` or `listTasks`.
+The task-coordination path never launches a worker agent, executes a task command, or edits a
+checkout. SQLite is the queue and the source of truth. Server-Sent Events (SSE) only wake connected
+consumers; every consumer must confirm state with `claimNextTask` or `listTasks`. Configured session
+summarization is a separate path: the `external` backend invokes its command through `/bin/sh -c`
+and can send transcript text through the selected Codex or Claude CLI vendor path.
 
 ## Quickstart
 
@@ -62,7 +64,7 @@ Sanity check:
 curl -fsS http://localhost:8766/api/status | jq
 ```
 
-The web surface centers on Activity, Board, and Recall. Activity is the main reading workspace: Browse shows the session rail and prompt-focused reader, Find exposes faceted event search, and Ask appears when its optional dependencies are reachable. Board at [`/board`](http://localhost:8766/board) shows Open, In Progress, Blocked, and Done columns; project and lane filters plus the selected task are encoded in the URL. Task detail includes the frozen spec, ownership, blocker, and linked completion Handoff. The Board's only lifecycle mutation is an explicit reset of `blocked` or `in_progress` work to `open`; it never runs an agent.
+The web surface centers on Activity, Board, and Recall. Activity is the main reading workspace: Browse shows the session rail and prompt-focused reader, Find exposes faceted event search, and Ask appears when its optional dependencies are reachable. Board at [`/board`](http://localhost:8766/board) shows Open, In Progress, Blocked, and Done columns; project and lane filters plus the selected task are encoded in the URL. Task detail includes the frozen spec, ownership, blocker, and linked completion Handoff. The Board's only lifecycle mutation is an explicit reset of `blocked` or `in_progress` work to `open`; it never launches a worker agent or executes a task command.
 
 ## Run as a service
 
@@ -108,7 +110,7 @@ Black Box does not capture raw sessions unless you wire the opt-in hook, does no
 
 ## How it compares
 
-Black Box is not the first local memory for coding agents, and you should know the field: [claude-mem](https://github.com/thedotmack/claude-mem) (81.6k stars) owns compressed observation capture at scale, [ai-memory](https://github.com/akitaonrails/ai-memory) (560 stars, three weeks old and moving fast) ships typed handoffs with session-start auto-injection, [EchoVault](https://github.com/mraza007/echovault) (145 stars) pioneered layered secret redaction, and [mem0](https://github.com/mem0ai/mem0) (58k stars) is the general-purpose heavyweight. What none of them capture: **the decision's rejected alternatives and the agent's confidence** — the two fields that tell the next agent whether to trust the call or reopen it. That schema, plus raw event recording, session summaries, and a web UI in one app with no external services, is the bet.
+Black Box is not the first local memory for coding agents, and you should know the field: [claude-mem](https://github.com/thedotmack/claude-mem) (81.6k stars) owns compressed observation capture at scale, [ai-memory](https://github.com/akitaonrails/ai-memory) (560 stars, three weeks old and moving fast) ships typed handoffs with session-start auto-injection, [EchoVault](https://github.com/mraza007/echovault) (145 stars) pioneered layered secret redaction, and [mem0](https://github.com/mem0ai/mem0) (58k stars) is the general-purpose heavyweight. What none of them capture: **the decision's rejected alternatives and the agent's confidence** — the two fields that tell the next agent whether to trust the call or reopen it. That schema, plus raw event recording, session summaries, and a web UI in one app—with SQLite sufficient for coordination and recall and optional summary/search integrations—is the bet.
 
 | | Typed decisions (alternatives + confidence) | Typed handoffs (open loops + next action) | Raw session capture | Auto-inject at session start | Secret redaction | Web UI | License |
 | --- | --- | --- | --- | --- | --- | --- | --- |
