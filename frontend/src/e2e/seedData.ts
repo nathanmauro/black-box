@@ -77,8 +77,8 @@ export function assertSafeSeedBaseUrl(baseURL: string): void {
   if (!["127.0.0.1", "localhost", "::1"].includes(hostname)) {
     throw new Error(`Refusing to seed non-local Black Box URL: ${baseURL}`);
   }
-  if (port === "8766") {
-    throw new Error(`Refusing to seed production Black Box port 8766: ${baseURL}`);
+  if (port !== "8799") {
+    throw new Error(`Refusing to seed outside isolated Black Box port 8799: ${baseURL}`);
   }
 }
 

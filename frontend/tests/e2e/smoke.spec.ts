@@ -21,26 +21,22 @@ test("activity workspace is stream-first with browse one tab away", async ({ pag
   await page.screenshot({ path: `${SHOT_DIR}/activity.png`, fullPage: true });
 });
 
-test("project combined log opens from the session group header", async ({ page }) => {
+test("Activity project picker scopes the current session rail and reader", async ({ page }) => {
   await page.goto("/?view=browse");
 
-  const openCombinedLog = page.getByRole("button", { name: /Open combined log/i }).first();
-  await expect(openCombinedLog).toBeVisible();
-  await openCombinedLog.click();
+  await page.locator(".project-picker-button").click();
+  const projectOption = page.getByRole("listbox", { name: "Project results" })
+    .getByRole("option")
+    .filter({ hasText: "/tmp/black-box-e2e" });
+  await expect(projectOption).toBeVisible();
+  await projectOption.click();
 
-  const combinedLog = page.getByRole("region", { name: /Project combined log/i });
-  await expect(combinedLog).toBeVisible();
-  await expect(combinedLog.getByRole("heading", { name: /Combined log/i })).toBeVisible();
-  await expect(combinedLog.locator(".combined-log-entry, .combined-log-empty").first()).toBeVisible();
-
-  const visibleTags = await combinedLog.locator(".combined-log-tag").allTextContents();
-  if (visibleTags.length === 0) {
-    await expect(combinedLog.locator(".combined-log-empty")).toBeVisible();
-  } else {
-    for (const tag of visibleTags) {
-      expect(["Decision", "Handoff", "Observation"]).toContain(tag.trim());
-    }
-  }
+  await expect(page).toHaveURL(/project=/);
+  await expect(page.getByLabel("Find sessions")).toBeVisible();
+  await expect(page.getByRole("button", { name: /UI rewrite kickoff/ })).toBeVisible();
+  await page.getByRole("button", { name: /UI rewrite kickoff/ }).click();
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+  await expect(page.getByText("No summary captured yet.")).toBeVisible();
 });
 
 test("faceted search filters to one source", async ({ page }) => {
