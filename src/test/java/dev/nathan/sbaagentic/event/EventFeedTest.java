@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -31,6 +32,9 @@ class EventFeedTest {
 
     @Autowired
     EventRepository repository;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void feedReturnsNewestFirstWithSessionAliases() {
@@ -86,6 +90,59 @@ class EventFeedTest {
         assertThat(repository.feed("project:" + key + "/beta", false, null, null, 10).items())
                 .extracting(EventFeedItem::id)
                 .containsExactly(claude.id());
+    }
+
+    @Test
+    void feedHonorsNegativeFacets() {
+        String key = uniqueKey("negative");
+        SeededEvent decision = seed(key, "codex", key + "-decision", "Decision", "assistant",
+                "Negative facet target " + key, "/tmp/" + key + "/alpha", null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent tool = seed(key, "codex", key + "-tool", "PostToolUse", "assistant",
+                "Negative facet tool " + key, "/tmp/" + key + "/alpha", "Edit",
+                Instant.parse("2026-07-01T12:01:00Z"));
+        SeededEvent otherProject = seed(key, "claude", key + "-other", "Decision", "assistant",
+                "Negative facet other project " + key, "/tmp/" + key + "/beta", null,
+                Instant.parse("2026-07-01T12:02:00Z"));
+
+        assertThat(repository.feed("NOT kind:PostToolUse " + key, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .contains(decision.id(), otherProject.id())
+                .doesNotContain(tool.id());
+
+        assertThat(repository.feed("-project:" + key + "/beta " + key, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .contains(decision.id())
+                .doesNotContain(otherProject.id());
+    }
+
+    @Test
+    void feedHonorsExactProjectFacetWithoutPrefixLeakageAndNoProjectRows() {
+        String key = uniqueKey("exact");
+        String source = "codex-" + key;
+        SeededEvent app = seed(key, source, key + "-app", "Decision", "assistant",
+                "Exact project app " + key, "/tmp/" + key + "/app", null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent appOther = seed(key, source, key + "-app-other", "Decision", "assistant",
+                "Exact project app other " + key, "/tmp/" + key + "/app-other", null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        SeededEvent noProject = seed(key, source, key + "-no-project", "Decision", "assistant",
+                "Exact project no cwd " + key, null, null,
+                Instant.parse("2026-07-01T12:02:00Z"));
+        SeededEvent blankProject = seed(key, source, key + "-blank-project", "Decision", "assistant",
+                "Exact project blank cwd " + key, "/tmp/" + key + "/placeholder", null,
+                Instant.parse("2026-07-01T12:03:00Z"));
+        jdbcTemplate.update("UPDATE agent_sessions SET cwd = '   ' WHERE client_session_id = ?", key + "-blank-project");
+
+        assertThat(repository.feed("source:" + source + " project_exact:/tmp/" + key + "/app", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(app.id())
+                .doesNotContain(appOther.id());
+
+        assertThat(repository.feed("source:" + source + " project_exact:__no_project__", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(blankProject.id(), noProject.id())
+                .doesNotContain(app.id());
     }
 
     @Test

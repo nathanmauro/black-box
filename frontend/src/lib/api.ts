@@ -298,8 +298,8 @@ export function getProjects(): Promise<ProjectSummary[]> {
   return getJson("/api/projects");
 }
 
-export function getProjectSessions(key: string): Promise<AgentSession[]> {
-  return getJson(`/api/projects/${encodeURIComponent(key)}/sessions`);
+export function getProjectSessions(key: string, limit = 250): Promise<AgentSession[]> {
+  return getJson(`/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}`);
 }
 
 export function getProjectTimeline(key: string, limit = 250, offset = 0): Promise<ProjectTimelineResponse> {

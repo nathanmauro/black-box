@@ -1,7 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import StreamRow from "../components/events/StreamRow";
-import { getEventFeed, searchValues, type EventFeedItem } from "../lib/api";
+import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
@@ -23,7 +23,12 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   project: [],
 };
 
-export default function StreamPage() {
+type StreamPageProps = {
+  project?: ProjectSummary | null;
+  projectScopePending?: boolean;
+};
+
+export default function StreamPage(props: StreamPageProps = {}) {
   let inputRef: HTMLInputElement | undefined;
   let inputWrapRef: HTMLDivElement | undefined;
   let feedRef: HTMLDivElement | undefined;
@@ -45,18 +50,41 @@ export default function StreamPage() {
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   const submitted = () => params.q ?? "";
-  const parsed = createMemo(() => parseQuery(submitted()));
+  const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
+  const apiQuery = createMemo(() => (props.project ? appendExactProjectScope(visibleSubmitted(), props.project.canonicalKey) : submitted()));
+  const parsed = createMemo(() => parseQuery(visibleSubmitted()));
   const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
   const canLoadMore = createMemo(() => Boolean(nextBefore()) && items().length < MAX_ROWS);
 
-  createEffect(() => setDraft(params.q ?? ""));
+  createEffect(() => setDraft(visibleSubmitted()));
 
   createEffect(() => {
-    const q = submitted();
+    const visible = visibleSubmitted();
+    if (props.project && visible !== submitted()) {
+      setParams({ q: visible || undefined });
+    }
+  });
+
+  createEffect(() => {
+    if (props.projectScopePending) {
+      loadToken += 1;
+      setLoading(true);
+      setError(null);
+      setItems([]);
+      setPendingItems([]);
+      setNewCount(0);
+      setNextBefore(null);
+      setLoadingMore(false);
+      setExpandedId(null);
+      return;
+    }
+    const q = apiQuery();
     const meaningful = meaningfulOnly();
     const token = ++loadToken;
     setLoading(true);
+    setLoadingMore(false);
+    setNextBefore(null);
     setError(null);
     getEventFeed({ limit: FEED_LIMIT, q, meaningful })
       .then((response) => {
@@ -116,8 +144,8 @@ export default function StreamPage() {
     run(draft());
   }
 
-  function applyFacet(key: FacetField["key"], value: string | null) {
-    run(setFacet(submitted(), key, value));
+  function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
+    run(setFacet(visibleSubmitted(), key, value, mode));
   }
 
   function dismissSuggestions() {
@@ -140,24 +168,29 @@ export default function StreamPage() {
 
   async function loadMore() {
     const before = nextBefore();
-    if (!before || loadingMore() || items().length >= MAX_ROWS) return;
+    if (props.projectScopePending || loading() || !before || loadingMore() || items().length >= MAX_ROWS) return;
+    const token = loadToken;
     setLoadingMore(true);
     setError(null);
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: submitted(), meaningful: meaningfulOnly(), before });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), before });
+      if (!isCurrentStreamRequest(token)) return;
       setItems((current) => dedupe([...current, ...response.items]).slice(0, MAX_ROWS));
       setNextBefore(items().length >= MAX_ROWS ? null : response.nextBefore ?? null);
     } catch (cause) {
+      if (!isCurrentStreamRequest(token)) return;
       setError(cause instanceof Error ? cause.message : "Unable to load more events.");
     } finally {
-      setLoadingMore(false);
+      if (isCurrentStreamRequest(token)) setLoadingMore(false);
     }
   }
 
   async function refetchHead(since: string | undefined) {
-    if (!since) return;
+    if (props.projectScopePending || !since) return;
+    const token = loadToken;
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: submitted(), meaningful: meaningfulOnly(), since });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), since });
+      if (!isCurrentStreamRequest(token)) return;
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
       if (!fresh.length) return;
@@ -173,6 +206,10 @@ export default function StreamPage() {
     } catch {
       // Live refetch is opportunistic; the normal feed error state remains tied to explicit loads.
     }
+  }
+
+  function isCurrentStreamRequest(token: number) {
+    return token === loadToken && !props.projectScopePending;
   }
 
   function nearTop() {
@@ -232,26 +269,38 @@ export default function StreamPage() {
             {(field) => (
               <div class="facet-group">
                 <span class="facet-label">{field.label}</span>
-                <Show
-                  when={parsed().facets[field.key]}
-                  fallback={
-                    <div class="facet-quick">
-                      <For each={QUICK_VALUES[field.key]}>
-                        {(value) => (
-                          <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>
-                            {value}
-                          </button>
-                        )}
-                      </For>
-                      <Show when={QUICK_VALUES[field.key].length === 0}>
-                        <span class="facet-hint">type {field.key}:...</span>
-                      </Show>
-                    </div>
-                  }
-                >
-                  <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
-                    {parsed().facets[field.key]} x
-                  </button>
+                <Show when={parsed().facets[field.key]}>
+                  {(value) => (
+                    <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
+                      {value()} x
+                    </button>
+                  )}
+                </Show>
+                <Show when={parsed().excludeFacets[field.key]}>
+                  {(value) => (
+                    <button
+                      type="button"
+                      class="facet-chip facet-chip--active facet-chip--exclude"
+                      aria-label={`${field.key} != ${value()}`}
+                      onClick={() => applyFacet(field.key, null, "exclude")}
+                    >
+                      {field.key} != {value()} x
+                    </button>
+                  )}
+                </Show>
+                <Show when={!parsed().facets[field.key] && !parsed().excludeFacets[field.key]}>
+                  <div class="facet-quick">
+                    <For each={QUICK_VALUES[field.key]}>
+                      {(value) => (
+                        <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>
+                          {value}
+                        </button>
+                      )}
+                    </For>
+                    <Show when={QUICK_VALUES[field.key].length === 0}>
+                      <span class="facet-hint">type {field.key}:...</span>
+                    </Show>
+                  </div>
                 </Show>
               </div>
             )}
@@ -307,6 +356,14 @@ function dedupe(items: EventFeedItem[]): EventFeedItem[] {
     result.push(item);
   }
   return result;
+}
+
+function appendExactProjectScope(query: string, canonicalKey: string): string {
+  return [query.trim(), `project_exact:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+}
+
+function quoteHiddenFacet(value: string): string {
+  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
 function createSignalResource<TSource, TResult>(

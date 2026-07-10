@@ -34,12 +34,46 @@ class QueryFacetsTest {
     }
 
     @Test
+    void parsesInternalExactProjectFacet() {
+        QueryFacets quoted = QueryFacets.parse("project_exact:\"/tmp/app\" kind:Decision");
+        assertThat(quoted.exactCwd()).isEqualTo("/tmp/app");
+        assertThat(quoted.eventType()).isEqualTo("Decision");
+        assertThat(quoted.freeText()).isEmpty();
+        assertThat(quoted.hasAnyFacet()).isTrue();
+
+        QueryFacets noProject = QueryFacets.parse("project_exact:__no_project__");
+        assertThat(noProject.exactCwd()).isEqualTo("__no_project__");
+        assertThat(noProject.freeText()).isEmpty();
+    }
+
+    @Test
     void aliasesMapToColumns() {
         QueryFacets f = QueryFacets.parse("agent:claude event_type:Handoff tool_name:Bash cwd:proj");
         assertThat(f.source()).isEqualTo("claude");
         assertThat(f.eventType()).isEqualTo("Handoff");
         assertThat(f.toolName()).isEqualTo("Bash");
         assertThat(f.cwd()).isEqualTo("proj");
+    }
+
+    @Test
+    void parsesReadableAndTerseNegativeFacets() {
+        QueryFacets readable = QueryFacets.parse("source:codex NOT kind:PostToolUse recall");
+        assertThat(readable.source()).isEqualTo("codex");
+        assertThat(readable.excludedEventType()).isEqualTo("PostToolUse");
+        assertThat(readable.freeText()).containsExactly("recall");
+        assertThat(readable.hasAnyFacet()).isTrue();
+
+        QueryFacets terse = QueryFacets.parse("-tool:Read -project:\"/tmp/sba agentic\"");
+        assertThat(terse.excludedToolName()).isEqualTo("Read");
+        assertThat(terse.excludedCwd()).isEqualTo("/tmp/sba agentic");
+        assertThat(terse.freeText()).isEmpty();
+    }
+
+    @Test
+    void danglingNotFallsBackToFreeText() {
+        QueryFacets f = QueryFacets.parse("NOT recall bug");
+        assertThat(f.hasAnyFacet()).isFalse();
+        assertThat(f.freeText()).containsExactly("NOT", "recall", "bug");
     }
 
     @Test

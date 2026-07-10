@@ -1,5 +1,8 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createSignal, For, Match, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
+import ProjectPicker from "../components/ProjectPicker";
+import { getProjects } from "../lib/api";
+import { readRememberedProjectKey, rememberProjectKey } from "../lib/projects";
 import SessionsPage from "./SessionsPage";
 import SearchPage, { type SearchMode } from "./SearchPage";
 import StreamPage from "./StreamPage";
@@ -14,10 +17,32 @@ const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
 ];
 
 export default function ActivityPage() {
-  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string }>();
+  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string; project?: string; event?: string }>();
   const [mode, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
+  const [projects] = createResource(getProjects, { initialValue: [] });
+  const availableProjects = createMemo(() => (projects.error ? [] : projects()));
+  const selectedProject = createMemo(() => availableProjects().find((project) => project.projectKey === params.project));
+  const projectScopePending = createMemo(() => Boolean(params.project) && projects.loading && !selectedProject());
 
   createEffect(() => setModeSignal(modeFromParams(params)));
+  createEffect(() => {
+    if (params.project !== undefined || projects.loading || projects.error) return;
+    const remembered = readRememberedProjectKey();
+    if (!remembered) return;
+    if (availableProjects().some((project) => project.projectKey === remembered)) {
+      setParams({ project: remembered, session: undefined, event: undefined });
+    } else {
+      rememberProjectKey(undefined);
+      if (params.session || params.event) {
+        setParams({ session: undefined, event: undefined });
+      }
+    }
+  });
+  createEffect(() => {
+    if (!params.project || projects.loading || selectedProject()) return;
+    rememberProjectKey(undefined);
+    setParams({ project: undefined, session: undefined, event: undefined });
+  });
 
   function selectMode(next: ActivityMode) {
     setModeSignal(next);
@@ -30,13 +55,18 @@ export default function ActivityPage() {
     }
   }
 
-  function selectSession(id: string) {
-    setParams({ session: id });
+  function selectProject(projectKey: string | undefined) {
+    rememberProjectKey(projectKey);
+    setParams({ project: projectKey, session: undefined, event: undefined });
   }
 
-  function openSearchResult(id: string) {
+  function selectSession(id: string) {
+    setParams({ session: id, event: undefined });
+  }
+
+  function openSearchResult(sessionId: string, eventId?: string) {
     setModeSignal("browse");
-    setParams({ session: id, q: undefined, view: "browse" });
+    setParams({ session: sessionId, event: eventId, q: undefined, view: "browse" });
   }
 
   return (
@@ -47,6 +77,14 @@ export default function ActivityPage() {
           <h1>Activity</h1>
           <p>Browse sessions, find events, and ask recorded memory from one surface.</p>
         </div>
+
+        <ProjectPicker
+          projects={availableProjects()}
+          selectedProjectKey={params.project}
+          loading={projects.loading}
+          error={projects.error ? "Unable to load projects." : null}
+          onSelect={selectProject}
+        />
 
         <div class="activity-mode-tabs" role="tablist" aria-label="Activity mode">
           <For each={MODES}>
@@ -70,13 +108,27 @@ export default function ActivityPage() {
       <div class="activity-workspace">
         <Switch>
           <Match when={mode() === "browse"}>
-            <SessionsPage selectedSessionId={params.session} defaultToFirst onSelectSession={selectSession} />
+            <Show when={!projectScopePending()} fallback={<p class="empty-state">Resolving project scope…</p>}>
+              <SessionsPage
+                selectedSessionId={params.session}
+                targetEventId={params.event}
+                project={selectedProject()}
+                defaultToFirst
+                onSelectSession={selectSession}
+              />
+            </Show>
           </Match>
           <Match when={mode() === "find" || mode() === "ask"}>
-            <SearchPage mode={mode() as SearchMode} showModeTabs={false} onSelectSession={openSearchResult} />
+            <SearchPage
+              mode={mode() as SearchMode}
+              showModeTabs={false}
+              project={selectedProject()}
+              projectScopePending={projectScopePending()}
+              onSelectSession={openSearchResult}
+            />
           </Match>
           <Match when={mode() === "stream"}>
-            <StreamPage />
+            <StreamPage project={selectedProject()} projectScopePending={projectScopePending()} />
           </Match>
         </Switch>
       </div>

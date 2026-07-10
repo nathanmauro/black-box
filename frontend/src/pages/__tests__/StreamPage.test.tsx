@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EventFeedItem, EventFeedResponse } from "../../lib/api";
+import type { EventFeedItem, EventFeedResponse, ProjectSummary } from "../../lib/api";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -15,6 +15,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const getEventFeed = mocks.getEventFeed;
+const selectedProject: ProjectSummary = {
+  projectKey: "sba-key",
+  canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+  label: "~/Developer/proj/sba-agentic",
+  sessionCount: 1,
+  eventCount: 1,
+  savedMeldCount: 0,
+};
 
 vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
@@ -71,6 +79,40 @@ describe("StreamPage", () => {
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true });
   });
 
+  it("passes selected project as a hidden stream facet", async () => {
+    render(() => <StreamPage project={selectedProject} />);
+
+    await screen.findByRole("link", { name: /Make stream default/ });
+    expect(getEventFeed).toHaveBeenCalledWith({
+      limit: 100,
+      q: "project_exact:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
+  });
+
+  it("does not fetch globally while project scope is pending", async () => {
+    render(() => <StreamPage projectScopePending />);
+
+    await Promise.resolve();
+    expect(getEventFeed).not.toHaveBeenCalled();
+  });
+
+  it("removes visible positive project facets before applying hidden project scope", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    const projectGroup = Array.from(document.querySelectorAll(".facet-group")).find((element) =>
+      within(element as HTMLElement).queryByText("Project"),
+    ) as HTMLElement;
+    expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
+  });
+
   it("uses facet chips to narrow the URL query", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("link", { name: /Make stream default/ });
@@ -79,6 +121,15 @@ describe("StreamPage", () => {
 
     await waitFor(() => expect(params.q).toBe("source:codex"));
     await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "source:codex", meaningful: true }));
+  });
+
+  it("renders exclude chips from negative facets", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "-kind:PostToolUse" });
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Make stream default/ });
+
+    expect(screen.getByRole("button", { name: "kind != PostToolUse" })).toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "-kind:PostToolUse", meaningful: true });
   });
 
   it("refetches when meaningful-only filtering changes", async () => {
@@ -107,6 +158,52 @@ describe("StreamPage", () => {
       meaningful: true,
       before: "2026-07-01T12:00:00Z|event-1",
     });
+  });
+
+  it("ignores stale load-more responses after the stream query changes", async () => {
+    const stalePage = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockReturnValueOnce(stalePage.promise)
+      .mockResolvedValueOnce(feed([eventItem("event-scoped", "New scope row")]));
+
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Original scope row/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+
+    setParams({ q: "kind:Decision" });
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
+    );
+    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
+
+    stalePage.resolve(feed([eventItem("event-stale", "Stale old scope row")]));
+    await Promise.resolve();
+
+    await waitFor(() => expect(screen.queryByRole("link", { name: /Stale old scope row/ })).not.toBeInTheDocument());
+  });
+
+  it("clears pagination while a primary stream reload is pending", async () => {
+    const primaryReload = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockReturnValueOnce(primaryReload.promise)
+      .mockResolvedValueOnce(feed([eventItem("event-stale", "Stale page row")]));
+
+    render(() => <StreamPage />);
+    await screen.findByRole("link", { name: /Original scope row/ });
+
+    setParams({ q: "kind:Decision" });
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    await Promise.resolve();
+    expect(getEventFeed).toHaveBeenCalledTimes(2);
+
+    primaryReload.resolve(feed([eventItem("event-scoped", "New scope row")]));
+    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
   });
 
   it("uses pending live rows for head refetch and new-count dedupe", async () => {
@@ -159,6 +256,14 @@ function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFe
     items,
     nextBefore,
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 function eventItem(id: string, text: string, observedAt?: string): EventFeedItem {
