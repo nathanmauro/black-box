@@ -11,6 +11,10 @@ spring:
       maximum-pool-size: 4
       connection-test-query: SELECT 1
       connection-init-sql: PRAGMA busy_timeout=5000
+      # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's
+      # foreign-key setting is connection-local, so a one-time startup PRAGMA would be insufficient.
+      data-source-properties:
+        foreign_keys: "true"
   sql:
     init:
       mode: always

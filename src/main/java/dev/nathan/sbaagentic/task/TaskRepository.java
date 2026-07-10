@@ -178,7 +178,9 @@ public class TaskRepository {
             sql.append(" AND t.status = ?");
             args.add(normalized.status().value());
         }
-        sql.append(" ORDER BY t.priority DESC, t.created_at ASC");
+        sql.append(" ORDER BY t.priority DESC, ")
+                .append(sortableInstant("t.created_at"))
+                .append(" ASC");
         return jdbcTemplate.query(sql.toString(), this::mapSnapshot, args.toArray());
     }
 
@@ -203,13 +205,13 @@ public class TaskRepository {
                          FROM tasks
                         WHERE status = 'open'
                           AND lane = ?
-                        ORDER BY priority DESC, created_at ASC
+                        ORDER BY priority DESC, %s ASC
                         LIMIT 1
                  )
                 RETURNING id, spec_id, project_key, title, lane, status, priority,
                           created_by, claimed_by, blocked_reason, result_handoff_id,
                           created_at, updated_at
-                """, this::mapTask, agent, now.toString(), lane);
+                """.formatted(sortableInstant("created_at")), this::mapTask, agent, now.toString(), lane);
         if (claimed.isEmpty()) {
             return Optional.empty();
         }
@@ -409,6 +411,25 @@ public class TaskRepository {
         catch (JsonProcessingException ex) {
             throw new IllegalStateException("Unable to parse stored task metadata", ex);
         }
+    }
+
+    /**
+     * {@link Instant#toString()} emits zero, three, six, or nine fractional digits. SQLite compares
+     * TEXT lexically, so a later six-digit value can otherwise sort before an earlier three-digit
+     * value. Right-padding the stored fraction for comparison preserves existing timestamp strings
+     * while making their ordering chronological.
+     */
+    private static String sortableInstant(String column) {
+        return """
+                CASE
+                    WHEN instr(%1$s, '.') = 0
+                        THEN substr(%1$s, 1, length(%1$s) - 1) || '.000000000Z'
+                    ELSE substr(%1$s, 1, length(%1$s) - 1)
+                         || substr('000000000', 1,
+                                   9 - (length(%1$s) - instr(%1$s, '.') - 1))
+                         || 'Z'
+                END
+                """.formatted(column);
     }
 
     private static void requireText(String value, String label) {

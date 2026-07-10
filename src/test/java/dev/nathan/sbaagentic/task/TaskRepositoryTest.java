@@ -1,6 +1,11 @@
 package dev.nathan.sbaagentic.task;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -8,6 +13,8 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +42,9 @@ class TaskRepositoryTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    DataSource dataSource;
 
     @BeforeEach
     void resetQueue() {
@@ -144,6 +154,69 @@ class TaskRepositoryTest {
                 .isEqualTo(newer.id());
         assertThat(repository.claimNextTask("codex", "agent-a")).isEmpty();
         assertThat(repository.findTask(otherLane.id()).orElseThrow().task().status()).isEqualTo(TaskStatus.OPEN);
+    }
+
+    @Test
+    void fifoOrderingNormalizesMixedInstantPrecision() {
+        TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
+        Task earlier = repository.enqueueTask(spec.id(), "earlier", "codex", 5, "manual").snapshot().task();
+        Task later = repository.enqueueTask(spec.id(), "later", "codex", 5, "manual").snapshot().task();
+        jdbcTemplate.update(
+                "UPDATE tasks SET created_at = '2026-07-09T00:00:00.123Z' WHERE id = ?", earlier.id());
+        jdbcTemplate.update(
+                "UPDATE tasks SET created_at = '2026-07-09T00:00:00.123001Z' WHERE id = ?", later.id());
+
+        assertThat(repository.listTasks(new TaskQuery(null, "codex", TaskStatus.OPEN)))
+                .extracting(snapshot -> snapshot.task().id())
+                .containsExactly(earlier.id(), later.id());
+        assertThat(repository.claimNextTask("codex", "agent-a"))
+                .get()
+                .extracting(change -> change.snapshot().task().id())
+                .isEqualTo(earlier.id());
+        assertThat(repository.claimNextTask("codex", "agent-a"))
+                .get()
+                .extracting(change -> change.snapshot().task().id())
+                .isEqualTo(later.id());
+    }
+
+    @Test
+    void pooledConnectionsEnforceForeignKeysAndRetainBusyTimeout() throws Exception {
+        List<Connection> connections = new ArrayList<>();
+        try {
+            for (int index = 0; index < 4; index++) {
+                connections.add(dataSource.getConnection());
+            }
+            assertThat(connections).allSatisfy(connection -> {
+                assertThat(pragma(connection, "foreign_keys")).isEqualTo(1);
+                assertThat(pragma(connection, "busy_timeout")).isEqualTo(5000);
+            });
+        }
+        finally {
+            for (Connection connection : connections.reversed()) {
+                connection.close();
+            }
+        }
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO tasks (
+                    id, spec_id, project_key, title, lane, status, priority,
+                    created_by, created_at, updated_at
+                )
+                VALUES (
+                    'orphan-task', 'missing-spec', 'project', 'task', 'codex', 'open', 0,
+                    'manual', '2026-07-09T00:00:00Z', '2026-07-09T00:00:00Z'
+                )
+                """))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("FOREIGN KEY constraint failed");
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO task_events (id, task_id, type, actor, observed_at)
+                VALUES ('orphan-event', 'missing-task', 'task.created', 'manual', '2026-07-09T00:00:00Z')
+                """))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("FOREIGN KEY constraint failed");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tasks", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM task_events", Integer.class)).isZero();
     }
 
     @Test
@@ -260,5 +333,18 @@ class TaskRepositoryTest {
         assertThat(repository.eventsForTask(task.id()))
                 .extracting(TaskEvent::type)
                 .containsExactly(TaskEventType.CREATED);
+    }
+
+    private static int pragma(Connection connection, String name) {
+        try (Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery("PRAGMA " + name)) {
+            if (!result.next()) {
+                throw new AssertionError("PRAGMA " + name + " returned no row");
+            }
+            return result.getInt(1);
+        }
+        catch (SQLException ex) {
+            throw new AssertionError("Unable to read PRAGMA " + name, ex);
+        }
     }
 }
