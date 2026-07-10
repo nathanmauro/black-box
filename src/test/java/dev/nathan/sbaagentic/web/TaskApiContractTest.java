@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.web;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,8 +22,10 @@ import dev.nathan.sbaagentic.task.TaskSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.tool.execution.ToolExecutionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -31,6 +34,9 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
@@ -168,12 +174,20 @@ class TaskApiContractTest {
         String handoffId = completed.at("/snapshot/task/resultHandoffId").asText();
 
         MvcResult recall = mockMvc.perform(get("/api/recall")
-                        .param("scope", PROJECT)
+                        .param("scope", handoffId)
                         .param("kinds", "handoff"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].eventId").value(handoffId))
                 .andExpect(jsonPath("$.items[0].clientSessionId").value("rest-transcript-session"))
                 .andReturn();
+        assertThat(tools.recallContext(handoffId, 168, List.of("handoff")).items())
+                .singleElement()
+                .extracting(item -> item.eventId())
+                .isEqualTo(handoffId);
+        JsonNode mcpRecall = json(callback("recallContext").call("""
+                {"repoOrTopic":"%s","withinHours":168,"kinds":["handoff"]}
+                """.formatted(handoffId)));
+        assertThat(mcpRecall.at("/items/0/eventId").asText()).isEqualTo(handoffId);
 
         mockMvc.perform(post("/api/tasks/claim")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -187,6 +201,7 @@ class TaskApiContractTest {
         System.out.println("REST_TRANSCRIPT POST /api/tasks/{id}/complete 200 "
                 + complete.getResponse().getContentAsString());
         System.out.println("REST_TRANSCRIPT GET /api/recall 200 " + recall.getResponse().getContentAsString());
+        System.out.println("MCP_TRANSCRIPT recallContext " + mcpRecall);
 
         assertThat(enqueued.at("/snapshot/task/id").asText())
                 .isEqualTo(claimed.at("/snapshot/task/id").asText());
@@ -312,6 +327,10 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$.length()").value(100))
                 .andReturn());
         assertThat(ids(unfiltered)).contains(other.snapshot().task().id());
+        ToolCallback listCallback = callback("listTasks");
+        JsonNode callbackDefault = json(listCallback.call("{}"));
+        assertThat(callbackDefault).hasSize(100);
+        assertThat(ids(callbackDefault)).isEqualTo(ids(unfiltered));
 
         JsonNode filtered = json(mockMvc.perform(get("/api/tasks")
                         .param("projectKey", PROJECT)
@@ -340,6 +359,11 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$.error.type").value("validation_failed"))
                 .andExpect(jsonPath("$.error.message").value("Spec id must be a UUID"));
 
+        mockMvc.perform(get("/api/specs/1-1-1-1-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"))
+                .andExpect(jsonPath("$.error.message").value("Spec id must be a UUID"));
+
         String missingSpec = UUID.randomUUID().toString();
         mockMvc.perform(get("/api/specs/{id}", missingSpec))
                 .andExpect(status().isNotFound())
@@ -359,6 +383,9 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$.error.type").value("spec_not_found"));
 
         TaskSpec spec = tools.createSpec(PROJECT, "errors", "body", null, "planner");
+        mockMvc.perform(get("/api/specs/{id}", spec.id().toUpperCase(Locale.ROOT)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(spec.id()));
         TaskChange created = tools.enqueueTask(spec.id(), "error task", "codex", 1, "planner");
         String taskId = created.snapshot().task().id();
         int eventsBefore = jdbcTemplate.queryForObject(
@@ -433,6 +460,59 @@ class TaskApiContractTest {
     }
 
     @Test
+    void mcpCallbacksExposeStructuredTaskErrorsAndPreserveErrorTransport() throws Exception {
+        JsonNode abbreviated = callbackError("getSpec", "{\"specId\":\"1-1-1-1-1\"}");
+        assertTaskError(abbreviated, "validation_failed", "VALIDATION_FAILED");
+
+        String missingSpec = UUID.randomUUID().toString();
+        JsonNode notFound = callbackError("getSpec", "{\"specId\":\"%s\"}".formatted(missingSpec));
+        assertTaskError(notFound, "spec_not_found", "SPEC_NOT_FOUND");
+
+        TaskSpec spec = tools.createSpec(PROJECT, "callback errors", "frozen", null, "planner");
+        JsonNode uppercaseSpec = json(callback("getSpec").call(
+                "{\"specId\":\"%s\"}".formatted(spec.id().toUpperCase(Locale.ROOT))));
+        assertThat(uppercaseSpec.get("id").asText()).isEqualTo(spec.id());
+
+        TaskChange created = tools.enqueueTask(spec.id(), "callback task", "codex", 1, "planner");
+        String taskId = created.snapshot().task().id();
+        String invalidInput = """
+                {"taskId":"%s","actor":"worker","status":"blocked","blockedReason":"waiting"}
+                """.formatted(taskId);
+        JsonNode transition = callbackError("updateTaskStatus", invalidInput);
+        assertTaskError(transition, "invalid_transition", "INVALID_TRANSITION");
+
+        McpSchema.CallToolResult transportError = McpToolUtils
+                .toSyncToolSpecification(callback("updateTaskStatus"))
+                .call()
+                .apply(org.mockito.Mockito.mock(McpSyncServerExchange.class), Map.of(
+                        "taskId", taskId,
+                        "actor", "worker",
+                        "status", "blocked",
+                        "blockedReason", "waiting"));
+        assertThat(transportError.isError()).isTrue();
+        McpSchema.TextContent errorContent = (McpSchema.TextContent) transportError.content().getFirst();
+        assertTaskError(json(errorContent.text()), "invalid_transition", "INVALID_TRANSITION");
+
+        tools.claimNextTask("codex", "owner");
+        String ownershipInput = """
+                {
+                  "taskId":"%s",
+                  "actor":"intruder",
+                  "source":"codex",
+                  "clientSessionId":"intruder-session",
+                  "summary":"Should fail.",
+                  "nextAction":"None."
+                }
+                """.formatted(taskId);
+        JsonNode ownership = callbackError("completeTask", ownershipInput);
+        assertTaskError(ownership, "claimant_mismatch", "CLAIMANT_MISMATCH");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+
+        System.out.println("MCP_STRUCTURED_ERROR=" + abbreviated);
+        System.out.println("MCP_IS_ERROR_RESULT=" + errorContent.text());
+    }
+
+    @Test
     void existingToolsRemainSourceCompatibleAndFourteenToolsAreRegistered() throws Exception {
         Set<String> registered = Arrays.stream(toolCallbackProvider.getToolCallbacks())
                 .map(callback -> callback.getToolDefinition().name())
@@ -488,12 +568,37 @@ class TaskApiContractTest {
                 .findFirst()
                 .orElseThrow();
         JsonNode listSchema = objectMapper.readTree(list.getToolDefinition().inputSchema());
-        assertThat(listSchema.get("required").toString()).isEqualTo("[\"limit\"]");
-        assertThat(list.call("{\"limit\":5}")).isEqualTo("[]");
+        assertThat(listSchema.path("required").isMissingNode() || listSchema.path("required").isEmpty()).isTrue();
+        assertThat(list.call("{}")).isEqualTo("[]");
     }
 
     private JsonNode json(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode json(String value) throws Exception {
+        return objectMapper.readTree(value);
+    }
+
+    private ToolCallback callback(String name) {
+        return Arrays.stream(toolCallbackProvider.getToolCallbacks())
+                .filter(candidate -> candidate.getToolDefinition().name().equals(name))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private JsonNode callbackError(String toolName, String input) throws Exception {
+        ToolExecutionException failure = catchThrowableOfType(
+                () -> callback(toolName).call(input), ToolExecutionException.class);
+        assertThat(failure).isNotNull();
+        assertThat(failure.getMessage()).doesNotContain("TaskDomainException", "java.", "\tat ");
+        return json(failure.getMessage());
+    }
+
+    private static void assertTaskError(JsonNode payload, String type, String code) {
+        assertThat(payload.at("/error/type").asText()).isEqualTo(type);
+        assertThat(payload.at("/error/code").asText()).isEqualTo(code);
+        assertThat(payload.at("/error/message").asText()).isNotBlank();
     }
 
     private static Set<String> ids(JsonNode array) {

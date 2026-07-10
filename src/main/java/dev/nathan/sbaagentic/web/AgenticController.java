@@ -400,8 +400,11 @@ public class AgenticController {
         }
         String normalized = value.strip();
         try {
-            UUID.fromString(normalized);
-            return normalized;
+            UUID parsed = UUID.fromString(normalized);
+            if (!parsed.toString().equalsIgnoreCase(normalized)) {
+                throw new IllegalArgumentException("Noncanonical UUID");
+            }
+            return parsed.toString();
         }
         catch (IllegalArgumentException ex) {
             throw validation(label + " must be a UUID");

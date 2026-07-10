@@ -213,7 +213,9 @@ public class AgenticTools {
                     description = "Optional exact lane; blank means all lanes.") String lane,
             @ToolParam(required = false,
                     description = "Optional status: open, in_progress, blocked, done, or cancelled.") String status,
-            @ToolParam(description = "Maximum snapshots to return, clamped to 1 through 250.") int limit) {
+            @ToolParam(required = false,
+                    description = "Maximum snapshots to return, defaulting to 100 and clamped to 1 through 250.")
+                    Integer limit) {
         return taskService.listTasks(new TaskQuery(
                         optionalFilter(projectKey),
                         optionalFilter(lane),
@@ -229,7 +231,10 @@ public class AgenticTools {
         return taskService.getSpec(requireUuid(specId, "Spec id"));
     }
 
-    private static int safeTaskLimit(int limit) {
+    private static int safeTaskLimit(Integer limit) {
+        if (limit == null) {
+            return 100;
+        }
         return Math.max(1, Math.min(limit, 250));
     }
 
@@ -263,8 +268,11 @@ public class AgenticTools {
         }
         String normalized = value.strip();
         try {
-            UUID.fromString(normalized);
-            return normalized;
+            UUID parsed = UUID.fromString(normalized);
+            if (!parsed.toString().equalsIgnoreCase(normalized)) {
+                throw new IllegalArgumentException("Noncanonical UUID");
+            }
+            return parsed.toString();
         }
         catch (IllegalArgumentException ex) {
             throw validation(label + " must be a UUID");

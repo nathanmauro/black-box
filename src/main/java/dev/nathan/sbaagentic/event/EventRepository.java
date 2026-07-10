@@ -449,8 +449,9 @@ public class EventRepository {
     /**
      * Reads prior intent back out for {@link dev.nathan.sbaagentic.context.ContextService}. Filters
      * to the given event types, bounds the window by {@code since}, and — when {@code scopeLike} is
-     * present — matches it against the session's working directory (recall by where you are working)
-     * or the event text (recall by what you are working on). Newest first.
+     * present — matches it against the event id (direct recall key), the session's working
+     * directory (recall by where you are working), or the event text (recall by what you are
+     * working on). Newest first.
      */
     public List<AgentEvent> recall(List<String> eventTypes, String scopeLike, Instant since, int limit) {
         if (eventTypes == null || eventTypes.isEmpty()) {
@@ -468,7 +469,9 @@ public class EventRepository {
                 .append(" WHERE e.event_type IN (").append(placeholders).append(")\n")
                 .append("   AND e.observed_at >= ?");
         if (scopeLike != null) {
-            sql.append("\n   AND (lower(coalesce(s.cwd, '')) LIKE ? OR lower(coalesce(e.text, '')) LIKE ?)");
+            sql.append("\n   AND (lower(e.id) LIKE ? OR lower(coalesce(s.cwd, '')) LIKE ?"
+                    + " OR lower(coalesce(e.text, '')) LIKE ?)");
+            args.add(scopeLike);
             args.add(scopeLike);
             args.add(scopeLike);
         }
