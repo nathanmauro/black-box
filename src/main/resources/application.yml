@@ -11,6 +11,10 @@ spring:
       maximum-pool-size: 4
       connection-test-query: SELECT 1
       connection-init-sql: PRAGMA busy_timeout=5000
+      # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's
+      # foreign-key setting is connection-local, so a one-time startup PRAGMA would be insufficient.
+      data-source-properties:
+        foreign_keys: "true"
   sql:
     init:
       mode: always
@@ -64,10 +68,10 @@ sba:
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
   summary:
-    # external (Codex/Claude CLI subprocess) is opt-in and sends transcript text to that CLI's
-    # backend; `local` uses an OpenAI-compatible local server and degrades to a compacted-transcript
-    # summary when no model server is running.
-    backend: ${SBA_SUMMARY_BACKEND:local}
+    # external is the default and sends transcript text through the bundled Codex CLI wrapper;
+    # `local` is an explicit opt-in for an OpenAI-compatible local server and degrades to a
+    # compacted-transcript summary when no model server is running.
+    backend: ${SBA_SUMMARY_BACKEND:external}
     external-command: ${SBA_SUMMARY_EXTERNAL_COMMAND:scripts/summarize-with-codex.sh}
     timeout: ${SBA_SUMMARY_TIMEOUT:10m}
   exports:

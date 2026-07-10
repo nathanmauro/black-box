@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.stream;
 
+import dev.nathan.sbaagentic.task.Task;
+
 /**
  * Lightweight payloads pushed over the {@code /api/stream} Server-Sent Events channel. These carry
  * only summary fields (never full event bodies) so the live feed stays cheap; the UI fetches detail
@@ -27,6 +29,14 @@ public final class StreamEvents {
             String cwd,
             long eventCount,
             String lastSeenAt) {
+    }
+
+    /** A committed task lifecycle change, named for the value of {@code transitionType}. */
+    public record TaskChanged(
+            Task task,
+            String transitionId,
+            String transitionType,
+            String observedAt) {
     }
 
     private StreamEvents() {

@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.web;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
@@ -34,11 +35,25 @@ import dev.nathan.sbaagentic.search.ElasticIndexClient;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.task.ClaimTaskRequest;
+import dev.nathan.sbaagentic.task.CompleteTaskRequest;
+import dev.nathan.sbaagentic.task.CreateSpecRequest;
+import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.task.TaskDomainException;
+import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.task.TaskQuery;
+import dev.nathan.sbaagentic.task.TaskService;
+import dev.nathan.sbaagentic.task.TaskSnapshot;
+import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.task.UpdateTaskStatusRequest;
 
 import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -60,6 +75,7 @@ public class AgenticController {
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
     private final AskService askService;
+    private final TaskService taskService;
 
     public AgenticController(
             EventIngestService ingestService,
@@ -72,7 +88,8 @@ public class AgenticController {
             ProjectMeldService projectMeldService,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient,
-            AskService askService) {
+            AskService askService,
+            TaskService taskService) {
         this.ingestService = ingestService;
         this.contextService = contextService;
         this.repository = repository;
@@ -84,6 +101,7 @@ public class AgenticController {
         this.localAiClient = localAiClient;
         this.elasticIndexClient = elasticIndexClient;
         this.askService = askService;
+        this.taskService = taskService;
     }
 
     @PostMapping("/events")
@@ -252,6 +270,86 @@ public class AgenticController {
         return elasticIndexClient.health();
     }
 
+    @PostMapping("/specs")
+    public TaskSpec createSpec(@RequestBody CreateSpecRequest request) {
+        return taskService.createSpec(request);
+    }
+
+    @GetMapping("/specs/{specId}")
+    public TaskSpec getSpec(@PathVariable String specId) {
+        return taskService.getSpec(requireUuid(specId, "Spec id"));
+    }
+
+    @PostMapping("/tasks")
+    public TaskChange enqueueTask(@RequestBody EnqueueTaskRequest request) {
+        return taskService.enqueueTask(new EnqueueTaskRequest(
+                requireUuid(request.specId(), "Spec id"),
+                request.title(),
+                request.lane(),
+                request.priority(),
+                request.actor()));
+    }
+
+    @GetMapping("/tasks")
+    public List<TaskSnapshot> listTasks(
+            @RequestParam(required = false) String projectKey,
+            @RequestParam(required = false) String lane,
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "100") int limit) {
+        return taskService.listTasks(new TaskQuery(
+                        optionalFilter(projectKey),
+                        optionalFilter(lane),
+                        optionalStatus(status)))
+                .stream()
+                .limit(safeTaskLimit(limit))
+                .toList();
+    }
+
+    @PostMapping("/tasks/claim")
+    public org.springframework.http.ResponseEntity<TaskChange> claimNextTask(
+            @RequestBody ClaimTaskRequest request) {
+        return taskService.claimNextTask(request)
+                .map(org.springframework.http.ResponseEntity::ok)
+                .orElseGet(() -> org.springframework.http.ResponseEntity.noContent().build());
+    }
+
+    @PatchMapping("/tasks/{taskId}")
+    public TaskChange updateTaskStatus(
+            @PathVariable String taskId,
+            @RequestBody TaskStatusBody request) {
+        return taskService.updateTaskStatus(new UpdateTaskStatusRequest(
+                requireUuid(taskId, "Task id"),
+                request.actor(),
+                requireStatus(request.status()),
+                request.blockedReason()));
+    }
+
+    @PostMapping("/tasks/{taskId}/complete")
+    public TaskChange completeTask(
+            @PathVariable String taskId,
+            @RequestBody CompleteTaskBody request) {
+        return taskService.completeTask(new CompleteTaskRequest(
+                requireUuid(taskId, "Task id"),
+                request.actor(),
+                request.source(),
+                request.clientSessionId(),
+                request.summary(),
+                request.openLoops(),
+                request.nextAction()));
+    }
+
+    public record TaskStatusBody(String actor, String status, String blockedReason) {
+    }
+
+    public record CompleteTaskBody(
+            String actor,
+            String source,
+            String clientSessionId,
+            String summary,
+            List<String> openLoops,
+            String nextAction) {
+    }
+
     private static int safeLimit(int limit) {
         return Math.max(1, Math.min(limit, 250));
     }
@@ -266,5 +364,54 @@ public class AgenticController {
 
     private static int safeOffset(int offset) {
         return Math.max(0, offset);
+    }
+
+    private static int safeTaskLimit(int limit) {
+        return Math.max(1, Math.min(limit, 250));
+    }
+
+    private static String optionalFilter(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static TaskStatus optionalStatus(String value) {
+        return value == null || value.isBlank() ? null : parseStatus(value);
+    }
+
+    private static TaskStatus requireStatus(String value) {
+        if (value == null || value.isBlank()) {
+            throw validation("Task status is required");
+        }
+        return parseStatus(value);
+    }
+
+    private static TaskStatus parseStatus(String value) {
+        try {
+            return TaskStatus.fromValue(value);
+        }
+        catch (IllegalArgumentException ex) {
+            throw validation("Unknown task status: " + value);
+        }
+    }
+
+    private static String requireUuid(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw validation(label + " is required");
+        }
+        String normalized = value.strip();
+        try {
+            UUID parsed = UUID.fromString(normalized);
+            if (!parsed.toString().equalsIgnoreCase(normalized)) {
+                throw new IllegalArgumentException("Noncanonical UUID");
+            }
+            return parsed.toString();
+        }
+        catch (IllegalArgumentException ex) {
+            throw validation(label + " must be a UUID");
+        }
+    }
+
+    private static TaskDomainException validation(String message) {
+        return new TaskDomainException(TaskErrorCode.VALIDATION_FAILED, message, null, null, null);
     }
 }

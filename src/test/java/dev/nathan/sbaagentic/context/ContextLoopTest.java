@@ -4,6 +4,7 @@ import java.util.List;
 
 import dev.nathan.sbaagentic.event.AgentEvent;
 import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.session.AgentSession;
 
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,24 @@ class ContextLoopTest {
         assertThat(item.toAgent()).isEqualTo("next-session");
         assertThat(item.openLoops()).containsExactly("webhook signature check missing");
         assertThat(item.nextAction()).contains("Stripe webhook secret");
+    }
+
+    @Test
+    void handoffEventIdIsADirectRecallKey() {
+        IngestResponse captured = contextService.captureHandoff(new CaptureHandoffRequest(
+                "codex", "codex-id-recall", "/tmp/id-recall",
+                "next-agent",
+                "Completed the queue adapter contract",
+                List.of("Board client remains"),
+                "Use the linked handoff id for recall"));
+
+        RecallResult recalled = contextService.recall(captured.eventId(), 168, List.of("handoff"));
+
+        assertThat(recalled.scope()).isEqualTo(captured.eventId());
+        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo(captured.eventId());
+            assertThat(item.headline()).isEqualTo("Completed the queue adapter contract");
+        });
     }
 
     @Test

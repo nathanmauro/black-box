@@ -2,7 +2,7 @@
 
 # Black Box Frontend Handoff
 
-**Last updated:** 2026-06-19 · **Current branch:** `reproducible-e2e-seed` · **Base branch:** `graph-constellation-page`
+**Last updated:** 2026-07-10 · **Status:** SolidJS frontend and coordination Board implemented
 
 Black Box now uses the SolidJS + Vite + TypeScript frontend under `frontend/`.
 The retired vanilla-JS overhaul notes in this file are no longer current. The built UI is emitted
@@ -15,6 +15,12 @@ into `src/main/resources/static/` by `npm run build` and by the Maven `-Pfronten
   chips, command palette, and live SSE activity.
 - Phase-2 views are in place: Recall, Projects with storyline timeline, Stats, and Graph
   constellation.
+- The coordination Board is in place at `/board`: project/lane filters and selected task are
+  shareable URL state; Open, In Progress, Blocked, and Done columns update from task SSE frames;
+  cancelled work is disclosed separately; detail shows the frozen spec and linked Handoff.
+- The Board never launches worker agents or executes task commands. Its only lifecycle write is an
+  explicit reset from `blocked` or `in_progress` to `open`, followed by an authoritative REST
+  refresh.
 - Playwright simulated-use coverage lives in `frontend/tests/e2e/smoke.spec.ts` and drives the real
   packaged app, not the Vite dev server.
 
@@ -40,20 +46,13 @@ The seed contract is tracked in `frontend/src/e2e/seedData.ts` and covered by
 `Frontend build`, the codex decision `Use SolidJS + Vite for the UI rewrite`, and the claude-only
 prompt text that `source:codex` searches must exclude.
 
-## Production Service Caveat
+## Live-Service Safety
 
-The production app runs as launchd service `com.nathan.sba-agentic` on port `8766` against
-`sba-agentic.db`, and launchd respawns it via KeepAlive. Do not plain-kill that process, and do not
-point tests or seed scripts at `8766` or `sba-agentic.db`.
-
-If a production restart is explicitly required, use the launchd flow rather than `kill`:
-
-```bash
-launchctl kickstart -k "gui/$(id -u)/${SBA_LAUNCHD_LABEL:-com.nathan.sba-agentic}"
-```
-
-The Playwright config refuses to seed `http://127.0.0.1:8766`, defaults to `8799`, and fails if that
-test URL is already occupied instead of reusing an unknown server.
+Never point Playwright or deterministic seed data at the normal service port or database. The
+checked-in config refuses `http://127.0.0.1:8766`, defaults to `127.0.0.1:8799`, creates a temporary
+SQLite file, disables optional AI/Elasticsearch paths, and refuses to reuse an unknown server.
+Restart a real installed service only through the supported `scripts/deploy-local.sh` path and only
+when a live deployment is explicitly in scope.
 
 ## Verification Stack
 
@@ -70,3 +69,15 @@ cd frontend
 npm run test -- src/e2e/seedData.test.ts
 npm run e2e -- --grep "overview is search-first"
 ```
+
+For the coordination client and Board:
+
+```bash
+cd frontend
+npm run test -- src/lib/api.test.ts src/lib/tasks.test.ts src/lib/sse.test.ts src/pages/__tests__/BoardPage.test.tsx
+npm run build
+```
+
+The task live store treats `/api/stream` as a wake/diff channel only. It starts from
+`GET /api/tasks`, ignores duplicate or older transitions, and refreshes after a connection gap or
+malformed task frame. SQLite via REST remains authoritative.

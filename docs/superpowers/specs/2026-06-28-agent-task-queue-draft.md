@@ -1,6 +1,18 @@
 # Task Queue Design for Black Box
 
-Black Box remains a coordination *substrate* and append-only recorder. It never executes agents or owns work. All coordination happens over the existing language-neutral MCP + REST surface and the SQLite event log + SSE. No broker, no new executors.
+> **Superseded.** This is the original exploratory draft and does not describe the shipped API or
+> schema. The approved design is
+> [`2026-06-28-agent-task-queue-design.md`](2026-06-28-agent-task-queue-design.md); the as-built file
+> map and validation plan are in
+> [`../plans/2026-07-10-agent-task-queue-implementation.md`](../plans/2026-07-10-agent-task-queue-implementation.md).
+> This draft is retained below as design history. Its executor-boundary wording has been clarified
+> to distinguish task coordination from the existing configured session-summary subprocess.
+
+Black Box remains a coordination *substrate* and append-only recorder. Its task path never launches
+worker agents, executes task commands, or owns the work. All coordination happens over the existing
+language-neutral MCP + REST surface and the SQLite event log + SSE. No broker, no new task
+executors. Configured external session summarization is separate and may invoke a Codex or Claude
+CLI command with transcript text.
 
 ## 1. Task table schema + lifecycle states
 
@@ -106,6 +118,7 @@ This slice touches only new narrow paths and reuses ingest/SSE verbatim.
 3. **Starvation + unfairness**: one noisy agent drains the queue.  
    Mitigation: deterministic ORDER BY `priority DESC, created_at ASC` (FIFO under priority). Document that priority is advisory. If abuse appears, later add per-agent claim rate or round-robin token in the selection query. Never implement executor-side scheduling here.
 
-Black Box records and coordinates. It does not run the work.
+Black Box records and coordinates tasks. It does not run the queued work; configured session
+summarization remains a separate subprocess boundary.
 
 (Word count of advice body: 648)

@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import { Route, Router } from "@solidjs/router";
 import App from "./App";
 import ActivityPage from "./pages/ActivityPage";
+import BoardPage from "./pages/BoardPage";
 import GraphPage from "./pages/GraphPage";
 import OverviewPage from "./pages/OverviewPage";
 import ProjectsPage from "./pages/ProjectsPage";
@@ -12,6 +13,7 @@ import StatsPage from "./pages/StatsPage";
 import "./theme.css";
 
 const root = document.getElementById("root");
+const BoardRoute = () => <BoardPage />;
 
 if (!root) {
   throw new Error("Missing #root mount point");
@@ -21,6 +23,7 @@ render(
   () => (
     <Router root={App}>
       <Route path="/" component={ActivityPage} />
+      <Route path="/board" component={BoardRoute} />
       <Route path="/overview" component={OverviewPage} />
       <Route path="/sessions" component={SessionsPage} />
       <Route path="/sessions/:sessionId" component={SessionsPage} />

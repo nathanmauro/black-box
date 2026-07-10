@@ -33,6 +33,8 @@ describe("e2e seed data", () => {
   it("refuses to seed the production service port", () => {
     expect(() => assertSafeSeedBaseUrl("http://127.0.0.1:8766")).toThrow(/Refusing/);
     expect(() => assertSafeSeedBaseUrl("http://127.0.0.1:8799")).not.toThrow();
+    expect(() => assertSafeSeedBaseUrl("http://127.0.0.1:8800")).toThrow(/port 8799/);
+    expect(() => assertSafeSeedBaseUrl("http://example.com:8799")).toThrow(/non-local/);
   });
 
   it("posts each record to the real ingest endpoint", async () => {
