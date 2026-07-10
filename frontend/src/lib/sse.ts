@@ -52,12 +52,12 @@ export function createLiveStore(): LiveStore {
   source.onopen = () => setStatus("live");
   source.onerror = () => setStatus("down");
   source.addEventListener("event.appended", (message) => {
-    const payload = parseSse<EventAppended>(message);
+    const payload = parseSseData<EventAppended>(message);
     if (!payload) return;
     setEvents((current) => [payload, ...current].slice(0, 50));
   });
   source.addEventListener("session.updated", (message) => {
-    const payload = parseSse<SessionUpdated>(message);
+    const payload = parseSseData<SessionUpdated>(message);
     if (!payload) return;
     for (const listener of sessionListeners) listener(payload);
   });
@@ -82,7 +82,7 @@ export function useLiveStore(): LiveStore {
   return store;
 }
 
-function parseSse<T>(message: Event): T | null {
+export function parseSseData<T>(message: Event): T | null {
   const data = (message as MessageEvent<string>).data;
   if (!data) return null;
   try {

@@ -262,6 +262,124 @@ export type DashboardStats = {
   recentActivity: DashboardDailyCount[];
 };
 
+export type SpecStatus = "active" | "done" | "archived";
+
+export type TaskStatus = "open" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
+
+export type TaskEventType =
+  | "task.created"
+  | "task.claimed"
+  | "task.blocked"
+  | "task.completed"
+  | "task.reset"
+  | "task.cancelled";
+
+export type Spec = {
+  id: string;
+  projectKey: string;
+  title: string;
+  body: string;
+  specRef?: Record<string, unknown> | null;
+  status: SpecStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentTask = {
+  id: string;
+  specId: string;
+  projectKey: string;
+  title: string;
+  lane: string;
+  status: TaskStatus;
+  priority: number;
+  createdBy: string;
+  claimedBy?: string | null;
+  blockedReason?: string | null;
+  resultHandoffId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskEvent = {
+  id: string;
+  taskId: string;
+  type: TaskEventType;
+  actor: string;
+  fromStatus?: TaskStatus | null;
+  toStatus?: TaskStatus | null;
+  detail?: Record<string, unknown> | null;
+  observedAt: string;
+};
+
+export type TaskSnapshot = {
+  task: AgentTask;
+  spec: Spec;
+};
+
+export type TaskChange = {
+  snapshot: TaskSnapshot;
+  event: TaskEvent;
+};
+
+export type CreateSpecRequest = {
+  projectKey: string;
+  title: string;
+  body: string;
+  specRef?: Record<string, unknown> | null;
+  actor: string;
+};
+
+export type EnqueueTaskRequest = {
+  specId: string;
+  title: string;
+  lane: string;
+  priority: number;
+  actor: string;
+};
+
+export type ClaimTaskRequest = {
+  lane: string;
+  agent: string;
+};
+
+export type UpdateTaskStatusRequest = {
+  actor: string;
+  status: TaskStatus;
+  blockedReason?: string | null;
+};
+
+export type CompleteTaskRequest = {
+  actor: string;
+  source: string;
+  clientSessionId: string;
+  summary: string;
+  openLoops: string[];
+  nextAction?: string | null;
+};
+
+export type TaskFilters = {
+  projectKey?: string;
+  lane?: string;
+  status?: TaskStatus;
+  limit?: number;
+};
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly type?: string;
+  readonly payload?: unknown;
+
+  constructor(message: string, status: number, type?: string, payload?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.type = type;
+    this.payload = payload;
+  }
+}
+
 export function getSessions(limit = 250): Promise<AgentSession[]> {
   return getJson(`/api/sessions?limit=${encodeURIComponent(limit)}`);
 }
@@ -344,6 +462,46 @@ export function getDashboardStats(): Promise<DashboardStats> {
   return getJson("/api/stats");
 }
 
+export function createSpec(request: CreateSpecRequest): Promise<Spec> {
+  return postJson("/api/specs", request);
+}
+
+export function getSpec(specId: string): Promise<Spec> {
+  return getJson(`/api/specs/${encodeURIComponent(specId)}`);
+}
+
+export function enqueueTask(request: EnqueueTaskRequest): Promise<TaskChange> {
+  return postJson("/api/tasks", request);
+}
+
+export async function claimNextTask(request: ClaimTaskRequest): Promise<TaskChange | null> {
+  const response = await fetch("/api/tasks/claim", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (response.status === 204) return null;
+  return readJson<TaskChange>(response);
+}
+
+export function updateTaskStatus(taskId: string, request: UpdateTaskStatusRequest): Promise<TaskChange> {
+  return patchJson(`/api/tasks/${encodeURIComponent(taskId)}`, request);
+}
+
+export function completeTask(taskId: string, request: CompleteTaskRequest): Promise<TaskChange> {
+  return postJson(`/api/tasks/${encodeURIComponent(taskId)}/complete`, request);
+}
+
+export function listTasks(filters: TaskFilters = {}): Promise<TaskSnapshot[]> {
+  const query = new URLSearchParams();
+  if (filters.projectKey !== undefined) query.set("projectKey", filters.projectKey);
+  if (filters.lane !== undefined) query.set("lane", filters.lane);
+  if (filters.status !== undefined) query.set("status", filters.status);
+  if (filters.limit !== undefined) query.set("limit", String(filters.limit));
+  const suffix = query.toString();
+  return getJson(`/api/tasks${suffix ? `?${suffix}` : ""}`);
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { headers: { Accept: "application/json" } });
   return readJson<T>(response);
@@ -358,18 +516,31 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return readJson<T>(response);
 }
 
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJson<T>(response);
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
+    let payload: unknown;
+    let errorType: string | undefined;
+    const body = await response.text().catch(() => "");
     try {
-      const payload = (await response.json()) as { message?: string; error?: string | { message?: string } };
-      const nestedError = typeof payload.error === "object" ? payload.error?.message : payload.error;
-      detail = payload.message || nestedError || detail;
+      payload = body ? JSON.parse(body) : undefined;
+      const errorBody = payload as { message?: string; error?: string | { message?: string; type?: string } };
+      const nestedError = typeof errorBody.error === "object" ? errorBody.error?.message : errorBody.error;
+      errorType = typeof errorBody.error === "object" ? errorBody.error?.type : undefined;
+      detail = errorBody.message || nestedError || detail;
     } catch {
-      const text = await response.text().catch(() => "");
-      if (text) detail = text;
+      if (body) detail = body;
     }
-    throw new Error(detail);
+    throw new ApiError(detail, response.status, errorType, payload);
   }
   return (await response.json()) as T;
 }

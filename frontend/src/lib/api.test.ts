@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ApiError,
+  claimNextTask,
+  completeTask,
+  createSpec,
+  enqueueTask,
+  getSpec,
+  listTasks,
+  updateTaskStatus,
   getProjectSessions,
   getProjectTimeline,
   getRecall,
@@ -11,6 +19,7 @@ import {
   type ProjectTimelineResponse,
   type RecallResult,
   type AgentSession,
+  type TaskChange,
 } from "./api";
 
 function stubJson<T>(payload: T) {
@@ -146,5 +155,131 @@ describe("Phase 2 API helpers", () => {
         body: JSON.stringify(request),
       }),
     );
+  });
+});
+
+describe("task API helpers", () => {
+  const change: TaskChange = {
+    snapshot: {
+      task: {
+        id: "task-1",
+        specId: "spec-1",
+        projectKey: "black-box",
+        title: "Build the Board",
+        lane: "codex",
+        status: "open",
+        priority: 7,
+        createdBy: "planner",
+        claimedBy: null,
+        blockedReason: null,
+        resultHandoffId: null,
+        createdAt: "2026-07-10T00:00:00Z",
+        updatedAt: "2026-07-10T00:00:00Z",
+      },
+      spec: {
+        id: "spec-1",
+        projectKey: "black-box",
+        title: "Agent loop",
+        body: "Frozen contract",
+        specRef: null,
+        status: "active",
+        createdBy: "planner",
+        createdAt: "2026-07-10T00:00:00Z",
+        updatedAt: "2026-07-10T00:00:00Z",
+      },
+    },
+    event: {
+      id: "event-1",
+      taskId: "task-1",
+      type: "task.created",
+      actor: "planner",
+      fromStatus: null,
+      toStatus: "open",
+      detail: null,
+      observedAt: "2026-07-10T00:00:00Z",
+    },
+  };
+
+  it("encodes each present list filter once and omits absent values", async () => {
+    const fetchMock = stubJson([change.snapshot]);
+
+    await listTasks({ projectKey: "black box", lane: "codex", status: "open", limit: 40 });
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://blackbox.test");
+    expect(url.pathname).toBe("/api/tasks");
+    expect(url.searchParams.getAll("projectKey")).toEqual(["black box"]);
+    expect(url.searchParams.getAll("lane")).toEqual(["codex"]);
+    expect(url.searchParams.getAll("status")).toEqual(["open"]);
+    expect(url.searchParams.getAll("limit")).toEqual(["40"]);
+    expect(url.search).not.toContain("undefined");
+
+    await listTasks({ projectKey: undefined, lane: undefined, status: undefined, limit: undefined });
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("/api/tasks");
+  });
+
+  it("maps an empty 204 claim to null without reading JSON", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(claimNextTask({ lane: "codex", agent: "worker-1" })).resolves.toBeNull();
+  });
+
+  it("surfaces typed API error messages and HTTP status", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      error: {
+        status: 409,
+        type: "claimant_mismatch",
+        message: "Task is owned by another agent",
+      },
+    }), {
+      status: 409,
+      statusText: "Conflict",
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    const error = await updateTaskStatus("task/1", { actor: "intruder", status: "blocked", blockedReason: "waiting" })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      message: "Task is owned by another agent",
+      status: 409,
+      type: "claimant_mismatch",
+    });
+  });
+
+  it("uses the seven REST task contract routes and typed bodies", async () => {
+    const fetchMock = stubJson(change);
+
+    await createSpec({ projectKey: "black-box", title: "Spec", body: "Frozen", specRef: null, actor: "planner" });
+    await getSpec("spec/1");
+    await enqueueTask({ specId: "spec-1", title: "Task", lane: "codex", priority: 7, actor: "planner" });
+    await claimNextTask({ lane: "codex", agent: "worker" });
+    await updateTaskStatus("task/1", { actor: "worker", status: "blocked", blockedReason: "dependency" });
+    await completeTask("task/1", {
+      actor: "worker",
+      source: "codex",
+      clientSessionId: "session-1",
+      summary: "Done",
+      openLoops: [],
+      nextAction: "Review",
+    });
+
+    expect(fetchMock.mock.calls.map(([path]) => String(path))).toEqual([
+      "/api/specs",
+      "/api/specs/spec%2F1",
+      "/api/tasks",
+      "/api/tasks/claim",
+      "/api/tasks/task%2F1",
+      "/api/tasks/task%2F1/complete",
+    ]);
+    expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual([
+      "POST",
+      undefined,
+      "POST",
+      "POST",
+      "PATCH",
+      "POST",
+    ]);
   });
 });
