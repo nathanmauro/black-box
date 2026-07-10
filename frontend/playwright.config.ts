@@ -57,6 +57,7 @@ export default defineConfig({
   metadata: {
     blackBoxE2eDbPath: dbPath,
     blackBoxE2eTempDir: tempDir,
+    blackBoxE2eRunToken: runToken,
   },
   testDir: "./tests/e2e",
   timeout: 30_000,

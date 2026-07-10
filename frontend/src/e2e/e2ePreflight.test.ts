@@ -82,4 +82,14 @@ describe("E2E storage ownership preflight", () => {
     expect(() => cleanupOwnedE2eStorage(tempDir, dbPath, "other-token")).toThrow(/matching ownership/);
     expect(existsSync(tempDir)).toBe(true);
   });
+
+  it("leaves an unowned matching directory untouched during cleanup", () => {
+    const { tempDir, dbPath } = isolatedPaths();
+    mkdirSync(tempDir, { mode: 0o700 });
+    const sentinel = path.join(tempDir, "must-survive-teardown");
+    writeFileSync(sentinel, "not Playwright-owned", "utf8");
+
+    expect(cleanupOwnedE2eStorage(tempDir, dbPath, randomUUID())).toBe(false);
+    expect(readFileSync(sentinel, "utf8")).toBe("not Playwright-owned");
+  });
 });
