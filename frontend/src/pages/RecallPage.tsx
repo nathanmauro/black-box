@@ -1,4 +1,5 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
+import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js";
 import KindBadge from "../components/KindBadge";
 import SourceDot from "../components/SourceDot";
 import { getRecall, type RecalledItem, type RecallResult } from "../lib/api";
@@ -13,7 +14,9 @@ const TIME_WINDOWS = [
 ];
 
 export default function RecallPage() {
-  const [scope, setScope] = createSignal("");
+  const [params, setParams] = useSearchParams<{ scope?: string }>();
+  let requestToken = 0;
+  const [scope, setScope] = createSignal(params.scope ?? "");
   const [withinHours, setWithinHours] = createSignal(168);
   const [kinds, setKinds] = createSignal<string[]>(["decision", "handoff"]);
   const [result, setResult] = createSignal<RecallResult | null>(null);
@@ -22,15 +25,30 @@ export default function RecallPage() {
   const filteredItems = createMemo(() => sourceFilter.matches(result()?.items || []));
   const groupedItems = createMemo(() => groupByKind(filteredItems()));
 
+  createEffect(() => {
+    const routeScope = params.scope ?? "";
+    if (routeScope === untrack(scope)) return;
+    requestToken += 1;
+    setScope(routeScope);
+    setResult(null);
+    setError(null);
+    setLoading(false);
+  });
+
   async function runRecall() {
+    const resolvedScope = scope().trim();
+    const token = ++requestToken;
+    if (scope() !== resolvedScope) setScope(resolvedScope);
     setLoading(true);
     setError(null);
+    setParams({ scope: resolvedScope || undefined });
     try {
-      setResult(await getRecall(scope(), withinHours(), kinds()));
+      const nextResult = await getRecall(resolvedScope, withinHours(), kinds());
+      if (token === requestToken) setResult(nextResult);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (token === requestToken) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (token === requestToken) setLoading(false);
     }
   }
 

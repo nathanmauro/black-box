@@ -39,6 +39,17 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("offers Projects as a first-class navigation command", async () => {
+    const onClose = vi.fn();
+    render(() => <CommandPalette open onClose={onClose} />);
+
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or search..."), { target: { value: "projects" } });
+    fireEvent.click(await screen.findByRole("option", { name: /Projects/ }));
+
+    expect(navigate).toHaveBeenCalledWith("/projects");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("offers the coordination Board as a first-class navigation command", async () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);

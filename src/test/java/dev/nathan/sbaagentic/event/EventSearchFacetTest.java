@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectAliasService;
+
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +32,9 @@ class EventSearchFacetTest {
 
     @Autowired
     EventRepository repository;
+
+    @Autowired
+    ProjectAliasService projectAliasService;
 
     private String seedDecisionFromCodex() {
         return ingestService.ingest(new EventIngestRequest(
@@ -99,6 +105,28 @@ class EventSearchFacetTest {
                 .stream().map(AgentEvent::id).toList();
 
         assertThat(ids).containsExactly(appId).doesNotContain(appOtherId);
+    }
+
+    @Test
+    void logicalProjectGroupFacetIncludesRegisteredAlias() {
+        String key = "group-" + UUID.randomUUID().toString().replace("-", "");
+        String source = "codex-" + key;
+        String primary = "/tmp/" + key + "/primary";
+        String alias = "/tmp/" + key + "/alias";
+        String primaryId = seed(source, key + "-primary", "Decision", "Primary search event " + key, primary);
+        String aliasId = seed(source, key + "-alias", "Decision", "Alias search event " + key, alias);
+        projectAliasService.put(new ProjectAliasRequest(alias, primary));
+
+        List<String> exactIds = repository.searchEvents(
+                        "source:" + source + " project_exact:" + primary, 50)
+                .stream().map(AgentEvent::id).toList();
+        List<String> groupedIds = repository.searchEvents(
+                        "source:" + source + " project_group:" + primary, 50)
+                .stream().map(AgentEvent::id).toList();
+
+        assertThat(exactIds).containsExactly(primaryId).doesNotContain(aliasId);
+        assertThat(groupedIds).containsExactlyInAnyOrder(aliasId, primaryId);
+        projectAliasService.delete(alias);
     }
 
     @Test

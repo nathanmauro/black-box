@@ -173,7 +173,7 @@ describe("BoardPage", () => {
     fireEvent.input(search, { target: { value: "black-box" } });
     let option = await screen.findByRole("option", { name: /black-box/ });
     expect(within(option).getByText("black-box")).toBeInTheDocument();
-    expect(within(option).getByText(canonicalScope)).toBeInTheDocument();
+    expect(within(option).getAllByText(canonicalScope).length).toBeGreaterThan(0);
 
     fireEvent.input(search, { target: { value: canonicalScope } });
     option = await screen.findByRole("option", { name: /black-box/ });
@@ -191,6 +191,41 @@ describe("BoardPage", () => {
     const detail = await screen.findByRole("complementary", { name: "Task detail" });
     expect(within(detail).getByText("black-box")).toBeInTheDocument();
     expect(within(detail).getByText(canonicalScope)).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-black-box");
+  });
+
+  it("maps grouped variant scopes for display without broadening the exact task filter", async () => {
+    const variantScope = "/workspace/black-box-worktrees/feature";
+    [params, setParams] = createStore<BoardSearchParams>({ project: variantScope, task: "task-variant" });
+    const store = fakeTaskStore([
+      snapshot({ id: "task-variant", projectKey: variantScope, title: "Variant-scoped task" }),
+    ]);
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+
+    const card = await screen.findByRole("button", { name: "Variant-scoped task, Open" });
+    expect(within(card).getByText("black-box")).toBeInTheDocument();
+    expect(within(card).getByText("/workspace/black-box")).toBeInTheDocument();
+    expect(store.setFilters).toHaveBeenCalledWith({ projectKey: variantScope, limit: 250 });
+
+    const detail = screen.getByRole("complementary", { name: "Task detail" });
+    expect(within(detail).getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-black-box");
+    expect(within(screen.getByRole("region", { name: "Board filters" })).getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /black-box/ }));
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: variantScope } });
+    const option = await screen.findByRole("option", { name: /Exact queue scope/ });
+    expect(within(option).getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
+    expect(within(option).queryByText(/^Uncatalogued queue scope/)).not.toBeInTheDocument();
+    fireEvent.click(option);
+    expect(searchParamWrites).toHaveBeenCalledWith({ project: variantScope, task: undefined });
   });
 
   it("shows a named empty project state and clearing it restores the complete queue", async () => {
@@ -209,11 +244,33 @@ describe("BoardPage", () => {
 
     expect(await screen.findByRole("heading", { name: "No work is queued for cockpit" })).toBeInTheDocument();
     expect(screen.getByText(/Agents enqueue work through REST or MCP/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-cockpit");
     fireEvent.click(screen.getByRole("button", { name: /Clear project/i }));
 
     expect(await screen.findByText("Catalog-backed task")).toBeInTheDocument();
     expect(searchParamWrites).toHaveBeenCalledWith({ project: undefined, task: undefined });
     expect(store.setFilters).toHaveBeenLastCalledWith({ limit: 250 });
+  });
+
+  it("keeps an empty grouped variant labeled as an exact queue scope", async () => {
+    const variantScope = "/workspace/black-box-worktrees/feature";
+    [params, setParams] = createStore<BoardSearchParams>({ project: variantScope });
+    const store = fakeTaskStore([
+      snapshot({ id: "task-primary", projectKey: "/workspace/black-box", title: "Primary-scoped task" }),
+    ], async () => undefined, true);
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: "No tasks match this view" })).toBeInTheDocument();
+    expect(screen.getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "No work is queued for black-box" })).not.toBeInTheDocument();
+    expect(store.setFilters).toHaveBeenCalledWith({ projectKey: variantScope, limit: 250 });
   });
 
   it("uses the generic empty state when another filter excludes a project's tasks", async () => {
@@ -252,6 +309,8 @@ describe("BoardPage", () => {
 
     await waitFor(() => expect(searchParamWrites).toHaveBeenCalledWith({ project: "other-project", task: undefined }));
     expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 });
+    fireEvent.click(screen.getByRole("button", { name: "Review the release, Open" }));
+    expect(within(screen.getByRole("complementary", { name: "Task detail" })).queryByRole("link", { name: "Open project" })).not.toBeInTheDocument();
   });
 
   it("keeps queued work and raw-scope filtering usable when the project catalog fails", async () => {
@@ -440,6 +499,20 @@ function catalogProjects(): ProjectSummary[] {
       eventCount: 42,
       savedMeldCount: 0,
       lastSeenAt: "2026-07-10T02:00:00Z",
+      scopes: [
+        {
+          projectKey: "catalog-black-box",
+          canonicalKey: "/workspace/black-box",
+          label: "/workspace/black-box",
+          primary: true,
+        },
+        {
+          projectKey: "catalog-black-box-feature",
+          canonicalKey: "/workspace/black-box-worktrees/feature",
+          label: "black-box feature worktree",
+          primary: false,
+        },
+      ],
     },
     {
       projectKey: "catalog-cockpit",

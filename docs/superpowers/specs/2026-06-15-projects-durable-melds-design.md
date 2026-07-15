@@ -1,7 +1,7 @@
 # Projects and Durable Melds Design
 
 Date: 2026-06-15
-Status: Approved design; Phase 1 Projects, Phase 1.5 session workbench, and Phase 2 meld preview/export implemented
+Status: Implemented through logical project identity and the Projects workspace
 
 ## Summary
 
@@ -17,8 +17,9 @@ keeps runway for a later full project-intelligence system.
 
 ## Implementation Status
 
-- Phase 1 is implemented: `GET /api/projects`, project sessions, project timeline, empty
-  meld list placeholder, and a read-only Projects tab.
+- Phase 1 introduced read-only project evidence through `GET /api/projects`, project sessions,
+  and project timeline. The current workspace keeps that evidence read-only while allowing
+  explicit merge/undo operations on grouping metadata only.
 - Phase 1.5 is implemented: the Sessions workspace now uses a project-first, collapsible,
   fuzzy-filtered rail; session event cards default collapsed; summaries open in a bounded
   popup; and a right-side session outline shows files edited, files read, tools used, and
@@ -26,9 +27,14 @@ keeps runway for a later full project-intelligence system.
 - Phase 2 is implemented: selected project sessions can build a bounded map-reduce-style
   context bundle locally, or run an explicit direct preview through the configured summary
   backend.
-- Durable saved melds and alias/merge controls remain future phases.
-- The v1 project key is a URL-safe encoded form of the normalized `cwd`; historical `cwd`
-  values and raw events are not rewritten.
+- Phase 3 is implemented in the API and storage layer: explicitly approved meld previews can
+  be saved with source-session provenance and rendered as synthesis blocks. Meld creation is
+  intentionally not exposed in the restored Projects workspace, where saved melds stay read-only.
+- Phase 4 is implemented as a conservative logical-identity layer: verified worktree scopes
+  and explicit aliases group catalog/session/storyline reads, while ambiguous scopes remain
+  separate until a reversible merge is requested.
+- Project keys remain URL-safe encoded paths. Historical `cwd` values, raw events, and exact
+  task/spec scopes are never rewritten by project grouping.
 
 ## Goals
 
@@ -56,8 +62,8 @@ keeps runway for a later full project-intelligence system.
   Black Box synthesis artifacts.
 - **Model execution:** support both direct Black Box-triggered Claude/Codex runs and export
   bundle mode for active agents.
-- **Project identity:** derive projects from normalized `cwd` for v1, with a small
-  alias/merge seam for future cleanup.
+- **Project identity:** derive projects from normalized `cwd`, with a small alias/merge
+  seam for verified worktrees and explicit path cleanup.
 - **Timeline default:** show a Hybrid Storyline by default: decisions, handoffs, assistant
   outputs, notable tool results, summaries, and saved melds. Raw events remain expandable.
 - **Meld input:** use a map-reduce bundle: per-session summaries plus selected high-signal
@@ -219,7 +225,8 @@ Roll out in four phases:
    export bundle, and failure states without persistence. Implemented as
    `POST /api/projects/{projectKey}/melds/preview`.
 3. **Durable saved melds:** persistence, provenance, timeline display, and source links.
-4. **Alias/merge seam:** minimal alias table and UI only for path cleanup.
+   Implemented in the API and storage layer.
+4. **Alias/merge seam:** minimal alias table and UI only for path cleanup. Implemented.
 
 Server tests should cover project grouping, alias resolution, timeline pagination and
 classification, bundle construction, preview failure modes, and saved meld provenance.

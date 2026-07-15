@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectAliasService;
+
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +38,9 @@ class EventFeedTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    ProjectAliasService projectAliasService;
 
     @Test
     void feedReturnsNewestFirstWithSessionAliases() {
@@ -143,6 +149,33 @@ class EventFeedTest {
                 .extracting(EventFeedItem::id)
                 .containsExactly(blankProject.id(), noProject.id())
                 .doesNotContain(app.id());
+    }
+
+    @Test
+    void projectGroupFacetIncludesAliasesWhileExactRemainsRawExact() {
+        String key = uniqueKey("group");
+        String source = "codex-" + key;
+        String primary = "/tmp/" + key + "/primary";
+        String alias = "/tmp/" + key + "/linked";
+        SeededEvent primaryEvent = seed(key, source, key + "-primary", "Decision", "assistant",
+                "Primary project event " + key, primary, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent aliasEvent = seed(key, source, key + "-alias", "Decision", "assistant",
+                "Aliased project event " + key, alias, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        projectAliasService.put(new ProjectAliasRequest(alias, primary));
+
+        assertThat(repository.feed(
+                        "source:" + source + " project_exact:" + primary, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(primaryEvent.id())
+                .doesNotContain(aliasEvent.id());
+        assertThat(repository.feed(
+                        "source:" + source + " project_group:" + primary, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(aliasEvent.id(), primaryEvent.id());
+
+        projectAliasService.delete(alias);
     }
 
     @Test

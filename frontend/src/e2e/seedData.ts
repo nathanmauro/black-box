@@ -19,6 +19,15 @@ export type SeedEventPayload = {
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+type SeedProject = {
+  projectKey: string;
+  canonicalKey: string;
+};
+
+type SeedSession = {
+  id: string;
+};
+
 export const E2E_PROJECT_CWD = "/tmp/black-box-e2e";
 
 export const E2E_SEED_EVENTS: SeedEventPayload[] = [
@@ -68,6 +77,19 @@ export const E2E_SEED_EVENTS: SeedEventPayload[] = [
       repo: E2E_PROJECT_CWD,
     },
   },
+  {
+    source: "codex",
+    clientSessionId: "black-box-e2e-codex-release-worktree",
+    eventType: "Handoff",
+    role: "assistant",
+    text: "Release worktree verification is complete. Next action: review the catalog-backed workspace.",
+    cwd: `${E2E_PROJECT_CWD}/.worktrees/release`,
+    metadata: {
+      title: "Release worktree handoff",
+      kind: "handoff",
+      repo: `${E2E_PROJECT_CWD}/.worktrees/release`,
+    },
+  },
 ];
 
 export function assertSafeSeedBaseUrl(baseURL: string): void {
@@ -95,4 +117,41 @@ export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fe
       throw new Error(`Failed to seed ${event.metadata.title}: HTTP ${response.status} ${response.statusText}`);
     }
   }
+
+  const projectsResponse = await fetchImpl(new URL("/api/projects", baseURL).toString(), {
+    headers: { accept: "application/json" },
+  });
+  await requireOk(projectsResponse, "load the seeded project catalog");
+  const projects = (await projectsResponse.json()) as SeedProject[];
+  const project = projects.find((candidate) => candidate.canonicalKey === E2E_PROJECT_CWD);
+  if (!project) throw new Error(`Seeded project was not grouped under ${E2E_PROJECT_CWD}`);
+
+  const sessionsUrl = new URL(`/api/projects/${encodeURIComponent(project.projectKey)}/sessions`, baseURL);
+  sessionsUrl.searchParams.set("limit", "20");
+  const sessionsResponse = await fetchImpl(sessionsUrl.toString(), { headers: { accept: "application/json" } });
+  await requireOk(sessionsResponse, "load seeded project sessions");
+  const sessions = (await sessionsResponse.json()) as SeedSession[];
+  if (!sessions.length) throw new Error("Seeded project did not expose any sessions for meld provenance");
+
+  const meldResponse = await fetchImpl(new URL("/api/melds", baseURL).toString(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      projectKey: project.projectKey,
+      title: "Release workspace synthesis",
+      body: "The release worktree is grouped with the primary project while every source session keeps its raw path.",
+      provider: "fixture",
+      model: "deterministic",
+      promptVersion: "e2e-v1",
+      executionMode: "export_bundle",
+      savedFromPreview: false,
+      sessionIds: sessions.map((session) => session.id),
+      metadata: { fixture: true },
+    }),
+  });
+  await requireOk(meldResponse, "save the seeded read-only meld");
+}
+
+async function requireOk(response: Response, action: string): Promise<void> {
+  if (!response.ok) throw new Error(`Failed to ${action}: HTTP ${response.status} ${response.statusText}`);
 }

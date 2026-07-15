@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 class SearchServiceTest {
 
     @Test
-    void suppressesElasticsearchForExactProjectScopeAndNegativeFacets() {
+    void suppressesElasticsearchForExactGroupedProjectScopeAndNegativeFacets() {
         EventRepository repository = mock(EventRepository.class);
         ElasticIndexClient elastic = mock(ElasticIndexClient.class);
         when(repository.searchEvents(anyString(), anyInt())).thenReturn(List.<AgentEvent>of());
@@ -28,13 +28,16 @@ class SearchServiceTest {
         SearchService service = new SearchService(repository, elastic);
 
         SearchResponse exact = service.search("kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
+        SearchResponse grouped = service.search("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         SearchResponse negative = service.search("NOT kind:PostToolUse project:sba-agentic", 25);
 
         assertThat(exact.elastic()).isEmpty();
+        assertThat(grouped.elastic()).isEmpty();
         assertThat(negative.elastic()).isEmpty();
         verify(repository).searchEvents("kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
+        verify(repository).searchEvents("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         verify(repository).searchEvents("NOT kind:PostToolUse project:sba-agentic", 25);
-        verify(elastic, times(2)).health();
+        verify(elastic, times(3)).health();
         verifyNoMoreInteractions(elastic);
     }
 

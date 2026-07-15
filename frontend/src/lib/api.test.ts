@@ -4,9 +4,11 @@ import {
   claimNextTask,
   completeTask,
   createSpec,
+  deleteProjectAlias,
   enqueueTask,
   getSpec,
   listTasks,
+  mergeProjectAlias,
   updateTaskStatus,
   getProjectSessions,
   getProjectTimeline,
@@ -87,6 +89,38 @@ describe("Phase 2 API helpers", () => {
     const url = new URL(requestPath, "http://blackbox.test");
     expect(url.pathname).toBe("/api/projects/proj%2Fkey/sessions");
     expect(url.searchParams.get("limit")).toBe("2000");
+  });
+
+  it("puts explicit project aliases using canonical raw scopes", async () => {
+    const payload = {
+      id: "alias-1",
+      aliasKey: "/tmp/worktree/black-box",
+      canonicalKey: "/repos/black-box",
+      source: "manual",
+      createdAt: "2026-07-15T17:00:00Z",
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(mergeProjectAlias(payload.aliasKey, payload.canonicalKey)).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/project-aliases",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ aliasKey: payload.aliasKey, canonicalKey: payload.canonicalKey }),
+      }),
+    );
+  });
+
+  it("deletes a manual project alias by its raw scope", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteProjectAlias("/tmp/worktree/black box")).resolves.toBeUndefined();
+    const requestPath = String(fetchMock.mock.calls[0]?.[0]);
+    const url = new URL(requestPath, "http://blackbox.test");
+    expect(url.pathname).toBe("/api/project-aliases");
+    expect(url.searchParams.get("aliasKey")).toBe("/tmp/worktree/black box");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("DELETE");
   });
 
   it("posts selected session ids to the project meld preview endpoint", async () => {

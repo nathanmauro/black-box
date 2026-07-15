@@ -35,14 +35,19 @@ public class ProjectMeldService {
 
     private final ProjectRepository repository;
     private final SummaryBackend summaryBackend;
+    private final ProjectAliasService aliasService;
 
-    public ProjectMeldService(ProjectRepository repository, SummaryBackend summaryBackend) {
+    public ProjectMeldService(
+            ProjectRepository repository,
+            SummaryBackend summaryBackend,
+            ProjectAliasService aliasService) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
+        this.aliasService = aliasService;
     }
 
     public ProjectMeldPreviewResponse preview(String projectKey, ProjectMeldPreviewRequest request) {
-        String canonicalKey = ProjectKeyCodec.decode(projectKey);
+        String canonicalKey = aliasService.resolve(ProjectKeyCodec.decode(projectKey));
         List<String> sessionIds = normalizedSessionIds(request == null ? null : request.sessionIds());
         if (sessionIds.isEmpty()) {
             throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");
@@ -94,7 +99,7 @@ public class ProjectMeldService {
         if (request == null) {
             throw new ResponseStatusException(BAD_REQUEST, "Meld save request is required");
         }
-        String canonicalKey = ProjectKeyCodec.decode(request.projectKey());
+        String canonicalKey = aliasService.resolve(ProjectKeyCodec.decode(request.projectKey()));
         List<String> sessionIds = normalizedSessionIds(request.sessionIds());
         if (sessionIds.isEmpty()) {
             throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");

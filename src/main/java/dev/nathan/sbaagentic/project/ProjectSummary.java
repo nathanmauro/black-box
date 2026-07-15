@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.project;
 
 import java.time.Instant;
+import java.util.List;
 
 public record ProjectSummary(
         String projectKey,
@@ -10,5 +11,6 @@ public record ProjectSummary(
         long eventCount,
         long savedMeldCount,
         Instant firstSeenAt,
-        Instant lastSeenAt) {
+        Instant lastSeenAt,
+        List<ProjectScope> scopes) {
 }

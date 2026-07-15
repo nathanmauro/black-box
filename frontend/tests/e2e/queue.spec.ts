@@ -115,7 +115,7 @@ test("agent coordination loop stays live from Open through Blocked, reset, Done,
   await test.step("Direct Board navigation restores project and lane filters from the URL", async () => {
     const freshPage = await page.context().newPage();
     await freshPage.goto(`/board?project=${encodeURIComponent(PROJECT)}&lane=${encodeURIComponent(DONE_LANE)}`);
-    await expect(freshPage.getByLabel("Project")).toHaveValue(PROJECT);
+    await expect(freshPage.locator(".board-project-filter .project-picker-button")).toContainText(PROJECT);
     await expect(freshPage.getByLabel("Lane")).toHaveValue(DONE_LANE);
     await expect(taskInColumn(freshPage, "Done", DONE_TITLE, "Done")).toBeVisible();
     await expect(freshPage.getByText(BLOCK_TITLE)).toHaveCount(0);

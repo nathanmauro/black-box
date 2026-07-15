@@ -1,5 +1,6 @@
 import type { FullConfig } from "@playwright/test";
 import { seedBlackBoxE2e } from "../../src/e2e/seedData";
+import { cleanupProjectFixture, prepareProjectFixture } from "./project-fixture";
 import {
   assertIsolatedDatabase,
   captureProtectedRuntime,
@@ -17,7 +18,13 @@ export default async function globalSetup(config: FullConfig) {
   writeSafetySnapshot(safetySnapshotPath(tempDir), protectedRuntime);
   console.log(`[black-box-saga-e2e] protected port 8766 listener PIDs before: ${formatPids(protectedRuntime.listenerPids)}`);
   console.log(`[black-box-saga-e2e] protected production DB before: ${protectedRuntime.databasePath || "not discovered"}`);
-  await seedBlackBoxE2e(String(baseURL));
+  prepareProjectFixture(tempDir);
+  try {
+    await seedBlackBoxE2e(String(baseURL));
+  } catch (error) {
+    cleanupProjectFixture(tempDir);
+    throw error;
+  }
 }
 
 function formatPids(pids: number[]): string {

@@ -4,6 +4,7 @@ import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
 import { ask, askStatus, search, searchValues, type AgentEvent, type ProjectSummary, type SearchResponse } from "../lib/api";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
+import { primaryProjectScope } from "../lib/projects";
 import { timeAgo, truncatePath } from "../lib/format";
 
 const STRUCTURED = new Set(["Decision", "Handoff", "Observation"]);
@@ -49,7 +50,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
-  const apiQuery = createMemo(() => (props.project ? appendExactProjectScope(visibleSubmitted(), props.project.canonicalKey) : submitted()));
+  const apiQuery = createMemo(() =>
+    props.project ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey) : submitted(),
+  );
   createEffect(() => setDraft(visibleSubmitted()));
   createEffect(() => {
     const visible = visibleSubmitted();
@@ -69,7 +72,10 @@ export default function SearchPage(props: SearchPageProps = {}) {
     api: apiQuery(),
     projectScopePending: props.projectScopePending === true,
   }));
-  const [response] = createResource<SearchResponse, { submitted: string; api: string; projectScopePending: boolean }>(searchRequest, async (request) =>
+  const [response, { refetch: refetchSearch }] = createResource<
+    SearchResponse,
+    { submitted: string; api: string; projectScopePending: boolean }
+  >(searchRequest, async (request) =>
     !request.projectScopePending && request.submitted.trim() ? search(request.api, 120) : emptySearchResponse(),
   );
 
@@ -96,7 +102,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
     run(setFacet(visibleSubmitted(), key, value, mode));
   }
 
-  const local = () => response()?.local ?? [];
+  // Solid resource accessors throw after a rejected request. Guard the accessor so Find can
+  // render a retryable failure without escaping through the route's render tree.
+  const local = () => (response.error ? [] : response()?.local ?? []);
   const filtered = createMemo(() => {
     const hasKindFacet = Boolean(parsed().facets.kind);
     return local().filter((event) => !(meaningfulOnly() && !hasKindFacet && event.eventType === "PostToolUse"));
@@ -272,27 +280,43 @@ export default function SearchPage(props: SearchPageProps = {}) {
             fallback={<p class="empty-state">Search the recorded memory — try <code>source:codex kind:Decision</code> or a phrase.</p>}
           >
             <Show when={!response.loading} fallback={<p class="empty-state">Searching…</p>}>
-              <p class="result-summary">
-                {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()} sessions
-                <Show when={response()?.elasticHealth?.available}> · elastic</Show>
-              </p>
+              <Show
+                when={!response.error}
+                fallback={
+                  <div class="inline-error" role="alert">
+                    <strong>{props.project ? "Scoped project search unavailable." : "Search unavailable."}</strong>{" "}
+                    {searchErrorMessage(response.error)}
+                    <Show when={props.project}>
+                      <span> The selected project scope was preserved; Black Box did not load global results.</span>
+                    </Show>{" "}
+                    <button type="button" class="secondary-action" onClick={() => void refetchSearch()}>
+                      Retry search
+                    </button>
+                  </div>
+                }
+              >
+                <p class="result-summary">
+                  {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()} sessions
+                  <Show when={response()?.elasticHealth?.available}> · elastic</Show>
+                </p>
 
-              <Show when={structured().length}>
-                <div class="result-group">
-                  <h2 class="result-group-title">Decisions &amp; handoffs</h2>
-                  <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
-                </div>
-              </Show>
+                <Show when={structured().length}>
+                  <div class="result-group">
+                    <h2 class="result-group-title">Decisions &amp; handoffs</h2>
+                    <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                  </div>
+                </Show>
 
-              <Show when={others().length}>
-                <div class="result-group">
-                  <h2 class="result-group-title">Events</h2>
-                  <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
-                </div>
-              </Show>
+                <Show when={others().length}>
+                  <div class="result-group">
+                    <h2 class="result-group-title">Events</h2>
+                    <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                  </div>
+                </Show>
 
-              <Show when={!filtered().length}>
-                <p class="empty-state">No results. Remove a facet or turn off “meaningful events only”.</p>
+                <Show when={!filtered().length}>
+                  <p class="empty-state">No results. Remove a facet or turn off “meaningful events only”.</p>
+                </Show>
               </Show>
             </Show>
           </Show>
@@ -306,8 +330,12 @@ function emptySearchResponse(): SearchResponse {
   return { query: "", local: [], elastic: [], elasticHealth: {} };
 }
 
-function appendExactProjectScope(query: string, canonicalKey: string): string {
-  return [query.trim(), `project_exact:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+function searchErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "Black Box could not complete this search.";
+}
+
+function appendProjectGroupScope(query: string, canonicalKey: string): string {
+  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
 }
 
 function quoteHiddenFacet(value: string): string {

@@ -23,12 +23,14 @@ import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.exporting.SummaryExportService;
-import dev.nathan.sbaagentic.project.ProjectService;
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldService;
 import dev.nathan.sbaagentic.project.ProjectSavedMeld;
+import dev.nathan.sbaagentic.project.ProjectService;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
@@ -51,10 +53,13 @@ import dev.nathan.sbaagentic.task.UpdateTaskStatusRequest;
 
 import jakarta.validation.Valid;
 
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -145,6 +150,17 @@ public class AgenticController {
     @GetMapping("/projects")
     public List<ProjectSummary> projects() {
         return projectService.projects();
+    }
+
+    @PutMapping("/project-aliases")
+    public ProjectAlias putProjectAlias(@RequestBody ProjectAliasRequest request) {
+        return projectService.putAlias(request);
+    }
+
+    @DeleteMapping("/project-aliases")
+    public ResponseEntity<Void> deleteProjectAlias(@RequestParam String aliasKey) {
+        projectService.deleteAlias(aliasKey);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/projects/{projectKey}/sessions")

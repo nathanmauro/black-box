@@ -1,4 +1,4 @@
-import { useSearchParams } from "@solidjs/router";
+import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
 import ProjectPicker from "../components/ProjectPicker";
 import {
@@ -11,7 +11,12 @@ import {
   type TaskFilters,
   type TaskSnapshot,
 } from "../lib/api";
-import { projectShortName } from "../lib/projects";
+import {
+  canonicalizeProjectPath,
+  findProjectByIdentifier,
+  primaryProjectScope,
+  projectShortName,
+} from "../lib/projects";
 import { createTaskLiveStore, type TaskLiveStore } from "../lib/tasks";
 
 type BoardSearchParams = {
@@ -66,7 +71,7 @@ export default function BoardPage(props: BoardPageProps) {
   const totalActive = createMemo(() => activeSnapshots().length);
   const catalogProjects = createMemo(() => catalog.error ? [] : catalog());
   const projectOptions = createMemo(() => mergeProjectOptions(catalogProjects(), knownProjects()));
-  const selectedProject = createMemo(() => projectForScope(params.project, projectOptions()));
+  const selectedProject = createMemo(() => selectedProjectForScope(params.project, projectOptions()));
   const projectCatalogError = createMemo(() => catalog.error ? "Unable to load projects." : null);
 
   createEffect(() => {
@@ -230,7 +235,7 @@ export default function BoardPage(props: BoardPageProps) {
 
       <Show when={phase() === "ready" && snapshots().length === 0}>
         <Show
-          when={selectedProject() && !params.lane ? selectedProject() : undefined}
+          when={!params.lane ? primaryCatalogFilter(params.project, selectedProject()) : undefined}
           fallback={(
             <BoardState class="board-state--empty" label="Empty coordination board" title="No tasks match this view">
               <p>Change a filter or enqueue work through the REST or MCP task contract.</p>
@@ -244,6 +249,9 @@ export default function BoardPage(props: BoardPageProps) {
               title={`No work is queued for ${projectShortName(project())}`}
             >
               <p>Agents enqueue work through REST or MCP. Selecting a project does not infer tasks from recorded activity.</p>
+              <Show when={projectHref(project())}>
+                {(href) => <A class="secondary-action" href={href()}>Open project</A>}
+              </Show>
               <button type="button" class="secondary-action" onClick={() => selectProject(undefined)}>Clear project</button>
             </BoardState>
           )}
@@ -455,6 +463,12 @@ function TaskDetail(props: {
             <dd class="board-project-identity">
               <strong>{props.project ? projectShortName(props.project) : task().projectKey}</strong>
               <span>{props.project?.canonicalKey || task().projectKey}</span>
+              <Show when={props.project && props.project.canonicalKey !== task().projectKey}>
+                <span>Exact queue scope · {task().projectKey}</span>
+              </Show>
+              <Show when={projectHref(props.project)}>
+                {(href) => <A href={href()}>Open project</A>}
+              </Show>
             </dd>
             <dt>Current claimant</dt><dd>{task().claimedBy || "Unclaimed"}</dd>
             <dt>Created by</dt><dd>{task().createdBy}</dd>
@@ -564,14 +578,34 @@ function pluralize(count: number, singular: string): string {
 
 function filterLabel(filters: TaskFilters | null, projects: ProjectSummary[]): string {
   if (!filters) return "previous snapshot";
-  const project = projectForScope(filters.projectKey, projects);
+  const project = selectedProjectForScope(filters.projectKey, projects);
   return `${projectLabel(project, filters.projectKey) || "every project"} / ${filters.lane || "every lane"}`;
 }
 
 function mergeProjectOptions(catalog: ProjectSummary[], queueScopes: string[]): ProjectSummary[] {
   const projects = [...catalog];
+  const addedScopes = new Set<string>();
   for (const scope of queueScopes) {
-    if (projectForScope(scope, projects)) continue;
+    const canonicalScope = canonicalizeProjectPath(scope);
+    if (addedScopes.has(canonicalScope)) continue;
+    addedScopes.add(canonicalScope);
+
+    const catalogProject = projectForScope(scope, catalog);
+    if (catalogProject) {
+      const primaryScope = primaryProjectScope(catalogProject);
+      if (canonicalizeProjectPath(primaryScope.canonicalKey) === canonicalScope) continue;
+      projects.push({
+        projectKey: `queue-scope:${scope}`,
+        canonicalKey: scope,
+        label: `Exact queue scope · ${scope}`,
+        sessionCount: 0,
+        eventCount: 0,
+        savedMeldCount: 0,
+        firstSeenAt: null,
+        lastSeenAt: null,
+      });
+      continue;
+    }
     projects.push({
       projectKey: `uncatalogued:${scope}`,
       canonicalKey: scope,
@@ -587,12 +621,39 @@ function mergeProjectOptions(catalog: ProjectSummary[], queueScopes: string[]): 
 }
 
 function projectForScope(scope: string | null | undefined, projects: ProjectSummary[]): ProjectSummary | undefined {
+  return findProjectByIdentifier(projects, scope);
+}
+
+function selectedProjectForScope(scope: string | null | undefined, projects: ProjectSummary[]): ProjectSummary | undefined {
   if (!scope) return undefined;
-  return projects.find((project) => project.canonicalKey === scope);
+  const canonicalScope = canonicalizeProjectPath(scope);
+  return projects.find((project) => (
+    isExactQueueChoice(project)
+    && canonicalizeProjectPath(project.canonicalKey) === canonicalScope
+  )) ?? projectForScope(scope, projects);
+}
+
+function primaryCatalogFilter(
+  scope: string | null | undefined,
+  project: ProjectSummary | undefined,
+): ProjectSummary | undefined {
+  if (!scope || !project || isExactQueueChoice(project)) return undefined;
+  return canonicalizeProjectPath(primaryProjectScope(project).canonicalKey) === canonicalizeProjectPath(scope)
+    ? project
+    : undefined;
+}
+
+function isExactQueueChoice(project: ProjectSummary): boolean {
+  return project.projectKey.startsWith("queue-scope:") || project.projectKey.startsWith("uncatalogued:");
+}
+
+function projectHref(project: ProjectSummary | undefined): string | undefined {
+  if (!project || isExactQueueChoice(project)) return undefined;
+  return `/projects/${encodeURIComponent(project.projectKey)}`;
 }
 
 function projectLabel(project: ProjectSummary | undefined, fallback?: string): string | undefined {
-  if (project?.projectKey.startsWith("uncatalogued:")) return project.canonicalKey;
+  if (project && isExactQueueChoice(project)) return project.label;
   return project?.label || fallback;
 }
 

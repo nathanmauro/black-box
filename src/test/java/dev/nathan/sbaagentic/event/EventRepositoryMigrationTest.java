@@ -4,6 +4,8 @@ import java.nio.file.Path;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.nathan.sbaagentic.project.ProjectAliasRepository;
+import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.session.TitleRank;
 
 import org.junit.jupiter.api.Test;
@@ -49,7 +51,10 @@ class EventRepositoryMigrationTest {
                 VALUES ('s1', 'claude', 'legacy-session', 'Old title', '2026-05-21T12:00:00Z', '2026-05-21T12:00:00Z', 3)
                 """);
 
-        EventRepository repository = new EventRepository(jdbc, new ObjectMapper());
+        EventRepository repository = new EventRepository(
+                jdbc,
+                new ObjectMapper(),
+                new ProjectAliasService(new ProjectAliasRepository(jdbc)));
         repository.ensureSchema();
 
         // The legacy session keeps its title but is protected (LEGACY) so only an AI retitle replaces it.

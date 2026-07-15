@@ -7,6 +7,7 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.ai.SessionFinalizationService;
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.search.EventIndexSink;
 import dev.nathan.sbaagentic.session.TitleRank;
 import dev.nathan.sbaagentic.session.Titles;
@@ -21,18 +22,21 @@ public class EventIngestService {
     private final List<EventIndexSink> indexSinks;
     private final SessionFinalizationService finalizationService;
     private final RedactionService redactionService;
+    private final ProjectAliasService projectAliasService;
 
     public EventIngestService(
             EventRepository repository,
             SbaProperties properties,
             List<EventIndexSink> indexSinks,
             SessionFinalizationService finalizationService,
-            RedactionService redactionService) {
+            RedactionService redactionService,
+            ProjectAliasService projectAliasService) {
         this.repository = repository;
         this.properties = properties;
         this.indexSinks = indexSinks;
         this.finalizationService = finalizationService;
         this.redactionService = redactionService;
+        this.projectAliasService = projectAliasService;
     }
 
     public IngestResponse ingest(EventIngestRequest request) {
@@ -46,6 +50,7 @@ public class EventIngestService {
         EventRepository.Persisted persisted =
                 repository.persistEvent(normalized, observedAt, title.value(), title.rank());
         AgentEvent event = persisted.event();
+        projectAliasService.discoverVerifiedAlias(persisted.session().cwd());
 
         boolean indexed = false;
         for (EventIndexSink sink : indexSinks) {

@@ -26,7 +26,7 @@ state; your agents and orchestrators still execute the work.
 
 | Remember | Coordinate | Observe | Stay local-first |
 | --- | --- | --- | --- |
-| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, project-aware Board, structured Recall, search, SSE updates, and stats | SQLite is authoritative; Elasticsearch and model-backed features are optional |
+| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, logical Projects, project-aware Board, structured Recall, search, SSE updates, and stats | SQLite is authoritative; Elasticsearch and model-backed features are optional |
 
 ## The loop
 
@@ -50,6 +50,13 @@ The task path never launches a worker, executes a command, or mutates a checkout
 wake-up hints; `claimNextTask` and `listTasks` remain authoritative.
 
 ## See it
+
+### Follow a whole project storyline
+
+<img src="docs/assets/projects.png" alt="Black Box Projects workspace showing one logical project, its verified worktree scope, recent sessions, saved synthesis, and newest storyline evidence." width="100%">
+
+Group verified worktrees under one logical identity, inspect the newest high-signal evidence, and
+pivot into Activity, the exact-scope Board, or Recall without rewriting recorded history.
 
 | Coordination Board | Structured Recall |
 | --- | --- |
@@ -181,6 +188,9 @@ recallContext({
 
 - **Activity** — the global event stream, session browser, faceted Find workspace, and optional Ask
   surface.
+- **Projects** — a searchable logical-project workspace that groups verified worktree scopes without
+  rewriting recorded paths. Inspect constituent scopes, recent sessions, Hybrid Storyline evidence,
+  and saved synthesis, or explicitly merge and undo ambiguous catalog scopes.
 - **Board** — searchable catalog-project and lane filters over explicitly queued Open, In Progress,
   Blocked, and Done tasks, with frozen spec and linked-Handoff detail. Selecting a project does not
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
@@ -191,6 +201,7 @@ recallContext({
 Open them directly:
 
 - [Activity](http://localhost:8766/)
+- [Projects](http://localhost:8766/projects)
 - [Board](http://localhost:8766/board)
 - [Recall](http://localhost:8766/recall)
 - [Search](http://localhost:8766/search)
@@ -200,6 +211,12 @@ Open them directly:
 SQLite is the source of truth for sessions, events, structured memory, specs, tasks, and lifecycle
 events. The server binds to `127.0.0.1` by default and has no built-in authentication. Do not expose
 it on a network unless you accept that trust model.
+
+Logical project aliases affect catalog, session, storyline, and saved-meld reads only. Black Box
+never rewrites historical session/event paths or task/spec project scopes when projects are grouped.
+Git-common-directory worktrees and structurally unambiguous worktree paths whose owner still has
+Git metadata are discovered automatically; ambiguous or unverified paths require an explicit,
+reversible merge in Projects.
 
 Automatic redaction is enabled before persistence for private-key blocks, AWS credentials, bearer
 or API tokens, and password/token assignments. Set `SBA_REDACT_ENABLED=false` only when you

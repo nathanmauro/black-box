@@ -15,6 +15,18 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 CREATE INDEX IF NOT EXISTS idx_agent_sessions_last_seen
     ON agent_sessions (last_seen_at DESC);
 
+CREATE TABLE IF NOT EXISTS project_aliases (
+    id TEXT PRIMARY KEY,
+    alias_key TEXT NOT NULL UNIQUE,
+    canonical_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (alias_key <> canonical_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_aliases_canonical
+    ON project_aliases (canonical_key);
+
 CREATE TABLE IF NOT EXISTS agent_events (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,

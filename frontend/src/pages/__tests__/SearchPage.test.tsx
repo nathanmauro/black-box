@@ -109,8 +109,34 @@ describe("SearchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() =>
-      expect(search).toHaveBeenLastCalledWith("kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic", 120),
+      expect(search).toHaveBeenLastCalledWith("kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic", 120),
     );
+  });
+
+  it("keeps a failed project search scoped and retries without crashing the route", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+    search
+      .mockRejectedValueOnce(new Error("search backend offline"))
+      .mockResolvedValueOnce({
+        query: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
+        local: [],
+        elastic: [],
+        elasticHealth: {},
+      });
+
+    render(() => <SearchPage project={selectedProject} />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Scoped project search unavailable.");
+    expect(alert).toHaveTextContent("search backend offline");
+    expect(alert).toHaveTextContent("The selected project scope was preserved; Black Box did not load global results.");
+    expect(search).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Retry search" }));
+
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.querySelector(".result-summary")).toHaveTextContent("0 events · 0 sessions"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not search globally while project scope is pending", async () => {
@@ -132,7 +158,7 @@ describe("SearchPage", () => {
       within(element as HTMLElement).queryByText("Project"),
     ) as HTMLElement;
     expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
-    expect(search).toHaveBeenLastCalledWith("kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic", 120);
+    expect(search).toHaveBeenLastCalledWith("kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic", 120);
   });
 
   it("warns that Ask is not scoped by selected project", async () => {

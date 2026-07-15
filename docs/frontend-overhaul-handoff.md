@@ -2,7 +2,7 @@
 
 # Black Box Frontend Handoff
 
-**Last updated:** 2026-07-10 · **Status:** SolidJS frontend and coordination Board implemented
+**Last updated:** 2026-07-15 · **Status:** SolidJS frontend, logical Projects, and coordination Board implemented
 
 Black Box now uses the SolidJS + Vite + TypeScript frontend under `frontend/`.
 The retired vanilla-JS overhaul notes in this file are no longer current. The built UI is emitted
@@ -13,8 +13,9 @@ into `src/main/resources/static/` by `npm run build` and by the Maven `-Pfronten
 
 - Phase-1 SolidJS rewrite is in place: Overview, Sessions, Search, structured event cards, source
   chips, command palette, and live SSE activity.
-- Phase-2 views are in place: Recall, Projects with storyline timeline, Stats, and Graph
-  constellation.
+- Phase-2 views are in place: Recall, logical Projects with verified worktree grouping, scope
+  provenance, recent sessions, storyline timeline, and saved synthesis, plus Stats and Graph.
+  Project alias merges change the read model only; raw session/event paths remain untouched.
 - The coordination Board is in place at `/board`: project/lane filters and selected task are
   shareable URL state; Open, In Progress, Blocked, and Done columns update from task SSE frames;
   cancelled work is disclosed separately; detail shows the frozen spec and linked Handoff.

@@ -1,7 +1,16 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { createStore, type SetStoreFunction } from "solid-js/store";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getRecall } from "../../lib/api";
 import RecallPage from "../RecallPage";
+
+let params: { scope?: string };
+let updateParams: SetStoreFunction<{ scope?: string }>;
+const setParams = vi.fn();
+
+vi.mock("@solidjs/router", () => ({
+  useSearchParams: () => [params, setParams],
+}));
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
@@ -33,6 +42,13 @@ vi.mock("../../lib/api", async (importOriginal) => {
   };
 });
 
+beforeEach(() => {
+  [params, updateParams] = createStore<{ scope?: string }>({});
+  setParams.mockReset();
+  setParams.mockImplementation((next: { scope?: string }) => updateParams(next));
+  vi.mocked(getRecall).mockClear();
+});
+
 describe("RecallPage", () => {
   it("submits the default structured recall query and renders projected cards", async () => {
     render(() => <RecallPage />);
@@ -46,5 +62,26 @@ describe("RecallPage", () => {
     expect(screen.getByText("Raw chronological feed")).toBeInTheDocument();
     expect(screen.getByText("82%")).toBeInTheDocument();
     expect(screen.queryByText(/eventId/)).not.toBeInTheDocument();
+    expect(setParams).toHaveBeenCalledWith({ scope: "sba-agentic" });
+  });
+
+  it("initializes scope from a project action URL", () => {
+    updateParams({ scope: "/Users/nathan/Developer/proj/sba-agentic" });
+    render(() => <RecallPage />);
+
+    expect(screen.getByLabelText("Scope")).toHaveValue("/Users/nathan/Developer/proj/sba-agentic");
+  });
+
+  it("synchronizes query-only navigation and clears stale results", async () => {
+    updateParams({ scope: "/tmp/first-project" });
+    render(() => <RecallPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
+
+    updateParams({ scope: "/tmp/second-project" });
+
+    await waitFor(() => expect(screen.getByLabelText("Scope")).toHaveValue("/tmp/second-project"));
+    expect(screen.queryByText("Use the Hybrid Storyline timeline")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
   });
 });

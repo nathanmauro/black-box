@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,89 +48,130 @@ public class ProjectRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ProjectAliasService aliasService;
 
-    public ProjectRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public ProjectRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ProjectAliasService aliasService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.aliasService = aliasService;
     }
 
     public List<ProjectSummary> summaries() {
-        return jdbcTemplate.query("""
-                SELECT projects.canonical_key,
+        ProjectAliasService.Snapshot aliases = aliasService.snapshot();
+        Map<String, MutableSummary> grouped = new LinkedHashMap<>();
+        List<RawSessionSummary> sessions = jdbcTemplate.query("""
+                SELECT %s AS scope_key,
                        COUNT(*) AS session_count,
-                       COALESCE(SUM(projects.event_count), 0) AS event_count,
-                       MIN(projects.started_at) AS first_seen_at,
-                       MAX(projects.last_seen_at) AS last_seen_at,
-                       COALESCE(melds.saved_meld_count, 0) AS saved_meld_count
-                  FROM (
-                        SELECT
-                          CASE
-                            WHEN cwd IS NULL OR trim(cwd) = '' THEN '__no_project__'
-                            WHEN rtrim(trim(cwd), '/') = '' THEN '/'
-                            ELSE rtrim(trim(cwd), '/')
-                          END AS canonical_key,
-                          event_count,
-                          started_at,
-                          last_seen_at
-                          FROM agent_sessions
-                       ) projects
-                  LEFT JOIN (
-                        SELECT project_key, COUNT(*) AS saved_meld_count
-                          FROM session_melds
-                         GROUP BY project_key
-                       ) melds ON melds.project_key = projects.canonical_key
-                 GROUP BY projects.canonical_key, melds.saved_meld_count
-                 ORDER BY last_seen_at DESC
-                """, this::mapSummary);
+                       COALESCE(SUM(event_count), 0) AS event_count,
+                       MIN(started_at) AS first_seen_at,
+                       MAX(last_seen_at) AS last_seen_at
+                  FROM agent_sessions s
+                 GROUP BY scope_key
+                """.formatted(SESSION_CANONICAL_KEY_SQL), (rs, rowNum) -> new RawSessionSummary(
+                        rs.getString("scope_key"),
+                        rs.getLong("session_count"),
+                        rs.getLong("event_count"),
+                        parseInstant(rs.getString("first_seen_at")),
+                        parseInstant(rs.getString("last_seen_at"))));
+        for (RawSessionSummary raw : sessions) {
+            String canonical = aliases.resolve(raw.scopeKey());
+            grouped.computeIfAbsent(canonical, MutableSummary::new).include(raw);
+        }
+
+        List<RawMeldSummary> melds = jdbcTemplate.query("""
+                SELECT project_key AS scope_key,
+                       COUNT(*) AS saved_meld_count,
+                       MIN(created_at) AS first_seen_at,
+                       MAX(created_at) AS last_seen_at
+                  FROM session_melds
+                 GROUP BY project_key
+                """, (rs, rowNum) -> new RawMeldSummary(
+                        ProjectKeyCodec.canonicalize(rs.getString("scope_key")),
+                        rs.getLong("saved_meld_count"),
+                        parseInstant(rs.getString("first_seen_at")),
+                        parseInstant(rs.getString("last_seen_at"))));
+        for (RawMeldSummary raw : melds) {
+            String canonical = aliases.resolve(raw.scopeKey());
+            grouped.computeIfAbsent(canonical, MutableSummary::new).include(raw);
+        }
+
+        return grouped.values().stream()
+                .map(summary -> summary.toSummary(aliases.projectScopesFor(summary.canonicalKey)))
+                .sorted(Comparator.comparing(
+                        ProjectSummary::lastSeenAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
     }
 
     public List<AgentSession> sessionsForProject(String canonicalKey, int limit) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.add(limit);
         return jdbcTemplate.query("""
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
                        s.started_at, s.last_seen_at, s.event_count
                   FROM agent_sessions s
-                 WHERE %s = ?
+                 WHERE %s IN (%s)
                  ORDER BY s.last_seen_at DESC
                  LIMIT ?
-                """.formatted(SESSION_CANONICAL_KEY_SQL), this::mapSession, canonicalKey, limit);
+                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size())),
+                this::mapSession, args.toArray());
     }
 
     public List<AgentSession> sessionsForProjectByIds(String canonicalKey, List<String> sessionIds) {
         if (sessionIds == null || sessionIds.isEmpty()) {
             return List.of();
         }
-        String placeholders = String.join(", ", Collections.nCopies(sessionIds.size(), "?"));
-        List<Object> args = new ArrayList<>();
-        args.add(canonicalKey);
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        String sessionPlaceholders = placeholders(sessionIds.size());
+        List<Object> args = new ArrayList<>(scopes);
         args.addAll(sessionIds);
         return jdbcTemplate.query("""
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
                        s.started_at, s.last_seen_at, s.event_count
                   FROM agent_sessions s
-                 WHERE %s = ?
+                 WHERE %s IN (%s)
                    AND s.id IN (%s)
                  ORDER BY s.last_seen_at DESC
-                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders), this::mapSession, args.toArray());
+                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size()), sessionPlaceholders),
+                this::mapSession, args.toArray());
     }
 
     public long countTimelineBlocks(String canonicalKey) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.addAll(scopes);
         Long count = jdbcTemplate.queryForObject("""
                 SELECT (
                     SELECT COUNT(*)
                       FROM agent_events e
                       JOIN agent_sessions s ON e.session_id = s.id
-                     WHERE %s = ?
+                     WHERE %s IN (%s)
                        AND %s
                 ) + (
                     SELECT COUNT(*)
                       FROM session_melds m
-                     WHERE m.project_key = ?
+                     WHERE m.project_key IN (%s)
                 )
-                """.formatted(SESSION_CANONICAL_KEY_SQL, STORYLINE_PREDICATE), Long.class, canonicalKey, canonicalKey);
+                """.formatted(
+                        SESSION_CANONICAL_KEY_SQL,
+                        placeholders(scopes.size()),
+                        STORYLINE_PREDICATE,
+                        placeholders(scopes.size())),
+                Long.class,
+                args.toArray());
         return count == null ? 0 : count;
     }
 
     public List<ProjectTimelineBlock> timelineBlocks(String canonicalKey, int limit, int offset) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.addAll(scopes);
+        args.add(limit);
+        args.add(offset);
         return jdbcTemplate.query("""
                 SELECT *
                   FROM (
@@ -157,7 +199,7 @@ public class ProjectRepository {
                                NULL AS meld_saved_from_preview
                           FROM agent_events e
                           JOIN agent_sessions s ON e.session_id = s.id
-                         WHERE %s = ?
+                         WHERE %s IN (%s)
                            AND %s
                         UNION ALL
                         SELECT m.id,
@@ -183,15 +225,24 @@ public class ProjectRepository {
                                m.execution_mode AS meld_execution_mode,
                                m.saved_from_preview AS meld_saved_from_preview
                           FROM session_melds m
-                         WHERE m.project_key = ?
+                         WHERE m.project_key IN (%s)
                        ) blocks
                  ORDER BY observed_at ASC
                  LIMIT ? OFFSET ?
-                """.formatted(SESSION_CANONICAL_KEY_SQL, STORYLINE_PREDICATE),
-                this::mapTimelineBlock, canonicalKey, canonicalKey, limit, offset);
+                """.formatted(
+                        SESSION_CANONICAL_KEY_SQL,
+                        placeholders(scopes.size()),
+                        STORYLINE_PREDICATE,
+                        placeholders(scopes.size())),
+                this::mapTimelineBlock,
+                args.toArray());
     }
 
     public List<ProjectTimelineBlock> timelineBlocksForSession(String canonicalKey, String sessionId, int limit) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.add(sessionId);
+        args.add(limit);
         return jdbcTemplate.query("""
                 SELECT e.id, 'raw_event' AS source_type,
                        e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
@@ -205,13 +256,14 @@ public class ProjectRepository {
                        NULL AS meld_saved_from_preview
                   FROM agent_events e
                   JOIN agent_sessions s ON e.session_id = s.id
-                 WHERE %s = ?
+                 WHERE %s IN (%s)
                    AND e.session_id = ?
                    AND %s
                  ORDER BY e.observed_at ASC
                  LIMIT ?
-                """.formatted(SESSION_CANONICAL_KEY_SQL, STORYLINE_PREDICATE),
-                this::mapTimelineBlock, canonicalKey, sessionId, limit);
+                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size()), STORYLINE_PREDICATE),
+                this::mapTimelineBlock,
+                args.toArray());
     }
 
     public void insertSavedMeld(
@@ -260,26 +312,83 @@ public class ProjectRepository {
     }
 
     public List<ProjectSavedMeld> savedMeldsForProject(String canonicalKey) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
         return jdbcTemplate.query("""
                 SELECT id, project_key, title, body, provider, model, prompt_version,
                        execution_mode, saved_from_preview, metadata_json, created_at
                   FROM session_melds
-                 WHERE project_key = ?
+                 WHERE project_key IN (%s)
                  ORDER BY created_at DESC
-                """, this::mapSavedMeld, canonicalKey);
+                """.formatted(placeholders(scopes.size())), this::mapSavedMeld, scopes.toArray());
     }
 
-    private ProjectSummary mapSummary(ResultSet rs, int rowNum) throws SQLException {
-        String canonicalKey = rs.getString("canonical_key");
-        return new ProjectSummary(
-                ProjectKeyCodec.encode(canonicalKey),
-                canonicalKey,
-                ProjectKeyCodec.labelFor(canonicalKey),
-                rs.getLong("session_count"),
-                rs.getLong("event_count"),
-                rs.getLong("saved_meld_count"),
-                Instant.parse(rs.getString("first_seen_at")),
-                Instant.parse(rs.getString("last_seen_at")));
+    private record RawSessionSummary(
+            String scopeKey,
+            long sessionCount,
+            long eventCount,
+            Instant firstSeenAt,
+            Instant lastSeenAt) {
+    }
+
+    private record RawMeldSummary(
+            String scopeKey,
+            long savedMeldCount,
+            Instant firstSeenAt,
+            Instant lastSeenAt) {
+    }
+
+    private static final class MutableSummary {
+        private final String canonicalKey;
+        private long sessionCount;
+        private long eventCount;
+        private long savedMeldCount;
+        private Instant firstSeenAt;
+        private Instant lastSeenAt;
+
+        private MutableSummary(String canonicalKey) {
+            this.canonicalKey = canonicalKey;
+        }
+
+        private void include(RawSessionSummary raw) {
+            sessionCount += raw.sessionCount();
+            eventCount += raw.eventCount();
+            includeTime(raw.firstSeenAt(), raw.lastSeenAt());
+        }
+
+        private void include(RawMeldSummary raw) {
+            savedMeldCount += raw.savedMeldCount();
+            includeTime(raw.firstSeenAt(), raw.lastSeenAt());
+        }
+
+        private void includeTime(Instant first, Instant last) {
+            if (first != null && (firstSeenAt == null || first.isBefore(firstSeenAt))) {
+                firstSeenAt = first;
+            }
+            if (last != null && (lastSeenAt == null || last.isAfter(lastSeenAt))) {
+                lastSeenAt = last;
+            }
+        }
+
+        private ProjectSummary toSummary(List<ProjectScope> scopes) {
+            return new ProjectSummary(
+                    ProjectKeyCodec.encode(canonicalKey),
+                    canonicalKey,
+                    ProjectKeyCodec.labelFor(canonicalKey),
+                    sessionCount,
+                    eventCount,
+                    savedMeldCount,
+                    firstSeenAt,
+                    lastSeenAt,
+                    scopes);
+        }
+    }
+
+    private static String placeholders(int count) {
+        return String.join(", ", Collections.nCopies(count, "?"));
+    }
+
+    private static Instant parseInstant(String value) {
+        return value == null || value.isBlank() ? null : Instant.parse(value);
     }
 
     private AgentSession mapSession(ResultSet rs, int rowNum) throws SQLException {
@@ -358,7 +467,7 @@ public class ProjectRepository {
     }
 
     private ProjectSavedMeld mapSavedMeld(ResultSet rs, int rowNum) throws SQLException {
-        String canonicalKey = rs.getString("project_key");
+        String canonicalKey = aliasService.resolve(rs.getString("project_key"));
         String id = rs.getString("id");
         return new ProjectSavedMeld(
                 id,
