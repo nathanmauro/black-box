@@ -47,6 +47,17 @@ class QueryFacetsTest {
     }
 
     @Test
+    void parsesInternalLogicalProjectGroupFacet() {
+        QueryFacets facets = QueryFacets.parse("project_group:\"/tmp/project with spaces\" kind:Decision");
+
+        assertThat(facets.groupCwd()).isEqualTo("/tmp/project with spaces");
+        assertThat(facets.exactCwd()).isNull();
+        assertThat(facets.eventType()).isEqualTo("Decision");
+        assertThat(facets.freeText()).isEmpty();
+        assertThat(facets.hasAnyFacet()).isTrue();
+    }
+
+    @Test
     void aliasesMapToColumns() {
         QueryFacets f = QueryFacets.parse("agent:claude event_type:Handoff tool_name:Bash cwd:proj");
         assertThat(f.source()).isEqualTo("claude");

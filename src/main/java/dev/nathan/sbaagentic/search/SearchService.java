@@ -78,6 +78,7 @@ public class SearchService {
 
     private static boolean elasticSearchAllowed(QueryFacets facets) {
         return facets.exactCwd() == null
+                && facets.groupCwd() == null
                 && facets.excludedSource() == null
                 && facets.excludedEventType() == null
                 && facets.excludedToolName() == null

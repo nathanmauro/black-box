@@ -2,6 +2,7 @@ import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import StreamRow from "../components/events/StreamRow";
 import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
+import { primaryProjectScope } from "../lib/projects";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
@@ -51,7 +52,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
-  const apiQuery = createMemo(() => (props.project ? appendExactProjectScope(visibleSubmitted(), props.project.canonicalKey) : submitted()));
+  const apiQuery = createMemo(() =>
+    props.project ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey) : submitted(),
+  );
   const parsed = createMemo(() => parseQuery(visibleSubmitted()));
   const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
@@ -84,8 +87,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
     const token = ++loadToken;
     setLoading(true);
     setLoadingMore(false);
+    setItems([]);
+    setPendingItems([]);
+    setNewCount(0);
     setNextBefore(null);
     setError(null);
+    setExpandedId(null);
     getEventFeed({ limit: FEED_LIMIT, q, meaningful })
       .then((response) => {
         if (token !== loadToken) return;
@@ -358,8 +365,8 @@ function dedupe(items: EventFeedItem[]): EventFeedItem[] {
   return result;
 }
 
-function appendExactProjectScope(query: string, canonicalKey: string): string {
-  return [query.trim(), `project_exact:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+function appendProjectGroupScope(query: string, canonicalKey: string): string {
+  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
 }
 
 function quoteHiddenFacet(value: string): string {

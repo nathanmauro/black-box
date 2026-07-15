@@ -1,6 +1,13 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { ProjectSummary } from "../lib/api";
-import { projectShortName, rankProjects } from "../lib/projects";
+import {
+  findProjectByIdentifier,
+  primaryProjectScope,
+  projectScopeDisplayName,
+  projectScopes,
+  projectShortName,
+  rankProjects,
+} from "../lib/projects";
 
 type ProjectPickerProps = {
   projects: ProjectSummary[];
@@ -8,6 +15,7 @@ type ProjectPickerProps = {
   loading?: boolean;
   error?: string | null;
   allDescription?: string;
+  allowAll?: boolean;
   onSelect: (projectKey: string | undefined) => void;
 };
 
@@ -16,7 +24,7 @@ export default function ProjectPicker(props: ProjectPickerProps) {
   const [query, setQuery] = createSignal("");
   const [activeIndex, setActiveIndex] = createSignal(0);
   const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(props.selectedProjectKey);
-  const selectedProject = createMemo(() => props.projects.find((project) => project.projectKey === selectedProjectKey()));
+  const selectedProject = createMemo(() => findProjectByIdentifier(props.projects, selectedProjectKey()));
   const results = createMemo(() => rankProjects(props.projects, query()).slice(0, 12));
   const listboxId = `project-picker-results-${createUniqueId()}`;
   let triggerButton: HTMLButtonElement | undefined;
@@ -58,9 +66,14 @@ export default function ProjectPicker(props: ProjectPickerProps) {
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
+      if (!results().length) return;
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      const lastIndex = Math.max(0, results().length - 1);
-      setActiveIndex((current) => Math.min(lastIndex, Math.max(0, current + direction)));
+      const lastIndex = results().length - 1;
+      const nextIndex = Math.min(lastIndex, Math.max(0, activeIndex() + direction));
+      setActiveIndex(nextIndex);
+      queueMicrotask(() => {
+        document.getElementById(`${listboxId}-${nextIndex}`)?.scrollIntoView({ block: "nearest" });
+      });
       return;
     }
     if (event.key === "Enter") {
@@ -84,14 +97,16 @@ export default function ProjectPicker(props: ProjectPickerProps) {
       >
         <span class="project-picker-label">Project</span>
         <strong>{selectedProject() ? projectShortName(selectedProject()!) : "All projects"}</strong>
-        <small>{selectedProject()?.label || props.allDescription || "Global activity"}</small>
+        <small>{selectedProject() ? primaryProjectScope(selectedProject()!).canonicalKey : props.allDescription || "Global activity"}</small>
       </button>
 
       <Show when={open()}>
         <div class="project-picker-popover">
-          <button type="button" class="project-picker-all" onClick={() => selectProject(undefined)}>
-            All projects
-          </button>
+          <Show when={props.allowAll !== false}>
+            <button type="button" class="project-picker-all" onClick={() => selectProject(undefined)}>
+              All projects
+            </button>
+          </Show>
           <input
             ref={searchInput}
             aria-label="Search projects"
@@ -121,13 +136,16 @@ export default function ProjectPicker(props: ProjectPickerProps) {
                       id={`${listboxId}-${index()}`}
                       type="button"
                       role="option"
-                      aria-selected={selectedProjectKey() === project.projectKey}
+                      aria-selected={selectedProject()?.projectKey === project.projectKey}
+                      classList={{ "project-picker-option--active": activeIndex() === index() }}
                       onClick={() => selectProject(project.projectKey)}
                     >
                       <strong>{projectShortName(project)}</strong>
-                      <span>{project.label}</span>
+                      <span>{projectScopeDisplayName(primaryProjectScope(project))}</span>
+                      <small>{primaryProjectScope(project).canonicalKey}</small>
                       <small>
                         {project.sessionCount} sessions - {project.eventCount} events
+                        {projectScopes(project).length > 1 ? ` - ${projectScopes(project).length} scopes` : ""}
                       </small>
                     </button>
                   </li>

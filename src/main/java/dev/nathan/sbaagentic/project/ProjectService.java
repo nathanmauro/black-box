@@ -10,9 +10,11 @@ import org.springframework.stereotype.Service;
 public class ProjectService {
 
     private final ProjectRepository repository;
+    private final ProjectAliasService aliasService;
 
-    public ProjectService(ProjectRepository repository) {
+    public ProjectService(ProjectRepository repository, ProjectAliasService aliasService) {
         this.repository = repository;
+        this.aliasService = aliasService;
     }
 
     public List<ProjectSummary> projects() {
@@ -20,11 +22,11 @@ public class ProjectService {
     }
 
     public List<AgentSession> sessions(String projectKey, int limit) {
-        return repository.sessionsForProject(ProjectKeyCodec.decode(projectKey), limit);
+        return repository.sessionsForProject(aliasService.resolve(ProjectKeyCodec.decode(projectKey)), limit);
     }
 
     public ProjectTimelineResponse timeline(String projectKey, int limit, int offset) {
-        String canonicalKey = ProjectKeyCodec.decode(projectKey);
+        String canonicalKey = aliasService.resolve(ProjectKeyCodec.decode(projectKey));
         return new ProjectTimelineResponse(
                 ProjectKeyCodec.encode(canonicalKey),
                 canonicalKey,
@@ -36,6 +38,14 @@ public class ProjectService {
     }
 
     public List<ProjectSavedMeld> melds(String projectKey) {
-        return repository.savedMeldsForProject(ProjectKeyCodec.decode(projectKey));
+        return repository.savedMeldsForProject(aliasService.resolve(ProjectKeyCodec.decode(projectKey)));
+    }
+
+    public ProjectAlias putAlias(ProjectAliasRequest request) {
+        return aliasService.put(request);
+    }
+
+    public void deleteAlias(String aliasKey) {
+        aliasService.delete(aliasKey);
     }
 }

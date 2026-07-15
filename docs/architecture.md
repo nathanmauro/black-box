@@ -38,7 +38,7 @@ flowchart LR
         BROADCAST["EventBroadcaster<br/>best effort"]
     end
 
-    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events")]
+    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
@@ -152,6 +152,24 @@ optional provenance, and a recall-resolved completion Handoff. Its only write co
 open” for `blocked` or `in_progress` work; the Board waits for the server response and refreshes
 instead of inventing local state.
 
+## Logical project identity
+
+Projects remain a read model over normalized recorded working directories. `project_aliases` adds
+cycle-safe, reversible mappings between an observed scope and its owning project. Automatic rows
+retain their direct structural owner while reads resolve the chain to one primary canonical scope.
+Git-common-directory worktrees and structurally unambiguous `.claude/worktrees` / `.worktrees`
+paths whose owner has Git metadata can be discovered automatically; basename-only matches,
+unverified paths, system contexts, `/`, and `__no_project__` are never merged automatically.
+
+Project summaries aggregate session/event/meld counts and expose every constituent scope. Project
+session, Hybrid Storyline, and saved-meld reads resolve through the same identity, and old encoded
+worktree URLs continue to resolve to the primary project. The hidden `project_group:` Activity facet
+uses this grouped identity, while `project_exact:` remains a raw exact-path filter.
+
+Grouping never rewrites `agent_sessions.cwd`, raw events, task/spec project keys, or historical meld
+rows. `/api/tasks?projectKey=` also remains exact: the Board may display a logical project name, but
+selecting a project never infers work or broadens the authoritative queue query.
+
 ## Continuity and search components
 
 - **`EventIngestService` and `EventRepository`.** Normalize hook/API event payloads and persist
@@ -159,10 +177,13 @@ instead of inventing local state.
 - **`ContextService`.** Capture and recall decisions, Handoffs, and observations by repo, topic, or
   direct event id.
 - **`SearchService`.** Search SQLite events and optionally combine Elasticsearch hits.
-- **`ProjectService` and `ProjectMeldService`.** Derive project views and bounded meld artifacts from
-  recorded sessions.
+- **`ProjectAliasService`, `ProjectService`, and `ProjectMeldService`.** Resolve conservative logical
+  project identity, derive grouped project views, and build bounded meld artifacts from recorded
+  sessions.
 - **SolidJS web UI.** Reads the same REST surfaces for Activity, Board, Recall, search, and supporting
-  views; Vite assets are packaged into the Spring Boot jar by the `frontend` Maven profile.
+  views, including the read-oriented Projects workspace and its explicit identity-curation controls;
+  Vite assets are packaged into the Spring Boot
+  jar by the `frontend` Maven profile.
 
 ## Local-first and model boundaries
 

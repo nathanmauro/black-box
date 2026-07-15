@@ -127,6 +127,20 @@ beforeEach(() => {
       eventCount: 4,
       savedMeldCount: 0,
       lastSeenAt: "2026-06-22T20:10:00Z",
+      scopes: [
+        {
+          projectKey: "sba-key",
+          canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+          label: "~/Developer/proj/sba-agentic",
+          primary: true,
+        },
+        {
+          projectKey: "sba-worktree-key",
+          canonicalKey: "/Users/nathan/.codex/worktrees/abc/sba-agentic",
+          label: "SBA worktree",
+          primary: false,
+        },
+      ],
     },
     {
       projectKey: "cockpit-key",
@@ -256,6 +270,23 @@ describe("ActivityPage", () => {
     expect(params.event).toBeUndefined();
   });
 
+  it("normalizes alias project IDs in the URL and local storage to the primary identity", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-worktree-key" });
+    localStorage.setItem("blackbox.activity.projectKey", "sba-worktree-key");
+
+    render(() => <ActivityPage />);
+
+    await waitFor(() => expect(params.project).toBe("sba-key"));
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
+    await waitFor(() =>
+      expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
+        meaningful: true,
+      }),
+    );
+  });
+
   it("clears a stale remembered project when the URL has no project", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({ session: "session-2", event: "event-old" });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
@@ -323,21 +354,27 @@ describe("ActivityPage", () => {
     expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
   });
 
-  it("clears a stale URL project after projects load and falls back to all projects", async () => {
+  it("fails closed for a stale URL project instead of loading global activity", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({ project: "missing-key", session: "session-2", event: "event-old" });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
 
     render(() => <ActivityPage />);
 
+    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(params.project).toBe("missing-key");
+    expect(params.session).toBe("session-2");
+    expect(params.event).toBe("event-old");
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
+    expect(screen.getByText(/not present in the current catalog/)).toBeInTheDocument();
+    expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear project" }));
     await waitFor(() => expect(params.project).toBeUndefined());
     expect(params.session).toBeUndefined();
     expect(params.event).toBeUndefined();
-    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
-    expect(await screen.findByRole("button", { name: /All projects/ })).toBeInTheDocument();
-    expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
   });
 
-  it("falls back to all projects when project loading fails with a URL project", async () => {
+  it("fails closed when the catalog fails with a URL project", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-key" });
     localStorage.setItem("blackbox.activity.projectKey", "sba-key");
     apiMocks.getProjects.mockRejectedValue(new Error("Project load failed."));
@@ -348,11 +385,32 @@ describe("ActivityPage", () => {
       </ErrorBoundary>
     ));
 
-    await waitFor(() => expect(params.project).toBeUndefined());
-    expect(localStorage.getItem("blackbox.activity.projectKey")).toBeNull();
-    expect(apiMocks.getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
+    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(params.project).toBe("sba-key");
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
+    expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
+    expect(screen.getByText(/will not broaden this scoped view to global activity/)).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
     expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
+  });
+
+  it("fails closed when a remembered project cannot be resolved because the catalog failed", async () => {
+    localStorage.setItem("blackbox.activity.projectKey", "sba-key");
+    apiMocks.getProjects.mockRejectedValue(new Error("Project load failed."));
+
+    render(() => (
+      <ErrorBoundary fallback={<p>Project resource crashed.</p>}>
+        <ActivityPage />
+      </ErrorBoundary>
+    ));
+
+    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(params.project).toBeUndefined();
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
+    expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear project" }));
+    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }));
   });
 });

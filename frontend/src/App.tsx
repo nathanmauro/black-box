@@ -8,11 +8,12 @@ type AppProps = {
   children?: JSX.Element;
 };
 
-type UtilityLinkId = "stream" | "browse" | "board" | "recall" | "search";
+type UtilityLinkId = "stream" | "browse" | "projects" | "board" | "recall" | "search";
 
 const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; icon: UtilityIconKind }> = [
   { id: "stream", href: "/", label: "Stream", icon: "activity" },
   { id: "browse", href: "/?view=browse", label: "Browse", icon: "browse" },
+  { id: "projects", href: "/projects", label: "Projects", icon: "projects" },
   { id: "board", href: "/board", label: "Board", icon: "board" },
   { id: "recall", href: "/recall", label: "Recall", icon: "recall" },
   { id: "search", href: "/search", label: "Search", icon: "search" },
@@ -116,11 +117,13 @@ function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string
       ? pathname === "/" && !view
       : item.id === "browse"
         ? pathname === "/" && view === "browse"
-        : pathname === item.href;
+        : item.id === "projects"
+          ? pathname === "/projects" || pathname.startsWith("/projects/")
+          : pathname === item.href;
   return active ? "utility-icon-link active" : "utility-icon-link";
 }
 
-type UtilityIconKind = "activity" | "browse" | "board" | "recall" | "search" | "sources";
+type UtilityIconKind = "activity" | "browse" | "projects" | "board" | "recall" | "search" | "sources";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
@@ -138,6 +141,15 @@ function UtilityIcon(props: { kind: UtilityIconKind }) {
         <path d="M4 10h12" />
         <path d="M4 14.6h12" />
         <path d="M7 3.8v12.4" />
+      </svg>
+    );
+  }
+
+  if (props.kind === "projects") {
+    return (
+      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M3.2 6.2h5l1.4-2h7.2v11.6H3.2z" />
+        <path d="M3.2 8.6h13.6" />
       </svg>
     );
   }

@@ -1,6 +1,7 @@
 import type { FullConfig } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { cleanupOwnedE2eStorage } from "../../src/e2e/e2ePreflight.mjs";
+import { cleanupProjectFixture } from "./project-fixture";
 import {
   assertProtectedRuntimeUnchanged,
   captureProtectedRuntime,
@@ -25,6 +26,10 @@ export default async function globalTeardown(config: FullConfig) {
     console.log(`[black-box-saga-e2e] protected production DB identity unchanged: ${after.databasePath || "not discovered"}`);
     console.log(`[black-box-saga-e2e] production synthetic-event row count unchanged: ${after.syntheticEventRows ?? "unavailable"}`);
   } finally {
+    const projectFixtureCleaned = cleanupProjectFixture(tempDir);
+    console.log(projectFixtureCleaned
+      ? "[black-box-saga-e2e] isolated project fixture removed"
+      : "[black-box-saga-e2e] isolated project fixture was already removed");
     const cleaned = cleanupOwnedE2eStorage(tempDir, dbPath, runToken);
     console.log(cleaned
       ? `[black-box-saga-e2e] isolated temp database removed: ${tempDir}`

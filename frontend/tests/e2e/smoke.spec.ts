@@ -6,6 +6,7 @@ test("activity workspace is stream-first with browse one tab away", async ({ pag
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Stream", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Browse", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Projects", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Recall", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
 
@@ -148,12 +149,30 @@ test("graph shows the seeded recall constellation", async ({ page }) => {
   await page.screenshot({ path: `${SHOT_DIR}/graph.png`, fullPage: true });
 });
 
-test("projects shows a project row with a storyline timeline", async ({ page }) => {
+test("projects opens the catalog-backed project workspace", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/projects");
-  await expect(page.getByRole("heading", { name: "Projects are parked" })).toBeVisible();
-  await expect(page.getByText("Project storylines and melds are disabled")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open Sessions" })).toHaveAttribute("href", "/sessions");
-  await expect(page.getByRole("link", { name: "Open Search" })).toHaveAttribute("href", "/search");
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  await expect(page.getByText("Project catalog", { exact: true })).toBeVisible();
+  const fixtureProject = page.locator(".project-catalog-row").filter({ hasText: "/tmp/black-box-e2e" });
+  await expect(fixtureProject).toBeVisible();
+  await fixtureProject.click();
+  await expect(page.getByRole("heading", { name: "black-box-e2e", exact: true })).toBeVisible();
+  await expect(page.getByText("Hybrid storyline", { exact: true })).toBeVisible();
+  await expect(page.getByText("Recent sessions", { exact: true })).toBeVisible();
+  await expect(page.getByText("UI rewrite kickoff", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Automatic · nested worktree", { exact: true })).toBeVisible();
+  await expect(page.getByText("Release workspace synthesis", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Release worktree handoff", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Activity Browse", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Preview meld/i })).toHaveCount(0);
+  await expect(page.getByText("Projects are parked")).toHaveCount(0);
+  await expect(page.getByText("Project storylines and melds are disabled")).toHaveCount(0);
+  expect(browserErrors).toEqual([]);
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 

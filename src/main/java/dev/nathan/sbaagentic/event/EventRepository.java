@@ -13,6 +13,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.search.QueryFacets;
 import dev.nathan.sbaagentic.session.AgentSession;
 import dev.nathan.sbaagentic.session.TitleRank;
@@ -53,10 +54,15 @@ public class EventRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ProjectAliasService projectAliasService;
 
-    public EventRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public EventRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ProjectAliasService projectAliasService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.projectAliasService = projectAliasService;
     }
 
     /**
@@ -267,7 +273,10 @@ public class EventRepository {
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
                 .append("e.observed_at\n")
                 .append("  FROM agent_events e\n");
-        boolean joinSessions = facets.cwd() != null || facets.excludedCwd() != null || facets.exactCwd() != null;
+        boolean joinSessions = facets.cwd() != null
+                || facets.excludedCwd() != null
+                || facets.exactCwd() != null
+                || facets.groupCwd() != null;
         if (joinSessions) {
             sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
         }
@@ -292,6 +301,7 @@ public class EventRepository {
             sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
             args.add(facets.exactCwd());
         }
+        appendProjectGroup(sql, args, facets.groupCwd());
         if (facets.excludedSource() != null) {
             sql.append("   AND lower(e.source) <> lower(?)\n");
             args.add(facets.excludedSource());
@@ -357,6 +367,7 @@ public class EventRepository {
             sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
             args.add(facets.exactCwd());
         }
+        appendProjectGroup(sql, args, facets.groupCwd());
         if (facets.excludedSource() != null) {
             sql.append("   AND lower(e.source) <> lower(?)\n");
             args.add(facets.excludedSource());
@@ -540,6 +551,19 @@ public class EventRepository {
         return jdbcTemplate.query(sql,
                 (rs, rowNum) -> new DashboardStats.DailyCount(rs.getString("day"), rs.getLong("count")),
                 args);
+    }
+
+    private void appendProjectGroup(StringBuilder sql, List<Object> args, String projectScope) {
+        if (projectScope == null) {
+            return;
+        }
+        List<String> scopes = projectAliasService.scopesFor(projectScope);
+        sql.append("   AND ")
+                .append(SESSION_CANONICAL_CWD_SQL)
+                .append(" IN (")
+                .append(String.join(", ", Collections.nCopies(scopes.size(), "?")))
+                .append(")\n");
+        args.addAll(scopes);
     }
 
     private AgentSession mapSession(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

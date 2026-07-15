@@ -84,6 +84,14 @@ export type RecallResult = {
   items: RecalledItem[];
 };
 
+export type ProjectScope = {
+  projectKey: string;
+  canonicalKey: string;
+  label: string;
+  primary: boolean;
+  source?: "manual" | "nested-worktree" | "git-commondir" | null;
+};
+
 export type ProjectSummary = {
   projectKey: string;
   canonicalKey: string;
@@ -93,6 +101,15 @@ export type ProjectSummary = {
   savedMeldCount: number;
   firstSeenAt?: string | null;
   lastSeenAt?: string | null;
+  scopes?: ProjectScope[];
+};
+
+export type ProjectAlias = {
+  id: string;
+  aliasKey: string;
+  canonicalKey: string;
+  source: string;
+  createdAt: string;
 };
 
 export type ProjectTimelineBlock = {
@@ -414,6 +431,19 @@ export function getProjects(): Promise<ProjectSummary[]> {
   return getJson("/api/projects");
 }
 
+export function mergeProjectAlias(aliasKey: string, canonicalKey: string): Promise<ProjectAlias> {
+  return putJson("/api/project-aliases", { aliasKey, canonicalKey });
+}
+
+export async function deleteProjectAlias(aliasKey: string): Promise<void> {
+  const query = new URLSearchParams({ aliasKey });
+  const response = await fetch(`/api/project-aliases?${query.toString()}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) await readJson<unknown>(response);
+}
+
 export function getProjectSessions(key: string, limit = 250): Promise<AgentSession[]> {
   return getJson(`/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}`);
 }
@@ -508,6 +538,15 @@ async function getJson<T>(path: string): Promise<T> {
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJson<T>(response);
+}
+
+async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "PUT",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

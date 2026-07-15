@@ -120,6 +120,7 @@ function syntheticEventRows(databasePath: string): number | null {
         'black-box-e2e-codex-ui-rewrite',
         'black-box-e2e-codex-frontend-build',
         'black-box-e2e-claude-design-prompt',
+        'black-box-e2e-codex-release-worktree',
         'black-box-saga-e2e-completion-session'
       );
     `], {

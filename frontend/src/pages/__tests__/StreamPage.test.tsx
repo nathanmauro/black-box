@@ -85,7 +85,7 @@ describe("StreamPage", () => {
     await screen.findByRole("link", { name: /Make stream default/ });
     expect(getEventFeed).toHaveBeenCalledWith({
       limit: 100,
-      q: "project_exact:/Users/nathan/Developer/proj/sba-agentic",
+      q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
   });
@@ -95,6 +95,25 @@ describe("StreamPage", () => {
 
     await Promise.resolve();
     expect(getEventFeed).not.toHaveBeenCalled();
+  });
+
+  it("clears prior rows when a newly selected project request fails", async () => {
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-global", "Global row must not leak")]))
+      .mockRejectedValueOnce(new Error("Scoped feed unavailable"));
+    const [project, setProject] = createSignal<ProjectSummary | null>(null);
+    render(() => <StreamPage project={project()} />);
+
+    expect(await screen.findByRole("link", { name: /Global row must not leak/ })).toBeInTheDocument();
+    setProject(selectedProject);
+
+    expect(await screen.findByText("Scoped feed unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Global row must not leak/ })).not.toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
   });
 
   it("removes visible positive project facets before applying hidden project scope", async () => {
@@ -108,7 +127,7 @@ describe("StreamPage", () => {
     expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
-      q: "kind:Decision project_exact:/Users/nathan/Developer/proj/sba-agentic",
+      q: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
   });
