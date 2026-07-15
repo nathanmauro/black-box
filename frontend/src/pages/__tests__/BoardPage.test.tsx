@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal, type JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask, TaskChange, TaskFilters, TaskSnapshot } from "../../lib/api";
+import type { AgentTask, ProjectSummary, TaskChange, TaskFilters, TaskSnapshot } from "../../lib/api";
 import type { TaskLifecycleFrame, TaskLiveStore } from "../../lib/tasks";
 import BoardPage from "../BoardPage";
 
@@ -16,6 +16,7 @@ type BoardSearchParams = { project?: string; lane?: string; task?: string };
 let params: BoardSearchParams;
 let setParams: SetStoreFunction<BoardSearchParams>;
 const searchParamWrites = vi.fn();
+const emptyCatalog = async (): Promise<ProjectSummary[]> => [];
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string }) => (
@@ -54,7 +55,7 @@ describe("BoardPage", () => {
       }],
     }));
 
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} recallHandoff={recallHandoff} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} recallHandoff={recallHandoff} loadProjects={emptyCatalog} />);
 
     await screen.findByRole("heading", { name: "Coordination board" });
     const open = screen.getByRole("region", { name: "Open tasks" });
@@ -88,7 +89,7 @@ describe("BoardPage", () => {
 
   it("moves a task between columns when the live store applies a lifecycle frame", async () => {
     const store = fakeTaskStore([fixtures()[0]!]);
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
     await screen.findByText("Shape the contract");
 
     store.applyFrame({
@@ -104,7 +105,7 @@ describe("BoardPage", () => {
 
   it("moves keyboard focus into task detail and restores it to the originating card", async () => {
     const store = fakeTaskStore(fixtures());
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
     const taskCard = await screen.findByRole("button", { name: "Shape the contract, Open" });
     taskCard.focus();
 
@@ -119,10 +120,12 @@ describe("BoardPage", () => {
   it("writes shareable project, lane, and task filters without mutating task state", async () => {
     const updateStatus = vi.fn();
     const store = fakeTaskStore(fixtures());
-    render(() => <BoardPage store={store} updateStatus={updateStatus} />);
+    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
     await screen.findByText("Shape the contract");
 
-    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "other-project" } });
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
     fireEvent.change(screen.getByLabelText("Lane"), { target: { value: "review" } });
     fireEvent.click(screen.getByRole("button", { name: /Shape the contract/ }));
 
@@ -142,13 +145,136 @@ describe("BoardPage", () => {
     const store = fakeTaskStore(fixtures());
     const updateStatus = vi.fn();
 
-    render(() => <BoardPage store={store} updateStatus={updateStatus} />);
+    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
 
-    expect(await screen.findByLabelText("Project")).toHaveValue("black-box");
+    expect(await screen.findByRole("button", { name: /black-box/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Lane")).toHaveValue("review");
     expect(screen.getByRole("complementary", { name: "Task detail" })).toHaveTextContent("Verify the queue");
     expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "black-box", lane: "review", limit: 250 });
     expect(updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("searches catalog projects by name and path, then filters tasks by canonical scope", async () => {
+    const canonicalScope = "/workspace/black-box";
+    const store = fakeTaskStore([
+      snapshot({ id: "task-catalog", projectKey: canonicalScope, title: "Catalog-backed task", priority: 9 }),
+    ]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+    await screen.findByText("Catalog-backed task");
+
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    const search = screen.getByLabelText("Search projects");
+    fireEvent.input(search, { target: { value: "black-box" } });
+    let option = await screen.findByRole("option", { name: /black-box/ });
+    expect(within(option).getByText("black-box")).toBeInTheDocument();
+    expect(within(option).getByText(canonicalScope)).toBeInTheDocument();
+
+    fireEvent.input(search, { target: { value: canonicalScope } });
+    option = await screen.findByRole("option", { name: /black-box/ });
+    fireEvent.click(option);
+
+    await waitFor(() => expect(searchParamWrites).toHaveBeenCalledWith({ project: canonicalScope, task: undefined }));
+    expect(store.setFilters).toHaveBeenCalledWith({ projectKey: canonicalScope, limit: 250 });
+    expect(screen.getByRole("button", { name: /black-box/ })).toHaveTextContent(canonicalScope);
+
+    const card = screen.getByRole("button", { name: "Catalog-backed task, Open" });
+    expect(within(card).getByText("black-box")).toBeInTheDocument();
+    expect(within(card).getByText(canonicalScope)).toBeInTheDocument();
+    fireEvent.click(card);
+
+    const detail = await screen.findByRole("complementary", { name: "Task detail" });
+    expect(within(detail).getByText("black-box")).toBeInTheDocument();
+    expect(within(detail).getByText(canonicalScope)).toBeInTheDocument();
+  });
+
+  it("shows a named empty project state and clearing it restores the complete queue", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ project: "/workspace/cockpit" });
+    const allTasks = [
+      snapshot({ id: "task-catalog", projectKey: "/workspace/black-box", title: "Catalog-backed task" }),
+    ];
+    const store = fakeTaskStore(allTasks, async () => undefined, true);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: "No work is queued for cockpit" })).toBeInTheDocument();
+    expect(screen.getByText(/Agents enqueue work through REST or MCP/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Clear project/i }));
+
+    expect(await screen.findByText("Catalog-backed task")).toBeInTheDocument();
+    expect(searchParamWrites).toHaveBeenCalledWith({ project: undefined, task: undefined });
+    expect(store.setFilters).toHaveBeenLastCalledWith({ limit: 250 });
+  });
+
+  it("uses the generic empty state when another filter excludes a project's tasks", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ project: "/workspace/black-box", lane: "review" });
+    const store = fakeTaskStore([
+      snapshot({ id: "task-catalog", projectKey: "/workspace/black-box", title: "Catalog-backed task", lane: "codex" }),
+    ], async () => undefined, true);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+
+    expect(await screen.findByRole("heading", { name: "No tasks match this view" })).toBeInTheDocument();
+    expect(screen.queryByText(/No work is queued for/)).not.toBeInTheDocument();
+  });
+
+  it("keeps unmatched historical task scopes accessible as uncatalogued choices", async () => {
+    const store = fakeTaskStore(fixtures());
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => catalogProjects()}
+      />
+    ));
+    await screen.findByText("Shape the contract");
+
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    const option = await screen.findByRole("option", { name: /other-project/ });
+    expect(within(option).getByText(/^Uncatalogued queue scope/)).toBeInTheDocument();
+    fireEvent.click(option);
+
+    await waitFor(() => expect(searchParamWrites).toHaveBeenCalledWith({ project: "other-project", task: undefined }));
+    expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 });
+  });
+
+  it("keeps queued work and raw-scope filtering usable when the project catalog fails", async () => {
+    const store = fakeTaskStore(fixtures());
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={async () => {
+          throw new Error("catalog offline");
+        }}
+      />
+    ));
+
+    expect(await screen.findByText("Shape the contract")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
+
+    await waitFor(() => expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 }));
+    expect(screen.getByText("Shape the contract")).toBeInTheDocument();
   });
 
   it("labels a retained snapshot as stale when a filter refresh fails", async () => {
@@ -156,11 +282,13 @@ describe("BoardPage", () => {
     store.refresh
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("filtered queue offline"));
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
     await waitFor(() => expect(store.refresh).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByText("refreshing")).not.toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "other-project" } });
+    fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
+    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Snapshot refresh failed");
@@ -189,7 +317,7 @@ describe("BoardPage", () => {
         observedAt: "2026-07-10T01:00:00Z",
       } });
     }));
-    render(() => <BoardPage store={store} updateStatus={updateStatus} />);
+    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
     const reset = await screen.findByRole("button", { name: "Reset task to open" });
 
     fireEvent.click(reset);
@@ -207,7 +335,7 @@ describe("BoardPage", () => {
     const updateStatus = vi.fn(async () => {
       throw new Error("task changed concurrently");
     });
-    render(() => <BoardPage store={store} updateStatus={updateStatus} />);
+    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Reset task to open" }));
 
@@ -223,7 +351,7 @@ describe("BoardPage", () => {
     const updateStatus = vi.fn(() => new Promise<TaskChange>((_resolve, reject) => {
       rejectReset = reject;
     }));
-    render(() => <BoardPage store={store} updateStatus={updateStatus} />);
+    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
     fireEvent.click(await screen.findByRole("button", { name: "Reset task to open" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Build the client, In progress" }));
@@ -241,7 +369,7 @@ describe("BoardPage", () => {
     const store = fakeTaskStore([], () => new Promise<void>((_resolve, reject) => {
       rejectLoad = reject;
     }));
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
 
     expect(screen.getByRole("status", { name: "Loading coordination board" })).toBeInTheDocument();
     await waitFor(() => expect(store.refresh).toHaveBeenCalled());
@@ -263,7 +391,11 @@ describe("BoardPage", () => {
   });
 });
 
-function fakeTaskStore(initial: TaskSnapshot[], refreshImpl: () => Promise<void> = async () => undefined) {
+function fakeTaskStore(
+  initial: TaskSnapshot[],
+  refreshImpl: () => Promise<void> = async () => undefined,
+  filterSnapshots = false,
+) {
   const [snapshots, setSnapshots] = createSignal(initial);
   const [filters, setFiltersSignal] = createSignal<TaskFilters>({});
   const refresh = vi.fn(refreshImpl);
@@ -279,6 +411,13 @@ function fakeTaskStore(initial: TaskSnapshot[], refreshImpl: () => Promise<void>
         && current.status === next.status
         && current.limit === next.limit) return;
       setFiltersSignal(next);
+      if (filterSnapshots) {
+        setSnapshots(initial.filter(({ task }) => (
+          (!next.projectKey || task.projectKey === next.projectKey)
+          && (!next.lane || task.lane === next.lane)
+          && (!next.status || task.status === next.status)
+        )));
+      }
       await refresh();
     }),
     refresh,
@@ -289,6 +428,29 @@ function fakeTaskStore(initial: TaskSnapshot[], refreshImpl: () => Promise<void>
     close: vi.fn(),
   };
   return store;
+}
+
+function catalogProjects(): ProjectSummary[] {
+  return [
+    {
+      projectKey: "catalog-black-box",
+      canonicalKey: "/workspace/black-box",
+      label: "/workspace/black-box",
+      sessionCount: 6,
+      eventCount: 42,
+      savedMeldCount: 0,
+      lastSeenAt: "2026-07-10T02:00:00Z",
+    },
+    {
+      projectKey: "catalog-cockpit",
+      canonicalKey: "/workspace/cockpit",
+      label: "/workspace/cockpit",
+      sessionCount: 3,
+      eventCount: 18,
+      savedMeldCount: 0,
+      lastSeenAt: "2026-07-10T01:00:00Z",
+    },
+  ];
 }
 
 function fixtures(): TaskSnapshot[] {
