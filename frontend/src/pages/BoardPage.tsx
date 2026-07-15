@@ -1,13 +1,17 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
+import ProjectPicker from "../components/ProjectPicker";
 import {
+  getProjects,
   getRecall,
   updateTaskStatus,
   type AgentTask,
+  type ProjectSummary,
   type TaskChange,
   type TaskFilters,
   type TaskSnapshot,
 } from "../lib/api";
+import { projectShortName } from "../lib/projects";
 import { createTaskLiveStore, type TaskLiveStore } from "../lib/tasks";
 
 type BoardSearchParams = {
@@ -32,6 +36,7 @@ const COLUMNS: BoardColumn[] = [
 
 export type BoardPageProps = {
   store?: TaskLiveStore;
+  loadProjects?: typeof getProjects;
   updateStatus?: typeof updateTaskStatus;
   recallHandoff?: typeof getRecall;
 };
@@ -41,6 +46,7 @@ export default function BoardPage(props: BoardPageProps) {
   const ownsStore = props.store === undefined;
   const store = props.store ?? createTaskLiveStore({ initialFilters: filtersFromParams(params) });
   const mutateStatus = props.updateStatus ?? updateTaskStatus;
+  const [catalog] = createResource(props.loadProjects ?? getProjects, { initialValue: [] });
   const [phase, setPhase] = createSignal<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [visibleFilters, setVisibleFilters] = createSignal<TaskFilters | null>(null);
@@ -58,6 +64,10 @@ export default function BoardPage(props: BoardPageProps) {
   const cancelledSnapshots = createMemo(() => snapshots().filter(({ task }) => task.status === "cancelled"));
   const selected = createMemo(() => snapshots().find(({ task }) => task.id === params.task));
   const totalActive = createMemo(() => activeSnapshots().length);
+  const catalogProjects = createMemo(() => catalog.error ? [] : catalog());
+  const projectOptions = createMemo(() => mergeProjectOptions(catalogProjects(), knownProjects()));
+  const selectedProject = createMemo(() => projectForScope(params.project, projectOptions()));
+  const projectCatalogError = createMemo(() => catalog.error ? "Unable to load projects." : null);
 
   createEffect(() => {
     const projects = new Set(knownProjects());
@@ -134,6 +144,13 @@ export default function BoardPage(props: BoardPageProps) {
     setParams({ task: taskId });
   }
 
+  function selectProject(projectKey?: string) {
+    const project = projectKey
+      ? projectOptions().find((candidate) => candidate.projectKey === projectKey)
+      : undefined;
+    setParams({ project: project?.canonicalKey, task: undefined });
+  }
+
   function closeTaskDetail() {
     const returnTo = lastFocusedTaskId;
     selectTask();
@@ -161,17 +178,16 @@ export default function BoardPage(props: BoardPageProps) {
       </header>
 
       <section class="board-filter-bar" aria-label="Board filters">
-        <label>
-          <span>Project</span>
-          <select
-            aria-label="Project"
-            value={params.project ?? ""}
-            onChange={(event) => setParams({ project: optionalValue(event.currentTarget.value), task: undefined })}
-          >
-            <option value="">All projects</option>
-            <For each={knownProjects()}>{(project) => <option value={project}>{project}</option>}</For>
-          </select>
-        </label>
+        <div class="board-project-filter">
+          <ProjectPicker
+            projects={projectOptions()}
+            selectedProjectKey={selectedProject()?.projectKey}
+            loading={catalog.loading && projectOptions().length === 0}
+            error={projectCatalogError()}
+            allDescription="Entire coordination queue"
+            onSelect={selectProject}
+          />
+        </div>
         <label>
           <span>Lane</span>
           <select
@@ -184,8 +200,11 @@ export default function BoardPage(props: BoardPageProps) {
           </select>
         </label>
         <div class="board-filter-summary" aria-live="polite">
-          <span>{params.project || "every project"}</span>
+          <span>{projectLabel(selectedProject(), params.project) || "every project"}</span>
           <span>{params.lane || "every lane"}</span>
+          <Show when={projectCatalogError()}>
+            <span class="board-catalog-warning">catalog unavailable</span>
+          </Show>
           <Show when={phase() === "loading" && snapshots().length > 0}>
             <span class="board-refreshing">refreshing</span>
           </Show>
@@ -210,16 +229,32 @@ export default function BoardPage(props: BoardPageProps) {
       </Show>
 
       <Show when={phase() === "ready" && snapshots().length === 0}>
-        <BoardState class="board-state--empty" label="Empty coordination board" title="No tasks match this view">
-          <p>Change a filter or enqueue work through the REST or MCP task contract.</p>
-        </BoardState>
+        <Show
+          when={selectedProject() && !params.lane ? selectedProject() : undefined}
+          fallback={(
+            <BoardState class="board-state--empty" label="Empty coordination board" title="No tasks match this view">
+              <p>Change a filter or enqueue work through the REST or MCP task contract.</p>
+            </BoardState>
+          )}
+        >
+          {(project) => (
+            <BoardState
+              class="board-state--empty"
+              label={`Empty coordination board for ${projectShortName(project())}`}
+              title={`No work is queued for ${projectShortName(project())}`}
+            >
+              <p>Agents enqueue work through REST or MCP. Selecting a project does not infer tasks from recorded activity.</p>
+              <button type="button" class="secondary-action" onClick={() => selectProject(undefined)}>Clear project</button>
+            </BoardState>
+          )}
+        </Show>
       </Show>
 
       <Show when={phase() === "error" && snapshots().length > 0}>
         <div class="board-stale-alert" role="alert">
           <div>
             <strong>Snapshot refresh failed</strong>
-            <span>{loadError()}. Showing the last successful view: {filterLabel(visibleFilters())}.</span>
+            <span>{loadError()}. Showing the last successful view: {filterLabel(visibleFilters(), projectOptions())}.</span>
           </div>
           <button type="button" aria-label="Retry refreshing board" onClick={() => void load()}>Retry</button>
         </div>
@@ -242,6 +277,7 @@ export default function BoardPage(props: BoardPageProps) {
                         {(snapshot) => (
                           <TaskCard
                             snapshot={snapshot}
+                            project={projectForScope(snapshot.task.projectKey, projectOptions())}
                             selected={params.task === snapshot.task.id}
                             buttonRef={(button) => taskButtons.set(snapshot.task.id, button)}
                             onSelect={() => selectTask(snapshot.task.id)}
@@ -270,6 +306,7 @@ export default function BoardPage(props: BoardPageProps) {
                       {(snapshot) => (
                         <TaskCard
                           snapshot={snapshot}
+                          project={projectForScope(snapshot.task.projectKey, projectOptions())}
                           selected={params.task === snapshot.task.id}
                           buttonRef={(button) => taskButtons.set(snapshot.task.id, button)}
                           onSelect={() => selectTask(snapshot.task.id)}
@@ -286,6 +323,7 @@ export default function BoardPage(props: BoardPageProps) {
             {(snapshot) => (
               <TaskDetail
                 snapshot={snapshot()}
+                project={projectForScope(snapshot().task.projectKey, projectOptions())}
                 resetting={resettingTasks().has(snapshot().task.id)}
                 resetError={resetErrors()[snapshot().task.id] ?? null}
                 recallHandoff={props.recallHandoff ?? getRecall}
@@ -310,7 +348,13 @@ function BoardState(props: { class: string; label: string; title: string; childr
   );
 }
 
-function TaskCard(props: { snapshot: TaskSnapshot; selected: boolean; buttonRef: (button: HTMLButtonElement) => void; onSelect: () => void }) {
+function TaskCard(props: {
+  snapshot: TaskSnapshot;
+  project?: ProjectSummary;
+  selected: boolean;
+  buttonRef: (button: HTMLButtonElement) => void;
+  onSelect: () => void;
+}) {
   const task = () => props.snapshot.task;
   return (
     <article class={`board-task board-task--${task().status}`}>
@@ -327,7 +371,22 @@ function TaskCard(props: { snapshot: TaskSnapshot; selected: boolean; buttonRef:
           <span class="board-priority">P{task().priority}</span>
         </span>
         <strong>{task().title}</strong>
-        <span class="board-task-meta"><i>{task().lane}</i><i>{task().projectKey}</i></span>
+        <span class="board-task-meta">
+          <i>{task().lane}</i>
+          <Show
+            when={props.project}
+            fallback={<i>{task().projectKey}</i>}
+          >
+            {(project) => (
+              <>
+                <i>{projectShortName(project())}</i>
+                <Show when={project().canonicalKey !== projectShortName(project())}>
+                  <i title={project().canonicalKey}>{project().canonicalKey}</i>
+                </Show>
+              </>
+            )}
+          </Show>
+        </span>
         <Show when={task().claimedBy}>
           {(claimant) => <span class="board-task-owner">↳ {claimant()}</span>}
         </Show>
@@ -341,6 +400,7 @@ function TaskCard(props: { snapshot: TaskSnapshot; selected: boolean; buttonRef:
 
 function TaskDetail(props: {
   snapshot: TaskSnapshot;
+  project?: ProjectSummary;
   resetting: boolean;
   resetError: string | null;
   recallHandoff: typeof getRecall;
@@ -391,7 +451,11 @@ function TaskDetail(props: {
         <section class="board-detail-section">
           <h3>Lifecycle</h3>
           <dl class="board-detail-grid">
-            <dt>Project</dt><dd>{task().projectKey}</dd>
+            <dt>Project</dt>
+            <dd class="board-project-identity">
+              <strong>{props.project ? projectShortName(props.project) : task().projectKey}</strong>
+              <span>{props.project?.canonicalKey || task().projectKey}</span>
+            </dd>
             <dt>Current claimant</dt><dd>{task().claimedBy || "Unclaimed"}</dd>
             <dt>Created by</dt><dd>{task().createdBy}</dd>
             <dt>Created</dt><dd>{formatInstant(task().createdAt)}</dd>
@@ -498,9 +562,38 @@ function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
-function filterLabel(filters: TaskFilters | null): string {
+function filterLabel(filters: TaskFilters | null, projects: ProjectSummary[]): string {
   if (!filters) return "previous snapshot";
-  return `${filters.projectKey || "every project"} / ${filters.lane || "every lane"}`;
+  const project = projectForScope(filters.projectKey, projects);
+  return `${projectLabel(project, filters.projectKey) || "every project"} / ${filters.lane || "every lane"}`;
+}
+
+function mergeProjectOptions(catalog: ProjectSummary[], queueScopes: string[]): ProjectSummary[] {
+  const projects = [...catalog];
+  for (const scope of queueScopes) {
+    if (projectForScope(scope, projects)) continue;
+    projects.push({
+      projectKey: `uncatalogued:${scope}`,
+      canonicalKey: scope,
+      label: `Uncatalogued queue scope · ${scope}`,
+      sessionCount: 0,
+      eventCount: 0,
+      savedMeldCount: 0,
+      firstSeenAt: null,
+      lastSeenAt: null,
+    });
+  }
+  return projects;
+}
+
+function projectForScope(scope: string | null | undefined, projects: ProjectSummary[]): ProjectSummary | undefined {
+  if (!scope) return undefined;
+  return projects.find((project) => project.canonicalKey === scope);
+}
+
+function projectLabel(project: ProjectSummary | undefined, fallback?: string): string | undefined {
+  if (project?.projectKey.startsWith("uncatalogued:")) return project.canonicalKey;
+  return project?.label || fallback;
 }
 
 function sameTaskFilters(left: TaskFilters, right: TaskFilters): boolean {

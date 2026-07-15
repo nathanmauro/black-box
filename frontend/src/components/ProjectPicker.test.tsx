@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectSummary } from "../lib/api";
 import ProjectPicker from "./ProjectPicker";
@@ -29,7 +29,11 @@ describe("ProjectPicker", () => {
     const onSelect = vi.fn();
     render(() => <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /All projects/ }));
+    const trigger = screen.getByRole("button", { name: /All projects/ });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(screen.getByLabelText("Search projects")).toHaveFocus());
     fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "sba" } });
 
     const listbox = screen.getByRole("listbox", { name: "Project results" });
@@ -42,5 +46,23 @@ describe("ProjectPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /sba-agentic/ }));
     fireEvent.click(screen.getByRole("button", { name: "All projects" }));
     expect(onSelect).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("supports keyboard selection and Escape dismissal", async () => {
+    const onSelect = vi.fn();
+    render(() => <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />);
+    const trigger = screen.getByRole("button", { name: /All projects/ });
+
+    fireEvent.click(trigger);
+    const search = screen.getByLabelText("Search projects");
+    fireEvent.input(search, { target: { value: "sba" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("sba-key");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByLabelText("Search projects"), { key: "Escape" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });

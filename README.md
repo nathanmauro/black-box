@@ -126,7 +126,7 @@ Restart the client if the tools do not appear. The server keeps the historical M
 
 | Tool | Purpose |
 | --- | --- |
-| `createSpec` | Freeze a project-scoped work definition with optional provenance |
+| `createSpec` | Freeze a work definition under the catalog's canonical project scope or path |
 | `enqueueTask` | Add an open task to one exact lane |
 | `claimNextTask` | Atomically claim the highest-priority, oldest eligible task |
 | `updateTaskStatus` | Block, reset, or cancel through the allowed lifecycle |
@@ -181,8 +181,10 @@ recallContext({
 
 - **Activity** — the global event stream, session browser, faceted Find workspace, and optional Ask
   surface.
-- **Board** — project and lane filters over Open, In Progress, Blocked, and Done tasks, with frozen
-  spec and linked-Handoff detail.
+- **Board** — searchable catalog-project and lane filters over explicitly queued Open, In Progress,
+  Blocked, and Done tasks, with frozen spec and linked-Handoff detail. Selecting a project does not
+  infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
+  `createSpec.projectKey` when enqueueing work.
 - **Recall** — focused Decision, Handoff, and Observation retrieval by repo or topic.
 - **Search** — local SQLite search with optional Elasticsearch results.
 
