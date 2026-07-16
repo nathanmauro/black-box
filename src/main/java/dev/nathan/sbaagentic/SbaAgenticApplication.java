@@ -13,6 +13,7 @@ public class SbaAgenticApplication {
     private static final Set<String> CLI_COMMANDS = Set.of(
             "doctor",
             "ingest",
+            "runner",
             "search",
             "sessions",
             "summarize");

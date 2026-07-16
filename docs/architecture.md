@@ -20,6 +20,7 @@ described below.
 flowchart LR
     subgraph Clients["Clients"]
         AGENTS["External agents and orchestrators"]
+        RUNNER["FULL_AUTO runner<br/>(external, config-gated)"]
         HUMAN["Human operator"]
         UI["SolidJS web UI"]
     end
@@ -38,12 +39,13 @@ flowchart LR
         BROADCAST["EventBroadcaster<br/>best effort"]
     end
 
-    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>project_aliases")]
+    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
 
     AGENTS --> MCP & REST
+    RUNNER --> REST
     HUMAN --> REST & UI
     UI --> REST
     HOOK --> CONTEXT
@@ -56,11 +58,17 @@ flowchart LR
     TASK -. "after durable mutation" .-> BROADCAST
     CONTEXT -. "after durable event write" .-> BROADCAST
     BROADCAST --> STREAM
-    STREAM -. "refresh or try claim" .-> AGENTS & UI
+    STREAM -. "refresh or try claim" .-> AGENTS & RUNNER & UI
     CONTEXT -. "new event mirror when enabled" .-> ES
     DB -. "session summary only" .-> EXTERNAL
     DB -. "when SBA_SUMMARY_BACKEND=local" .-> LOCAL
 ```
+
+The operator launches the runner as a separate process with
+`java -jar sba-agentic.jar runner`. It is gated by an explicit machine-local config selected through
+`SBA_RUNNER_CONFIG` or, by default, `~/.blackbox/runner.json`, which is never committed. Like every
+other client, the runner has no direct database access and uses only the REST surface described
+below.
 
 SQLite remains authoritative if an SSE client disconnects, a broadcast fails, Elasticsearch is
 offline, or a model backend is unavailable. Task row mutation and its `task_events` append commit in
@@ -109,6 +117,15 @@ status fields when relevant. The domain types are `VALIDATION_FAILED`, `SPEC_NOT
 `TASK_NOT_FOUND`, `INVALID_TRANSITION`, `CLAIMANT_MISMATCH`, `CONCURRENT_MODIFICATION`, and
 `HANDOFF_FAILED`.
 
+The following runner-supporting operations are REST-only in v1; they do not have MCP parity.
+
+| Operation | REST | Input, storage, and result |
+| --- | --- | --- |
+| Append annotation | `POST /api/tasks/{taskId}/annotations` | `actor`, `kind` (`note`, `steer`, `progress`, `worker_session`, or `engine`), `text`, optional `dataJson` → append-only `task_events` row of type `task.note`, valid at any task status; broadcasts `task.note` with `{task, annotation, observedAt}` |
+| Read task timeline | `GET /api/tasks/{taskId}/events` | Full chronological lifecycle-plus-annotation timeline rendered by Board card detail |
+| Create or read session lineage | `POST /api/session-links`; `GET /api/sessions/{id}/links` | `session_links` stores `parent_session_id`, `child_session_id`, `link_type`, optional `task_id`, unique per parent/child/type triple; link types are `spawned` (runner to worker), `steered`, and `continued` |
+| Read lineage DAG | `GET /api/tasks/{taskId}/dag`; `GET /api/dag?sessionId=` | Pure projection over existing specs, tasks, and sessions: spec-to-task edges from the queue, task-to-session edges from `worker_session` annotations, and session-to-session edges from `session_links`; creates no new state |
+
 ## Lifecycle and ownership
 
 ```mermaid
@@ -137,9 +154,11 @@ available to existing recall without adding a second continuity system.
 ## SSE and the Board
 
 `GET /api/stream` carries the existing `event.appended` and `session.updated` frames plus
-`task.created`, `task.claimed`, `task.blocked`, `task.completed`, `task.reset`, and
-`task.cancelled`. Task frames contain the current task plus a transition id, transition type, and
-timestamp. They deliberately omit the frozen spec body.
+`task.created`, `task.claimed`, `task.blocked`, `task.completed`, `task.reset`, `task.cancelled`, and
+`task.note`. Lifecycle task frames contain the current task plus a transition id, transition type,
+and timestamp; `task.note` contains `{task, annotation, observedAt}`. The annotation frame is
+additive and does not change any existing frame's payload shape. Task frames deliberately omit the
+frozen spec body.
 
 The frontend task store loads authoritative task/spec snapshots over REST, applies newer lifecycle
 frames idempotently, ignores duplicate or older transitions, and performs a bounded refresh after a
@@ -151,6 +170,42 @@ filters and selected detail. Task detail shows ownership, blocker, timestamps, t
 optional provenance, and a recall-resolved completion Handoff. Its only write control is “Reset to
 open” for `blocked` or `in_progress` work; the Board waits for the server response and refreshes
 instead of inventing local state.
+
+## Optional FULL_AUTO runner
+
+The FULL_AUTO runner turns an explicitly submitted story into an end-to-end run while remaining an
+external REST client of Black Box:
+
+1. **Intake.** The Board's New Story form, or `createSpec` followed by `enqueueTask`, freezes the
+   story and creates a task in lane `gate`.
+2. **Gate.** The runner evaluates deterministic readiness checks: the repo must exist, be a readable
+   Git working tree, and appear in the runner config allowlist; the Acceptance criteria section must
+   be non-empty; a verify command must be present or derivable from the repo; and push intent is
+   honored only when that repo's config permits it and carries no danger flag. An optional LLM pass
+   can add advisory feedback but cannot solely block the story. A pass enqueues an `auto`-lane task
+   and completes the gate task with a Handoff; a failure blocks the gate task with concrete repair
+   guidance.
+3. **Execution.** For the claimed `auto` task, the runner creates an isolated worktree and branch,
+   opens a tmux session, launches the configured engine, and appends `progress` annotations at
+   milestones.
+4. **Completion signal.** The worker reports deterministically with
+   `scripts/runner/report.sh <taskId> done|blocked "<summary>"`. A bounded pane-state, commit-probe,
+   and timeout fallback records diagnostic evidence but never infers success; an exhausted timeout
+   blocks the task and preserves the worktree for inspection.
+5. **Ship.** The runner, never the worker, owns push, pull-request creation, and merge through
+   `scripts/runner/ship.sh`. Push and merge require the repo's `push` and `auto_merge` settings,
+   respectively, and no danger flag; merge also requires green checks. A config or credential gap
+   records the exact manual follow-up commands and still completes already delivered local or PR
+   work. A red check gets one bounded repair round in the same worker session and blocks if it
+   remains red.
+6. **Complete.** `completeTask` records the usual recallable Handoff with the summary, branch, pull
+   request, merge state, open loops, and next action.
+
+Fail-closed behavior is the invariant: an unknown repo, a danger flag, a red check, or a missing
+credential degrades the run to local-only or blocked state, never to a risky action.
+
+The full contract, including worker-session ingest, steering, recovery, and v1 non-goals, is in the
+[`FULL_AUTO board-driven runner` design spec](superpowers/specs/2026-07-15-full-auto-board-runner.md).
 
 ## Logical project identity
 
@@ -200,12 +255,18 @@ participates in task coordination or structured recall.
 
 ## MVP non-goals
 
-The shipped coordination MVP intentionally adds no embedded worker runner, worker-process spawning,
-task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency DAG,
-capability registry, multi-node broker, authentication layer, priority aging, or automatic
-follow-up enqueue. Manual reset is the recovery mechanism for abandoned ownership. Those additions
-must preserve SQLite as the truth and keep task execution outside the Black Box server. The
-separately configured session-summary subprocess described above is not a worker or task executor.
+The Black Box server intentionally embeds no worker runner and adds no worker-process spawning,
+task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency-aware
+scheduling DAG, capability registry, multi-node broker, authentication layer, priority aging, or
+automatic follow-up enqueue. Manual reset is the recovery mechanism for abandoned ownership. Those
+additions must preserve SQLite as the truth and keep task execution outside the Black Box server.
+The separately configured session-summary subprocess described above is not a worker or task
+executor.
+
+The external, config-gated FULL_AUTO runner documented above does not change that boundary. It is a
+separate operator-launched process and an ordinary client of the same REST surface used by other
+agents and orchestrators; the server itself still spawns no workers, executes no task commands, and
+mutates no checkout.
 
 The implemented design and file map are recorded in
 [`docs/superpowers/specs/2026-06-28-agent-task-queue-design.md`](superpowers/specs/2026-06-28-agent-task-queue-design.md)

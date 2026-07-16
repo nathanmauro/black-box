@@ -2,7 +2,9 @@ import { createSignal } from "solid-js";
 import {
   listTasks,
   type AgentTask,
+  type AnnotationKind,
   type Spec,
+  type TaskAnnotation,
   type TaskEventType,
   type TaskFilters,
   type TaskSnapshot,
@@ -31,11 +33,27 @@ const TASK_STATUSES = new Set<TaskStatus>([
 const DEFAULT_TASK_LIMIT = 100;
 const MAX_TASK_LIMIT = 250;
 const MAX_TRACKED_TASKS = 1_000;
+const MAX_ANNOTATIONS_PER_TASK = 500;
+const MAX_TRACKED_ANNOTATION_TASKS = 200;
+
+const ANNOTATION_KINDS = new Set<AnnotationKind>([
+  "note",
+  "steer",
+  "progress",
+  "worker_session",
+  "engine",
+]);
 
 export type TaskLifecycleFrame = {
   task: AgentTask;
   transitionId: string;
   transitionType: TaskEventType;
+  observedAt: string;
+};
+
+export type TaskNoteFrame = {
+  task: AgentTask;
+  annotation: TaskAnnotation;
   observedAt: string;
 };
 
@@ -50,12 +68,19 @@ export type TaskLiveStore = {
   status: () => LiveStatus;
   tasks: () => AgentTask[];
   snapshots: () => TaskSnapshot[];
+  taskAnnotations?: (taskId: string) => TaskAnnotation[];
+  noteEpoch?: () => number;
   filters: () => TaskFilters;
   setFilters: (filters: TaskFilters) => Promise<void>;
   refresh: () => Promise<void>;
   applyFrame: (frame: TaskLifecycleFrame) => void;
   diagnostics: () => TaskLiveStoreDiagnostics;
   close: () => void;
+};
+
+export type TaskLiveStoreWithNotes = TaskLiveStore & {
+  taskAnnotations: (taskId: string) => TaskAnnotation[];
+  noteEpoch: () => number;
 };
 
 export type TaskLiveStoreDiagnostics = {
@@ -76,14 +101,17 @@ type TaskRecord = {
   spec?: Spec;
 };
 
-export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiveStore {
+export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiveStoreWithNotes {
   const loadTasks = options.loadTasks ?? listTasks;
   const [status, setStatus] = createSignal<LiveStatus>("connecting");
   const [filters, setFiltersSignal] = createSignal<TaskFilters>(normalizeFilters(options.initialFilters ?? {}));
   const [records, setRecords] = createSignal<Map<string, TaskRecord>>(new Map());
+  const [noteEpoch, setNoteEpoch] = createSignal(0);
   const seenTransitions = new Set<string>();
+  const seenAnnotationIds = new Set<string>();
   const latestVersions = new Map<string, string>();
   const liveMutationSequence = new Map<string, number>();
+  const annotationsByTask = new Map<string, TaskAnnotation[]>();
   let refreshInFlight: Promise<void> | null = null;
   let recoveryLoop: Promise<void> | null = null;
   let mutationSequence = 0;
@@ -123,6 +151,14 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
         applyFrame(frame);
       });
     }
+    source.addEventListener("task.note", (message) => {
+      const frame = parseTaskNoteFrame(message);
+      if (!frame) {
+        requestAuthoritativeRecovery("malformed-task-note-frame");
+        return;
+      }
+      applyNoteFrame(frame);
+    });
   }
 
   function tasks(): AgentTask[] {
@@ -135,6 +171,10 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
       if (record.spec) values.push({ task: record.task, spec: record.spec });
     }
     return orderSnapshots(values);
+  }
+
+  function taskAnnotations(taskId: string): TaskAnnotation[] {
+    return [...(annotationsByTask.get(taskId) ?? [])];
   }
 
   function refresh(): Promise<void> {
@@ -185,6 +225,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
       const pendingGeneration = pendingRecoveryKeys.get(key);
       if (pendingGeneration !== undefined && pendingGeneration > activeRecoverySnapshotGeneration) return;
     }
+    setNoteEpoch((value) => value + 1);
     recoveryGeneration += 1;
     if (key !== undefined) pendingRecoveryKeys.set(key, recoveryGeneration);
     ensureRecoveryLoop();
@@ -233,34 +274,52 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     seenTransitions.add(frame.transitionId);
     trimSeenTransitions(seenTransitions);
 
-    const version = instantKey(frame.task.updatedAt);
-    if (!version) return;
-    const latestVersion = latestVersions.get(frame.task.id);
-    if (latestVersion !== undefined && compareInstantKeys(version, latestVersion) < 0) return;
-    touchMap(latestVersions, frame.task.id, version);
-    mutationSequence += 1;
-    touchMap(liveMutationSequence, frame.task.id, mutationSequence);
     const hadFrozenSpec = records().get(frame.task.id)?.spec !== undefined;
-
-    setRecords((current) => {
-      const next = new Map(current);
-      const previous = current.get(frame.task.id);
-      const previousVersion = previous ? instantKey(previous.task.updatedAt) : null;
-      if (previousVersion && compareInstantKeys(version, previousVersion) < 0) return current;
-
-      if (matchesFilters(frame.task, filters())) {
-        next.set(frame.task.id, { task: frame.task, spec: previous?.spec });
-      } else {
-        next.delete(frame.task.id);
-      }
-      return compactState(next, filters());
-    });
+    if (!mergeLiveTask(frame.task)) return;
 
     if (frame.transitionType === "task.created"
       && !hadFrozenSpec
       && matchesFilters(frame.task, filters())) {
       requestAuthoritativeRecovery("hydrate-created-task");
     }
+  }
+
+  function applyNoteFrame(frame: TaskNoteFrame): void {
+    if (closed || seenAnnotationIds.has(frame.annotation.id)) return;
+    seenAnnotationIds.add(frame.annotation.id);
+    trimSeenAnnotationIds(seenAnnotationIds);
+
+    const existing = annotationsByTask.get(frame.annotation.taskId) ?? [];
+    const annotations = insertAnnotation(existing, frame.annotation);
+    touchMap(annotationsByTask, frame.annotation.taskId, annotations.slice(-MAX_ANNOTATIONS_PER_TASK));
+    pruneMap(annotationsByTask, new Set([frame.annotation.taskId]), MAX_TRACKED_ANNOTATION_TASKS);
+    mergeLiveTask(frame.task);
+    setNoteEpoch((value) => value + 1);
+  }
+
+  function mergeLiveTask(task: AgentTask): boolean {
+    const version = instantKey(task.updatedAt);
+    if (!version) return false;
+    const latestVersion = latestVersions.get(task.id);
+    if (latestVersion !== undefined && compareInstantKeys(version, latestVersion) < 0) return false;
+    touchMap(latestVersions, task.id, version);
+    mutationSequence += 1;
+    touchMap(liveMutationSequence, task.id, mutationSequence);
+
+    setRecords((current) => {
+      const next = new Map(current);
+      const previous = current.get(task.id);
+      const previousVersion = previous ? instantKey(previous.task.updatedAt) : null;
+      if (previousVersion && compareInstantKeys(version, previousVersion) < 0) return current;
+
+      if (matchesFilters(task, filters())) {
+        next.set(task.id, { task, spec: previous?.spec });
+      } else {
+        next.delete(task.id);
+      }
+      return compactState(next, filters());
+    });
+    return true;
   }
 
   function compactState(next: Map<string, TaskRecord>, activeFilters: TaskFilters): Map<string, TaskRecord> {
@@ -289,10 +348,12 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     setStatus("down");
   }
 
-  const store: TaskLiveStore = {
+  const store: TaskLiveStoreWithNotes = {
     status,
     tasks,
     snapshots,
+    taskAnnotations,
+    noteEpoch,
     filters,
     setFilters,
     refresh,
@@ -317,6 +378,29 @@ export function parseTaskLifecycleFrame(message: Event): TaskLifecycleFrame | nu
     task: value.task,
     transitionId: value.transitionId,
     transitionType: value.transitionType,
+    observedAt: value.observedAt,
+  };
+}
+
+export function parseTaskNoteFrame(message: Event): TaskNoteFrame | null {
+  const value = parseSseData<unknown>(message);
+  if (!isRecord(value) || !isAgentTask(value.task) || !isRecord(value.annotation)) return null;
+  const annotation = value.annotation;
+  if (!isNonemptyString(annotation.id) || !isNonemptyString(annotation.taskId)) return null;
+  if (!isAnnotationKind(annotation.kind) || !isNonemptyString(annotation.actor)) return null;
+  if (typeof annotation.text !== "string" || !isOptionalRecord(annotation.dataJson)) return null;
+  if (!isValidInstant(annotation.observedAt) || !isValidInstant(value.observedAt)) return null;
+  return {
+    task: value.task,
+    annotation: {
+      id: annotation.id,
+      taskId: annotation.taskId,
+      kind: annotation.kind,
+      actor: annotation.actor,
+      text: annotation.text,
+      dataJson: annotation.dataJson,
+      observedAt: annotation.observedAt,
+    },
     observedAt: value.observedAt,
   };
 }
@@ -417,8 +501,16 @@ function isTaskEventType(value: unknown): value is TaskEventType {
   return typeof value === "string" && (TASK_EVENT_TYPES as readonly string[]).includes(value);
 }
 
+function isAnnotationKind(value: unknown): value is AnnotationKind {
+  return typeof value === "string" && ANNOTATION_KINDS.has(value as AnnotationKind);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isOptionalRecord(value: unknown): value is Record<string, unknown> | null | undefined {
+  return value === undefined || value === null || isRecord(value);
 }
 
 function isNonemptyString(value: unknown): value is string {
@@ -485,8 +577,26 @@ function pruneMap<V>(map: Map<string, V>, protectedIds: Set<string>, maximum: nu
   }
 }
 
+function insertAnnotation(annotations: TaskAnnotation[], annotation: TaskAnnotation): TaskAnnotation[] {
+  const next = [...annotations];
+  let index = 0;
+  while (index < next.length && compareAnnotations(next[index]!, annotation) <= 0) index += 1;
+  next.splice(index, 0, annotation);
+  return next;
+}
+
+function compareAnnotations(left: TaskAnnotation, right: TaskAnnotation): number {
+  return compareInstants(left.observedAt, right.observedAt) || left.id.localeCompare(right.id);
+}
+
 function trimSeenTransitions(seen: Set<string>): void {
   if (seen.size <= 1_000) return;
+  const oldest = seen.values().next().value;
+  if (oldest !== undefined) seen.delete(oldest);
+}
+
+function trimSeenAnnotationIds(seen: Set<string>): void {
+  if (seen.size <= 2_000) return;
   const oldest = seen.values().next().value;
   if (oldest !== undefined) seen.delete(oldest);
 }

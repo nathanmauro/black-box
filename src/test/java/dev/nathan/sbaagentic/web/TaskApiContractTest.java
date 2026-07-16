@@ -309,6 +309,114 @@ class TaskApiContractTest {
     }
 
     @Test
+    void taskAnnotationsAreAppendOnlyEventsInEveryTaskStatus() throws Exception {
+        TaskSpec spec = tools.createSpec(PROJECT, "annotations", "frozen body", null, "planner");
+        TaskChange created = tools.enqueueTask(spec.id(), "annotated task", "codex", 5, "planner");
+        String taskId = created.snapshot().task().id();
+
+        MvcResult annotationResult = mockMvc.perform(post("/api/tasks/{taskId}/annotations", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actor":"worker",
+                                  "kind":"progress",
+                                  "text":"Implemented the persistence slice.",
+                                  "dataJson":{"percent":60,"phase":"persistence"}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.taskId").value(taskId))
+                .andExpect(jsonPath("$.kind").value("progress"))
+                .andExpect(jsonPath("$.actor").value("worker"))
+                .andExpect(jsonPath("$.text").value("Implemented the persistence slice."))
+                .andExpect(jsonPath("$.observedAt").isString())
+                .andExpect(jsonPath("$.dataJson.percent").value(60))
+                .andExpect(jsonPath("$.dataJson.phase").value("persistence"))
+                .andReturn();
+        assertTimestampString(json(annotationResult), "/observedAt");
+
+        mockMvc.perform(get("/api/tasks/{taskId}/events", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("task.created"))
+                .andExpect(jsonPath("$[1].type").value("task.note"))
+                .andExpect(jsonPath("$[1].detail.kind").value("progress"))
+                .andExpect(jsonPath("$[1].detail.text")
+                        .value("Implemented the persistence slice."))
+                .andExpect(jsonPath("$[1].detail.dataJson.percent").value(60));
+
+        tools.claimNextTask("codex", "worker");
+        tools.completeTask(
+                taskId,
+                "worker",
+                "codex",
+                "annotation-done-session",
+                "Completed before the final annotation.",
+                List.of(),
+                "Record the final engine note.");
+
+        mockMvc.perform(post("/api/tasks/{taskId}/annotations", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actor":"engine",
+                                  "kind":"engine",
+                                  "text":"Task is already done."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(taskId))
+                .andExpect(jsonPath("$.kind").value("engine"))
+                .andExpect(jsonPath("$.text").value("Task is already done."));
+    }
+
+    @Test
+    void annotationEndpointsReturnStableValidationAndNotFoundErrors() throws Exception {
+        TaskSpec spec = tools.createSpec(PROJECT, "annotation errors", "body", null, "planner");
+        String taskId = tools.enqueueTask(spec.id(), "annotation errors", "codex", 1, "planner")
+                .snapshot().task().id();
+
+        mockMvc.perform(post("/api/tasks/{taskId}/annotations", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"worker","kind":"bogus","text":"Unknown kind."}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+
+        mockMvc.perform(post("/api/tasks/{taskId}/annotations", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":" ","kind":"note","text":"Missing actor."}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+
+        String missingTask = UUID.randomUUID().toString();
+        mockMvc.perform(post("/api/tasks/{taskId}/annotations", missingTask)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"worker","kind":"note","text":"Missing task."}
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.type").value("task_not_found"));
+        mockMvc.perform(get("/api/tasks/{taskId}/events", missingTask))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.type").value("task_not_found"));
+
+        mockMvc.perform(post("/api/tasks/not-a-uuid/annotations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"worker","kind":"note","text":"Malformed task id."}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+        mockMvc.perform(get("/api/tasks/not-a-uuid/events"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+    }
+
+    @Test
     void actualTaskCallbacksUseRestJsonForEverySuccessfulOperation() throws Exception {
         JsonNode created = json(callback("createSpec").call("""
                 {

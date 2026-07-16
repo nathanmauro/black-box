@@ -227,6 +227,30 @@ the exception: the default `external` backend invokes the bundled Codex wrapper 
 transcript text through that vendor path. Set `SBA_SUMMARY_BACKEND=local` to use LM Studio or another
 local OpenAI-compatible server instead.
 
+## Board-driven FULL_AUTO (optional, config-gated)
+
+Black Box also ships an optional external runner process: `java -jar sba-agentic.jar runner`, a CLI
+subcommand alongside `doctor`, `ingest`, `sessions`, and the other maintenance commands. A story
+submitted through the Board's New Story form, or through `createSpec` plus `enqueueTask` in lane
+`gate`, is checked for readiness and then driven through an isolated worktree, branch, configured
+engine, verification, and commit. Codex model and reasoning effort are configurable; a `fake` engine
+is available for tests. Push, pull-request creation, and merge occur only when the repo config
+allows them. The card moves live on the Board, and its tendril opens the worker session's full
+context.
+
+- The runner requires an explicit machine-local config, selected through `SBA_RUNNER_CONFIG` or
+  `~/.blackbox/runner.json` by default. It is never committed; start from
+  [`docs/runner-config.example.json`](docs/runner-config.example.json). The config allowlists repos
+  and controls push, auto-merge, and danger settings.
+- Story readiness is the human gate. Downstream behavior fails closed: an unknown repo, danger
+  flag, red check, or missing credential produces local-only or blocked work, never a risky action.
+- The Black Box server still never launches a worker or executes a task command. The runner is a
+  separate process and an ordinary REST client, like any other agent or orchestrator.
+
+See the [FULL_AUTO architecture](docs/architecture.md#optional-full_auto-runner) and the
+[`FULL_AUTO board-driven runner` design spec](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md)
+for the full pipeline and guardrails.
+
 ## Run as a service
 
 macOS launchd:

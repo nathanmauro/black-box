@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -293,6 +294,66 @@ public class TaskRepository {
                  WHERE task_id = ?
                  ORDER BY observed_at ASC, id ASC
                 """, this::mapEvent, taskId);
+    }
+
+    public List<Task> listTasksBySpec(String specId) {
+        requireText(specId, "Spec id");
+        return jdbcTemplate.query("""
+                SELECT id, spec_id, project_key, title, lane, status, priority,
+                       created_by, claimed_by, blocked_reason, result_handoff_id,
+                       created_at, updated_at
+                  FROM tasks
+                 WHERE spec_id = ?
+                 ORDER BY %s ASC
+                """.formatted(sortableInstant("created_at")), this::mapTask, specId);
+    }
+
+    public List<TaskEvent> eventsByType(TaskEventType type) {
+        if (type == null) {
+            throw new IllegalArgumentException("Task event type is required");
+        }
+        return jdbcTemplate.query("""
+                SELECT id, task_id, type, actor, from_status, to_status, detail_json, observed_at
+                  FROM task_events
+                 WHERE type = ?
+                 ORDER BY %s ASC, id ASC
+                """.formatted(sortableInstant("observed_at")), this::mapEvent, type.value());
+    }
+
+    public TaskAnnotation appendAnnotation(
+            String taskId,
+            AnnotationKind kind,
+            String actor,
+            String text,
+            Map<String, Object> dataJson) {
+        requireText(taskId, "Task id");
+        requireText(actor, "Task actor");
+        requireText(text, "Annotation text");
+
+        Map<String, Object> detail;
+        if (dataJson == null) {
+            detail = Map.of("kind", kind.value(), "text", text);
+        }
+        else {
+            detail = new LinkedHashMap<>();
+            detail.put("kind", kind.value());
+            detail.put("text", text);
+            detail.put("dataJson", dataJson);
+        }
+        TaskEvent event = appendEvent(
+                taskId, TaskEventType.NOTE, actor, null, null, detail, Instant.now());
+        Map<String, Object> persistedDetail = event.detail();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> persistedDataJson =
+                (Map<String, Object>) persistedDetail.get("dataJson");
+        return new TaskAnnotation(
+                event.id(),
+                event.taskId(),
+                AnnotationKind.fromValue((String) persistedDetail.get("kind")),
+                event.actor(),
+                (String) persistedDetail.get("text"),
+                persistedDataJson,
+                event.observedAt());
     }
 
     private TaskEvent appendEvent(

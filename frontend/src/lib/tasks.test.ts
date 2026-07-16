@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask, TaskSnapshot } from "./api";
+import type { AgentTask, TaskAnnotation, TaskSnapshot } from "./api";
 import { createTaskLiveStore, type TaskEventSource, type TaskLifecycleFrame } from "./tasks";
 
 class FakeEventSource implements TaskEventSource {
@@ -47,6 +47,19 @@ function task(overrides: Partial<AgentTask> = {}): AgentTask {
     resultHandoffId: null,
     createdAt: "2026-07-10T00:00:00Z",
     updatedAt: "2026-07-10T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function annotation(overrides: Partial<TaskAnnotation> = {}): TaskAnnotation {
+  return {
+    id: "annotation-1",
+    taskId: "task-1",
+    kind: "note",
+    actor: "worker-1",
+    text: "Investigating the queue state",
+    dataJson: { phase: "diagnosis" },
+    observedAt: "2026-07-10T00:01:00Z",
     ...overrides,
   };
 }
@@ -398,6 +411,158 @@ describe("task live store", () => {
     expect(loadTasks).toHaveBeenLastCalledWith({ projectKey: "black-box", lane: "codex", status: "open", limit: 25 });
     expect(store.filters()).toEqual({ projectKey: "black-box", lane: "codex", status: "open", limit: 25 });
     expect(store.tasks()[0]).toEqual(open);
+    store.close();
+  });
+});
+
+describe("task.note handling", () => {
+  it("appends a well-formed annotation with all fields intact", async () => {
+    const open = task();
+    const note = annotation();
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(open)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    source.emit("task.note", JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }));
+
+    expect(store.taskAnnotations(open.id)).toEqual([note]);
+    store.close();
+  });
+
+  it("deduplicates repeated annotation ids", async () => {
+    const open = task();
+    const note = annotation();
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(open)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    const payload = JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt });
+    source.emit("task.note", payload);
+    source.emit("task.note", payload);
+
+    expect(store.taskAnnotations(open.id)).toEqual([note]);
+    store.close();
+  });
+
+  it("returns an empty annotation list for an unseen task", async () => {
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    expect(store.taskAnnotations("unseen-task")).toEqual([]);
+    store.close();
+  });
+
+  it("tracks annotations for different tasks independently", async () => {
+    const taskA = task({ id: "task-a" });
+    const taskB = task({ id: "task-b" });
+    const noteA = annotation({ id: "annotation-a", taskId: taskA.id });
+    const noteB = annotation({ id: "annotation-b", taskId: taskB.id });
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(taskA), snapshot(taskB)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    source.emit("task.note", JSON.stringify({ task: taskA, annotation: noteA, observedAt: noteA.observedAt }));
+    source.emit("task.note", JSON.stringify({ task: taskB, annotation: noteB, observedAt: noteB.observedAt }));
+
+    expect(store.taskAnnotations(taskA.id)).toEqual([noteA]);
+    expect(store.taskAnnotations(taskB.id)).toEqual([noteB]);
+    store.close();
+  });
+
+  it("recovers and bumps noteEpoch for a malformed annotation frame", async () => {
+    const open = task();
+    const { kind: _kind, ...malformedAnnotation } = annotation();
+    const loadTasks = vi.fn(async () => [snapshot(open)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+    const epoch = store.noteEpoch();
+
+    expect(() => source.emit("task.note", JSON.stringify({
+      task: open,
+      annotation: malformedAnnotation,
+      observedAt: malformedAnnotation.observedAt,
+    }))).not.toThrow();
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+    await flush();
+
+    expect(store.taskAnnotations(open.id)).toEqual([]);
+    expect(store.noteEpoch()).toBe(epoch + 1);
+    store.close();
+  });
+
+  it("bumps noteEpoch after an SSE reconnect gap", async () => {
+    const open = task();
+    const loadTasks = vi.fn(async () => [snapshot(open)]);
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
+    await store.refresh();
+    const epoch = store.noteEpoch();
+
+    source.onerror?.(new Event("error"));
+    source.onopen?.(new Event("open"));
+    await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
+
+    expect(store.noteEpoch()).toBe(epoch + 1);
+    store.close();
+  });
+
+  it("exposes a new annotation when its embedded task state is older", async () => {
+    const current = task({ updatedAt: "2026-07-10T00:02:00Z" });
+    const older = task({ title: "Stale title", updatedAt: "2026-07-10T00:01:00Z" });
+    const note = annotation({ observedAt: "2026-07-10T00:03:00Z" });
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(current)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+    const epoch = store.noteEpoch();
+
+    source.emit("task.note", JSON.stringify({ task: older, annotation: note, observedAt: note.observedAt }));
+
+    expect(store.taskAnnotations(current.id)).toEqual([note]);
+    expect(store.noteEpoch()).toBe(epoch + 1);
+    expect(store.tasks()).toEqual([current]);
+    store.close();
+  });
+
+  it("merges newer embedded task state without regressing to an older version", async () => {
+    const open = task();
+    const newer = task({
+      title: "Build the live Board",
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:02:00Z",
+    });
+    const older = task({ title: "Stale title", updatedAt: "2026-07-10T00:01:00Z" });
+    const newerNote = annotation({ id: "annotation-newer", observedAt: "2026-07-10T00:03:00Z" });
+    const olderNote = annotation({ id: "annotation-older", observedAt: "2026-07-10T00:04:00Z" });
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(open)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    source.emit("task.note", JSON.stringify({ task: newer, annotation: newerNote, observedAt: newerNote.observedAt }));
+    expect(store.tasks()).toEqual([newer]);
+
+    source.emit("task.note", JSON.stringify({ task: older, annotation: olderNote, observedAt: olderNote.observedAt }));
+    expect(store.tasks()).toEqual([newer]);
     store.close();
   });
 });

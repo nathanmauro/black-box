@@ -3,10 +3,16 @@ import {
   ApiError,
   claimNextTask,
   completeTask,
+  createSessionLink,
   createSpec,
+  createTaskAnnotation,
   deleteProjectAlias,
   enqueueTask,
+  getSessionDag,
+  getSessionLinks,
   getSpec,
+  getTaskDag,
+  getTaskEvents,
   listTasks,
   mergeProjectAlias,
   updateTaskStatus,
@@ -23,6 +29,13 @@ import {
   type AgentSession,
   type TaskChange,
   type CompleteTaskRequest,
+  type CreateAnnotationRequest,
+  type CreateSessionLinkRequest,
+  type DagResponse,
+  type SessionLink,
+  type SessionLinksResponse,
+  type TaskAnnotation,
+  type TaskEvent,
   type UpdateTaskStatusRequest,
 } from "./api";
 
@@ -324,5 +337,109 @@ describe("task API helpers", () => {
       .toEqualTypeOf<"blocked" | "open" | "cancelled">();
     expectTypeOf<CompleteTaskRequest>()
       .toMatchTypeOf<{ nextAction: string }>();
+  });
+
+  it("posts task annotations to the encoded task route", async () => {
+    const request: CreateAnnotationRequest = {
+      actor: "worker-1",
+      kind: "progress",
+      text: "Queue wiring is complete",
+      dataJson: { tests: 12 },
+    };
+    const payload: TaskAnnotation = {
+      id: "annotation-1",
+      taskId: "task/1",
+      ...request,
+      observedAt: "2026-07-15T18:00:00Z",
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(createTaskAnnotation("task/1", request)).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/task%2F1/annotations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(request),
+      }),
+    );
+  });
+
+  it("gets the full event timeline from the encoded task route", async () => {
+    const payload: TaskEvent[] = [{
+      id: "event-1",
+      taskId: "task/1",
+      type: "task.note",
+      actor: "worker-1",
+      fromStatus: null,
+      toStatus: null,
+      detail: { kind: "note", text: "Checking in", dataJson: null },
+      observedAt: "2026-07-15T18:00:00Z",
+    }];
+    const fetchMock = stubJson(payload);
+
+    await expect(getTaskEvents("task/1")).resolves.toEqual(payload);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/tasks/task%2F1/events");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("posts session links with the typed request body", async () => {
+    const request: CreateSessionLinkRequest = {
+      parentSessionId: "session-parent",
+      childSessionId: "session-child",
+      linkType: "spawned",
+      taskId: "task-1",
+    };
+    const payload: SessionLink = {
+      linkId: "link-1",
+      ...request,
+      createdAt: "2026-07-15T18:00:00Z",
+      session: { id: "session-child", title: "Child worker", source: "codex" },
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(createSessionLink(request)).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/session-links",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(request),
+      }),
+    );
+  });
+
+  it("gets session link parents and children from the encoded session route", async () => {
+    const payload: SessionLinksResponse = { parents: [], children: [] };
+    const fetchMock = stubJson(payload);
+
+    await expect(getSessionLinks("session/1")).resolves.toEqual(payload);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/sessions/session%2F1/links");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("gets a task DAG from the encoded task route", async () => {
+    const payload: DagResponse = {
+      nodes: [{ id: "task:task/1", type: "task", label: "Build Board", status: "open", ref: "task/1" }],
+      edges: [],
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(getTaskDag("task/1")).resolves.toEqual(payload);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/tasks/task%2F1/dag");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("gets a session DAG with a properly encoded sessionId query", async () => {
+    const payload: DagResponse = { nodes: [], edges: [] };
+    const fetchMock = stubJson(payload);
+
+    await expect(getSessionDag("session/with space")).resolves.toEqual(payload);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dag?sessionId=session%2Fwith%20space");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
   });
 });

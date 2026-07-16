@@ -289,7 +289,8 @@ export type TaskEventType =
   | "task.blocked"
   | "task.completed"
   | "task.reset"
-  | "task.cancelled";
+  | "task.cancelled"
+  | "task.note";
 
 export type Spec = {
   id: string;
@@ -328,6 +329,77 @@ export type TaskEvent = {
   toStatus?: TaskStatus | null;
   detail?: Record<string, unknown> | null;
   observedAt: string;
+};
+
+export type AnnotationKind = "note" | "steer" | "progress" | "worker_session" | "engine";
+
+export type TaskAnnotation = {
+  id: string;
+  taskId: string;
+  kind: AnnotationKind;
+  actor: string;
+  text: string;
+  dataJson?: Record<string, unknown> | null;
+  observedAt: string;
+};
+
+export type CreateAnnotationRequest = {
+  actor: string;
+  kind: AnnotationKind;
+  text: string;
+  dataJson?: Record<string, unknown> | null;
+};
+
+export type SessionLinkType = "spawned" | "steered" | "continued";
+
+export type SessionLinkPeer = {
+  id: string;
+  title: string;
+  source: string;
+};
+
+export type SessionLink = {
+  linkId: string;
+  parentSessionId: string;
+  childSessionId: string;
+  linkType: SessionLinkType;
+  taskId?: string | null;
+  createdAt: string;
+  session: SessionLinkPeer;
+};
+
+export type SessionLinksResponse = {
+  parents: SessionLink[];
+  children: SessionLink[];
+};
+
+export type CreateSessionLinkRequest = {
+  parentSessionId: string;
+  childSessionId: string;
+  linkType: SessionLinkType;
+  taskId?: string;
+};
+
+export type DagNodeType = "spec" | "task" | "session";
+export type DagEdgeType = "has_task" | "worker_session" | "spawned" | "steered" | "continued";
+
+export type DagNode = {
+  id: string;
+  type: DagNodeType;
+  label: string;
+  status?: string | null;
+  ref: string;
+};
+
+export type DagEdge = {
+  from: string;
+  to: string;
+  type: DagEdgeType;
+};
+
+export type DagResponse = {
+  nodes: DagNode[];
+  edges: DagEdge[];
 };
 
 export type TaskSnapshot = {
@@ -500,6 +572,30 @@ export function getSpec(specId: string): Promise<Spec> {
 
 export function enqueueTask(request: EnqueueTaskRequest): Promise<TaskChange> {
   return postJson("/api/tasks", request);
+}
+
+export function createTaskAnnotation(taskId: string, request: CreateAnnotationRequest): Promise<TaskAnnotation> {
+  return postJson(`/api/tasks/${encodeURIComponent(taskId)}/annotations`, request);
+}
+
+export function getTaskEvents(taskId: string): Promise<TaskEvent[]> {
+  return getJson(`/api/tasks/${encodeURIComponent(taskId)}/events`);
+}
+
+export function createSessionLink(request: CreateSessionLinkRequest): Promise<SessionLink> {
+  return postJson("/api/session-links", request);
+}
+
+export function getSessionLinks(sessionId: string): Promise<SessionLinksResponse> {
+  return getJson(`/api/sessions/${encodeURIComponent(sessionId)}/links`);
+}
+
+export function getTaskDag(taskId: string): Promise<DagResponse> {
+  return getJson(`/api/tasks/${encodeURIComponent(taskId)}/dag`);
+}
+
+export function getSessionDag(sessionId: string): Promise<DagResponse> {
+  return getJson(`/api/dag?sessionId=${encodeURIComponent(sessionId)}`);
 }
 
 export async function claimNextTask(request: ClaimTaskRequest): Promise<TaskChange | null> {

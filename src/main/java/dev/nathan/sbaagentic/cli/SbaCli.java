@@ -30,6 +30,7 @@ public class SbaCli implements ApplicationRunner {
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
     private final ObjectMapper objectMapper;
+    private final RunnerCli runnerCli;
 
     public SbaCli(
             EventIngestService ingestService,
@@ -38,7 +39,8 @@ public class SbaCli implements ApplicationRunner {
             SessionSummaryService summaryService,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            RunnerCli runnerCli) {
         this.ingestService = ingestService;
         this.repository = repository;
         this.searchService = searchService;
@@ -46,6 +48,7 @@ public class SbaCli implements ApplicationRunner {
         this.localAiClient = localAiClient;
         this.elasticIndexClient = elasticIndexClient;
         this.objectMapper = objectMapper;
+        this.runnerCli = runnerCli;
     }
 
     @Override
@@ -62,6 +65,7 @@ public class SbaCli implements ApplicationRunner {
             case "ingest" -> ingest(args);
             case "summarize" -> summarize(positional);
             case "summarize-missing" -> summarizeMissing(args);
+            case "runner" -> runnerCli.run(args);
             default -> usage();
         }
     }
@@ -129,6 +133,7 @@ public class SbaCli implements ApplicationRunner {
                   sba-agentic ingest --source=manual --session=my-session --type=ManualCapture --text='note'
                   sba-agentic summarize <session-id>
                   sba-agentic summarize-missing [--limit=10]
+                  sba-agentic runner
                 """);
     }
 

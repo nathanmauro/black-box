@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.web;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import dev.nathan.sbaagentic.link.LinkDomainException;
 import dev.nathan.sbaagentic.task.TaskDomainException;
 import dev.nathan.sbaagentic.task.TaskErrorCode;
 
@@ -73,6 +74,16 @@ public class ApiExceptionHandler {
             case SPEC_NOT_FOUND, TASK_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case INVALID_TRANSITION, CLAIMANT_MISMATCH, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
             case HANDOFF_FAILED -> HttpStatus.BAD_GATEWAY;
+        };
+        String type = ex.code().name().toLowerCase(Locale.ROOT);
+        return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));
+    }
+
+    @ExceptionHandler(LinkDomainException.class)
+    public ResponseEntity<ApiError> handleLinkDomain(LinkDomainException ex) {
+        HttpStatus status = switch (ex.code()) {
+            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case DUPLICATE_LINK -> HttpStatus.CONFLICT;
         };
         String type = ex.code().name().toLowerCase(Locale.ROOT);
         return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));

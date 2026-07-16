@@ -1,0 +1,34 @@
+{
+  "concurrency": 2,
+  "engines": [
+    {
+      "id": "codex",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "sandbox": "workspace-write",
+      "enabled": true
+    },
+    {
+      "id": "fake",
+      "model": "fake",
+      "effort": "n/a",
+      "enabled": true
+    },
+    {
+      "id": "grok",
+      "model": "grok-4.5-fast",
+      "provider": "xai",
+      "enabled": false
+    }
+  ],
+  "notify": "terminal-notifier -title 'Black Box' -message {msg}",
+  "repos": [
+    {
+      "path": "$HOME/Developer/proj/your-repo",
+      "push": true,
+      "auto_merge": true,
+      "verify": "mvn test",
+      "danger": ""
+    }
+  ]
+}
