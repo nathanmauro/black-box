@@ -8,6 +8,9 @@ public enum AnnotationKind {
     NOTE("note"),
     STEER("steer"),
     PROGRESS("progress"),
+    PLAN("plan"),
+    REVIEW("review"),
+    APPROVAL("approval"),
     WORKER_SESSION("worker_session"),
     ENGINE("engine");
 

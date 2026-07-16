@@ -81,13 +81,6 @@ export function evaluateGateHints(input: StoryFormInput): GateHint[] {
     });
   }
 
-  if (input.mode === "sdlc") {
-    hints.push({
-      id: "mode-unsupported",
-      message: "SDLC mode is not runnable yet — this story will sit in the gate lane until full_auto mode is selected.",
-    });
-  }
-
   if (!Number.isFinite(input.priority) || input.priority < 1 || input.priority > 100) {
     hints.push({
       id: "priority-out-of-range",

@@ -43,19 +43,25 @@ public class RunnerGateCycleImpl implements GateCycle {
 
             GateResult result = gateEvaluator.evaluate(spec, config);
             if (result.pass()) {
-                Optional<Task> existingAutoTask = existingAutoTask(spec.id());
-                if (existingAutoTask.isPresent()) {
-                    Task existing = existingAutoTask.orElseThrow();
+                boolean sdlc = "sdlc".equals(result.mode());
+                String successorLane = sdlc ? "sdlc:plan" : "auto";
+                Optional<Task> existingSuccessorTask = existingTask(spec.id(), successorLane);
+                if (existingSuccessorTask.isPresent()) {
+                    Task existing = existingSuccessorTask.orElseThrow();
                     apiClient.annotate(
                             task.id(),
                             actorId,
                             "progress",
-                            "Gate passed; existing auto task " + existing.id() + " reused.",
-                            Map.of("autoTaskId", existing.id()));
+                            sdlc
+                                    ? "Gate passed; existing SDLC plan task "
+                                            + existing.id() + " reused."
+                                    : "Gate passed; existing auto task "
+                                            + existing.id() + " reused.",
+                            Map.of(sdlc ? "planTaskId" : "autoTaskId", existing.id()));
                 }
                 else {
                     apiClient.enqueueTask(
-                            spec.id(), task.title(), "auto", task.priority(), actorId);
+                            spec.id(), task.title(), successorLane, task.priority(), actorId);
                 }
                 try {
                     List<String> findings = result.findings().isEmpty()
@@ -76,19 +82,35 @@ public class RunnerGateCycleImpl implements GateCycle {
                             actorId,
                             "cli",
                             "blackbox-runner-gate-" + task.id(),
-                            existingAutoTask.isPresent()
-                                    ? "Gate passed; existing auto task reused."
-                                    : "Gate passed; auto task enqueued.",
+                            existingSuccessorTask.isPresent()
+                                    ? sdlc
+                                            ? "Gate passed; existing SDLC plan task reused."
+                                            : "Gate passed; existing auto task reused."
+                                    : sdlc
+                                            ? "Gate passed; SDLC plan task enqueued."
+                                            : "Gate passed; auto task enqueued.",
                             List.of(),
-                            "Auto-lane execution will pick this up next.");
+                            sdlc
+                                    ? "SDLC plan-lane execution will pick this up next."
+                                    : "Auto-lane execution will pick this up next.");
                 }
                 catch (RuntimeException postEnqueueFailure) {
-                    log.error(
-                            "Auto task enqueued for spec {} but annotate/complete failed on gate task {} "
-                                    + "afterward; leaving the gate task claimed rather than releasing it, to "
-                                    + "avoid a duplicate auto-lane enqueue on re-evaluation. Manual cleanup "
-                                    + "may be required.",
-                            spec.id(), task.id(), postEnqueueFailure);
+                    if (sdlc) {
+                        log.error(
+                                "SDLC plan task enqueued for spec {} but annotate/complete failed on gate task {} "
+                                        + "afterward; leaving the gate task claimed rather than releasing it, to "
+                                        + "avoid a duplicate sdlc:plan enqueue on re-evaluation. Manual cleanup "
+                                        + "may be required.",
+                                spec.id(), task.id(), postEnqueueFailure);
+                    }
+                    else {
+                        log.error(
+                                "Auto task enqueued for spec {} but annotate/complete failed on gate task {} "
+                                        + "afterward; leaving the gate task claimed rather than releasing it, to "
+                                        + "avoid a duplicate auto-lane enqueue on re-evaluation. Manual cleanup "
+                                        + "may be required.",
+                                spec.id(), task.id(), postEnqueueFailure);
+                    }
                 }
                 return;
             }
@@ -109,12 +131,12 @@ public class RunnerGateCycleImpl implements GateCycle {
         }
     }
 
-    private Optional<Task> existingAutoTask(String specId) {
-        return apiClient.listTasks(null).stream()
+    private Optional<Task> existingTask(String specId, String lane) {
+        return apiClient.listTasks(null, lane).stream()
                 .map(TaskSnapshot::task)
                 .filter(task -> task != null
                         && specId.equals(task.specId())
-                        && "auto".equals(task.lane())
+                        && lane.equals(task.lane())
                         && (task.status() == TaskStatus.OPEN
                                 || task.status() == TaskStatus.IN_PROGRESS))
                 .findFirst();

@@ -1,5 +1,6 @@
 import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
+import ApprovalBox, { approvalDecision, type ApprovalStage } from "../components/ApprovalBox";
 import DagView from "../components/DagView";
 import ProjectPicker from "../components/ProjectPicker";
 import SteerBox from "../components/SteerBox";
@@ -41,6 +42,8 @@ type BoardColumn = {
   statuses: AgentTask["status"][];
 };
 
+type ApprovalState = "inactive" | "checking" | "unavailable" | "awaiting" | "decided";
+
 const COLUMNS: BoardColumn[] = [
   { id: "open", label: "Open", description: "Ready to claim", statuses: ["open"] },
   { id: "active", label: "In Progress", description: "Owned and moving", statuses: ["claimed", "in_progress"] },
@@ -73,6 +76,7 @@ export default function BoardPage(props: BoardPageProps) {
   const [resetErrors, setResetErrors] = createSignal<Record<string, string | undefined>>({});
   const [knownProjects, setKnownProjects] = createSignal<string[]>(params.project ? [params.project] : []);
   const [knownLanes, setKnownLanes] = createSignal<string[]>(params.lane ? [params.lane] : []);
+  const [localApprovals, setLocalApprovals] = createSignal<Record<string, TaskAnnotation>>({});
   const taskButtons = new Map<string, HTMLButtonElement>();
   let lastFocusedTaskId: string | undefined;
   let loadSequence = 0;
@@ -318,6 +322,9 @@ export default function BoardPage(props: BoardPageProps) {
                           <TaskCard
                             snapshot={snapshot}
                             project={projectForScope(snapshot.task.projectKey, projectOptions())}
+                            store={store}
+                            getTaskEvents={props.getTaskEvents ?? getTaskEvents}
+                            localApproval={localApprovals()[snapshot.task.id]}
                             selected={params.task === snapshot.task.id}
                             buttonRef={(button) => taskButtons.set(snapshot.task.id, button)}
                             onSelect={() => selectTask(snapshot.task.id)}
@@ -347,6 +354,9 @@ export default function BoardPage(props: BoardPageProps) {
                         <TaskCard
                           snapshot={snapshot}
                           project={projectForScope(snapshot.task.projectKey, projectOptions())}
+                          store={store}
+                          getTaskEvents={props.getTaskEvents ?? getTaskEvents}
+                          localApproval={localApprovals()[snapshot.task.id]}
                           selected={params.task === snapshot.task.id}
                           buttonRef={(button) => taskButtons.set(snapshot.task.id, button)}
                           onSelect={() => selectTask(snapshot.task.id)}
@@ -371,6 +381,11 @@ export default function BoardPage(props: BoardPageProps) {
                 getTaskEvents={props.getTaskEvents ?? getTaskEvents}
                 getTaskDag={props.getTaskDag ?? getTaskDag}
                 createAnnotation={props.createAnnotation}
+                localApproval={localApprovals()[snapshot().task.id]}
+                onApproval={(annotation) => setLocalApprovals((current) => ({
+                  ...current,
+                  [annotation.taskId]: annotation,
+                }))}
                 onClose={closeTaskDetail}
                 onReset={() => void resetTask(snapshot())}
               />
@@ -395,11 +410,40 @@ function BoardState(props: { class: string; label: string; title: string; childr
 function TaskCard(props: {
   snapshot: TaskSnapshot;
   project?: ProjectSummary;
+  store: TaskLiveStoreWithNotes;
+  getTaskEvents: typeof getTaskEvents;
+  localApproval?: TaskAnnotation;
   selected: boolean;
   buttonRef: (button: HTMLButtonElement) => void;
   onSelect: () => void;
 }) {
   const task = () => props.snapshot.task;
+  const stage = createMemo(() => sdlcStage(task().lane));
+  const [stageEvents] = createResource(
+    () => (task().status === "done" && stage()
+      ? task().id
+      : undefined),
+    (taskId) => props.getTaskEvents(taskId),
+  );
+  const stageTimeline = createMemo(() => {
+    props.store.noteEpoch();
+    return mergeTaskTimeline(
+      stageEvents.error ? [] : stageEvents() ?? [],
+      annotationsWithLocal(
+        props.store.taskAnnotations(task().id),
+        props.localApproval,
+      ),
+    );
+  });
+  const decision = createMemo(() => approvalForStage(stageTimeline(), stage()));
+  const approvalState = createMemo<ApprovalState>(() => {
+    if (task().status !== "done" || stage() === undefined) return "inactive";
+    if (decision() !== undefined) return "decided";
+    if (stageEvents.loading) return "checking";
+    if (stageEvents.error) return "unavailable";
+    if (stageEvents() === undefined) return "checking";
+    return "awaiting";
+  });
   return (
     <article class={`board-task board-task--${task().status}`}>
       <button
@@ -407,6 +451,7 @@ function TaskCard(props: {
         ref={props.buttonRef}
         classList={{ "board-task-button": true, "board-task-button--selected": props.selected }}
         aria-label={`${task().title}, ${statusLabel(task().status)}`}
+        aria-describedby={stage() ? `task-stage-${task().id}` : undefined}
         aria-pressed={props.selected}
         onClick={props.onSelect}
       >
@@ -415,6 +460,22 @@ function TaskCard(props: {
           <span class="board-priority">P{task().priority}</span>
         </span>
         <strong>{task().title}</strong>
+        <Show when={stage()}>
+          {(currentStage) => (
+            <span id={`task-stage-${task().id}`} class="board-task-stage-row">
+              <span class={`board-stage-chip board-stage-chip--${currentStage()}`}>{currentStage()}</span>
+              <Show when={approvalState() === "awaiting"}>
+                <span class="board-awaiting-chip">Awaiting approval</span>
+              </Show>
+              <Show when={approvalState() === "checking"}>
+                <span class="board-approval-state-chip">Checking approval</span>
+              </Show>
+              <Show when={approvalState() === "unavailable"}>
+                <span class="board-approval-state-chip board-approval-state-chip--error">Approval status unavailable</span>
+              </Show>
+            </span>
+          )}
+        </Show>
         <span class="board-task-meta">
           <i>{task().lane}</i>
           <Show
@@ -452,6 +513,8 @@ function TaskDetail(props: {
   getTaskEvents: typeof getTaskEvents;
   getTaskDag: typeof getTaskDag;
   createAnnotation?: typeof createTaskAnnotation;
+  localApproval?: TaskAnnotation;
+  onApproval: (annotation: TaskAnnotation) => void;
   onClose: () => void;
   onReset: () => void;
 }) {
@@ -459,6 +522,7 @@ function TaskDetail(props: {
   const task = () => props.snapshot.task;
   const spec = () => props.snapshot.spec;
   const canReset = () => task().status === "blocked" || task().status === "in_progress";
+  const stage = createMemo(() => sdlcStage(task().lane));
   const [dagExpanded, setDagExpanded] = createSignal(false);
   const [events, { refetch: refetchEvents }] = createResource(
     () => [task().id, props.store.noteEpoch()] as const,
@@ -468,9 +532,29 @@ function TaskDetail(props: {
     () => (dagExpanded() ? task().id : undefined),
     (taskId) => props.getTaskDag(taskId),
   );
-  const timeline = createMemo(() => mergeTaskTimeline(
-    events() ?? [],
-    props.store.taskAnnotations(task().id),
+  const timeline = createMemo(() => {
+    props.store.noteEpoch();
+    return mergeTaskTimeline(
+      events.error ? [] : events() ?? [],
+      annotationsWithLocal(
+        props.store.taskAnnotations(task().id),
+        props.localApproval,
+      ),
+    );
+  });
+  const decision = createMemo(() => approvalForStage(timeline(), stage()));
+  const approvalState = createMemo<ApprovalState>(() => {
+    if (task().status !== "done" || stage() === undefined) return "inactive";
+    if (decision() !== undefined) return "decided";
+    if (events.loading) return "checking";
+    if (events.error) return "unavailable";
+    if (events() === undefined) return "checking";
+    return "awaiting";
+  });
+  const approvalReady = createMemo(() => (
+    task().status === "done"
+    && stage() !== undefined
+    && (decision() !== undefined || (!events.loading && !events.error && events() !== undefined))
   ));
   const chips = createMemo(() => timelineChips(timeline()));
   const tendril = createMemo(() => timeline().find((entry) => (
@@ -502,6 +586,15 @@ function TaskDetail(props: {
           <StatusBadge status={task().status} />
           <span>{task().lane}</span>
           <span>P{task().priority}</span>
+          <Show when={approvalState() === "awaiting"}>
+            <span class="board-awaiting-chip">Awaiting approval</span>
+          </Show>
+          <Show when={approvalState() === "checking"}>
+            <span class="board-approval-state-chip">Checking approval</span>
+          </Show>
+          <Show when={approvalState() === "unavailable"}>
+            <span class="board-approval-state-chip board-approval-state-chip--error">Approval status unavailable</span>
+          </Show>
         </section>
 
         <Show when={task().blockedReason}>
@@ -592,7 +685,14 @@ function TaskDetail(props: {
             <ul class="board-annotation-list">
               <For each={timeline()}>
                 {(entry) => (
-                  <li class="board-annotation-row" data-annotation-id={entry.id}>
+                  <li
+                    classList={{
+                      "board-annotation-row": true,
+                      "board-annotation-row--document": entry.kind === "plan" || entry.kind === "review",
+                      [`board-annotation-row--${entry.kind}`]: entry.kind === "plan" || entry.kind === "review",
+                    }}
+                    data-annotation-id={entry.id}
+                  >
                     <div class="board-annotation-meta">
                       <span class={`board-annotation-kind board-annotation-kind--${entry.kind}`}>
                         {entry.kind === "lifecycle" ? entry.text : annotationKindLabel(entry.kind)}
@@ -600,11 +700,32 @@ function TaskDetail(props: {
                       <span>{entry.actor}</span>
                       <time dateTime={entry.observedAt}>{formatInstant(entry.observedAt)}</time>
                     </div>
-                    <p>{entry.text}</p>
+                    <Show
+                      when={entry.kind === "plan" || entry.kind === "review"}
+                      fallback={<p>{entry.text}</p>}
+                    >
+                      <pre class="board-annotation-document">{entry.text}</pre>
+                    </Show>
                   </li>
                 )}
               </For>
             </ul>
+          </Show>
+
+          <Show when={approvalReady() && stage()}>
+            {(currentStage) => (
+              <ApprovalBox
+                taskId={task().id}
+                actor="nathan"
+                stage={currentStage()}
+                decision={decision()}
+                createAnnotation={props.createAnnotation}
+                onDecided={(annotation) => {
+                  props.onApproval(annotation);
+                  void refetchEvents();
+                }}
+              />
+            )}
           </Show>
 
           <SteerBox
@@ -715,7 +836,21 @@ const ANNOTATION_KINDS = new Set<AnnotationKind>([
   "progress",
   "worker_session",
   "engine",
+  "plan",
+  "review",
+  "approval",
 ]);
+
+const ANNOTATION_KIND_LABELS: Record<AnnotationKind, string> = {
+  note: "Note",
+  steer: "Steer",
+  progress: "Progress",
+  worker_session: "Worker Session",
+  engine: "Engine",
+  plan: "Plan",
+  review: "Review",
+  approval: "Approval",
+};
 
 function mergeTaskTimeline(history: TaskEvent[], liveAnnotations: TaskAnnotation[]): TaskTimelineEntry[] {
   const fetchedIds = new Set(history.map((event) => event.id));
@@ -771,7 +906,42 @@ function timelineChips(entries: TaskTimelineEntry[]): { engine?: string; branch?
 }
 
 function annotationKindLabel(kind: AnnotationKind): string {
-  return kind.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+  return ANNOTATION_KIND_LABELS[kind];
+}
+
+function sdlcStage(lane: string): ApprovalStage | undefined {
+  if (lane === "sdlc:plan") return "plan";
+  if (lane === "sdlc:review") return "review";
+  return undefined;
+}
+
+function approvalForStage(
+  entries: TaskTimelineEntry[],
+  stage: ApprovalStage | undefined,
+): TaskAnnotation | undefined {
+  if (!stage) return undefined;
+  const entry = entries.find((candidate) => (
+    candidate.kind === "approval"
+    && approvalDecision({ kind: "approval", dataJson: candidate.dataJson }, stage) !== undefined
+  ));
+  if (!entry) return undefined;
+  return {
+    id: entry.id,
+    taskId: entry.taskId,
+    kind: "approval",
+    actor: entry.actor,
+    text: entry.text,
+    dataJson: entry.dataJson,
+    observedAt: entry.observedAt,
+  };
+}
+
+function annotationsWithLocal(
+  annotations: TaskAnnotation[],
+  localApproval: TaskAnnotation | undefined,
+): TaskAnnotation[] {
+  if (!localApproval || annotations.some((annotation) => annotation.id === localApproval.id)) return annotations;
+  return [...annotations, localApproval];
 }
 
 function isAnnotationKind(value: unknown): value is AnnotationKind {

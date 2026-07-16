@@ -99,7 +99,8 @@ public class GateEvaluator {
             findings.add("[advisor] " + advisorNote.feedback());
         }
         // Advisory output is intentionally excluded from pass/fail in gate v1.
-        return new GateResult(deterministicPass, findings, resolvedVerify, advisorNote);
+        return new GateResult(
+                deterministicPass, findings, resolvedVerify, advisorNote, frontmatter.mode());
     }
 
     private boolean checkRepo(String repoPath, List<String> findings) {

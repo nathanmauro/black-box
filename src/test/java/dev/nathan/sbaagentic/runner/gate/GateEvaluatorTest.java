@@ -34,6 +34,19 @@ class GateEvaluatorTest {
         assertThat(result.pass()).isTrue();
         assertThat(result.findings()).isEmpty();
         assertThat(result.resolvedVerify()).isEqualTo("mvn -q test");
+        assertThat(result.mode()).isEqualTo("full_auto");
+    }
+
+    @Test
+    void threadsSdlcModeIntoGateResult() throws Exception {
+        Path repo = gitRepo("sdlc-mode");
+
+        GateResult result = evaluate(
+                story(repo, "sdlc", "mvn -q test", false, acceptanceCriteria()),
+                config(repoConfig(repo, true, "")));
+
+        assertThat(result.pass()).isTrue();
+        assertThat(result.mode()).isEqualTo("sdlc");
     }
 
     @Test
@@ -215,11 +228,20 @@ class GateEvaluatorTest {
             String verify,
             boolean push,
             String bodyMarkdown) {
+        return story(repo, "full_auto", verify, push, bodyMarkdown);
+    }
+
+    private static String story(
+            Path repo,
+            String mode,
+            String verify,
+            boolean push,
+            String bodyMarkdown) {
         String verifyLine = verify == null ? "" : "verify: '" + verify.replace("'", "''") + "'\n";
         return "---\n"
                 + "story: v1\n"
                 + "repo: '" + repo.toString().replace("'", "''") + "'\n"
-                + "mode: full_auto\n"
+                + "mode: " + mode + "\n"
                 + verifyLine
                 + "push: " + push + "\n"
                 + "priority: 10\n"

@@ -112,9 +112,9 @@ describe("evaluateGateHints", () => {
       .toContain("verify-missing");
   });
 
-  it("reports the unsupported SDLC mode", () => {
+  it("accepts SDLC mode without an unsupported-mode hint", () => {
     expect(evaluateGateHints({ ...validInput, mode: "sdlc" }).map((hint) => hint.id))
-      .toContain("mode-unsupported");
+      .not.toContain("mode-unsupported");
   });
 
   it.each([0, 101, Number.NaN])("reports an invalid priority for %s", (priority) => {

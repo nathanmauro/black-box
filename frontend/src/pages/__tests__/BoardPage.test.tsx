@@ -510,6 +510,60 @@ describe("BoardPage", () => {
     expect(rows[2]).toHaveTextContent("— → open");
   });
 
+  it("renders plan and review annotations as preformatted documents with distinct kind badges", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures());
+    const history: TaskEvent[] = [
+      {
+        id: "plan-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "worker-plan",
+        detail: { kind: "plan", text: "## Approach\n\n1. Inspect the board.", dataJson: null },
+        observedAt: "2026-07-16T12:00:00Z",
+      },
+      {
+        id: "review-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "worker-review",
+        detail: { kind: "review", text: "## Findings\n\n- Approval path is covered.", dataJson: null },
+        observedAt: "2026-07-16T12:01:00Z",
+      },
+      {
+        id: "approval-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "nathan",
+        detail: {
+          kind: "approval",
+          text: "Review approved.",
+          dataJson: { decision: "approve", stage: "review", feedback: "" },
+        },
+        observedAt: "2026-07-16T12:02:00Z",
+      },
+    ];
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => history)}
+      />
+    ));
+
+    await waitFor(() => expect(document.querySelector('[data-annotation-id="plan-note"]')).not.toBeNull());
+    const planRow = document.querySelector<HTMLElement>('[data-annotation-id="plan-note"]')!;
+    const reviewRow = document.querySelector<HTMLElement>('[data-annotation-id="review-note"]')!;
+    const approvalRow = document.querySelector<HTMLElement>('[data-annotation-id="approval-note"]')!;
+    expect(planRow.querySelector("pre")).toHaveTextContent("## Approach 1. Inspect the board.");
+    expect(reviewRow.querySelector("pre")).toHaveTextContent("## Findings - Approval path is covered.");
+    expect(within(planRow).getByText("Plan")).toHaveClass("board-annotation-kind--plan");
+    expect(within(reviewRow).getByText("Review")).toHaveClass("board-annotation-kind--review");
+    expect(within(approvalRow).getByText("Approval")).toHaveClass("board-annotation-kind--approval");
+  });
+
   it("links the newest worker session back to the selected task", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
     const store = fakeTaskStore(fixtures(), undefined, false, [annotation({
@@ -597,6 +651,155 @@ describe("BoardPage", () => {
     expect(screen.queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
   });
 
+  it("shows completed SDLC stages awaiting approval and collapses after approval", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-plan" });
+    const stageTask = snapshot({
+      id: "task-plan",
+      title: "Approve the implementation plan",
+      status: "done",
+      lane: "sdlc:plan",
+      priority: 10,
+    });
+    const history: TaskEvent[] = [{
+      id: "plan-document",
+      taskId: "task-plan",
+      type: "task.note",
+      actor: "worker-plan",
+      detail: { kind: "plan", text: "Implement the approval seam.", dataJson: null },
+      observedAt: "2026-07-16T13:00:00Z",
+    }];
+    const store = fakeTaskStore([stageTask]);
+    const result = annotation({
+      id: "approval-plan",
+      taskId: "task-plan",
+      kind: "approval",
+      actor: "nathan",
+      text: "Plan approved.",
+      dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      observedAt: "2026-07-16T13:05:00Z",
+    });
+    const createAnnotation = vi.fn(async () => result);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => history)}
+        createAnnotation={createAnnotation}
+      />
+    ));
+
+    const card = await screen.findByRole("button", { name: "Approve the implementation plan, Done" });
+    expect(within(card).getByText("plan")).toHaveClass("board-stage-chip--plan");
+    await waitFor(() => expect(within(card).getByText("Awaiting approval")).toBeInTheDocument());
+    expect(card).toHaveAccessibleDescription(/plan Awaiting approval/i);
+    const detail = screen.getByRole("complementary", { name: "Task detail" });
+    expect(await within(detail).findByText("Awaiting approval")).toBeInTheDocument();
+    fireEvent.click(await within(detail).findByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
+      actor: "nathan",
+      kind: "approval",
+      text: "Plan approved.",
+      dataJson: { decision: "approve", stage: "plan", feedback: "" },
+    }));
+    expect(await within(detail).findByText(/Approved by nathan at/)).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument());
+  });
+
+  it("hydrates prior decisions and ignores malformed or wrong-stage approvals", async () => {
+    const validTask = snapshot({
+      id: "task-plan-valid",
+      title: "Previously approved plan",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    const pendingTask = snapshot({
+      id: "task-plan-pending",
+      title: "Plan with wrong-stage decision",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    const validApproval: TaskEvent = {
+      id: "approval-valid",
+      taskId: "task-plan-valid",
+      type: "task.note",
+      actor: "nathan",
+      detail: {
+        kind: "approval",
+        text: "Plan approved.",
+        dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      },
+      observedAt: "2026-07-16T13:10:00Z",
+    };
+    const wrongStageApproval: TaskEvent = {
+      ...validApproval,
+      id: "approval-wrong-stage",
+      taskId: "task-plan-pending",
+      detail: {
+        kind: "approval",
+        text: "Mismatched approval.",
+        dataJson: { decision: "approve", stage: "review", feedback: "" },
+      },
+    };
+    const getTaskEvents = vi.fn(async (taskId: string) => (
+      taskId === "task-plan-valid" ? [validApproval] : [wrongStageApproval]
+    ));
+    const store = fakeTaskStore([validTask, pendingTask]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={getTaskEvents}
+      />
+    ));
+
+    const validCard = await screen.findByRole("button", { name: "Previously approved plan, Done" });
+    const pendingCard = screen.getByRole("button", { name: "Plan with wrong-stage decision, Done" });
+    await waitFor(() => expect(within(validCard).queryByText("Awaiting approval")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(pendingCard).getByText("Awaiting approval")).toBeInTheDocument());
+
+    fireEvent.click(validCard);
+    expect(await screen.findByText(/Approved by nathan at/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+
+    fireEvent.click(pendingCard);
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+
+  it("distinguishes approval history loading and failure from awaiting approval", async () => {
+    const stageTask = snapshot({
+      id: "task-plan-history-error",
+      title: "Plan with unavailable history",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    let rejectHistory!: (error: Error) => void;
+    const getTaskEvents = vi.fn(() => new Promise<TaskEvent[]>((_resolve, reject) => {
+      rejectHistory = reject;
+    }));
+    const store = fakeTaskStore([stageTask]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={getTaskEvents}
+      />
+    ));
+
+    const card = await screen.findByRole("button", { name: "Plan with unavailable history, Done" });
+    expect(within(card).getByText("Checking approval")).toBeInTheDocument();
+    expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+    rejectHistory(new Error("history unavailable"));
+
+    expect(await within(card).findByText("Approval status unavailable")).toBeInTheDocument();
+    expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument();
+  });
+
   it("lazily fetches and highlights the selected task in the agent DAG", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
     const store = fakeTaskStore(fixtures());
@@ -633,6 +836,9 @@ describe("BoardPage", () => {
     expect(themeCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(themeCss).toContain(".board-loading-lines i { animation: none; }");
     expect(themeCss).toContain(".board-task-button:hover { transform: none; }");
+    expect(themeCss).toContain(".board-annotation-kind--plan");
+    expect(themeCss).toContain(".board-annotation-kind--review");
+    expect(themeCss).toContain(".board-annotation-kind--approval");
   });
 });
 

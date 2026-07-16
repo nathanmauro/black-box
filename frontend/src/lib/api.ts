@@ -331,7 +331,15 @@ export type TaskEvent = {
   observedAt: string;
 };
 
-export type AnnotationKind = "note" | "steer" | "progress" | "worker_session" | "engine";
+export type AnnotationKind =
+  | "note"
+  | "steer"
+  | "progress"
+  | "worker_session"
+  | "engine"
+  | "plan"
+  | "review"
+  | "approval";
 
 export type TaskAnnotation = {
   id: string;

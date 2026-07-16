@@ -57,6 +57,8 @@ class ShipExecutorTest {
                         "Worker summary");
         assertThat(processRunner.workingDirs.getFirst()).isEqualTo(REPO);
         assertThat(processRunner.timeouts.getFirst()).isEqualTo(Duration.ofMinutes(35));
+        assertThat(apiClient.annotations).singleElement().satisfies(annotation ->
+                assertThat(annotation.dataJson()).isNull());
     }
 
     @Test
@@ -127,6 +129,44 @@ class ShipExecutorTest {
                 .contains("Please fix and I will re-run verify + push.");
         assertThat(apiClient.completeCalls).isZero();
         assertThat(apiClient.statusCalls).isZero();
+    }
+
+    @Test
+    void sdlcShipRecordsStructuralResultWithoutRepairing() {
+        RecordingApiClient apiClient = new RecordingApiClient();
+        FakeProcessRunner processRunner = new FakeProcessRunner(jsonResult(
+                "blocked",
+                "checks red: unit-tests",
+                "https://example.test/pr/4",
+                "checks-red",
+                List.of()));
+        FakeTmuxController tmux = new FakeTmuxController(true);
+        ShipExecutor executor = executor(apiClient, processRunner, tmux);
+
+        ShipResult result = executor.shipForSdlc(
+                "review-task-1",
+                "runner-1",
+                REPO_CONFIG,
+                "auto/story-task1",
+                WORKTREE,
+                "Story title",
+                "Review summary",
+                "approval-1");
+
+        assertThat(result.status()).isEqualTo("blocked");
+        assertThat(processRunner.shipInvocations).isEqualTo(1);
+        assertThat(processRunner.commands).hasSize(1);
+        assertThat(tmux.sentText).isNull();
+        assertThat(apiClient.annotations).singleElement().satisfies(annotation -> {
+            assertThat(annotation.taskId()).isEqualTo("review-task-1");
+            assertThat(annotation.kind()).isEqualTo("progress");
+            assertThat(annotation.dataJson())
+                    .containsEntry("sdlc", "shipped")
+                    .containsEntry("approvalId", "approval-1")
+                    .containsEntry("status", "blocked")
+                    .containsEntry("branch", "auto/story-task1")
+                    .containsEntry("worktree", WORKTREE.getAbsolutePath());
+        });
     }
 
     @Test
@@ -219,6 +259,7 @@ class ShipExecutorTest {
 
         private int completeCalls;
         private int statusCalls;
+        private final List<AnnotationCall> annotations = new ArrayList<>();
 
         private RecordingApiClient() {
             super(new ObjectMapper());
@@ -231,6 +272,7 @@ class ShipExecutorTest {
                 String kind,
                 String text,
                 Map<String, Object> dataJson) {
+            annotations.add(new AnnotationCall(taskId, actor, kind, text, dataJson));
             return null;
         }
 
@@ -253,6 +295,14 @@ class ShipExecutorTest {
             statusCalls++;
             return null;
         }
+    }
+
+    private record AnnotationCall(
+            String taskId,
+            String actor,
+            String kind,
+            String text,
+            Map<String, Object> dataJson) {
     }
 
     private static final class FakeTmuxController implements TmuxController {

@@ -6,9 +6,12 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,12 +39,17 @@ public class RunnerDaemon {
     private final CrashRecovery crashRecovery;
     private final GateCycle gateCycle;
     private final AutoCycle autoCycle;
+    private final SdlcPlanCycle sdlcPlanCycle;
+    private final SdlcReviewCycle sdlcReviewCycle;
+    private final SdlcApprovalReconciler approvalReconciler;
     private final ObjectMapper objectMapper;
     private final TmuxController tmux;
     private final ActiveRunRegistry activeRunRegistry;
     private final AtomicBoolean running = new AtomicBoolean();
 
     private volatile long lastWakeAtMillis;
+    private volatile RunnerConfig activeConfig;
+    private volatile Executor approvalExecutor;
     private volatile SseStreamReader sseReader;
 
     public RunnerDaemon(
@@ -49,6 +57,9 @@ public class RunnerDaemon {
             CrashRecovery crashRecovery,
             GateCycle gateCycle,
             AutoCycle autoCycle,
+            SdlcPlanCycle sdlcPlanCycle,
+            SdlcReviewCycle sdlcReviewCycle,
+            SdlcApprovalReconciler approvalReconciler,
             ObjectMapper objectMapper,
             TmuxController tmux,
             ActiveRunRegistry activeRunRegistry) {
@@ -56,6 +67,9 @@ public class RunnerDaemon {
         this.crashRecovery = crashRecovery;
         this.gateCycle = gateCycle;
         this.autoCycle = autoCycle;
+        this.sdlcPlanCycle = sdlcPlanCycle;
+        this.sdlcReviewCycle = sdlcReviewCycle;
+        this.approvalReconciler = approvalReconciler;
         this.objectMapper = objectMapper;
         this.tmux = tmux;
         this.activeRunRegistry = activeRunRegistry;
@@ -84,13 +98,22 @@ public class RunnerDaemon {
 
         String actorId = ACTOR_ID;
         int concurrency = Math.max(1, config.concurrency());
-        AtomicInteger activeAutoRuns = new AtomicInteger();
-        ExecutorService autoPool = Executors.newFixedThreadPool(concurrency);
+        AtomicInteger activeWorkerRuns = new AtomicInteger();
+        ExecutorService workerPool = Executors.newFixedThreadPool(concurrency);
+        ScheduledExecutorService approvals = Executors.newSingleThreadScheduledExecutor();
         SseStreamReader reader = null;
 
         running.set(true);
+        activeConfig = config;
+        approvalExecutor = approvals;
         try {
             crashRecovery.reconcile(config, actorId);
+            approvals.execute(() -> reconcileApprovalsBestEffort(config, actorId));
+            approvals.scheduleWithFixedDelay(
+                    () -> reconcileApprovalsBestEffort(config, actorId),
+                    60,
+                    60,
+                    TimeUnit.SECONDS);
 
             String startupUuid = UUID.randomUUID().toString();
             String clientSessionId = "blackbox-runner-" + startupUuid;
@@ -122,25 +145,34 @@ public class RunnerDaemon {
                         continue;
                     }
 
-                    if (activeAutoRuns.get() < concurrency) {
+                    if (activeWorkerRuns.get() < concurrency) {
                         Optional<TaskChange> autoTask = apiClient.claimTask("auto", actorId);
                         if (autoTask.isPresent()) {
-                            activeAutoRuns.incrementAndGet();
-                            try {
-                                autoPool.submit(() -> {
-                                    try {
-                                        autoCycle.execute(
-                                                autoTask.get(), config, actorId, orchestratorSessionId);
-                                    }
-                                    finally {
-                                        activeAutoRuns.decrementAndGet();
-                                    }
-                                });
-                            }
-                            catch (RuntimeException ex) {
-                                activeAutoRuns.decrementAndGet();
-                                throw ex;
-                            }
+                            submitWorker(
+                                    workerPool,
+                                    activeWorkerRuns,
+                                    () -> autoCycle.execute(
+                                            autoTask.get(), config, actorId, orchestratorSessionId));
+                            continue;
+                        }
+
+                        Optional<TaskChange> planTask = apiClient.claimTask("sdlc:plan", actorId);
+                        if (planTask.isPresent()) {
+                            submitWorker(
+                                    workerPool,
+                                    activeWorkerRuns,
+                                    () -> sdlcPlanCycle.execute(
+                                            planTask.get(), config, actorId, orchestratorSessionId));
+                            continue;
+                        }
+
+                        Optional<TaskChange> reviewTask = apiClient.claimTask("sdlc:review", actorId);
+                        if (reviewTask.isPresent()) {
+                            submitWorker(
+                                    workerPool,
+                                    activeWorkerRuns,
+                                    () -> sdlcReviewCycle.execute(
+                                            reviewTask.get(), config, actorId, orchestratorSessionId));
                             continue;
                         }
                     }
@@ -162,7 +194,10 @@ public class RunnerDaemon {
             if (reader != null) {
                 reader.stop();
             }
-            autoPool.shutdownNow();
+            approvals.shutdownNow();
+            workerPool.shutdownNow();
+            activeConfig = null;
+            approvalExecutor = null;
             sseReader = null;
             try {
                 instanceLock.close();
@@ -181,7 +216,15 @@ public class RunnerDaemon {
         }
     }
 
-    private void onSseFrame(String eventName, String jsonData) {
+    void onSseFrame(String eventName, String jsonData) {
+        onSseFrame(eventName, jsonData, activeConfig, approvalExecutor);
+    }
+
+    void onSseFrame(
+            String eventName,
+            String jsonData,
+            RunnerConfig config,
+            Executor approvalWakeExecutor) {
         lastWakeAtMillis = System.currentTimeMillis();
         if (!"task.note".equals(eventName)) {
             return;
@@ -190,11 +233,18 @@ public class RunnerDaemon {
             JsonNode root = objectMapper.readTree(jsonData);
             JsonNode annotation = root.path("annotation");
             JsonNode task = root.path("task");
+            String taskId = task.path("id").asText();
+            if ("approval".equals(annotation.path("kind").asText())) {
+                if (!taskId.isBlank() && approvalWakeExecutor != null && config != null) {
+                    approvalWakeExecutor.execute(() -> reconcileApprovalTaskBestEffort(
+                            taskId, config, ACTOR_ID));
+                }
+                return;
+            }
             if (!"steer".equals(annotation.path("kind").asText())
                     || !ACTOR_ID.equals(task.path("claimedBy").asText())) {
                 return;
             }
-            String taskId = task.path("id").asText();
             String steerText = annotation.path("text").asText();
             if (taskId.isBlank() || steerText.isBlank()) {
                 return;
@@ -210,10 +260,50 @@ public class RunnerDaemon {
             });
         }
         catch (JsonProcessingException ex) {
-            log.warn("Unable to parse task.note SSE frame for runner steering", ex);
+            log.warn("Unable to parse task.note SSE frame for runner", ex);
         }
         catch (RuntimeException ex) {
-            log.warn("Unable to inject steering from task.note SSE frame", ex);
+            log.warn("Unable to handle task.note SSE frame", ex);
+        }
+    }
+
+    private void reconcileApprovalsBestEffort(RunnerConfig config, String actorId) {
+        try {
+            approvalReconciler.reconcile(config, actorId);
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to reconcile SDLC approvals; the runner will retry", ex);
+        }
+    }
+
+    private void reconcileApprovalTaskBestEffort(
+            String taskId, RunnerConfig config, String actorId) {
+        try {
+            approvalReconciler.reconcileTask(taskId, config, actorId);
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to reconcile SDLC approval for task {}; the poll will retry", taskId, ex);
+        }
+    }
+
+    private static void submitWorker(
+            ExecutorService workerPool,
+            AtomicInteger activeWorkerRuns,
+            Runnable worker) {
+        activeWorkerRuns.incrementAndGet();
+        try {
+            workerPool.submit(() -> {
+                try {
+                    worker.run();
+                }
+                finally {
+                    activeWorkerRuns.decrementAndGet();
+                }
+            });
+        }
+        catch (RuntimeException ex) {
+            activeWorkerRuns.decrementAndGet();
+            throw ex;
         }
     }
 

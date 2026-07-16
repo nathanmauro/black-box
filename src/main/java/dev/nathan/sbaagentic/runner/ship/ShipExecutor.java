@@ -3,7 +3,9 @@ package dev.nathan.sbaagentic.runner.ship;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -77,11 +79,60 @@ public class ShipExecutor {
             String title,
             String summary,
             String tmuxSessionNameForRepair) {
+        return ship(
+                taskId,
+                actorId,
+                repoConfig,
+                branch,
+                worktreeDir,
+                title,
+                summary,
+                tmuxSessionNameForRepair,
+                true,
+                null);
+    }
+
+    public ShipResult shipForSdlc(
+            String taskId,
+            String actorId,
+            RepoConfig repoConfig,
+            String branch,
+            File worktreeDir,
+            String title,
+            String summary,
+            String approvalId) {
+        if (approvalId == null || approvalId.isBlank()) {
+            throw new IllegalArgumentException("SDLC approval id is required");
+        }
+        return ship(
+                taskId,
+                actorId,
+                repoConfig,
+                branch,
+                worktreeDir,
+                title,
+                summary,
+                null,
+                false,
+                approvalId);
+    }
+
+    private ShipResult ship(
+            String taskId,
+            String actorId,
+            RepoConfig repoConfig,
+            String branch,
+            File worktreeDir,
+            String title,
+            String summary,
+            String tmuxSessionNameForRepair,
+            boolean allowRepair,
+            String sdlcApprovalId) {
         List<String> command = shipCommand(
                 taskId, repoConfig, branch, worktreeDir, title, summary);
         ShipResult result = invokeShip(command, new File(repoConfig.path()));
 
-        if ("blocked".equals(result.status())) {
+        if (allowRepair && "blocked".equals(result.status())) {
             String originalCommit = currentCommit(worktreeDir);
             steerRepairBestEffort(tmuxSessionNameForRepair, result.reason());
             if (awaitNewCommit(worktreeDir, originalCommit)) {
@@ -89,13 +140,31 @@ public class ShipExecutor {
             }
         }
 
+        Map<String, Object> annotationData = sdlcApprovalId == null
+                ? null
+                : sdlcShipData(result, sdlcApprovalId, branch, worktreeDir);
         apiClient.annotate(
                 taskId,
                 actorId,
                 "progress",
                 describe(result),
-                null);
+                annotationData);
         return result;
+    }
+
+    private static Map<String, Object> sdlcShipData(
+            ShipResult result, String approvalId, String branch, File worktreeDir) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("sdlc", "shipped");
+        data.put("approvalId", approvalId);
+        data.put("status", result.status());
+        data.put("reason", result.reason());
+        data.put("prUrl", result.prUrl());
+        data.put("mergeStatus", result.mergeStatus());
+        data.put("manualCommands", result.manualCommands());
+        data.put("branch", branch);
+        data.put("worktree", worktreeDir.getAbsolutePath());
+        return data;
     }
 
     private ShipResult invokeShip(List<String> command, File repoDir) {

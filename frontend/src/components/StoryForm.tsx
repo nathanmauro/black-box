@@ -214,10 +214,9 @@ export default function StoryForm(props: StoryFormProps) {
               name={`${id}-mode`}
               value="sdlc"
               checked={mode() === "sdlc"}
-              disabled
               onChange={() => setMode("sdlc")}
             />
-            SDLC (coming soon)
+            SDLC
           </label>
         </fieldset>
 

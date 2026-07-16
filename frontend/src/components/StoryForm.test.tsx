@@ -74,7 +74,7 @@ const taskChange: TaskChange = {
 };
 
 describe("StoryForm", () => {
-  it("renders the complete story intake form with SDLC disabled", () => {
+  it("renders the complete story intake form with SDLC enabled", () => {
     renderStoryForm();
 
     expect(screen.getByRole("textbox", { name: "Title" })).toBeRequired();
@@ -86,7 +86,10 @@ describe("StoryForm", () => {
     expect(screen.getByRole("textbox", { name: "Verify command" })).toBeInTheDocument();
     expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(10);
     expect(screen.getByRole("radio", { name: "Full auto" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "SDLC (coming soon)" })).toBeDisabled();
+    const sdlc = screen.getByRole("radio", { name: "SDLC" });
+    expect(sdlc).toBeEnabled();
+    fireEvent.click(sdlc);
+    expect(sdlc).toBeChecked();
   });
 
   it("updates the acceptance-criteria gate hint as the user types", () => {
@@ -149,6 +152,19 @@ describe("StoryForm", () => {
       actor: "board",
     }));
     expect(onCreated).toHaveBeenCalledWith({ spec, taskChange });
+  });
+
+  it("records the selected SDLC mode in the frozen spec", async () => {
+    const create = vi.fn(async (_request: CreateSpecRequest) => spec);
+    const enqueue = vi.fn(async (_request: EnqueueTaskRequest) => taskChange);
+    renderStoryForm({ create, enqueue });
+    fillRequiredFields();
+
+    fireEvent.click(screen.getByRole("radio", { name: "SDLC" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create story" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    expect(create.mock.calls[0]?.[0].body).toContain("mode: sdlc");
   });
 
   it("shows a create-spec failure without enqueueing or reporting creation", async () => {
