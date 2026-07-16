@@ -129,9 +129,11 @@ public class BlackBoxApiClient {
     }
 
     public List<TaskSnapshot> listTasks(String status) {
-        String path = "/api/tasks";
+        // Always request the server's maximum row cap: the default of 100 silently hides
+        // tasks on busy lanes (a live cleanup pass missed 11 tasks past the default cap).
+        String path = "/api/tasks?limit=250";
         if (status != null && !status.isBlank()) {
-            path += "?status=" + queryValue(status);
+            path += "&status=" + queryValue(status);
         }
         HttpResponse<String> response = send("GET", path, null);
         requireSuccess("GET", path, response);
