@@ -31,6 +31,7 @@ vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string }) => (
     <a href={props.href} class={props.class}>{props.children}</a>
   ),
+  useNavigate: () => vi.fn(),
   useSearchParams: () => [params, (next: BoardSearchParams) => {
     searchParamWrites(next);
     setParams(next);

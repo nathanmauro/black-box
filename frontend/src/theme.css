@@ -2138,14 +2138,14 @@ a {
   stroke-width: 4;
   filter: drop-shadow(0 0 9px color-mix(in srgb, var(--node-color) 52%, transparent));
 }
-.dag-link { outline: none; }
-.dag-link:hover .dag-node-shape,
-.dag-link:focus-visible .dag-node-shape {
+.dag-node--link { outline: none; cursor: pointer; }
+.dag-node--link:hover .dag-node-shape,
+.dag-node--link:focus-visible .dag-node-shape {
   fill: color-mix(in srgb, var(--node-color) 32%, var(--bg-hover));
   stroke-width: 3;
 }
-.dag-node--current .dag-link:hover .dag-node-shape,
-.dag-node--current .dag-link:focus-visible .dag-node-shape { stroke-width: 4; }
+.dag-node--current.dag-node--link:hover .dag-node-shape,
+.dag-node--current.dag-node--link:focus-visible .dag-node-shape { stroke-width: 4; }
 .dag-label {
   fill: var(--text-bright);
   paint-order: stroke;

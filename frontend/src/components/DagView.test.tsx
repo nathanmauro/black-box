@@ -1,7 +1,13 @@
-import { render, screen } from "@solidjs/testing-library";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DagResponse } from "../lib/api";
-import DagView, { layoutDag } from "./DagView";
+
+const navigateSpy = vi.fn();
+vi.mock("@solidjs/router", () => ({
+  useNavigate: () => navigateSpy,
+}));
+
+const { default: DagView, layoutDag } = await import("./DagView");
 
 const fixture: DagResponse = {
   nodes: [
@@ -59,13 +65,28 @@ describe("layoutDag", () => {
 });
 
 describe("DagView", () => {
+  beforeEach(() => {
+    navigateSpy.mockClear();
+  });
+
   it("renders linked task and session nodes with a current-node marker", () => {
     const { container } = render(() => <DagView dag={fixture} currentTaskId="task-1" />);
 
-    expect(screen.getByRole("link", { name: "Open task: Validate the story" })).toHaveAttribute("href", "/board?task=task-1");
-    expect(screen.getByRole("link", { name: "Open session: Gate worker" })).toHaveAttribute("href", "/sessions/session-1");
+    // Nodes navigate from the <g> itself: an <a> would compile to an HTML-namespace
+    // anchor inside the SVG and collapse its children to zero size in real browsers.
+    const taskNode = screen.getByRole("link", { name: "Open task: Validate the story" });
+    expect(taskNode).toHaveAttribute("data-node-href", "/board?task=task-1");
+    expect(taskNode.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    expect(container.querySelector("svg a")).not.toBeInTheDocument();
+    const sessionNode = screen.getByRole("link", { name: "Open session: Gate worker" });
+    expect(sessionNode).toHaveAttribute("data-node-href", "/sessions/session-1");
     expect(screen.getByText("Ship the full-auto runner")).toBeInTheDocument();
     expect(container.querySelector('[data-node-id="task-1"]')).toHaveClass("dag-node--current");
+
+    fireEvent.click(taskNode);
+    expect(navigateSpy).toHaveBeenCalledWith("/board?task=task-1");
+    fireEvent.keyDown(sessionNode, { key: "Enter" });
+    expect(navigateSpy).toHaveBeenCalledWith("/sessions/session-1");
   });
 
   it("renders an empty state instead of an SVG", () => {

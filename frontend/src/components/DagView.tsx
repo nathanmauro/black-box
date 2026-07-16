@@ -1,4 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import type { DagEdgeType, DagNode, DagResponse } from "../lib/api";
 
 const COLUMN_SPACING = 220;
@@ -100,23 +101,35 @@ export default function DagView(props: DagViewProps) {
 function DagNodeView(props: { node: DagLayoutNode; current: boolean }) {
   const tooltip = () => tooltipFor(props.node);
   const href = () => nodeHref(props.node);
+  const navigate = useNavigate();
+  const open = () => {
+    const target = href();
+    if (target) navigate(target);
+  };
+  // An <a> here compiles to an HTML-namespace anchor inside the SVG tree, which
+  // lays out its SVG children at zero size in real browsers; navigate from the
+  // <g> instead.
   return (
     <g
-      class={`dag-node dag-node--${props.node.type}${props.current ? " dag-node--current" : ""}`}
+      class={`dag-node dag-node--${props.node.type}${props.current ? " dag-node--current" : ""}${href() ? " dag-node--link" : ""}`}
       transform={`translate(${props.node.x} ${props.node.y})`}
       style={{ "--node-color": nodeColor(props.node) }}
       data-node-id={props.node.id}
       data-node-type={props.node.type}
-      aria-label={tooltip()}
+      data-node-href={href() ?? undefined}
+      aria-label={href() ? `Open ${props.node.type}: ${props.node.label}` : tooltip()}
+      role={href() ? "link" : undefined}
+      tabindex={href() ? 0 : undefined}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      }}
     >
       <title>{tooltip()}</title>
-      {href() ? (
-        <a href={href()!} class="dag-link" aria-label={`Open ${props.node.type}: ${props.node.label}`}>
-          <DagNodeContent node={props.node} />
-        </a>
-      ) : (
-        <DagNodeContent node={props.node} />
-      )}
+      <DagNodeContent node={props.node} />
     </g>
   );
 }
