@@ -44,6 +44,10 @@ public class BlackBoxApiClient {
         this(objectMapper, configuredBaseUrl());
     }
 
+    public String baseUrl() {
+        return baseUrl;
+    }
+
     BlackBoxApiClient(ObjectMapper objectMapper, String baseUrl) {
         this.objectMapper = objectMapper;
         this.baseUrl = stripTrailingSlash(baseUrl);

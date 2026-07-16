@@ -239,14 +239,14 @@ public final class WorkerRunExecutor {
             throw new IllegalStateException(
                     "Engine '" + selection.engine().id() + "' returned no command");
         }
-        String commandLine = "export SBA_STAGE=" + shQuote(stage.environmentValue());
+        String commandLine = "export SBA_STAGE=" + shQuote(stage.environmentValue())
+                // Always pin the worker's report target to this runner's resolved base URL.
+                // The tmux server's global environment can carry a stale SBA_BASE_URL from an
+                // unrelated harness run, silently pointing report.sh at a dead server.
+                + "; export SBA_BASE_URL=" + shQuote(apiClient.baseUrl());
         if ("fake".equals(selection.engine().id())) {
             commandLine += "; export SBA_TASK_ID=" + shQuote(taskId)
                     + "; export SBA_WORKTREE=" + shQuote(worktreeDir.getAbsolutePath());
-            String baseUrl = System.getenv("SBA_BASE_URL");
-            if (!isBlank(baseUrl)) {
-                commandLine += "; export SBA_BASE_URL=" + shQuote(baseUrl);
-            }
         }
         commandLine += "; " + shellCommand(command);
         tmux.sendKeys(tmuxSessionName, commandLine);
