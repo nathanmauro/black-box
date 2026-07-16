@@ -24,6 +24,25 @@ class CodexEngineTest {
     }
 
     @Test
+    void workspaceWriteSandboxAllowsLoopbackReporting() {
+        List<String> command = engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", "workspace-write", null, true));
+
+        assertThat(command).containsSequence(
+                "--sandbox", "workspace-write", "-c", "sandbox_workspace_write.network_access=true");
+    }
+
+    @Test
+    void otherSandboxModesGetNoNetworkOverride() {
+        List<String> command = engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", "read-only", null, true));
+
+        assertThat(command).doesNotContain("sandbox_workspace_write.network_access=true");
+    }
+
+    @Test
     void dashLeadingPromptIsNeverParsedAsFlag() {
         List<String> command = engine.command(
                 "--shout looks like a flag",
