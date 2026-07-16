@@ -6,7 +6,9 @@ import type {
   ProjectSummary,
   Spec,
   TaskChange,
+  UpdateTaskStatusRequest,
 } from "../lib/api";
+import type { StoryFormInput } from "../lib/storySpec";
 import StoryForm from "./StoryForm";
 
 const projects: ProjectSummary[] = [
@@ -73,6 +75,17 @@ const taskChange: TaskChange = {
   },
 };
 
+const prefilledInput: StoryFormInput = {
+  title: "Revise the board story",
+  repo: "/Users/nathan/Developer/proj/sba-agentic",
+  mode: "sdlc",
+  goal: "Address the deterministic gate feedback.",
+  acceptanceCriteria: "The corrected gate passes.\nThe old gate is cancelled.",
+  constraints: "Preserve the frozen spec.",
+  verify: "npx vitest run",
+  priority: 31,
+};
+
 describe("StoryForm", () => {
   it("renders the complete story intake form with SDLC enabled", () => {
     renderStoryForm();
@@ -114,6 +127,27 @@ describe("StoryForm", () => {
     expect(repo).toHaveValue("/Users/nathan/Developer/proj/sba-agentic");
     fireEvent.input(repo, { target: { value: "/tmp/editable-checkout" } });
     expect(repo).toHaveValue("/tmp/editable-checkout");
+  });
+
+  it("prefills every owned field and presents the blocked gate feedback", () => {
+    renderStoryForm({
+      initialInput: prefilledInput,
+      blockedReason: "Acceptance criteria must name the cancellation behavior.",
+      replacesTaskId: "task-blocked-gate",
+    });
+
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(prefilledInput.title);
+    expect(screen.getByRole("textbox", { name: "Repo path" })).toHaveValue(prefilledInput.repo);
+    expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue(prefilledInput.goal);
+    expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(prefilledInput.acceptanceCriteria);
+    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue(prefilledInput.constraints);
+    expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue(prefilledInput.verify);
+    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(prefilledInput.priority);
+    expect(screen.getByRole("radio", { name: "SDLC" })).toBeChecked();
+    expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(
+      "Acceptance criteria must name the cancellation behavior.",
+    );
+    expect(screen.getByRole("button", { name: "Create revised story" })).toBeEnabled();
   });
 
   it("creates the spec, enqueues the gate task, and reports both results", async () => {
@@ -165,6 +199,70 @@ describe("StoryForm", () => {
 
     await waitFor(() => expect(create).toHaveBeenCalledOnce());
     expect(create.mock.calls[0]?.[0].body).toContain("mode: sdlc");
+  });
+
+  it("creates the replacement spec and gate task before cancelling the blocked gate", async () => {
+    const create = vi.fn(async (_request: CreateSpecRequest) => spec);
+    const enqueue = vi.fn(async (_request: EnqueueTaskRequest) => taskChange);
+    const update = vi.fn(async (_taskId: string, _request: UpdateTaskStatusRequest) => taskChange);
+    const onCreated = vi.fn();
+    renderStoryForm({
+      initialInput: prefilledInput,
+      replacesTaskId: "task-blocked-gate",
+      create,
+      enqueue,
+      update,
+      onCreated,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith("task-blocked-gate", {
+      actor: "board",
+      status: "cancelled",
+    }));
+    expect(create).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(create.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]!);
+    expect(enqueue.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ spec, taskChange }));
+  });
+
+  it("keeps the new story when old-task cancellation fails and retries only the cleanup", async () => {
+    const create = vi.fn(async (_request: CreateSpecRequest) => spec);
+    const enqueue = vi.fn(async (_request: EnqueueTaskRequest) => taskChange);
+    const update = vi.fn()
+      .mockRejectedValueOnce(new Error("Cancellation unavailable"))
+      .mockResolvedValueOnce(taskChange);
+    const onCreated = vi.fn();
+    const onCleanupFailed = vi.fn();
+    renderStoryForm({
+      initialInput: prefilledInput,
+      replacesTaskId: "task-blocked-gate",
+      create,
+      enqueue,
+      update,
+      onCreated,
+      onCleanupFailed,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "New story created and kept, but the old gate task could not be cancelled: Cancellation unavailable",
+    );
+    expect(create).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledOnce();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(onCleanupFailed).toHaveBeenCalledWith({ spec, taskChange }, "Cancellation unavailable");
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry cancelling old task" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(create).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ spec, taskChange }));
   });
 
   it("shows a create-spec failure without enqueueing or reporting creation", async () => {
@@ -237,15 +335,25 @@ describe("StoryForm", () => {
 function renderStoryForm(options: {
   create?: (request: CreateSpecRequest) => Promise<Spec>;
   enqueue?: (request: EnqueueTaskRequest) => Promise<TaskChange>;
+  update?: (taskId: string, request: UpdateTaskStatusRequest) => Promise<TaskChange>;
+  initialInput?: StoryFormInput;
+  blockedReason?: string;
+  replacesTaskId?: string;
   onCreated?: (result: { spec: Spec; taskChange: TaskChange }) => void;
+  onCleanupFailed?: (result: { spec: Spec; taskChange: TaskChange }, message: string) => void;
   onCancel?: () => void;
 } = {}) {
   return render(() => (
     <StoryForm
       projects={projects}
+      initialInput={options.initialInput}
+      blockedReason={options.blockedReason}
+      replacesTaskId={options.replacesTaskId}
       createSpec={options.create}
       enqueueTask={options.enqueue}
+      updateTaskStatus={options.update}
       onCreated={options.onCreated ?? vi.fn()}
+      onCleanupFailed={options.onCleanupFailed}
       onCancel={options.onCancel ?? vi.fn()}
     />
   ));

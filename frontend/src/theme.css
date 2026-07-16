@@ -3415,6 +3415,13 @@ a {
 .board-blocked-callout { padding: 10px; background: color-mix(in srgb, var(--red) 8%, var(--bg)); border: 1px solid color-mix(in srgb, var(--red) 34%, var(--border)); border-radius: var(--radius); }
 .board-blocked-callout > span { color: var(--red); }
 .board-blocked-callout p { margin: 5px 0 0; color: var(--text-bright); font-size: 12px; }
+.board-revise-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 9px; padding: 10px; background: color-mix(in srgb, var(--accent) 6%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: var(--radius); }
+.board-revise-panel strong { color: var(--text-bright); font-size: 11px; }
+.board-revise-panel p { margin: 3px 0 0; color: var(--text-dim); font-size: 10px; }
+.board-revise-button { height: 32px; padding: 0 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border)); border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.board-revise-button:hover:not(:disabled) { color: var(--text-bright); background: color-mix(in srgb, var(--accent) 17%, var(--bg)); }
+.board-revise-button:disabled { cursor: wait; opacity: 0.66; }
+.board-revise-panel .board-revise-error { grid-column: 1 / -1; margin: 0; color: var(--red); }
 .board-detail-section { margin-top: 11px; padding: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
 .board-detail-section > h3 { margin: 0 0 9px; color: var(--text-bright); font-size: 12px; }
 .board-detail-grid { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 6px 10px; margin: 0; }
@@ -3495,6 +3502,10 @@ a {
 }
 .story-form-header h2 { margin: 2px 0 0; color: var(--text-bright); font-size: 17px; line-height: 1.25; }
 .story-form-header > div > p:last-child { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; }
+.story-form-gate-feedback { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; margin: 12px 14px 0; padding: 11px 12px; color: var(--text-bright); background: color-mix(in srgb, var(--red) 10%, var(--bg)); border: 1px solid color-mix(in srgb, var(--red) 42%, var(--border)); border-left-width: 3px; border-radius: var(--radius-sm); }
+.story-form-gate-feedback > span { grid-row: 1 / span 2; align-self: start; padding: 3px 6px; color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 38%, var(--border)); border-radius: var(--radius-pill); font-family: var(--font-mono); font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.story-form-gate-feedback strong { font-size: 11px; }
+.story-form-gate-feedback p { margin: 0; color: var(--text-bright); font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
 .story-form form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3601,6 +3612,7 @@ a {
 .story-form-submit:disabled { cursor: not-allowed; color: var(--text-faint); background: var(--bg); border-color: var(--border); }
 
 @media (max-width: 660px) {
+  .board-revise-panel { grid-template-columns: 1fr; align-items: stretch; }
   .story-form form { grid-template-columns: 1fr; padding: 11px; }
   .story-form-field--wide { grid-column: 1; }
   .story-form-mode { align-items: flex-start; flex-direction: column; gap: 8px; }

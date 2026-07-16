@@ -93,6 +93,7 @@ describe("BoardPage", () => {
     expect(within(detail).getByText("worker-2")).toBeInTheDocument();
     expect(within(detail).getByText(/specs\/queue\.md/)).toBeInTheDocument();
     expect(within(detail).getByRole("button", { name: "Reset task to open" })).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute|launch|run agent/i })).not.toBeInTheDocument();
 
     fireEvent.click(within(done).getByRole("button", { name: /Ship the adapter/ }));
@@ -103,6 +104,139 @@ describe("BoardPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show 1 cancelled task" }));
     expect(screen.getByRole("region", { name: "Cancelled tasks" })).toHaveTextContent("Retired experiment");
+  });
+
+  it("offers revision only for blocked gate tasks", async () => {
+    const store = fakeTaskStore([
+      snapshot({ id: "blocked-gate", title: "Blocked at gate", status: "blocked", lane: "gate", blockedReason: "Add acceptance criteria." }),
+      snapshot({ id: "blocked-review", title: "Blocked in review", status: "blocked", lane: "sdlc:review", blockedReason: "Review rejected." }),
+      snapshot({ id: "open-gate", title: "Open at gate", status: "open", lane: "gate" }),
+    ]);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Blocked at gate, Blocked" }));
+    const detail = screen.getByRole("complementary", { name: "Task detail" });
+    expect(within(detail).getByRole("button", { name: "Revise & resubmit" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Blocked in review, Blocked" }));
+    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Open at gate, Open" }));
+    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+  });
+
+  it("fetches and prefills the frozen spec, then creates the replacement before cancelling the old gate", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked-gate" });
+    const blocked = snapshot({
+      id: "task-blocked-gate",
+      projectKey: "/workspace/black-box",
+      title: "Original task title",
+      status: "blocked",
+      lane: "gate",
+      priority: 7,
+      blockedReason: "Name the exact cancellation behavior in acceptance criteria.",
+    }, "This snapshot body must not be used for the prefill.");
+    const frozenSpec = {
+      ...blocked.spec,
+      title: "Correct the gate contract",
+      body: `---
+story: v1
+repo: "/workspace/black-box"
+mode: sdlc
+verify: "npx vitest run"
+push: true
+priority: 42
+---
+
+# Correct the gate contract
+
+## Goal
+
+Make the resubmission cleanup explicit.
+
+## Acceptance criteria
+
+- A new gate task is enqueued.
+- The blocked gate is cancelled afterward.
+
+## Constraints / dangers
+
+- Keep the original spec frozen.
+`,
+    };
+    const createdSpec = { ...frozenSpec, id: "spec-revised", createdBy: "board" };
+    const createdTaskChange: TaskChange = {
+      snapshot: {
+        spec: createdSpec,
+        task: {
+          ...blocked.task,
+          id: "task-revised",
+          specId: createdSpec.id,
+          title: createdSpec.title,
+          status: "open",
+          priority: 42,
+          claimedBy: null,
+          blockedReason: null,
+        },
+      },
+      event: {
+        id: "event-revised",
+        taskId: "task-revised",
+        type: "task.created",
+        actor: "board",
+        fromStatus: null,
+        toStatus: "open",
+        observedAt: "2026-07-16T14:00:00Z",
+      },
+    };
+    const loadSpec = vi.fn(async () => frozenSpec);
+    const create = vi.fn(async () => createdSpec);
+    const enqueue = vi.fn(async () => createdTaskChange);
+    const update = vi.fn(async () => createdTaskChange);
+    const store = fakeTaskStore([blocked]);
+    render(() => (
+      <BoardPage
+        store={store}
+        loadProjects={emptyCatalog}
+        loadSpec={loadSpec}
+        createSpec={create}
+        enqueueTask={enqueue}
+        updateStatus={update}
+      />
+    ));
+
+    const detail = await screen.findByRole("complementary", { name: "Task detail" });
+    fireEvent.click(within(detail).getByRole("button", { name: "Revise & resubmit" }));
+
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Correct the gate contract");
+    expect(loadSpec).toHaveBeenCalledWith(blocked.task.specId);
+    expect(screen.getByRole("textbox", { name: "Repo path" })).toHaveValue("/workspace/black-box");
+    expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue("Make the resubmission cleanup explicit.");
+    expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(
+      "A new gate task is enqueued.\nThe blocked gate is cancelled afterward.",
+    );
+    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue("Keep the original spec frozen.");
+    expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue("npx vitest run");
+    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(42);
+    expect(screen.getByRole("radio", { name: "SDLC" })).toBeChecked();
+    expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(blocked.task.blockedReason!);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith("task-blocked-gate", {
+      actor: "board",
+      status: "cancelled",
+    }));
+    expect(create).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      specId: "spec-revised",
+      title: "Correct the gate contract",
+      lane: "gate",
+      priority: 42,
+      actor: "board",
+    });
+    expect(create.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]!);
+    expect(enqueue.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
   });
 
   it("moves a task between columns when the live store applies a lifecycle frame", async () => {

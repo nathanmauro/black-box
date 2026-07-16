@@ -6,9 +6,12 @@ import ProjectPicker from "../components/ProjectPicker";
 import SteerBox from "../components/SteerBox";
 import StoryForm from "../components/StoryForm";
 import {
+  createSpec,
   createTaskAnnotation,
+  enqueueTask,
   getProjects,
   getRecall,
+  getSpec,
   getTaskDag,
   getTaskEvents,
   updateTaskStatus,
@@ -27,6 +30,7 @@ import {
   primaryProjectScope,
   projectShortName,
 } from "../lib/projects";
+import { parseSpecBody, type StoryFormInput } from "../lib/storySpec";
 import { createTaskLiveStore, type TaskLiveStoreWithNotes } from "../lib/tasks";
 
 type BoardSearchParams = {
@@ -44,6 +48,12 @@ type BoardColumn = {
 
 type ApprovalState = "inactive" | "checking" | "unavailable" | "awaiting" | "decided";
 
+type StoryFormState = {
+  initialInput?: StoryFormInput;
+  blockedReason?: string;
+  replacesTaskId?: string;
+};
+
 const COLUMNS: BoardColumn[] = [
   { id: "open", label: "Open", description: "Ready to claim", statuses: ["open"] },
   { id: "active", label: "In Progress", description: "Owned and moving", statuses: ["claimed", "in_progress"] },
@@ -54,6 +64,9 @@ const COLUMNS: BoardColumn[] = [
 export type BoardPageProps = {
   store?: TaskLiveStoreWithNotes;
   loadProjects?: typeof getProjects;
+  loadSpec?: typeof getSpec;
+  createSpec?: typeof createSpec;
+  enqueueTask?: typeof enqueueTask;
   updateStatus?: typeof updateTaskStatus;
   recallHandoff?: typeof getRecall;
   getTaskEvents?: typeof getTaskEvents;
@@ -71,7 +84,9 @@ export default function BoardPage(props: BoardPageProps) {
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [visibleFilters, setVisibleFilters] = createSignal<TaskFilters | null>(null);
   const [showCancelled, setShowCancelled] = createSignal(false);
-  const [showStoryForm, setShowStoryForm] = createSignal(false);
+  const [storyForm, setStoryForm] = createSignal<StoryFormState>();
+  const [revisingTaskId, setRevisingTaskId] = createSignal<string>();
+  const [revisionErrors, setRevisionErrors] = createSignal<Record<string, string | undefined>>({});
   const [resettingTasks, setResettingTasks] = createSignal<Set<string>>(new Set());
   const [resetErrors, setResetErrors] = createSignal<Record<string, string | undefined>>({});
   const [knownProjects, setKnownProjects] = createSignal<string[]>(params.project ? [params.project] : []);
@@ -157,6 +172,25 @@ export default function BoardPage(props: BoardPageProps) {
     }
   }
 
+  async function reviseTask(snapshot: TaskSnapshot) {
+    const { task } = snapshot;
+    if (task.status !== "blocked" || task.lane !== "gate" || revisingTaskId() === task.id) return;
+    setRevisingTaskId(task.id);
+    setRevisionErrors((current) => ({ ...current, [task.id]: undefined }));
+    try {
+      const frozenSpec = await (props.loadSpec ?? getSpec)(task.specId);
+      setStoryForm({
+        initialInput: parseSpecBody(frozenSpec.body),
+        blockedReason: task.blockedReason ?? "The gate blocked this story without feedback.",
+        replacesTaskId: task.id,
+      });
+    } catch (error) {
+      setRevisionErrors((current) => ({ ...current, [task.id]: errorMessage(error) }));
+    } finally {
+      setRevisingTaskId(undefined);
+    }
+  }
+
   function columnTasks(column: BoardColumn): TaskSnapshot[] {
     return activeSnapshots().filter(({ task }) => column.statuses.includes(task.status));
   }
@@ -233,23 +267,32 @@ export default function BoardPage(props: BoardPageProps) {
           <button
             type="button"
             class="story-form-trigger"
-            aria-expanded={showStoryForm()}
-            onClick={() => setShowStoryForm(true)}
+            aria-expanded={storyForm() !== undefined}
+            onClick={() => setStoryForm({})}
           >
             New story
           </button>
         </div>
       </section>
 
-      <Show when={showStoryForm()}>
-        <StoryForm
-          projects={projectOptions()}
-          onCreated={() => {
-            setShowStoryForm(false);
-            void store.refresh();
-          }}
-          onCancel={() => setShowStoryForm(false)}
-        />
+      <Show when={storyForm()} keyed>
+        {(formState) => (
+          <StoryForm
+            projects={projectOptions()}
+            initialInput={formState.initialInput}
+            blockedReason={formState.blockedReason}
+            replacesTaskId={formState.replacesTaskId}
+            createSpec={props.createSpec}
+            enqueueTask={props.enqueueTask}
+            updateTaskStatus={mutateStatus}
+            onCreated={() => {
+              setStoryForm(undefined);
+              void store.refresh();
+            }}
+            onCleanupFailed={() => void store.refresh()}
+            onCancel={() => setStoryForm(undefined)}
+          />
+        )}
       </Show>
 
       <Show when={phase() === "loading" && snapshots().length === 0}>
@@ -377,6 +420,8 @@ export default function BoardPage(props: BoardPageProps) {
                 store={store}
                 resetting={resettingTasks().has(snapshot().task.id)}
                 resetError={resetErrors()[snapshot().task.id] ?? null}
+                revising={revisingTaskId() === snapshot().task.id}
+                revisionError={revisionErrors()[snapshot().task.id] ?? null}
                 recallHandoff={props.recallHandoff ?? getRecall}
                 getTaskEvents={props.getTaskEvents ?? getTaskEvents}
                 getTaskDag={props.getTaskDag ?? getTaskDag}
@@ -388,6 +433,7 @@ export default function BoardPage(props: BoardPageProps) {
                 }))}
                 onClose={closeTaskDetail}
                 onReset={() => void resetTask(snapshot())}
+                onRevise={() => void reviseTask(snapshot())}
               />
             )}
           </Show>
@@ -509,6 +555,8 @@ function TaskDetail(props: {
   store: TaskLiveStoreWithNotes;
   resetting: boolean;
   resetError: string | null;
+  revising: boolean;
+  revisionError: string | null;
   recallHandoff: typeof getRecall;
   getTaskEvents: typeof getTaskEvents;
   getTaskDag: typeof getTaskDag;
@@ -517,11 +565,13 @@ function TaskDetail(props: {
   onApproval: (annotation: TaskAnnotation) => void;
   onClose: () => void;
   onReset: () => void;
+  onRevise: () => void;
 }) {
   let closeButton: HTMLButtonElement | undefined;
   const task = () => props.snapshot.task;
   const spec = () => props.snapshot.spec;
   const canReset = () => task().status === "blocked" || task().status === "in_progress";
+  const canRevise = () => task().status === "blocked" && task().lane === "gate";
   const stage = createMemo(() => sdlcStage(task().lane));
   const [dagExpanded, setDagExpanded] = createSignal(false);
   const [events, { refetch: refetchEvents }] = createResource(
@@ -604,6 +654,27 @@ function TaskDetail(props: {
               <p>{reason()}</p>
             </section>
           )}
+        </Show>
+
+        <Show when={canRevise()}>
+          <section class="board-revise-panel">
+            <div>
+              <strong>Submit a corrected story</strong>
+              <p>The frozen spec stays unchanged. A successful resubmission creates a new spec and gate task.</p>
+            </div>
+            <button
+              type="button"
+              class="board-revise-button"
+              aria-busy={props.revising}
+              disabled={props.revising}
+              onClick={props.onRevise}
+            >
+              {props.revising ? "Loading spec…" : "Revise & resubmit"}
+            </button>
+            <Show when={props.revisionError}>
+              {(message) => <p class="board-revise-error" role="alert">Unable to load frozen spec: {message()}</p>}
+            </Show>
+          </section>
         </Show>
 
         <section class="board-detail-section">
