@@ -292,9 +292,13 @@ public class SdlcApprovalReconciler {
                 .map(TaskSnapshot::task)
                 .filter(Objects::nonNull)
                 .filter(task -> specId.equals(task.specId()))
+                // BLOCKED counts as acted-on: the approval already produced a successor and
+                // it needs human intervention. Excluding it turns every reconcile poll into
+                // another enqueue — a runaway that flooded a live board with blocked tasks.
                 .filter(task -> task.status() == TaskStatus.OPEN
                         || task.status() == TaskStatus.IN_PROGRESS
-                        || task.status() == TaskStatus.DONE)
+                        || task.status() == TaskStatus.DONE
+                        || task.status() == TaskStatus.BLOCKED)
                 .findFirst();
     }
 

@@ -234,7 +234,7 @@ public final class WorkerRunExecutor {
             File worktreeDir,
             String tmuxSessionName,
             RunStage stage) {
-        List<String> command = selection.engine().command(prompt, selection.config());
+        List<String> command = selection.engine().command(prompt, selection.config(), worktreeDir);
         if (command == null || command.isEmpty()) {
             throw new IllegalStateException(
                     "Engine '" + selection.engine().id() + "' returned no command");

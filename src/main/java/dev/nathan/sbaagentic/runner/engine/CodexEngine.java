@@ -1,7 +1,12 @@
 package dev.nathan.sbaagentic.runner.engine;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import dev.nathan.sbaagentic.runner.EngineConfig;
 
@@ -16,7 +21,7 @@ public class CodexEngine implements Engine {
     }
 
     @Override
-    public List<String> command(String prompt, EngineConfig config) {
+    public List<String> command(String prompt, EngineConfig config, File worktreeDir) {
         List<String> command = new ArrayList<>(List.of(
                 "codex",
                 "-m",
@@ -34,6 +39,13 @@ public class CodexEngine implements Engine {
                 // local Black Box API. Without this, plan/review stages can never report.
                 command.add("-c");
                 command.add("sandbox_workspace_write.network_access=true");
+                // A linked worktree keeps its git metadata under the parent repository's
+                // .git directory, outside the sandbox's writable cwd — without this root,
+                // git add/commit cannot create index.lock and the build stage fail-closes.
+                gitCommonDir(worktreeDir).ifPresent(common -> {
+                    command.add("-c");
+                    command.add("sandbox_workspace_write.writable_roots=[\"" + common + "\"]");
+                });
             }
         }
         // End-of-options marker: goal prompts can open with story frontmatter ("---"),
@@ -41,5 +53,29 @@ public class CodexEngine implements Engine {
         command.add("--");
         command.add(prompt);
         return List.copyOf(command);
+    }
+
+    // A linked worktree's .git is a pointer file: "gitdir: <repo>/.git/worktrees/<name>".
+    // The common directory two levels up is where index locks, refs, and objects live.
+    private static Optional<String> gitCommonDir(File worktreeDir) {
+        if (worktreeDir == null) {
+            return Optional.empty();
+        }
+        Path pointer = worktreeDir.toPath().resolve(".git");
+        if (!Files.isRegularFile(pointer)) {
+            return Optional.empty();
+        }
+        try {
+            String content = Files.readString(pointer).strip();
+            if (!content.startsWith("gitdir:")) {
+                return Optional.empty();
+            }
+            Path gitDir = Path.of(content.substring("gitdir:".length()).strip());
+            Path common = gitDir.getParent() == null ? null : gitDir.getParent().getParent();
+            return common == null ? Optional.empty() : Optional.of(common.toAbsolutePath().toString());
+        }
+        catch (IOException ex) {
+            return Optional.empty();
+        }
     }
 }

@@ -190,7 +190,7 @@ class RunExecutorTest {
             }
 
             @Override
-            public List<String> command(String prompt, EngineConfig config) {
+            public List<String> command(String prompt, EngineConfig config, File worktreeDir) {
                 return List.of(executable);
             }
         };

@@ -78,6 +78,28 @@ class SdlcApprovalReconcilerTest {
     }
 
     @Test
+    void blockedBuildSuccessorCountsAsActedOnAndIsNeverReEnqueued() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        RecordingApiClient apiClient = new RecordingApiClient();
+        TaskSnapshot plan = task(repo, "plan-1", "sdlc:plan", TaskStatus.DONE, "sdlc");
+        TaskSnapshot blockedBuild = task(repo, "build-1", "auto", TaskStatus.BLOCKED, "sdlc");
+        apiClient.tasks.add(plan);
+        apiClient.tasks.add(blockedBuild);
+        apiClient.events.put("plan-1", new ArrayList<>(List.of(
+                workerArtifact("plan-artifact", "plan-1", "plan", "Implementation plan."),
+                approval("approval-1", "plan-1", "approve", "plan", ""))));
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        RecordingProcessRunner processRunner = new RecordingProcessRunner(BUILD_BRANCH);
+
+        reconciler(apiClient, shipExecutor, processRunner)
+                .reconcileTask("plan-1", config(repo), ACTOR);
+        reconciler(apiClient, shipExecutor, processRunner)
+                .reconcile(config(repo), ACTOR);
+
+        assertThat(apiClient.enqueues).isEmpty();
+    }
+
+    @Test
     void planApprovalWithoutWorkerPlanFailsClosed() throws Exception {
         Path repo = Files.createDirectories(tempDir.resolve("repo"));
         RecordingApiClient apiClient = new RecordingApiClient();
