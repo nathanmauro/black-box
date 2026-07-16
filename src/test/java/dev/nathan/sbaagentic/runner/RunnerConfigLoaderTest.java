@@ -27,6 +27,19 @@ class RunnerConfigLoaderTest {
     }
 
     @Test
+    void explicitEnvPathThatDoesNotExistFailsInsteadOfFallingBack() throws Exception {
+        Path fallback = tempDir.resolve(".blackbox/runner.json");
+        Files.createDirectories(fallback.getParent());
+        Files.writeString(fallback, "{\"repos\":[{\"path\":\"/tmp/repo\"}]}");
+        Path missing = tempDir.resolve("typo-runner.json");
+
+        assertThatThrownBy(() -> loader.load(missing.toString(), tempDir.toString()))
+                .isInstanceOf(RunnerConfigException.class)
+                .hasMessageContaining(missing.toString())
+                .hasMessageContaining("SBA_RUNNER_CONFIG");
+    }
+
+    @Test
     void validConfigParsesSnakeCaseAndDefaultsEnabledToTrue() throws Exception {
         Path configPath = tempDir.resolve(".blackbox/runner.json");
         Files.createDirectories(configPath.getParent());

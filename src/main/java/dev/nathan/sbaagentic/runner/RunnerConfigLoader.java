@@ -37,7 +37,12 @@ public class RunnerConfigLoader {
             throw new RunnerConfigException("Runner config path is invalid. Set " + CONFIG_ENV
                     + " to a readable JSON file or copy " + EXAMPLE_PATH + " to ~/.blackbox/runner.json.", ex);
         }
-        Path selected = envPath != null && Files.isRegularFile(envPath)
+        if (envPath != null && !Files.isRegularFile(envPath)) {
+            throw new RunnerConfigException("Runner config not found at " + envPath + ", which " + CONFIG_ENV
+                    + " points to. Fix the path or unset " + CONFIG_ENV
+                    + " to fall back to " + defaultPath + ".");
+        }
+        Path selected = envPath != null
                 ? envPath
                 : Files.isRegularFile(defaultPath) ? defaultPath : null;
 

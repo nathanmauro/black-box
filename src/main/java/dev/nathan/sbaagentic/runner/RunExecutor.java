@@ -556,7 +556,7 @@ public class RunExecutor implements AutoCycle {
                 index < configuredEngines.size();
                 index++) {
             Optional<SelectedEngine> selected = selectedEngine(configuredEngines, index);
-            if (selected.isPresent()) {
+            if (selected.isPresent() && !"fake".equals(selected.orElseThrow().engine().id())) {
                 return selected;
             }
         }

@@ -2,12 +2,15 @@ package dev.nathan.sbaagentic.runner;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import dev.nathan.sbaagentic.runner.gate.GateEvaluator;
 import dev.nathan.sbaagentic.runner.gate.GateResult;
 import dev.nathan.sbaagentic.task.Task;
 import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.task.TaskSnapshot;
 import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.task.TaskStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,8 +43,20 @@ public class RunnerGateCycleImpl implements GateCycle {
 
             GateResult result = gateEvaluator.evaluate(spec, config);
             if (result.pass()) {
-                apiClient.enqueueTask(
-                        spec.id(), task.title(), "auto", task.priority(), actorId);
+                Optional<Task> existingAutoTask = existingAutoTask(spec.id());
+                if (existingAutoTask.isPresent()) {
+                    Task existing = existingAutoTask.orElseThrow();
+                    apiClient.annotate(
+                            task.id(),
+                            actorId,
+                            "progress",
+                            "Gate passed; existing auto task " + existing.id() + " reused.",
+                            Map.of("autoTaskId", existing.id()));
+                }
+                else {
+                    apiClient.enqueueTask(
+                            spec.id(), task.title(), "auto", task.priority(), actorId);
+                }
                 try {
                     List<String> findings = result.findings().isEmpty()
                             ? List.of("all checks green")
@@ -61,7 +76,9 @@ public class RunnerGateCycleImpl implements GateCycle {
                             actorId,
                             "cli",
                             "blackbox-runner-gate-" + task.id(),
-                            "Gate passed; auto task enqueued.",
+                            existingAutoTask.isPresent()
+                                    ? "Gate passed; existing auto task reused."
+                                    : "Gate passed; auto task enqueued.",
                             List.of(),
                             "Auto-lane execution will pick this up next.");
                 }
@@ -90,5 +107,16 @@ public class RunnerGateCycleImpl implements GateCycle {
             apiClient.updateTaskStatus(
                     task.id(), actorId, "open", "Gate evaluation crashed: " + ex.getMessage());
         }
+    }
+
+    private Optional<Task> existingAutoTask(String specId) {
+        return apiClient.listTasks(null).stream()
+                .map(TaskSnapshot::task)
+                .filter(task -> task != null
+                        && specId.equals(task.specId())
+                        && "auto".equals(task.lane())
+                        && (task.status() == TaskStatus.OPEN
+                                || task.status() == TaskStatus.IN_PROGRESS))
+                .findFirst();
     }
 }

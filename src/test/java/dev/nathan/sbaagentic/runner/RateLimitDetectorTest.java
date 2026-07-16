@@ -22,4 +22,16 @@ class RateLimitDetectorTest {
         assertThat(RateLimitDetector.matches("")).isFalse();
         assertThat(RateLimitDetector.matches(null)).isFalse();
     }
+
+    @Test
+    void ignores429InsideLineNumbersAndDurations() {
+        assertThat(RateLimitDetector.matches("line 4290 failed\nrequest took 429ms"))
+                .isFalse();
+    }
+
+    @Test
+    void recognizes429InHttpErrorContexts() {
+        assertThat(RateLimitDetector.matches("HTTP 429")).isTrue();
+        assertThat(RateLimitDetector.matches("status 429: Too Many Requests")).isTrue();
+    }
 }

@@ -97,6 +97,36 @@ class RunnerGateCycleImplTest {
     }
 
     @Test
+    void completeFailureThenReevaluationReusesExistingAutoTask() {
+        TaskChange claimedTask = claimedGateTask();
+        when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null));
+        when(apiClient.listTasks(null))
+                .thenReturn(List.of(), List.of(existingAutoTask()));
+        when(apiClient.completeTask(
+                TASK_ID,
+                ACTOR_ID,
+                "cli",
+                "blackbox-runner-gate-" + TASK_ID,
+                "Gate passed; auto task enqueued.",
+                List.of(),
+                "Auto-lane execution will pick this up next."))
+                .thenThrow(new RuntimeException("completion unavailable"));
+
+        gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
+        gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
+
+        verify(apiClient, times(1))
+                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
+        verify(apiClient).annotate(
+                TASK_ID,
+                ACTOR_ID,
+                "progress",
+                "Gate passed; existing auto task auto-task-1 reused.",
+                Map.of("autoTaskId", "auto-task-1"));
+    }
+
+    @Test
     void blockedGateMarksTaskBlockedWithoutEnqueuing() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
@@ -154,5 +184,24 @@ class RunnerGateCycleImplTest {
                 now,
                 now);
         return new TaskChange(new TaskSnapshot(task, spec), null);
+    }
+
+    private static TaskSnapshot existingAutoTask() {
+        Instant now = Instant.parse("2026-07-15T12:01:00Z");
+        Task task = new Task(
+                "auto-task-1",
+                SPEC_ID,
+                "/tmp/project",
+                "Implement story",
+                "auto",
+                TaskStatus.OPEN,
+                10,
+                ACTOR_ID,
+                null,
+                null,
+                null,
+                now,
+                now);
+        return new TaskSnapshot(task, null);
     }
 }
