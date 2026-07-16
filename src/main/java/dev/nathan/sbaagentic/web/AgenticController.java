@@ -15,6 +15,8 @@ import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
+import dev.nathan.sbaagentic.dag.DagResponse;
+import dev.nathan.sbaagentic.dag.DagService;
 import dev.nathan.sbaagentic.event.AgentEvent;
 import dev.nathan.sbaagentic.event.DashboardStats;
 import dev.nathan.sbaagentic.event.EventFeedResponse;
@@ -23,6 +25,10 @@ import dev.nathan.sbaagentic.event.EventIngestService;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.exporting.SummaryExportService;
+import dev.nathan.sbaagentic.link.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.link.SessionLink;
+import dev.nathan.sbaagentic.link.SessionLinkService;
+import dev.nathan.sbaagentic.link.SessionLinksResponse;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
@@ -39,11 +45,14 @@ import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.session.AgentSession;
 import dev.nathan.sbaagentic.task.ClaimTaskRequest;
 import dev.nathan.sbaagentic.task.CompleteTaskRequest;
+import dev.nathan.sbaagentic.task.CreateAnnotationRequest;
 import dev.nathan.sbaagentic.task.CreateSpecRequest;
 import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.task.TaskAnnotation;
 import dev.nathan.sbaagentic.task.TaskChange;
 import dev.nathan.sbaagentic.task.TaskDomainException;
 import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.task.TaskEvent;
 import dev.nathan.sbaagentic.task.TaskQuery;
 import dev.nathan.sbaagentic.task.TaskService;
 import dev.nathan.sbaagentic.task.TaskSnapshot;
@@ -81,6 +90,8 @@ public class AgenticController {
     private final ElasticIndexClient elasticIndexClient;
     private final AskService askService;
     private final TaskService taskService;
+    private final SessionLinkService sessionLinkService;
+    private final DagService dagService;
 
     public AgenticController(
             EventIngestService ingestService,
@@ -94,7 +105,9 @@ public class AgenticController {
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient,
             AskService askService,
-            TaskService taskService) {
+            TaskService taskService,
+            SessionLinkService sessionLinkService,
+            DagService dagService) {
         this.ingestService = ingestService;
         this.contextService = contextService;
         this.repository = repository;
@@ -107,6 +120,8 @@ public class AgenticController {
         this.elasticIndexClient = elasticIndexClient;
         this.askService = askService;
         this.taskService = taskService;
+        this.sessionLinkService = sessionLinkService;
+        this.dagService = dagService;
     }
 
     @PostMapping("/events")
@@ -354,7 +369,47 @@ public class AgenticController {
                 request.nextAction()));
     }
 
+    @PostMapping("/tasks/{taskId}/annotations")
+    public TaskAnnotation createAnnotation(
+            @PathVariable String taskId,
+            @RequestBody AnnotationBody request) {
+        return taskService.createAnnotation(new CreateAnnotationRequest(
+                requireUuid(taskId, "Task id"),
+                request.actor(),
+                request.kind(),
+                request.text(),
+                request.dataJson()));
+    }
+
+    @GetMapping("/tasks/{taskId}/events")
+    public List<TaskEvent> taskEvents(@PathVariable String taskId) {
+        return taskService.getTaskEvents(requireUuid(taskId, "Task id"));
+    }
+
+    @GetMapping("/tasks/{taskId}/dag")
+    public DagResponse taskDag(@PathVariable String taskId) {
+        return dagService.forTask(requireUuid(taskId, "Task id"));
+    }
+
+    @GetMapping("/dag")
+    public DagResponse dag(@RequestParam String sessionId) {
+        return dagService.forSession(sessionId);
+    }
+
+    @PostMapping("/session-links")
+    public SessionLink createSessionLink(@RequestBody CreateSessionLinkRequest request) {
+        return sessionLinkService.createLink(request);
+    }
+
+    @GetMapping("/sessions/{sessionId}/links")
+    public SessionLinksResponse sessionLinks(@PathVariable String sessionId) {
+        return sessionLinkService.linksForSession(sessionId);
+    }
+
     public record TaskStatusBody(String actor, String status, String blockedReason) {
+    }
+
+    public record AnnotationBody(String actor, String kind, String text, Map<String, Object> dataJson) {
     }
 
     public record CompleteTaskBody(

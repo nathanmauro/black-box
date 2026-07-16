@@ -122,3 +122,22 @@ CREATE TABLE IF NOT EXISTS task_events (
 
 CREATE INDEX IF NOT EXISTS idx_task_events_task
     ON task_events (task_id, observed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_task_events_type
+    ON task_events (type, observed_at ASC);
+
+CREATE TABLE IF NOT EXISTS session_links (
+    id TEXT PRIMARY KEY,
+    parent_session_id TEXT NOT NULL,
+    child_session_id TEXT NOT NULL,
+    link_type TEXT NOT NULL,
+    task_id TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (parent_session_id, child_session_id, link_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_links_parent
+    ON session_links (parent_session_id);
+
+CREATE INDEX IF NOT EXISTS idx_session_links_child
+    ON session_links (child_session_id);

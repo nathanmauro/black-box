@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.stream;
 
 import dev.nathan.sbaagentic.task.Task;
+import dev.nathan.sbaagentic.task.TaskAnnotation;
 
 /**
  * Lightweight payloads pushed over the {@code /api/stream} Server-Sent Events channel. These carry
@@ -37,6 +38,10 @@ public final class StreamEvents {
             String transitionId,
             String transitionType,
             String observedAt) {
+    }
+
+    /** A committed task annotation, named SSE event {@code task.note}. */
+    public record TaskNoted(Task task, TaskAnnotation annotation, String observedAt) {
     }
 
     private StreamEvents() {

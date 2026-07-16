@@ -17,6 +17,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import dev.nathan.sbaagentic.task.ClaimTaskRequest;
+import dev.nathan.sbaagentic.task.CreateAnnotationRequest;
 import dev.nathan.sbaagentic.task.CreateSpecRequest;
 import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
 import dev.nathan.sbaagentic.task.TaskService;
@@ -110,6 +111,64 @@ class TaskStreamTest {
                         .contains("\"id\":\"" + taskId + "\"")
                         .contains("\"status\":\"open\"")
                         .contains("\"status\":\"in_progress\"");
+            });
+        } finally {
+            pump.cancel(true);
+            reader.shutdownNow();
+            client.shutdownNow();
+        }
+    }
+
+    @Test
+    void committedTaskAnnotationsUseNamedSseFramesWithCurrentTaskAndAnnotation() {
+        TaskSpec spec = taskService.createSpec(new CreateSpecRequest(
+                "/repos/task-stream-test", "SSE notes", "Verify task note frames.", Map.of(), "planner"));
+        String taskId = taskService.enqueueTask(new EnqueueTaskRequest(
+                spec.id(), "annotated streamed task", "codex", 4, "planner")).snapshot().task().id();
+        BlockingQueue<String> lines = new LinkedBlockingQueue<>();
+        ExecutorService reader = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "task-note-sse-test-reader");
+            thread.setDaemon(true);
+            return thread;
+        });
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                .header("Accept", "text/event-stream")
+                .GET()
+                .build();
+
+        Future<?> pump = reader.submit(() -> {
+            try {
+                HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                try (BufferedReader in = new BufferedReader(
+                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        lines.add(line);
+                    }
+                }
+            } catch (Exception ignored) {
+                // connection closed by test teardown
+            }
+        });
+
+        try {
+            await().atMost(Duration.ofSeconds(5)).until(() -> broadcaster.subscriberCount() >= 1);
+
+            taskService.createAnnotation(new CreateAnnotationRequest(
+                    taskId,
+                    "agent-a",
+                    "progress",
+                    "Persistence is complete.",
+                    Map.of("percent", 60)));
+
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+                String stream = String.join("\n", lines);
+                assertThat(stream)
+                        .contains("event:task.note")
+                        .contains("\"kind\":\"progress\"")
+                        .contains("\"text\":\"Persistence is complete.\"")
+                        .contains("\"taskId\":\"" + taskId + "\"");
             });
         } finally {
             pump.cancel(true);

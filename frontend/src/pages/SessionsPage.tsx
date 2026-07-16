@@ -1,10 +1,22 @@
-import { useNavigate, useParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, useContext } from "solid-js";
+import DagView from "../components/DagView";
 import SourceDot from "../components/SourceDot";
+import SteerBox from "../components/SteerBox";
 import { EventRenderer } from "../components/events/EventRow";
-import { getProjectSessions, getSessionEvents, getSessions, type AgentEvent, type AgentSession, type ProjectSummary } from "../lib/api";
+import {
+  getProjectSessions,
+  getSessionDag,
+  getSessionEvents,
+  getSessions,
+  getTaskDag,
+  type AgentEvent,
+  type AgentSession,
+  type ProjectSummary,
+} from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
 import { parseQuery } from "../lib/query";
+import { LiveStoreContext } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
 
 type SessionsPageProps = {
@@ -32,9 +44,16 @@ type ProjectSessionResult = {
 
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
+  const [searchParams] = useSearchParams<{ task?: string }>();
   const navigate = useNavigate();
+  const live = useContext(LiveStoreContext);
   const [sessionFilter, setSessionFilter] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
+  const [dagExpanded, setDagExpanded] = createSignal(false);
+  const [taskContext, { refetch: refetchTaskContext }] = createResource(
+    () => searchParams.task,
+    (taskId) => getTaskDag(taskId),
+  );
   const [allSessions] = createResource(
     () => (props.project ? null : sourceFilter.key()),
     async () => sourceFilter.matches(await getSessions(2_000)),
@@ -61,6 +80,14 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     return props.defaultToFirst ? scopedSessions[0]?.id ?? "" : "";
   });
   const selectedSession = createMemo(() => filteredSessions().find((session) => session.id === selectedId()));
+  const taskNode = createMemo(() => taskContext()?.nodes.find((node) => (
+    node.type === "task" && node.id === searchParams.task
+  )));
+  const specNode = createMemo(() => taskContext()?.nodes.find((node) => node.type === "spec"));
+  const [sessionDag] = createResource(
+    () => (dagExpanded() && selectedId() ? selectedId() : undefined),
+    (sessionId) => getSessionDag(sessionId),
+  );
   const [events] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
     initialValue: [] as AgentEvent[],
   });
@@ -76,6 +103,14 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const promptTurns = createMemo(() => groupPromptTurns(visibleEvents()));
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
   const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
+
+  createEffect(() => {
+    if (!live || !searchParams.task) return;
+    const unsubscribe = live.onSessionUpdated((update) => {
+      if (update.sessionId === selectedId()) void refetchTaskContext();
+    });
+    onCleanup(unsubscribe);
+  });
 
   createEffect(() => {
     const targetId = props.targetEventId;
@@ -97,135 +132,193 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   }
 
   return (
-    <section class="sessions-page">
-      <aside class="session-list-pane">
-        <div class="pane-head">
-          <span class="eyebrow">sessions</span>
-          <span>
-            {filteredSessions().length.toLocaleString()} / {sessions().length.toLocaleString()}
-          </span>
-        </div>
-        <div class="session-filter-bar">
-          <label for="session-filter">Find sessions</label>
-          <div class="session-filter-row">
-            <input
-              id="session-filter"
-              value={sessionFilter()}
-              onInput={(event) => setSessionFilter(event.currentTarget.value)}
-              placeholder="source:codex project:sba-agentic prompt text"
-              autocomplete="off"
-            />
-            <button
-              type="button"
-              aria-label="Clear session filters"
-              disabled={!sessionFilter().trim()}
-              onClick={() => setSessionFilter("")}
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-        <Show when={filteredSessions().length} fallback={<p class="empty-state session-list-empty">No sessions match the active filters.</p>}>
-          <div class="session-rows">
-            <For each={filteredSessions()}>
-              {(session) => (
-                <button
-                  type="button"
-                  classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
-                  onClick={() => selectSession(session.id)}
-                >
-                  <SourceDot source={session.source} />
-                  <span class="session-row-main">
-                    <strong>{session.title || session.clientSessionId}</strong>
-                    <small>
-                      {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} · {timeAgo(session.lastSeenAt)}
-                    </small>
-                  </span>
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-      </aside>
-
-      <section class="session-detail-pane">
-        <Show
-          when={selectedSession()}
-          fallback={
-            <div class="empty-detail">
-              <p class="eyebrow">session detail</p>
-              <h1>Select a session</h1>
-              <p>Use the list or ⌘K to jump into a recorded trace.</p>
-            </div>
-          }
-        >
-          {(session) => (
-            <>
-              <header class="detail-header">
-                <div class="detail-title-block">
-                  <div class="detail-kicker">
-                    <SourceDot source={session().source} label />
-                    <span>{session().eventCount.toLocaleString()} events</span>
-                    <span>{timeAgo(session().lastSeenAt)}</span>
-                  </div>
-                  <h1 title={session().title || session().clientSessionId}>
-                    {session().title || session().clientSessionId}
-                  </h1>
-                  <p>{truncatePath(session().cwd)}</p>
+    <>
+      <Show when={searchParams.task}>
+        {(taskId) => (
+          <header class="tendril-header">
+            <div class="tendril-context">
+              <p class="eyebrow">worker tendril</p>
+              <div class="tendril-title-row">
+                <div>
+                  <span>Story</span>
+                  <strong>{specNode()?.label ?? "Loading task context…"}</strong>
+                  <Show when={taskNode()?.label}>{(label) => <small>{label()}</small>}</Show>
                 </div>
-                <div class="detail-summary">
-                  <span class="eyebrow">summary</span>
-                  <p>{session().summary || "No summary captured yet."}</p>
-                  <small>
-                    {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
-                  </small>
-                  <Show when={memoryEventCount() > 0}>
-                    <label class="reading-toggle">
-                      <input
-                        type="checkbox"
-                        checked={showMemoryEvents()}
-                        onChange={(event) => setShowMemoryEvents(event.currentTarget.checked)}
-                      />
-                      <span>Show memory events</span>
-                      <span aria-hidden="true" class="reading-toggle-count">
-                        {memoryEventCount().toLocaleString()}
-                      </span>
-                    </label>
-                  </Show>
-                </div>
-              </header>
-
-              <div class="detail-body">
-                <div class="timeline-pane">
-                  <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
-                    <For each={promptTurns()}>
-                      {(turn) => (
-                        <section id={turn.id} classList={{ "prompt-turn": true, "prompt-turn--preamble": !turn.prompt }}>
-                          <For each={turn.events}>
-                            {(event) => (
-                              <div
-                                id={`event-${event.id}`}
-                                classList={{
-                                  "event-flow-row": true,
-                                  "event-flow-row--target": props.targetEventId === event.id,
-                                }}
-                              >
-                                <EventRenderer event={event} />
-                              </div>
-                            )}
-                          </For>
-                        </section>
-                      )}
-                    </For>
-                  </Show>
-                </div>
-                <PromptOutline prompts={promptOutline()} />
+                <Show when={taskNode()?.status}>
+                  {(status) => (
+                    <span class={`tendril-status tendril-status--${status()}`}>
+                      {statusLabel(status())}
+                    </span>
+                  )}
+                </Show>
               </div>
-            </>
-          )}
-        </Show>
+            </div>
+
+            <SteerBox taskId={taskId()} actor="session" enabled={taskNode()?.status === "in_progress"} />
+
+            <div class="tendril-dag-panel">
+              <button
+                type="button"
+                class="tendril-dag-toggle"
+                aria-expanded={dagExpanded()}
+                aria-controls={`session-dag-${selectedId() || "pending"}`}
+                onClick={() => setDagExpanded((expanded) => !expanded)}
+              >
+                <span aria-hidden="true">{dagExpanded() ? "−" : "+"}</span>
+                {dagExpanded() ? "Hide session DAG" : "View session DAG"}
+              </button>
+              <Show when={dagExpanded()}>
+                <div id={`session-dag-${selectedId() || "pending"}`} class="tendril-dag-body">
+                  <Show when={sessionDag.loading}>
+                    <p>Loading session DAG…</p>
+                  </Show>
+                  <Show when={sessionDag.error}>
+                    <p class="tendril-dag-error">Session DAG could not be loaded.</p>
+                  </Show>
+                  <Show when={!sessionDag.loading && !sessionDag.error}>
+                    <DagView
+                      dag={sessionDag() ?? { nodes: [], edges: [] }}
+                      currentSessionId={selectedId()}
+                      currentTaskId={taskId()}
+                    />
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </header>
+        )}
+      </Show>
+
+      <section class="sessions-page">
+        <aside class="session-list-pane">
+          <div class="pane-head">
+            <span class="eyebrow">sessions</span>
+            <span>
+              {filteredSessions().length.toLocaleString()} / {sessions().length.toLocaleString()}
+            </span>
+          </div>
+          <div class="session-filter-bar">
+            <label for="session-filter">Find sessions</label>
+            <div class="session-filter-row">
+              <input
+                id="session-filter"
+                value={sessionFilter()}
+                onInput={(event) => setSessionFilter(event.currentTarget.value)}
+                placeholder="source:codex project:sba-agentic prompt text"
+                autocomplete="off"
+              />
+              <button
+                type="button"
+                aria-label="Clear session filters"
+                disabled={!sessionFilter().trim()}
+                onClick={() => setSessionFilter("")}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <Show when={filteredSessions().length} fallback={<p class="empty-state session-list-empty">No sessions match the active filters.</p>}>
+            <div class="session-rows">
+              <For each={filteredSessions()}>
+                {(session) => (
+                  <button
+                    type="button"
+                    classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
+                    onClick={() => selectSession(session.id)}
+                  >
+                    <SourceDot source={session.source} />
+                    <span class="session-row-main">
+                      <strong>{session.title || session.clientSessionId}</strong>
+                      <small>
+                        {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} · {timeAgo(session.lastSeenAt)}
+                      </small>
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+        </aside>
+
+        <section class="session-detail-pane">
+          <Show
+            when={selectedSession()}
+            fallback={
+              <div class="empty-detail">
+                <p class="eyebrow">session detail</p>
+                <h1>Select a session</h1>
+                <p>Use the list or ⌘K to jump into a recorded trace.</p>
+              </div>
+            }
+          >
+            {(session) => (
+              <>
+                <header class="detail-header">
+                  <div class="detail-title-block">
+                    <div class="detail-kicker">
+                      <SourceDot source={session().source} label />
+                      <span>{session().eventCount.toLocaleString()} events</span>
+                      <span>{timeAgo(session().lastSeenAt)}</span>
+                    </div>
+                    <h1 title={session().title || session().clientSessionId}>
+                      {session().title || session().clientSessionId}
+                    </h1>
+                    <p>{truncatePath(session().cwd)}</p>
+                  </div>
+                  <div class="detail-summary">
+                    <span class="eyebrow">summary</span>
+                    <p>{session().summary || "No summary captured yet."}</p>
+                    <small>
+                      {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
+                    </small>
+                    <Show when={memoryEventCount() > 0}>
+                      <label class="reading-toggle">
+                        <input
+                          type="checkbox"
+                          checked={showMemoryEvents()}
+                          onChange={(event) => setShowMemoryEvents(event.currentTarget.checked)}
+                        />
+                        <span>Show memory events</span>
+                        <span aria-hidden="true" class="reading-toggle-count">
+                          {memoryEventCount().toLocaleString()}
+                        </span>
+                      </label>
+                    </Show>
+                  </div>
+                </header>
+
+                <div class="detail-body">
+                  <div class="timeline-pane">
+                    <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
+                      <For each={promptTurns()}>
+                        {(turn) => (
+                          <section id={turn.id} classList={{ "prompt-turn": true, "prompt-turn--preamble": !turn.prompt }}>
+                            <For each={turn.events}>
+                              {(event) => (
+                                <div
+                                  id={`event-${event.id}`}
+                                  classList={{
+                                    "event-flow-row": true,
+                                    "event-flow-row--target": props.targetEventId === event.id,
+                                  }}
+                                >
+                                  <EventRenderer event={event} />
+                                </div>
+                              )}
+                            </For>
+                          </section>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                  <PromptOutline prompts={promptOutline()} />
+                </div>
+              </>
+            )}
+          </Show>
+        </section>
       </section>
-    </section>
+    </>
   );
 }
 
@@ -259,6 +352,11 @@ function filterSessions<T extends { source: string; title?: string | null; clien
 
 function normalizeSessionText(value: unknown): string {
   return String(value ?? "").toLowerCase();
+}
+
+function statusLabel(status: string): string {
+  if (status === "in_progress" || status === "claimed") return "In progress";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function PromptOutline(props: { prompts: AgentEvent[] }) {

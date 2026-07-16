@@ -59,6 +59,7 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 - Search filter suggestion dismissal — the Search page closes the suggestion popover after selection, supports Escape/click-away dismissal, keeps applied filters removable, and has Playwright coverage in `frontend/tests/e2e/smoke.spec.ts`.
 - Activity Find result selection — embedded Activity Find results now open the selected session in the Browse reader without bouncing to standalone `/sessions/:id`; standalone Search links still deep-link normally.
 - Local deploy safety — `scripts/deploy-local.sh` unloads the launchd service before rebuilding the executable jar and restarts it before status polling, with `scripts/test-deploy-local.sh` covering command order.
+- FULL_AUTO board-driven runner — server annotations, `session_links`, DAG read model, and `task.note` SSE; runner CLI/daemon with a test-used `fake` engine; and the Board's New Story form, card tendril, and DAG view have landed. See [`docs/superpowers/specs/2026-07-15-full-auto-board-runner.md`](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md).
 
 ## Verification checklist
 

@@ -9,6 +9,7 @@ public enum TaskEventType {
     CLAIMED("task.claimed"),
     BLOCKED("task.blocked"),
     COMPLETED("task.completed"),
+    NOTE("task.note"),
     RESET("task.reset"),
     CANCELLED("task.cancelled");
 

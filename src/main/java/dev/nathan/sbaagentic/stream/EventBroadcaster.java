@@ -82,6 +82,10 @@ public class EventBroadcaster implements EventIndexSink {
         send(payload.transitionType(), payload);
     }
 
+    public void publishTaskNote(StreamEvents.TaskNoted payload) {
+        send("task.note", payload);
+    }
+
     private void send(String name, Object payload) {
         for (SseEmitter emitter : emitters) {
             try {

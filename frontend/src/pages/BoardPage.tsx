@@ -1,13 +1,22 @@
 import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
+import DagView from "../components/DagView";
 import ProjectPicker from "../components/ProjectPicker";
+import SteerBox from "../components/SteerBox";
+import StoryForm from "../components/StoryForm";
 import {
+  createTaskAnnotation,
   getProjects,
   getRecall,
+  getTaskDag,
+  getTaskEvents,
   updateTaskStatus,
   type AgentTask,
+  type AnnotationKind,
   type ProjectSummary,
+  type TaskAnnotation,
   type TaskChange,
+  type TaskEvent,
   type TaskFilters,
   type TaskSnapshot,
 } from "../lib/api";
@@ -17,7 +26,7 @@ import {
   primaryProjectScope,
   projectShortName,
 } from "../lib/projects";
-import { createTaskLiveStore, type TaskLiveStore } from "../lib/tasks";
+import { createTaskLiveStore, type TaskLiveStoreWithNotes } from "../lib/tasks";
 
 type BoardSearchParams = {
   project?: string;
@@ -40,10 +49,13 @@ const COLUMNS: BoardColumn[] = [
 ];
 
 export type BoardPageProps = {
-  store?: TaskLiveStore;
+  store?: TaskLiveStoreWithNotes;
   loadProjects?: typeof getProjects;
   updateStatus?: typeof updateTaskStatus;
   recallHandoff?: typeof getRecall;
+  getTaskEvents?: typeof getTaskEvents;
+  getTaskDag?: typeof getTaskDag;
+  createAnnotation?: typeof createTaskAnnotation;
 };
 
 export default function BoardPage(props: BoardPageProps) {
@@ -56,6 +68,7 @@ export default function BoardPage(props: BoardPageProps) {
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [visibleFilters, setVisibleFilters] = createSignal<TaskFilters | null>(null);
   const [showCancelled, setShowCancelled] = createSignal(false);
+  const [showStoryForm, setShowStoryForm] = createSignal(false);
   const [resettingTasks, setResettingTasks] = createSignal<Set<string>>(new Set());
   const [resetErrors, setResetErrors] = createSignal<Record<string, string | undefined>>({});
   const [knownProjects, setKnownProjects] = createSignal<string[]>(params.project ? [params.project] : []);
@@ -213,8 +226,27 @@ export default function BoardPage(props: BoardPageProps) {
           <Show when={phase() === "loading" && snapshots().length > 0}>
             <span class="board-refreshing">refreshing</span>
           </Show>
+          <button
+            type="button"
+            class="story-form-trigger"
+            aria-expanded={showStoryForm()}
+            onClick={() => setShowStoryForm(true)}
+          >
+            New story
+          </button>
         </div>
       </section>
+
+      <Show when={showStoryForm()}>
+        <StoryForm
+          projects={projectOptions()}
+          onCreated={() => {
+            setShowStoryForm(false);
+            void store.refresh();
+          }}
+          onCancel={() => setShowStoryForm(false)}
+        />
+      </Show>
 
       <Show when={phase() === "loading" && snapshots().length === 0}>
         <BoardState class="board-state--loading" label="Loading coordination board" title="Reading the queue">
@@ -332,9 +364,13 @@ export default function BoardPage(props: BoardPageProps) {
               <TaskDetail
                 snapshot={snapshot()}
                 project={projectForScope(snapshot().task.projectKey, projectOptions())}
+                store={store}
                 resetting={resettingTasks().has(snapshot().task.id)}
                 resetError={resetErrors()[snapshot().task.id] ?? null}
                 recallHandoff={props.recallHandoff ?? getRecall}
+                getTaskEvents={props.getTaskEvents ?? getTaskEvents}
+                getTaskDag={props.getTaskDag ?? getTaskDag}
+                createAnnotation={props.createAnnotation}
                 onClose={closeTaskDetail}
                 onReset={() => void resetTask(snapshot())}
               />
@@ -409,9 +445,13 @@ function TaskCard(props: {
 function TaskDetail(props: {
   snapshot: TaskSnapshot;
   project?: ProjectSummary;
+  store: TaskLiveStoreWithNotes;
   resetting: boolean;
   resetError: string | null;
   recallHandoff: typeof getRecall;
+  getTaskEvents: typeof getTaskEvents;
+  getTaskDag: typeof getTaskDag;
+  createAnnotation?: typeof createTaskAnnotation;
   onClose: () => void;
   onReset: () => void;
 }) {
@@ -419,6 +459,23 @@ function TaskDetail(props: {
   const task = () => props.snapshot.task;
   const spec = () => props.snapshot.spec;
   const canReset = () => task().status === "blocked" || task().status === "in_progress";
+  const [dagExpanded, setDagExpanded] = createSignal(false);
+  const [events, { refetch: refetchEvents }] = createResource(
+    () => [task().id, props.store.noteEpoch()] as const,
+    ([taskId]) => props.getTaskEvents(taskId),
+  );
+  const [dag] = createResource(
+    () => (dagExpanded() ? task().id : undefined),
+    (taskId) => props.getTaskDag(taskId),
+  );
+  const timeline = createMemo(() => mergeTaskTimeline(
+    events() ?? [],
+    props.store.taskAnnotations(task().id),
+  ));
+  const chips = createMemo(() => timelineChips(timeline()));
+  const tendril = createMemo(() => timeline().find((entry) => (
+    entry.kind === "worker_session" && typeof entry.dataJson?.sessionId === "string"
+  )));
   const [handoff] = createResource(
     () => task().resultHandoffId || undefined,
     async (handoffId) => {
@@ -499,6 +556,92 @@ function TaskDetail(props: {
           </Show>
         </section>
 
+        <section class="board-detail-section board-annotations">
+          <h3>Agent activity</h3>
+          <Show when={chips().engine || chips().branch || chips().prUrl}>
+            <div class="board-chip-row" aria-label="Agent run context">
+              <Show when={chips().engine}>{(engine) => <span class="board-chip board-chip--engine">Engine · {engine()}</span>}</Show>
+              <Show when={chips().branch}>{(branch) => <code class="board-chip board-chip--branch">{branch()}</code>}</Show>
+              <Show when={chips().prUrl}>
+                {(prUrl) => <a class="board-chip board-chip--pr" href={prUrl()} target="_blank" rel="noreferrer">Pull request ↗</a>}
+              </Show>
+            </div>
+          </Show>
+
+          <Show when={tendril()}>
+            {(entry) => (
+              <A
+                href={`/sessions/${encodeURIComponent(entry().dataJson!.sessionId as string)}?task=${encodeURIComponent(task().id)}`}
+                class="board-tendril-button"
+              >
+                Open worker session →
+              </A>
+            )}
+          </Show>
+
+          <Show when={events.loading}>
+            <p class="board-annotation-state">Loading task activity…</p>
+          </Show>
+          <Show when={events.error}>
+            <p class="board-annotation-state board-annotation-state--error">Task activity could not be loaded.</p>
+          </Show>
+          <Show when={!events.loading && !events.error && timeline().length === 0}>
+            <p class="board-annotation-state">No task activity yet.</p>
+          </Show>
+          <Show when={!events.loading && !events.error && timeline().length > 0}>
+            <ul class="board-annotation-list">
+              <For each={timeline()}>
+                {(entry) => (
+                  <li class="board-annotation-row" data-annotation-id={entry.id}>
+                    <div class="board-annotation-meta">
+                      <span class={`board-annotation-kind board-annotation-kind--${entry.kind}`}>
+                        {entry.kind === "lifecycle" ? entry.text : annotationKindLabel(entry.kind)}
+                      </span>
+                      <span>{entry.actor}</span>
+                      <time dateTime={entry.observedAt}>{formatInstant(entry.observedAt)}</time>
+                    </div>
+                    <p>{entry.text}</p>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+
+          <SteerBox
+            taskId={task().id}
+            actor="board"
+            enabled={task().status === "in_progress"}
+            createAnnotation={props.createAnnotation}
+            onSteered={() => void refetchEvents()}
+          />
+        </section>
+
+        <section class="board-detail-section board-dag-panel">
+          <button
+            type="button"
+            class="board-dag-toggle"
+            aria-expanded={dagExpanded()}
+            aria-controls={`task-dag-${task().id}`}
+            onClick={() => setDagExpanded((expanded) => !expanded)}
+          >
+            <span aria-hidden="true">{dagExpanded() ? "−" : "+"}</span>
+            {dagExpanded() ? "Hide agent DAG" : "View agent DAG"}
+          </button>
+          <Show when={dagExpanded()}>
+            <div id={`task-dag-${task().id}`} class="board-dag-body">
+              <Show when={dag.loading}>
+                <p class="board-annotation-state">Loading agent DAG…</p>
+              </Show>
+              <Show when={dag.error}>
+                <p class="board-annotation-state board-annotation-state--error">Agent DAG could not be loaded.</p>
+              </Show>
+              <Show when={!dag.loading && !dag.error}>
+                <DagView dag={dag() ?? { nodes: [], edges: [] }} currentTaskId={task().id} />
+              </Show>
+            </div>
+          </Show>
+        </section>
+
         <Show when={task().resultHandoffId}>
           {(handoffId) => (
             <section class="board-handoff" id={`handoff-${handoffId()}`}>
@@ -554,6 +697,89 @@ function TaskDetail(props: {
 
 function StatusBadge(props: { status: AgentTask["status"] }) {
   return <span class={`board-status board-status--${props.status}`}>{statusLabel(props.status)}</span>;
+}
+
+type TaskTimelineEntry = {
+  id: string;
+  taskId: string;
+  kind: AnnotationKind | "lifecycle";
+  actor: string;
+  text: string;
+  dataJson?: Record<string, unknown>;
+  observedAt: string;
+};
+
+const ANNOTATION_KINDS = new Set<AnnotationKind>([
+  "note",
+  "steer",
+  "progress",
+  "worker_session",
+  "engine",
+]);
+
+function mergeTaskTimeline(history: TaskEvent[], liveAnnotations: TaskAnnotation[]): TaskTimelineEntry[] {
+  const fetchedIds = new Set(history.map((event) => event.id));
+  const entries = history.flatMap((event): TaskTimelineEntry[] => {
+    if (event.type !== "task.note") {
+      const label = `${event.fromStatus ?? "—"} → ${event.toStatus ?? event.type}`;
+      return [{
+        id: event.id,
+        taskId: event.taskId,
+        kind: "lifecycle",
+        actor: event.actor,
+        text: label,
+        observedAt: event.observedAt,
+      }];
+    }
+
+    const detail = event.detail;
+    if (!isRecord(detail) || !isAnnotationKind(detail.kind)) return [];
+    return [{
+      id: event.id,
+      taskId: event.taskId,
+      kind: detail.kind,
+      actor: event.actor,
+      text: typeof detail.text === "string" ? detail.text : "",
+      dataJson: isRecord(detail.dataJson) ? detail.dataJson : undefined,
+      observedAt: event.observedAt,
+    }];
+  });
+
+  for (const annotation of liveAnnotations) {
+    if (fetchedIds.has(annotation.id)) continue;
+    entries.push({
+      ...annotation,
+      dataJson: annotation.dataJson ?? undefined,
+    });
+  }
+
+  return entries.sort((left, right) => (
+    right.observedAt.localeCompare(left.observedAt) || right.id.localeCompare(left.id)
+  ));
+}
+
+function timelineChips(entries: TaskTimelineEntry[]): { engine?: string; branch?: string; prUrl?: string } {
+  const result: { engine?: string; branch?: string; prUrl?: string } = {};
+  for (const entry of [...entries].reverse()) {
+    if (!entry.dataJson || !["engine", "progress", "worker_session"].includes(entry.kind)) continue;
+    if (typeof entry.dataJson.engine === "string") result.engine = entry.dataJson.engine;
+    if (typeof entry.dataJson.branch === "string") result.branch = entry.dataJson.branch;
+    if (typeof entry.dataJson.prUrl === "string") result.prUrl = entry.dataJson.prUrl;
+    else if (typeof entry.dataJson.pr === "string") result.prUrl = entry.dataJson.pr;
+  }
+  return result;
+}
+
+function annotationKindLabel(kind: AnnotationKind): string {
+  return kind.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+function isAnnotationKind(value: unknown): value is AnnotationKind {
+  return typeof value === "string" && ANNOTATION_KINDS.has(value as AnnotationKind);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function filtersFromParams(params: BoardSearchParams): TaskFilters {

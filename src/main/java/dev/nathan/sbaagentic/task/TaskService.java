@@ -91,6 +91,43 @@ public class TaskService {
                         TaskErrorCode.TASK_NOT_FOUND, "Task not found: " + taskId, taskId, null, null));
     }
 
+    public TaskAnnotation createAnnotation(CreateAnnotationRequest request) {
+        requireRequest(request, "Annotation request");
+        requireText(request.taskId(), "Task id");
+        requireText(request.actor(), "Annotation actor");
+        requireText(request.kind(), "Annotation kind");
+        requireText(request.text(), "Annotation text");
+
+        AnnotationKind kind;
+        try {
+            kind = AnnotationKind.fromValue(request.kind());
+        }
+        catch (IllegalArgumentException ex) {
+            throw validation("Unknown annotation kind: " + request.kind(), request.taskId());
+        }
+        Task task = getTask(request.taskId()).task();
+        TaskAnnotation annotation = repository.appendAnnotation(
+                request.taskId(), kind, request.actor(), request.text(), request.dataJson());
+        try {
+            broadcaster.publishTaskNote(new StreamEvents.TaskNoted(
+                    task, annotation, annotation.observedAt().toString()));
+        }
+        catch (RuntimeException ex) {
+            log.warn(
+                    "Task annotation committed but SSE publish failed for task {} kind {}",
+                    request.taskId(),
+                    kind,
+                    ex);
+        }
+        return annotation;
+    }
+
+    public List<TaskEvent> getTaskEvents(String taskId) {
+        requireText(taskId, "Task id");
+        getTask(taskId);
+        return repository.eventsForTask(taskId);
+    }
+
     public TaskChange updateTaskStatus(UpdateTaskStatusRequest request) {
         requireRequest(request, "Task update request");
         requireText(request.taskId(), "Task id");

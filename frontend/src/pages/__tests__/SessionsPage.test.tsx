@@ -1,12 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
+import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getProjectSessions, getSessionEvents, getSessions } from "../../lib/api";
-import type { AgentEvent, AgentSession } from "../../lib/api";
+import { getProjectSessions, getSessionDag, getSessionEvents, getSessions, getTaskDag } from "../../lib/api";
+import type { AgentEvent, AgentSession, DagResponse } from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
 const navigate = vi.fn();
+type TendrilSearchParams = { task?: string };
+let searchParams: TendrilSearchParams;
+let setSearchParams: SetStoreFunction<TendrilSearchParams>;
 
 const sessions: AgentSession[] = [
   {
@@ -99,6 +103,7 @@ vi.mock("@solidjs/router", async (importOriginal) => {
     ...actual,
     useNavigate: () => navigate,
     useParams: () => ({ sessionId: "session-1" }),
+    useSearchParams: () => [searchParams, setSearchParams],
   };
 });
 
@@ -117,10 +122,13 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getSessions: vi.fn(async () => sessions),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
+    getTaskDag: vi.fn(async () => ({ nodes: [], edges: [] })),
+    getSessionDag: vi.fn(async () => ({ nodes: [], edges: [] })),
   };
 });
 
 beforeEach(() => {
+  [searchParams, setSearchParams] = createStore<TendrilSearchParams>({});
   navigate.mockReset();
   vi.mocked(createSessionsResource).mockClear();
   vi.mocked(getSessions).mockReset();
@@ -129,6 +137,10 @@ beforeEach(() => {
   vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
   vi.mocked(getSessionEvents).mockReset();
   vi.mocked(getSessionEvents).mockResolvedValue(events);
+  vi.mocked(getTaskDag).mockReset();
+  vi.mocked(getTaskDag).mockResolvedValue({ nodes: [], edges: [] });
+  vi.mocked(getSessionDag).mockReset();
+  vi.mocked(getSessionDag).mockResolvedValue({ nodes: [], edges: [] });
   vi.mocked(sourceFilter.key).mockReset();
   vi.mocked(sourceFilter.key).mockReturnValue("");
   vi.mocked(sourceFilter.matches).mockReset();
@@ -136,6 +148,61 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("does not render tendril context without a task query parameter", () => {
+    render(() => <SessionsPage />);
+
+    expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
+    expect(getTaskDag).not.toHaveBeenCalled();
+    expect(getSessionDag).not.toHaveBeenCalled();
+  });
+
+  it("renders active task context with an enabled steer box", async () => {
+    [searchParams, setSearchParams] = createStore<TendrilSearchParams>({ task: "task-1" });
+    vi.mocked(getTaskDag).mockResolvedValue(taskDag("in_progress"));
+
+    render(() => <SessionsPage />);
+
+    const header = document.querySelector(".tendril-header") as HTMLElement;
+    expect(await within(header).findByText("Full-auto board runner")).toBeInTheDocument();
+    const status = within(header).getByText("In progress");
+    expect(status).toHaveClass("tendril-status--in_progress");
+    expect(within(header).getByRole("textbox", { name: "Steer this run" })).toBeEnabled();
+    expect(within(header).getByRole("button", { name: "Send steer" })).toBeEnabled();
+    expect(getTaskDag).toHaveBeenCalledWith("task-1");
+  });
+
+  it("disables steering when the task is blocked", async () => {
+    [searchParams, setSearchParams] = createStore<TendrilSearchParams>({ task: "task-1" });
+    vi.mocked(getTaskDag).mockResolvedValue(taskDag("blocked"));
+
+    render(() => <SessionsPage />);
+
+    const header = document.querySelector(".tendril-header") as HTMLElement;
+    expect(await within(header).findByText("Blocked")).toHaveClass("tendril-status--blocked");
+    expect(within(header).getByText("Steering is only available while the task is in progress.")).toBeInTheDocument();
+    expect(within(header).queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
+  });
+
+  it("lazily fetches and renders the selected session DAG from the tendril header", async () => {
+    [searchParams, setSearchParams] = createStore<TendrilSearchParams>({ task: "task-1" });
+    vi.mocked(getTaskDag).mockResolvedValue(taskDag("in_progress"));
+    vi.mocked(getSessionDag).mockResolvedValue({
+      nodes: [
+        { id: "task-1", type: "task", label: "Implement card detail", status: "in_progress", ref: "/tasks/task-1" },
+        { id: "session-1", type: "session", label: "Worker tendril 1", ref: "/sessions/session-1" },
+      ],
+      edges: [{ from: "task-1", to: "session-1", type: "worker_session" }],
+    });
+
+    render(() => <SessionsPage />);
+
+    expect(getSessionDag).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "View session DAG" }));
+    await waitFor(() => expect(getSessionDag).toHaveBeenCalledWith("session-1"));
+    expect(await screen.findByText("Worker tendril 1", { selector: ".dag-label" })).toBeInTheDocument();
+    expect(document.querySelector('[data-node-id="session-1"]')).toHaveClass("dag-node--current");
+  });
+
   it("filters the session rail by text, project, and source facets", async () => {
     render(() => <SessionsPage />);
 
@@ -320,3 +387,13 @@ describe("SessionsPage", () => {
     expect(row).toHaveClass("event-flow-row--target");
   });
 });
+
+function taskDag(status: string): DagResponse {
+  return {
+    nodes: [
+      { id: "spec-1", type: "spec", label: "Full-auto board runner", ref: "/specs/spec-1" },
+      { id: "task-1", type: "task", label: "Implement card detail", status, ref: "/tasks/task-1" },
+    ],
+    edges: [{ from: "spec-1", to: "task-1", type: "has_task" }],
+  };
+}

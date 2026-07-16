@@ -2,8 +2,17 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal, type JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask, ProjectSummary, TaskChange, TaskFilters, TaskSnapshot } from "../../lib/api";
-import type { TaskLifecycleFrame, TaskLiveStore } from "../../lib/tasks";
+import type {
+  AgentTask,
+  DagResponse,
+  ProjectSummary,
+  TaskAnnotation,
+  TaskChange,
+  TaskEvent,
+  TaskFilters,
+  TaskSnapshot,
+} from "../../lib/api";
+import type { TaskLifecycleFrame, TaskLiveStoreWithNotes } from "../../lib/tasks";
 import BoardPage from "../BoardPage";
 
 // Vitest exposes Node for this shipped-CSS contract while the frontend intentionally does not.
@@ -22,11 +31,20 @@ vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string }) => (
     <a href={props.href} class={props.class}>{props.children}</a>
   ),
+  useNavigate: () => vi.fn(),
   useSearchParams: () => [params, (next: BoardSearchParams) => {
     searchParamWrites(next);
     setParams(next);
   }],
 }));
+
+vi.mock("../../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/api")>();
+  return {
+    ...actual,
+    getTaskEvents: vi.fn(async () => []),
+  };
+});
 
 beforeEach(() => {
   [params, setParams] = createStore<BoardSearchParams>({});
@@ -440,6 +458,174 @@ describe("BoardPage", () => {
     expect(await screen.findByText("No tasks match this view")).toBeInTheDocument();
   });
 
+  it("merges fetched and live activity without duplicates and orders it newest first", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const duplicate = annotation({
+      id: "note-fetched",
+      text: "Fetched progress",
+      observedAt: "2026-07-15T12:01:00Z",
+    });
+    const live = annotation({
+      id: "note-live",
+      kind: "progress",
+      actor: "worker-1",
+      text: "Live verification complete",
+      observedAt: "2026-07-15T12:02:00Z",
+    });
+    const store = fakeTaskStore(fixtures(), undefined, false, [duplicate, live]);
+    const history: TaskEvent[] = [
+      {
+        id: "event-created",
+        taskId: "task-active",
+        type: "task.created",
+        actor: "planner",
+        fromStatus: null,
+        toStatus: "open",
+        detail: null,
+        observedAt: "2026-07-15T12:00:00Z",
+      },
+      {
+        id: duplicate.id,
+        taskId: "task-active",
+        type: "task.note",
+        actor: duplicate.actor,
+        detail: { kind: duplicate.kind, text: duplicate.text, dataJson: duplicate.dataJson },
+        observedAt: duplicate.observedAt,
+      },
+    ];
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => history)}
+      />
+    ));
+
+    await screen.findByText("Live verification complete");
+    const rows = [...document.querySelectorAll<HTMLElement>(".board-annotation-row")];
+    expect(rows.map((row) => row.dataset.annotationId)).toEqual(["note-live", "note-fetched", "event-created"]);
+    expect(rows.filter((row) => row.dataset.annotationId === "note-fetched")).toHaveLength(1);
+    expect(rows[2]).toHaveTextContent("— → open");
+  });
+
+  it("links the newest worker session back to the selected task", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures(), undefined, false, [annotation({
+      id: "worker-session",
+      kind: "worker_session",
+      text: "Worker session attached",
+      dataJson: { sessionId: "session-9" },
+    })]);
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => [])}
+      />
+    ));
+
+    expect(await screen.findByRole("link", { name: "Open worker session →" })).toHaveAttribute(
+      "href",
+      "/sessions/session-9?task=task-active",
+    );
+  });
+
+  it("derives engine, branch, and pull request chips with later values winning", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures(), undefined, false, [
+      annotation({
+        id: "engine-old",
+        kind: "engine",
+        text: "Runner selected",
+        dataJson: { engine: "claude", branch: "feature/old", pr: "https://example.com/pr/1" },
+        observedAt: "2026-07-15T12:00:00Z",
+      }),
+      annotation({
+        id: "progress-new",
+        kind: "progress",
+        text: "Implementation moved",
+        dataJson: { engine: "codex", branch: "feature/new", prUrl: "https://example.com/pr/2" },
+        observedAt: "2026-07-15T12:05:00Z",
+      }),
+    ]);
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => [])}
+      />
+    ));
+
+    const chips = await screen.findByLabelText("Agent run context");
+    expect(chips).toHaveTextContent("Engine · codex");
+    expect(chips).toHaveTextContent("feature/new");
+    expect(within(chips).getByRole("link", { name: "Pull request ↗" })).toHaveAttribute("href", "https://example.com/pr/2");
+  });
+
+  it("enables steering only while the selected task is in progress", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures());
+    const createAnnotation = vi.fn(async () => annotation({ kind: "steer", text: "Stay on verification." }));
+    const getTaskEvents = vi.fn(async () => [] as TaskEvent[]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={getTaskEvents}
+        createAnnotation={createAnnotation}
+      />
+    ));
+
+    const textarea = await screen.findByRole("textbox", { name: "Steer this run" });
+    fireEvent.input(textarea, { target: { value: "Stay on verification." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send steer" }));
+    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-active", {
+      actor: "board",
+      kind: "steer",
+      text: "Stay on verification.",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Verify the queue, Blocked" }));
+    expect(await screen.findByText("Steering is only available while the task is in progress.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
+  });
+
+  it("lazily fetches and highlights the selected task in the agent DAG", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures());
+    const dag: DagResponse = {
+      nodes: [
+        { id: "spec-1", type: "spec", label: "Coordination story", ref: "/specs/spec-1" },
+        { id: "task-active", type: "task", label: "Build the client", status: "in_progress", ref: "/tasks/task-active" },
+      ],
+      edges: [{ from: "spec-1", to: "task-active", type: "has_task" }],
+    };
+    const getTaskDag = vi.fn(async () => dag);
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => [])}
+        getTaskDag={getTaskDag}
+      />
+    ));
+
+    expect(getTaskDag).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "View agent DAG" }));
+    await waitFor(() => expect(getTaskDag).toHaveBeenCalledWith("task-active"));
+    expect(await screen.findByText("Build the client", { selector: ".dag-label" })).toBeInTheDocument();
+    expect(document.querySelector('[data-node-id="task-active"]')).toHaveClass("dag-node--current");
+  });
+
   it("ships explicit narrow stacking and reduced-motion contracts", () => {
     expect(themeCss).toContain("@media (max-width: 660px)");
     expect(themeCss).toContain(".board-columns,");
@@ -454,14 +640,22 @@ function fakeTaskStore(
   initial: TaskSnapshot[],
   refreshImpl: () => Promise<void> = async () => undefined,
   filterSnapshots = false,
+  initialAnnotations: TaskAnnotation[] = [],
 ) {
   const [snapshots, setSnapshots] = createSignal(initial);
   const [filters, setFiltersSignal] = createSignal<TaskFilters>({});
+  const [noteEpoch] = createSignal(0);
+  const annotationsByTask = new Map<string, TaskAnnotation[]>();
+  for (const item of initialAnnotations) {
+    annotationsByTask.set(item.taskId, [...(annotationsByTask.get(item.taskId) ?? []), item]);
+  }
   const refresh = vi.fn(refreshImpl);
-  const store: TaskLiveStore & { setFilters: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn> } = {
+  const store: TaskLiveStoreWithNotes & { setFilters: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn> } = {
     status: () => "live",
     tasks: () => snapshots().map(({ task }) => task),
     snapshots,
+    taskAnnotations: (taskId) => [...(annotationsByTask.get(taskId) ?? [])],
+    noteEpoch,
     filters,
     setFilters: vi.fn(async (next: TaskFilters) => {
       const current = filters();
@@ -487,6 +681,19 @@ function fakeTaskStore(
     close: vi.fn(),
   };
   return store;
+}
+
+function annotation(overrides: Partial<TaskAnnotation> = {}): TaskAnnotation {
+  return {
+    id: "note-1",
+    taskId: "task-active",
+    kind: "note",
+    actor: "worker-1",
+    text: "Task note",
+    dataJson: null,
+    observedAt: "2026-07-15T12:00:00Z",
+    ...overrides,
+  };
 }
 
 function catalogProjects(): ProjectSummary[] {
