@@ -47,7 +47,8 @@ public class GoalPromptBuilder {
     private static final String PLAN_COMPLETION_PROTOCOL = """
             ## Completion protocol
 
-            When the implementation plan is complete, post its full markdown text, then report done:
+            The stage is complete ONLY after you have executed both commands below from the shell.
+            Printing the plan as a chat answer does not complete the task — execute:
               <reportScript> <taskId> plan "<implementation plan markdown>"
               <reportScript> <taskId> done "<one-line summary of the plan>"
 
@@ -68,7 +69,8 @@ public class GoalPromptBuilder {
     private static final String REVIEW_COMPLETION_PROTOCOL = """
             ## Completion protocol
 
-            When the adversarial review is complete, post its full markdown findings, then report done:
+            The stage is complete ONLY after you have executed both commands below from the shell.
+            Printing the findings as a chat answer does not complete the task — execute:
               <reportScript> <taskId> review "<review findings markdown>"
               <reportScript> <taskId> done "<one-line summary of the review>"
 
