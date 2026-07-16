@@ -29,6 +29,9 @@ public class CodexEngine implements Engine {
             command.add("--sandbox");
             command.add(config.sandbox());
         }
+        // End-of-options marker: goal prompts can open with story frontmatter ("---"),
+        // which codex's argument parser would otherwise reject as a malformed flag.
+        command.add("--");
         command.add(prompt);
         return List.copyOf(command);
     }
