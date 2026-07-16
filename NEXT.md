@@ -10,10 +10,8 @@ Playwright e2e including the new `full-auto.spec.ts`.
 
 **Current branch state**:
 - `full-auto-board-runner` pushed; **PR #18 open** (https://github.com/nathanmauro/black-box/pull/18).
-  **CI never attached** — GitHub Actions created no run for the PR despite `on: pull_request`
-  (only third-party check-suite placeholders appear; last successful Actions runs are
-  from 2026-07-10). Investigate Actions availability/billing before merging; merge is
-  intentionally not done.
+  Nathan explicitly does NOT want GitHub Actions running for this (2026-07-16) — do not
+  chase CI. Merge is human-gated: `gh pr merge 18 --merge` when Nathan is ready.
 - `full-auto-continuation` (this branch) stacked on it for the next slice.
 
 **Live state**:
@@ -32,12 +30,11 @@ Playwright e2e including the new `full-auto.spec.ts`.
    reboots without a manual nohup.
 2. SDLC mode — reserved lanes `sdlc:plan` / `sdlc:review` with approval annotations
    between stages (design sketch in the spec's Non-goals).
-3. CI investigation for PR #18 (Actions run never created) + merge once green.
-4. Optional: xAI provider config for the grok-4.5-fast fallback; revise-and-resubmit
+3. Optional: xAI provider config for the grok-4.5-fast fallback; revise-and-resubmit
    prefill on blocked gate cards (stretch item in the spec).
 
 **Blockers / questions for human**:
-- Merge PR #18 after CI is sorted (or instruct merge without checks).
+- Merge PR #18 (`gh pr merge 18 --merge`) — no Actions wanted, so no checks to wait on.
 - Start the runner daemon when ready (command above), or allowlist it.
 
 **Notes**:
