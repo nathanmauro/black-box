@@ -1,0 +1,44 @@
+<!--
+  Black Box runner launchd template.
+
+  Copy to ~/Library/LaunchAgents/@LABEL@.plist, replace placeholders, then:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/@LABEL@.plist
+
+  To remove:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/@LABEL@.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@JAVA_BIN@</string>
+    <string>-jar</string>
+    <string>@JAR_PATH@</string>
+    <string>runner</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SBA_BASE_URL</key>
+    <string>@BASE_URL@</string>
+    <key>SBA_RUNNER_CONFIG</key>
+    <string>@RUNNER_CONFIG_PATH@</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>@LOG_DIR@/runner.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>@LOG_DIR@/runner.log</string>
+</dict>
+</plist>

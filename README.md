@@ -262,6 +262,20 @@ macOS launchd:
 The script builds the frontend and jar, restarts `com.nathan.sba-agentic` by default, and waits for a
 healthy status response. Use `scripts/black-box.plist.template` for a first-time LaunchAgent install.
 
+macOS FULL_AUTO runner launchd:
+
+`scripts/deploy-runner-local.sh` deploys the already-built jar as the
+`com.nathan.blackbox-runner` launchd service. It does not build the jar; run
+`scripts/deploy-local.sh` first. Use `scripts/blackbox-runner.plist.template` for a first-time runner
+LaunchAgent install.
+
+Running the deploy script by hand starts or restarts the runner. This is not a passive service:
+starting it launches autonomous workers according to `~/.blackbox/runner.json`. FULL_AUTO will claim
+`gate` and `auto` tasks and drive Codex workers using that config's engine, repo, push, and auto-merge
+settings. Review [Board-driven FULL_AUTO](#board-driven-full_auto-optional-config-gated) for the full
+behavior and [`docs/runner-config.example.json`](docs/runner-config.example.json) for the config
+shape before starting it.
+
 Linux systemd:
 
 ```bash

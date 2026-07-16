@@ -25,9 +25,8 @@ Playwright e2e including the new `full-auto.spec.ts`.
   sba-agentic (push + auto_merge).
 
 **Next recommended work**:
-1. Runner as a launchd service (`com.nathan.blackbox-runner`), mirroring
-   `scripts/black-box.plist.template` + deploy-local wiring, so FULL_AUTO survives
-   reboots without a manual nohup.
+1. **Landed** — runner launchd service (`com.nathan.blackbox-runner`) via
+   `scripts/blackbox-runner.plist.template` and `scripts/deploy-runner-local.sh`.
 2. SDLC mode — reserved lanes `sdlc:plan` / `sdlc:review` with approval annotations
    between stages (design sketch in the spec's Non-goals).
 3. Optional: xAI provider config for the grok-4.5-fast fallback; revise-and-resubmit
