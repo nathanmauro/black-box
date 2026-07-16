@@ -12,7 +12,7 @@
       "id": "fake",
       "model": "fake",
       "effort": "n/a",
-      "enabled": true
+      "enabled": false
     },
     {
       "id": "grok",

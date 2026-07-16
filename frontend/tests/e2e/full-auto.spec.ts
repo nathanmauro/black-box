@@ -69,12 +69,17 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
       await page.screenshot({ path: `${SHOT_DIR}/full-auto-open.png`, fullPage: true });
     });
 
+    // The runner boots the full Spring context, whose datasource defaults to
+    // jdbc:sqlite:sba-agentic.db relative to cwd — without an override it would
+    // open the real production database at the repo root.
+    const runnerDbPath = path.join(scratchDir, "runner-e2e.db");
     runnerDaemon = spawn("java", ["-jar", "target/sba-agentic-0.1.0.jar", "runner"], {
       cwd: REPO_ROOT,
       env: {
         ...process.env,
         SBA_RUNNER_CONFIG: runnerConfigPath,
         SBA_BASE_URL: baseURL,
+        SBA_DATASOURCE_URL: `jdbc:sqlite:${runnerDbPath}`,
       },
     });
     pipeRunnerOutput(runnerDaemon);

@@ -97,7 +97,7 @@ if [[ "$PUSH" != "true" ]]; then
     "$pr_command"
 fi
 
-if printf '%s\n' "$DANGER" | grep -Eiq 'PUBLIC|never push|do not push'; then
+if [[ -n "$DANGER" ]]; then
   emit_result \
     "local-only" \
     "repo config danger flag: ${DANGER}" \
@@ -141,7 +141,8 @@ if ! git -C "$REPO" push -u origin "$BRANCH" >/dev/null 2>"$error_file"; then
     "git push failed: $(stderr_tail "$error_file" "see git push output")" \
     "" \
     "" \
-    "$push_command"
+    "$push_command" \
+    "$pr_command"
 fi
 
 pr_url="$(cd "$REPO" && gh pr view "$BRANCH" --json url -q .url 2>/dev/null || true)"
