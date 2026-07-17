@@ -93,6 +93,7 @@ describe("BoardPage", () => {
     expect(within(detail).getByText("worker-2")).toBeInTheDocument();
     expect(within(detail).getByText(/specs\/queue\.md/)).toBeInTheDocument();
     expect(within(detail).getByRole("button", { name: "Reset task to open" })).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /execute|launch|run agent/i })).not.toBeInTheDocument();
 
     fireEvent.click(within(done).getByRole("button", { name: /Ship the adapter/ }));
@@ -103,6 +104,139 @@ describe("BoardPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show 1 cancelled task" }));
     expect(screen.getByRole("region", { name: "Cancelled tasks" })).toHaveTextContent("Retired experiment");
+  });
+
+  it("offers revision only for blocked gate tasks", async () => {
+    const store = fakeTaskStore([
+      snapshot({ id: "blocked-gate", title: "Blocked at gate", status: "blocked", lane: "gate", blockedReason: "Add acceptance criteria." }),
+      snapshot({ id: "blocked-review", title: "Blocked in review", status: "blocked", lane: "sdlc:review", blockedReason: "Review rejected." }),
+      snapshot({ id: "open-gate", title: "Open at gate", status: "open", lane: "gate" }),
+    ]);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Blocked at gate, Blocked" }));
+    const detail = screen.getByRole("complementary", { name: "Task detail" });
+    expect(within(detail).getByRole("button", { name: "Revise & resubmit" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Blocked in review, Blocked" }));
+    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Open at gate, Open" }));
+    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+  });
+
+  it("fetches and prefills the frozen spec, then creates the replacement before cancelling the old gate", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked-gate" });
+    const blocked = snapshot({
+      id: "task-blocked-gate",
+      projectKey: "/workspace/black-box",
+      title: "Original task title",
+      status: "blocked",
+      lane: "gate",
+      priority: 7,
+      blockedReason: "Name the exact cancellation behavior in acceptance criteria.",
+    }, "This snapshot body must not be used for the prefill.");
+    const frozenSpec = {
+      ...blocked.spec,
+      title: "Correct the gate contract",
+      body: `---
+story: v1
+repo: "/workspace/black-box"
+mode: sdlc
+verify: "npx vitest run"
+push: true
+priority: 42
+---
+
+# Correct the gate contract
+
+## Goal
+
+Make the resubmission cleanup explicit.
+
+## Acceptance criteria
+
+- A new gate task is enqueued.
+- The blocked gate is cancelled afterward.
+
+## Constraints / dangers
+
+- Keep the original spec frozen.
+`,
+    };
+    const createdSpec = { ...frozenSpec, id: "spec-revised", createdBy: "board" };
+    const createdTaskChange: TaskChange = {
+      snapshot: {
+        spec: createdSpec,
+        task: {
+          ...blocked.task,
+          id: "task-revised",
+          specId: createdSpec.id,
+          title: createdSpec.title,
+          status: "open",
+          priority: 42,
+          claimedBy: null,
+          blockedReason: null,
+        },
+      },
+      event: {
+        id: "event-revised",
+        taskId: "task-revised",
+        type: "task.created",
+        actor: "board",
+        fromStatus: null,
+        toStatus: "open",
+        observedAt: "2026-07-16T14:00:00Z",
+      },
+    };
+    const loadSpec = vi.fn(async () => frozenSpec);
+    const create = vi.fn(async () => createdSpec);
+    const enqueue = vi.fn(async () => createdTaskChange);
+    const update = vi.fn(async () => createdTaskChange);
+    const store = fakeTaskStore([blocked]);
+    render(() => (
+      <BoardPage
+        store={store}
+        loadProjects={emptyCatalog}
+        loadSpec={loadSpec}
+        createSpec={create}
+        enqueueTask={enqueue}
+        updateStatus={update}
+      />
+    ));
+
+    const detail = await screen.findByRole("complementary", { name: "Task detail" });
+    fireEvent.click(within(detail).getByRole("button", { name: "Revise & resubmit" }));
+
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Correct the gate contract");
+    expect(loadSpec).toHaveBeenCalledWith(blocked.task.specId);
+    expect(screen.getByRole("textbox", { name: "Repo path" })).toHaveValue("/workspace/black-box");
+    expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue("Make the resubmission cleanup explicit.");
+    expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(
+      "A new gate task is enqueued.\nThe blocked gate is cancelled afterward.",
+    );
+    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue("Keep the original spec frozen.");
+    expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue("npx vitest run");
+    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(42);
+    expect(screen.getByRole("radio", { name: "SDLC" })).toBeChecked();
+    expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(blocked.task.blockedReason!);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith("task-blocked-gate", {
+      actor: "board",
+      status: "cancelled",
+    }));
+    expect(create).toHaveBeenCalledOnce();
+    expect(enqueue).toHaveBeenCalledWith({
+      specId: "spec-revised",
+      title: "Correct the gate contract",
+      lane: "gate",
+      priority: 42,
+      actor: "board",
+    });
+    expect(create.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]!);
+    expect(enqueue.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
   });
 
   it("moves a task between columns when the live store applies a lifecycle frame", async () => {
@@ -510,6 +644,60 @@ describe("BoardPage", () => {
     expect(rows[2]).toHaveTextContent("— → open");
   });
 
+  it("renders plan and review annotations as preformatted documents with distinct kind badges", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
+    const store = fakeTaskStore(fixtures());
+    const history: TaskEvent[] = [
+      {
+        id: "plan-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "worker-plan",
+        detail: { kind: "plan", text: "## Approach\n\n1. Inspect the board.", dataJson: null },
+        observedAt: "2026-07-16T12:00:00Z",
+      },
+      {
+        id: "review-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "worker-review",
+        detail: { kind: "review", text: "## Findings\n\n- Approval path is covered.", dataJson: null },
+        observedAt: "2026-07-16T12:01:00Z",
+      },
+      {
+        id: "approval-note",
+        taskId: "task-active",
+        type: "task.note",
+        actor: "nathan",
+        detail: {
+          kind: "approval",
+          text: "Review approved.",
+          dataJson: { decision: "approve", stage: "review", feedback: "" },
+        },
+        observedAt: "2026-07-16T12:02:00Z",
+      },
+    ];
+
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => history)}
+      />
+    ));
+
+    await waitFor(() => expect(document.querySelector('[data-annotation-id="plan-note"]')).not.toBeNull());
+    const planRow = document.querySelector<HTMLElement>('[data-annotation-id="plan-note"]')!;
+    const reviewRow = document.querySelector<HTMLElement>('[data-annotation-id="review-note"]')!;
+    const approvalRow = document.querySelector<HTMLElement>('[data-annotation-id="approval-note"]')!;
+    expect(planRow.querySelector("pre")).toHaveTextContent("## Approach 1. Inspect the board.");
+    expect(reviewRow.querySelector("pre")).toHaveTextContent("## Findings - Approval path is covered.");
+    expect(within(planRow).getByText("Plan")).toHaveClass("board-annotation-kind--plan");
+    expect(within(reviewRow).getByText("Review")).toHaveClass("board-annotation-kind--review");
+    expect(within(approvalRow).getByText("Approval")).toHaveClass("board-annotation-kind--approval");
+  });
+
   it("links the newest worker session back to the selected task", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
     const store = fakeTaskStore(fixtures(), undefined, false, [annotation({
@@ -597,6 +785,155 @@ describe("BoardPage", () => {
     expect(screen.queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
   });
 
+  it("shows completed SDLC stages awaiting approval and collapses after approval", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-plan" });
+    const stageTask = snapshot({
+      id: "task-plan",
+      title: "Approve the implementation plan",
+      status: "done",
+      lane: "sdlc:plan",
+      priority: 10,
+    });
+    const history: TaskEvent[] = [{
+      id: "plan-document",
+      taskId: "task-plan",
+      type: "task.note",
+      actor: "worker-plan",
+      detail: { kind: "plan", text: "Implement the approval seam.", dataJson: null },
+      observedAt: "2026-07-16T13:00:00Z",
+    }];
+    const store = fakeTaskStore([stageTask]);
+    const result = annotation({
+      id: "approval-plan",
+      taskId: "task-plan",
+      kind: "approval",
+      actor: "nathan",
+      text: "Plan approved.",
+      dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      observedAt: "2026-07-16T13:05:00Z",
+    });
+    const createAnnotation = vi.fn(async () => result);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={vi.fn(async () => history)}
+        createAnnotation={createAnnotation}
+      />
+    ));
+
+    const card = await screen.findByRole("button", { name: "Approve the implementation plan, Done" });
+    expect(within(card).getByText("plan")).toHaveClass("board-stage-chip--plan");
+    await waitFor(() => expect(within(card).getByText("Awaiting approval")).toBeInTheDocument());
+    expect(card).toHaveAccessibleDescription(/plan Awaiting approval/i);
+    const detail = screen.getByRole("complementary", { name: "Task detail" });
+    expect(await within(detail).findByText("Awaiting approval")).toBeInTheDocument();
+    fireEvent.click(await within(detail).findByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
+      actor: "nathan",
+      kind: "approval",
+      text: "Plan approved.",
+      dataJson: { decision: "approve", stage: "plan", feedback: "" },
+    }));
+    expect(await within(detail).findByText(/Approved by nathan at/)).toBeInTheDocument();
+    expect(within(detail).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument());
+  });
+
+  it("hydrates prior decisions and ignores malformed or wrong-stage approvals", async () => {
+    const validTask = snapshot({
+      id: "task-plan-valid",
+      title: "Previously approved plan",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    const pendingTask = snapshot({
+      id: "task-plan-pending",
+      title: "Plan with wrong-stage decision",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    const validApproval: TaskEvent = {
+      id: "approval-valid",
+      taskId: "task-plan-valid",
+      type: "task.note",
+      actor: "nathan",
+      detail: {
+        kind: "approval",
+        text: "Plan approved.",
+        dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      },
+      observedAt: "2026-07-16T13:10:00Z",
+    };
+    const wrongStageApproval: TaskEvent = {
+      ...validApproval,
+      id: "approval-wrong-stage",
+      taskId: "task-plan-pending",
+      detail: {
+        kind: "approval",
+        text: "Mismatched approval.",
+        dataJson: { decision: "approve", stage: "review", feedback: "" },
+      },
+    };
+    const getTaskEvents = vi.fn(async (taskId: string) => (
+      taskId === "task-plan-valid" ? [validApproval] : [wrongStageApproval]
+    ));
+    const store = fakeTaskStore([validTask, pendingTask]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={getTaskEvents}
+      />
+    ));
+
+    const validCard = await screen.findByRole("button", { name: "Previously approved plan, Done" });
+    const pendingCard = screen.getByRole("button", { name: "Plan with wrong-stage decision, Done" });
+    await waitFor(() => expect(within(validCard).queryByText("Awaiting approval")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(pendingCard).getByText("Awaiting approval")).toBeInTheDocument());
+
+    fireEvent.click(validCard);
+    expect(await screen.findByText(/Approved by nathan at/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+
+    fireEvent.click(pendingCard);
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+  });
+
+  it("distinguishes approval history loading and failure from awaiting approval", async () => {
+    const stageTask = snapshot({
+      id: "task-plan-history-error",
+      title: "Plan with unavailable history",
+      status: "done",
+      lane: "sdlc:plan",
+    });
+    let rejectHistory!: (error: Error) => void;
+    const getTaskEvents = vi.fn(() => new Promise<TaskEvent[]>((_resolve, reject) => {
+      rejectHistory = reject;
+    }));
+    const store = fakeTaskStore([stageTask]);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadProjects={emptyCatalog}
+        getTaskEvents={getTaskEvents}
+      />
+    ));
+
+    const card = await screen.findByRole("button", { name: "Plan with unavailable history, Done" });
+    expect(within(card).getByText("Checking approval")).toBeInTheDocument();
+    expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument();
+
+    rejectHistory(new Error("history unavailable"));
+
+    expect(await within(card).findByText("Approval status unavailable")).toBeInTheDocument();
+    expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument();
+  });
+
   it("lazily fetches and highlights the selected task in the agent DAG", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
     const store = fakeTaskStore(fixtures());
@@ -633,6 +970,9 @@ describe("BoardPage", () => {
     expect(themeCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(themeCss).toContain(".board-loading-lines i { animation: none; }");
     expect(themeCss).toContain(".board-task-button:hover { transform: none; }");
+    expect(themeCss).toContain(".board-annotation-kind--plan");
+    expect(themeCss).toContain(".board-annotation-kind--review");
+    expect(themeCss).toContain(".board-annotation-kind--approval");
   });
 });
 

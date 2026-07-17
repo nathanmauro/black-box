@@ -20,7 +20,7 @@ described below.
 flowchart LR
     subgraph Clients["Clients"]
         AGENTS["External agents and orchestrators"]
-        RUNNER["FULL_AUTO runner<br/>(external, config-gated)"]
+        RUNNER["Board runner<br/>(FULL_AUTO / SDLC; external, config-gated)"]
         HUMAN["Human operator"]
         UI["SolidJS web UI"]
     end
@@ -91,9 +91,10 @@ clients recover by fetching `GET /api/tasks`.
 6. The Board or a later agent passes `resultHandoffId` to `GET /api/recall` or `recallContext`; event
    ids are direct recall keys.
 
-Completion does not enqueue follow-up work automatically. The completing agent, a human, or an
-external orchestrator decides whether to create another task. That boundary is what keeps Black Box
-a substrate rather than an executor.
+`TaskService` completion does not enqueue follow-up work automatically. The completing agent, a
+human, or an external orchestrator decides whether to create another task. The optional runner may
+do so after observing lifecycle or approval facts, but it remains an external client. That boundary
+is what keeps the Black Box server a substrate rather than an executor.
 
 ## One contract, two adapters
 
@@ -121,7 +122,7 @@ The following runner-supporting operations are REST-only in v1; they do not have
 
 | Operation | REST | Input, storage, and result |
 | --- | --- | --- |
-| Append annotation | `POST /api/tasks/{taskId}/annotations` | `actor`, `kind` (`note`, `steer`, `progress`, `worker_session`, or `engine`), `text`, optional `dataJson` → append-only `task_events` row of type `task.note`, valid at any task status; broadcasts `task.note` with `{task, annotation, observedAt}` |
+| Append annotation | `POST /api/tasks/{taskId}/annotations` | `actor`, `kind` (`note`, `steer`, `progress`, `worker_session`, `engine`, `plan`, `review`, or `approval`), `text`, optional `dataJson` → append-only `task_events` row of type `task.note`, valid at any task status; `plan` and `review` carry stage text, while `approval` uses `{decision, stage, feedback}` data; broadcasts `task.note` with `{task, annotation, observedAt}` |
 | Read task timeline | `GET /api/tasks/{taskId}/events` | Full chronological lifecycle-plus-annotation timeline rendered by Board card detail |
 | Create or read session lineage | `POST /api/session-links`; `GET /api/sessions/{id}/links` | `session_links` stores `parent_session_id`, `child_session_id`, `link_type`, optional `task_id`, unique per parent/child/type triple; link types are `spawned` (runner to worker), `steered`, and `continued` |
 | Read lineage DAG | `GET /api/tasks/{taskId}/dag`; `GET /api/dag?sessionId=` | Pure projection over existing specs, tasks, and sessions: spec-to-task edges from the queue, task-to-session edges from `worker_session` annotations, and session-to-session edges from `session_links`; creates no new state |
@@ -166,10 +167,12 @@ connection gap or malformed task frame. An SSE publish failure never rolls back 
 
 The Board route is `/board`. It has Open, In Progress, Blocked, and Done columns, with cancelled work
 in a disclosure below the main board. The URL query parameters `project`, `lane`, and `task` preserve
-filters and selected detail. Task detail shows ownership, blocker, timestamps, the frozen spec and
-optional provenance, and a recall-resolved completion Handoff. Its only write control is “Reset to
-open” for `blocked` or `in_progress` work; the Board waits for the server response and refreshes
-instead of inventing local state.
+filters and selected detail. Task detail shows ownership, blocker, timestamps, the frozen spec,
+optional provenance, the annotation timeline, and a recall-resolved completion Handoff. The Board
+can create a story, post steering annotations while runner work is in progress, and post approval or
+rejection annotations for completed SDLC plan and review stages. “Reset to open” remains available
+for `blocked` or `in_progress` work. Each write waits for the server response instead of inventing
+local state.
 
 ## Optional FULL_AUTO runner
 
@@ -206,6 +209,40 @@ credential degrades the run to local-only or blocked state, never to a risky act
 
 The full contract, including worker-session ingest, steering, recovery, and v1 non-goals, is in the
 [`FULL_AUTO board-driven runner` design spec](superpowers/specs/2026-07-15-full-auto-board-runner.md).
+
+## Optional SDLC runner mode
+
+SDLC reuses the same external runner and storage contracts while inserting explicit human gates
+after planning and review:
+
+1. **Intake and gate.** The frozen story records `mode: sdlc` and begins in lane `gate`. The same
+   deterministic readiness checks apply, but a pass enqueues `sdlc:plan` instead of `auto`.
+2. **Plan.** A plan-stage worker receives a read-only, no-commit goal, explores the repo, posts a
+   full `plan` annotation, and completes the stage task with a Handoff. The `done` task then waits for
+   a human decision on its Board card.
+3. **Plan decision.** An `approval` annotation with `stage: plan` and `decision: approve` allows the
+   runner to enqueue the `auto` build task. A rejection records its feedback once as an SDLC
+   `rejection_recorded` `progress` marker on the already-`done` plan task and enqueues nothing.
+4. **Build.** The `auto` task follows the FULL_AUTO execution path through a verified commit, but it
+   does not ship. The runner records the branch and worktree, preserves both, completes the build
+   with a Handoff, and enqueues `sdlc:review`.
+5. **Review.** A review-stage worker uses the preserved worktree under a read-only, no-code-change
+   goal, checks the diff, acceptance criteria, approved plan, and verification command, posts an
+   advisory `review` annotation, and completes the stage with a Handoff.
+6. **Review decision and ship.** Approval invokes the existing shipping executor directly against
+   the preserved worktree. Repo allowlists, danger settings, push and auto-merge configuration,
+   credentials, and green-check requirements remain unchanged and fail closed. Rejection records the
+   same durable marker, ships nothing, and preserves the worktree for inspection.
+
+“Awaiting approval” is a Board state, not a task lifecycle status: the plan or review task remains
+`done`, and without a matching approval the runner makes no progress. Approval annotations are
+append-only REST/UI facts; the server stores and broadcasts them but never consumes them or launches
+work. The runner treats an approval SSE frame only as a wake hint, reconciles completed SDLC stages
+at startup and every 60 seconds, and uses existing successor tasks plus SDLC progress markers to make
+replays idempotent. SQLite remains authoritative throughout.
+
+The complete stage contracts, approval payloads, reconciliation rules, and non-goals are in the
+[`SDLC mode` design spec](superpowers/specs/2026-07-16-sdlc-mode.md).
 
 ## Logical project identity
 
@@ -258,15 +295,15 @@ participates in task coordination or structured recall.
 The Black Box server intentionally embeds no worker runner and adds no worker-process spawning,
 task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency-aware
 scheduling DAG, capability registry, multi-node broker, authentication layer, priority aging, or
-automatic follow-up enqueue. Manual reset is the recovery mechanism for abandoned ownership. Those
-additions must preserve SQLite as the truth and keep task execution outside the Black Box server.
-The separately configured session-summary subprocess described above is not a worker or task
-executor.
+server-side automatic follow-up enqueue. Manual reset is the recovery mechanism for abandoned
+ownership. Those additions must preserve SQLite as the truth and keep task execution outside the
+Black Box server. The separately configured session-summary subprocess described above is not a
+worker or task executor.
 
-The external, config-gated FULL_AUTO runner documented above does not change that boundary. It is a
-separate operator-launched process and an ordinary client of the same REST surface used by other
-agents and orchestrators; the server itself still spawns no workers, executes no task commands, and
-mutates no checkout.
+The external, config-gated FULL_AUTO and SDLC runner modes documented above do not change that
+boundary. They run in a separate operator-launched process that is an ordinary client of the same
+REST surface used by other agents and orchestrators; the server itself still spawns no workers,
+executes no task commands, and mutates no checkout.
 
 The implemented design and file map are recorded in
 [`docs/superpowers/specs/2026-06-28-agent-task-queue-design.md`](superpowers/specs/2026-06-28-agent-task-queue-design.md)

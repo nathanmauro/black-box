@@ -2,6 +2,7 @@ import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
   createSpec,
   enqueueTask,
+  updateTaskStatus,
   type ProjectSummary,
   type Spec,
   type TaskChange,
@@ -17,26 +18,36 @@ import ProjectPicker from "./ProjectPicker";
 export type StoryFormProps = {
   projects: ProjectSummary[];
   actor?: string;
+  initialInput?: StoryFormInput;
+  blockedReason?: string;
+  replacesTaskId?: string;
   createSpec?: typeof createSpec;
   enqueueTask?: typeof enqueueTask;
-  onCreated: (result: { spec: Spec; taskChange: TaskChange }) => void;
+  updateTaskStatus?: typeof updateTaskStatus;
+  onCreated: (result: StoryCreationResult) => void;
+  onCleanupFailed?: (result: StoryCreationResult, message: string) => void;
   onCancel: () => void;
 };
 
+export type StoryCreationResult = { spec: Spec; taskChange: TaskChange };
+
 export default function StoryForm(props: StoryFormProps) {
   const id = createUniqueId();
-  const [title, setTitle] = createSignal("");
-  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string>();
-  const [repo, setRepo] = createSignal("");
-  const [goal, setGoal] = createSignal("");
-  const [acceptanceCriteria, setAcceptanceCriteria] = createSignal("");
-  const [constraints, setConstraints] = createSignal("");
-  const [verify, setVerify] = createSignal("");
-  const [priority, setPriority] = createSignal(10);
-  const [mode, setMode] = createSignal<StoryFormInput["mode"]>("full_auto");
+  const initial = props.initialInput;
+  const initialProject = findProjectByIdentifier(props.projects, initial?.repo);
+  const [title, setTitle] = createSignal(initial?.title ?? "");
+  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(initialProject?.projectKey);
+  const [repo, setRepo] = createSignal(initial?.repo ?? "");
+  const [goal, setGoal] = createSignal(initial?.goal ?? "");
+  const [acceptanceCriteria, setAcceptanceCriteria] = createSignal(initial?.acceptanceCriteria ?? "");
+  const [constraints, setConstraints] = createSignal(initial?.constraints ?? "");
+  const [verify, setVerify] = createSignal(initial?.verify ?? "");
+  const [priority, setPriority] = createSignal(initial?.priority ?? 10);
+  const [mode, setMode] = createSignal<StoryFormInput["mode"]>(initial?.mode ?? "full_auto");
   const [submitting, setSubmitting] = createSignal(false);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [createdSpec, setCreatedSpec] = createSignal<Spec>();
+  const [createdResult, setCreatedResult] = createSignal<StoryCreationResult>();
 
   const currentInput = createMemo<StoryFormInput>(() => ({
     title: title(),
@@ -52,6 +63,11 @@ export default function StoryForm(props: StoryFormProps) {
   const requiredFieldsMissing = createMemo(() => (
     !title().trim() || !repo().trim() || !goal().trim() || !Number.isFinite(priority())
   ));
+  const submitLabel = createMemo(() => {
+    if (submitting()) return createdResult() ? "Cancelling old task…" : "Creating…";
+    if (createdResult()) return "Retry cancelling old task";
+    return props.replacesTaskId ? "Create revised story" : "Create story";
+  });
 
   function selectProject(projectKey: string | undefined) {
     setSelectedProjectKey(projectKey);
@@ -68,6 +84,14 @@ export default function StoryForm(props: StoryFormProps) {
     const input = currentInput();
     const actor = props.actor ?? "board";
     try {
+      const existingResult = createdResult();
+      if (existingResult) {
+        if (!props.replacesTaskId || await cancelReplacedTask(existingResult, actor)) {
+          setCreatedResult(undefined);
+          props.onCreated(existingResult);
+        }
+        return;
+      }
       let spec = createdSpec();
       if (!spec) {
         spec = await (props.createSpec ?? createSpec)({
@@ -87,11 +111,32 @@ export default function StoryForm(props: StoryFormProps) {
         actor,
       });
       setCreatedSpec(undefined);
-      props.onCreated({ spec, taskChange });
+      const result = { spec, taskChange };
+      setCreatedResult(result);
+      if (!props.replacesTaskId || await cancelReplacedTask(result, actor)) {
+        setCreatedResult(undefined);
+        props.onCreated(result);
+      }
     } catch (error) {
       setSubmitError(errorMessage(error));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function cancelReplacedTask(result: StoryCreationResult, actor: string): Promise<boolean> {
+    if (!props.replacesTaskId) return true;
+    try {
+      await (props.updateTaskStatus ?? updateTaskStatus)(props.replacesTaskId, {
+        actor,
+        status: "cancelled",
+      });
+      return true;
+    } catch (error) {
+      const message = errorMessage(error);
+      setSubmitError(`New story created and kept, but the old gate task could not be cancelled: ${message}`);
+      props.onCleanupFailed?.(result, message);
+      return false;
     }
   }
 
@@ -104,6 +149,16 @@ export default function StoryForm(props: StoryFormProps) {
           <p>Freeze the work contract, then queue it for the deterministic gate.</p>
         </div>
       </header>
+
+      <Show when={props.blockedReason}>
+        {(reason) => (
+          <section class="story-form-gate-feedback" role="note" aria-label="Gate feedback">
+            <span>Gate feedback</span>
+            <strong>Fix this before resubmitting</strong>
+            <p>{reason()}</p>
+          </section>
+        )}
+      </Show>
 
       <form aria-busy={submitting()} onSubmit={submitStory}>
         <label class="story-form-field story-form-field--wide" for={`${id}-story-title`}>
@@ -214,10 +269,9 @@ export default function StoryForm(props: StoryFormProps) {
               name={`${id}-mode`}
               value="sdlc"
               checked={mode() === "sdlc"}
-              disabled
               onChange={() => setMode("sdlc")}
             />
-            SDLC (coming soon)
+            SDLC
           </label>
         </fieldset>
 
@@ -240,7 +294,7 @@ export default function StoryForm(props: StoryFormProps) {
             class="story-form-submit"
             disabled={submitting() || requiredFieldsMissing()}
           >
-            {submitting() ? "Creating…" : "Create story"}
+            {submitLabel()}
           </button>
         </div>
       </form>

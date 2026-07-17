@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assembleSpecBody, evaluateGateHints, type StoryFormInput } from "./storySpec";
+import { assembleSpecBody, evaluateGateHints, parseSpecBody, type StoryFormInput } from "./storySpec";
 
 const validInput: StoryFormInput = {
   title: "Build the board runner",
@@ -85,6 +85,116 @@ Run approved stories from the board.
   });
 });
 
+describe("parseSpecBody", () => {
+  it("round-trips every form-owned field through the canonical builder", () => {
+    const body = assembleSpecBody({
+      ...validInput,
+      title: "  Build the board runner  ",
+      repo: '/tmp\\runner"checkout',
+      mode: "sdlc",
+      goal: `  Run approved stories.
+
+## Goal
+Keep this nested heading in the goal.
+
+## Acceptance criteria
+This heading is also goal context.
+
+## Constraints / dangers
+Keep the frozen contract.  `,
+      acceptanceCriteria: "  Gate validates the story.\n\n- Runner claims the task.  ",
+      constraints: "  Preserve local state.\nDo not force push.  ",
+      verify: '  npm test -- --name="runner"  ',
+      priority: 23,
+    });
+
+    expect(parseSpecBody(body)).toEqual({
+      title: "Build the board runner",
+      repo: '/tmp\\runner"checkout',
+      mode: "sdlc",
+      goal: `Run approved stories.
+
+## Goal
+Keep this nested heading in the goal.
+
+## Acceptance criteria
+This heading is also goal context.
+
+## Constraints / dangers
+Keep the frozen contract.`,
+      acceptanceCriteria: "Gate validates the story.\n- Runner claims the task.",
+      constraints: "Preserve local state.\nDo not force push.",
+      verify: 'npm test -- --name="runner"',
+      priority: 23,
+    });
+    expect(assembleSpecBody(parseSpecBody(body))).toBe(body);
+  });
+
+  it("restores omitted verify and the canonical empty-constraints sentinel", () => {
+    const parsed = parseSpecBody(assembleSpecBody({
+      ...validInput,
+      verify: "  ",
+      constraints: "\n ",
+    }));
+
+    expect(parsed.verify).toBe("");
+    expect(parsed.constraints).toBe("");
+  });
+
+  it.each([
+    ["Goal", "goal"],
+    ["Acceptance criteria", "acceptanceCriteria"],
+    ["Constraints / dangers", "constraints"],
+  ] as const)("defaults a missing %s section to an empty field", (heading, field) => {
+    const body = assembleSpecBody(validInput).replace(
+      new RegExp(`\\n## ${heading}\\n[\\s\\S]*?(?=\\n## |$)`),
+      "",
+    );
+
+    expect(parseSpecBody(body)[field]).toBe("");
+  });
+
+  it("ignores extra frontmatter keys and defaults absent owned values", () => {
+    expect(parseSpecBody(`---
+story: v1
+repo: '/tmp/black-box'
+mode: "sdlc"
+owner: delivery
+push: false
+priority: "23"
+custom: { retained: outside-the-form }
+---
+
+# Resubmit the blocked story
+
+## Goal
+
+Address the gate feedback.
+`)).toEqual({
+      title: "Resubmit the blocked story",
+      repo: "/tmp/black-box",
+      mode: "sdlc",
+      goal: "Address the gate feedback.",
+      acceptanceCriteria: "",
+      constraints: "",
+      verify: "",
+      priority: 23,
+    });
+  });
+
+  it("defaults blank and invalid priority values", () => {
+    const document = (priority: string) => `---
+priority: ${priority}
+---
+
+# Story
+`;
+
+    expect(parseSpecBody(document("")).priority).toBe(10);
+    expect(parseSpecBody(document("nope")).priority).toBe(10);
+  });
+});
+
 describe("evaluateGateHints", () => {
   it("returns no hints for a valid story", () => {
     expect(evaluateGateHints(validInput)).toEqual([]);
@@ -112,9 +222,9 @@ describe("evaluateGateHints", () => {
       .toContain("verify-missing");
   });
 
-  it("reports the unsupported SDLC mode", () => {
+  it("accepts SDLC mode without an unsupported-mode hint", () => {
     expect(evaluateGateHints({ ...validInput, mode: "sdlc" }).map((hint) => hint.id))
-      .toContain("mode-unsupported");
+      .not.toContain("mode-unsupported");
   });
 
   it.each([0, 101, Number.NaN])("reports an invalid priority for %s", (priority) => {

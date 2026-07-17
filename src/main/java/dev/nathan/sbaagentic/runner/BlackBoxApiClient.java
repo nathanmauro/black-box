@@ -44,6 +44,10 @@ public class BlackBoxApiClient {
         this(objectMapper, configuredBaseUrl());
     }
 
+    public String baseUrl() {
+        return baseUrl;
+    }
+
     BlackBoxApiClient(ObjectMapper objectMapper, String baseUrl) {
         this.objectMapper = objectMapper;
         this.baseUrl = stripTrailingSlash(baseUrl);
@@ -125,12 +129,28 @@ public class BlackBoxApiClient {
     }
 
     public List<TaskSnapshot> listTasks(String status) {
-        String path = "/api/tasks";
+        // Always request the server's maximum row cap: the default of 100 silently hides
+        // tasks on busy lanes (a live cleanup pass missed 11 tasks past the default cap).
+        String path = "/api/tasks?limit=250";
         if (status != null && !status.isBlank()) {
-            path += "?status=" + queryValue(status);
+            path += "&status=" + queryValue(status);
         }
         HttpResponse<String> response = send("GET", path, null);
         requireSuccess("GET", path, response);
+        return read(response.body(), new TypeReference<>() { }, response.statusCode());
+    }
+
+    public List<TaskSnapshot> listTasks(String status, String lane) {
+        StringBuilder path = new StringBuilder("/api/tasks?");
+        if (status != null && !status.isBlank()) {
+            path.append("status=").append(queryValue(status)).append('&');
+        }
+        if (lane != null && !lane.isBlank()) {
+            path.append("lane=").append(queryValue(lane)).append('&');
+        }
+        path.append("limit=250");
+        HttpResponse<String> response = send("GET", path.toString(), null);
+        requireSuccess("GET", path.toString(), response);
         return read(response.body(), new TypeReference<>() { }, response.statusCode());
     }
 

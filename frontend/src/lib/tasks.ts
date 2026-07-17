@@ -42,6 +42,9 @@ const ANNOTATION_KINDS = new Set<AnnotationKind>([
   "progress",
   "worker_session",
   "engine",
+  "plan",
+  "review",
+  "approval",
 ]);
 
 export type TaskLifecycleFrame = {

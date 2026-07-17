@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.runner.run;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -13,11 +14,14 @@ import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
 import dev.nathan.sbaagentic.task.TaskAnnotation;
 import dev.nathan.sbaagentic.task.TaskChange;
 import dev.nathan.sbaagentic.task.TaskEvent;
+import dev.nathan.sbaagentic.task.TaskSnapshot;
 
 final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 
     List<TaskEvent> taskEvents = List.of();
     java.util.function.Supplier<List<TaskEvent>> taskEventsSupplier = () -> taskEvents;
+    final Map<String, List<TaskEvent>> taskEventsByTask = new HashMap<>();
+    List<TaskSnapshot> taskSnapshots = List.of();
     IngestResponse ingestResponse = new IngestResponse(
             "event-1", "session-1", "codex", "client-1", "session_meta", false);
     final List<PostEventCall> postEventCalls = new ArrayList<>();
@@ -25,6 +29,7 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
     final List<SessionLinkCall> sessionLinkCalls = new ArrayList<>();
     final List<CompleteCall> completeCalls = new ArrayList<>();
     final List<StatusCall> statusCalls = new ArrayList<>();
+    final List<EnqueueCall> enqueueCalls = new ArrayList<>();
 
     FakeBlackBoxApiClient() {
         super(new ObjectMapper());
@@ -32,7 +37,35 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 
     @Override
     public List<TaskEvent> taskEvents(String taskId) {
+        if (taskEventsByTask.containsKey(taskId)) {
+            return taskEventsByTask.get(taskId);
+        }
         return taskEventsSupplier.get();
+    }
+
+    void setTaskEvents(String taskId, List<TaskEvent> events) {
+        taskEventsByTask.put(taskId, List.copyOf(events));
+    }
+
+    @Override
+    public List<TaskSnapshot> listTasks(String status) {
+        return taskSnapshots;
+    }
+
+    @Override
+    public List<TaskSnapshot> listTasks(String status, String lane) {
+        return taskSnapshots.stream()
+                .filter(snapshot -> status == null
+                        || status.equals(snapshot.task().status().value()))
+                .filter(snapshot -> lane == null || lane.equals(snapshot.task().lane()))
+                .toList();
+    }
+
+    @Override
+    public TaskChange enqueueTask(
+            String specId, String title, String lane, int priority, String actor) {
+        enqueueCalls.add(new EnqueueCall(specId, title, lane, priority, actor));
+        return null;
     }
 
     @Override
@@ -143,5 +176,8 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
     }
 
     record StatusCall(String taskId, String actor, String status, String blockedReason) {
+    }
+
+    record EnqueueCall(String specId, String title, String lane, int priority, String actor) {
     }
 }

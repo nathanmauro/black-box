@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -87,6 +88,25 @@ class BlackBoxApiClientTest {
         server.start();
         try {
             assertThat(client(server).claimTask("gate", "blackbox-runner")).isEmpty();
+        }
+        finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void listTasksCanFilterApprovalReconciliationByStatusAndLane() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        AtomicReference<String> query = new AtomicReference<>();
+        server.createContext("/api/tasks", exchange -> {
+            query.set(exchange.getRequestURI().getRawQuery());
+            respondJson(exchange, "[]");
+        });
+        server.start();
+        try {
+            assertThat(client(server).listTasks("done", "sdlc:review")).isEmpty();
+            assertThat(query.get())
+                    .isEqualTo("status=done&lane=sdlc%3Areview&limit=250");
         }
         finally {
             server.stop(0);

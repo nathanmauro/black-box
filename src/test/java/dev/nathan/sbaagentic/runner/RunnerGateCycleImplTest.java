@@ -52,7 +52,7 @@ class RunnerGateCycleImplTest {
     void passingGateEnqueuesAnnotatesAndCompletesOnce() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
-                .thenReturn(new GateResult(true, List.of(), "mvn test", null));
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null, "full_auto"));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
@@ -76,10 +76,60 @@ class RunnerGateCycleImplTest {
     }
 
     @Test
+    void passingSdlcGateEnqueuesPlanLane() {
+        TaskChange claimedTask = claimedGateTask();
+        when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null, "sdlc"));
+
+        gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
+
+        verify(apiClient, times(1))
+                .enqueueTask(SPEC_ID, "Implement story", "sdlc:plan", 10, ACTOR_ID);
+        verify(apiClient, never())
+                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
+        verify(apiClient, times(1)).completeTask(
+                TASK_ID,
+                ACTOR_ID,
+                "cli",
+                "blackbox-runner-gate-" + TASK_ID,
+                "Gate passed; SDLC plan task enqueued.",
+                List.of(),
+                "SDLC plan-lane execution will pick this up next.");
+    }
+
+    @Test
+    void passingSdlcGateDeduplicatesAgainstPlanLaneOnly() {
+        TaskChange claimedTask = claimedGateTask();
+        when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null, "sdlc"));
+        when(apiClient.listTasks(null, "sdlc:plan")).thenReturn(List.of(
+                existingTask("auto-task-1", "auto"),
+                existingTask("plan-task-1", "sdlc:plan")));
+
+        gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
+
+        verify(apiClient, never()).enqueueTask(any(), any(), any(), anyInt(), any());
+        verify(apiClient).annotate(
+                TASK_ID,
+                ACTOR_ID,
+                "progress",
+                "Gate passed; existing SDLC plan task plan-task-1 reused.",
+                Map.of("planTaskId", "plan-task-1"));
+        verify(apiClient).completeTask(
+                TASK_ID,
+                ACTOR_ID,
+                "cli",
+                "blackbox-runner-gate-" + TASK_ID,
+                "Gate passed; existing SDLC plan task reused.",
+                List.of(),
+                "SDLC plan-lane execution will pick this up next.");
+    }
+
+    @Test
     void postEnqueueAnnotationFailureDoesNotReleaseGateTask() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
-                .thenReturn(new GateResult(true, List.of(), "mvn test", null));
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null, "full_auto"));
         when(apiClient.annotate(
                 eq(TASK_ID),
                 eq(ACTOR_ID),
@@ -100,9 +150,9 @@ class RunnerGateCycleImplTest {
     void completeFailureThenReevaluationReusesExistingAutoTask() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
-                .thenReturn(new GateResult(true, List.of(), "mvn test", null));
-        when(apiClient.listTasks(null))
-                .thenReturn(List.of(), List.of(existingAutoTask()));
+                .thenReturn(new GateResult(true, List.of(), "mvn test", null, "full_auto"));
+        when(apiClient.listTasks(null, "auto"))
+                .thenReturn(List.of(), List.of(existingTask("auto-task-1", "auto")));
         when(apiClient.completeTask(
                 TASK_ID,
                 ACTOR_ID,
@@ -130,7 +180,8 @@ class RunnerGateCycleImplTest {
     void blockedGateMarksTaskBlockedWithoutEnqueuing() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
-                .thenReturn(new GateResult(false, List.of("some finding"), null, null));
+                .thenReturn(new GateResult(
+                        false, List.of("some finding"), null, null, "full_auto"));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
@@ -186,14 +237,14 @@ class RunnerGateCycleImplTest {
         return new TaskChange(new TaskSnapshot(task, spec), null);
     }
 
-    private static TaskSnapshot existingAutoTask() {
+    private static TaskSnapshot existingTask(String taskId, String lane) {
         Instant now = Instant.parse("2026-07-15T12:01:00Z");
         Task task = new Task(
-                "auto-task-1",
+                taskId,
                 SPEC_ID,
                 "/tmp/project",
                 "Implement story",
-                "auto",
+                lane,
                 TaskStatus.OPEN,
                 10,
                 ACTOR_ID,

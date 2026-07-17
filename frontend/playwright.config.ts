@@ -62,6 +62,8 @@ export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   expect: { timeout: 10_000 },
+  // Runner stories share the daemon's fail-closed instance lock and must not overlap across files.
+  workers: 1,
   fullyParallel: false,
   reporter: [["list"]],
   globalSetup: "./tests/e2e/global-setup.ts",

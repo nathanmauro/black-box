@@ -432,6 +432,28 @@ describe("task.note handling", () => {
     store.close();
   });
 
+  it.each(["plan", "review", "approval"] as const)("accepts live %s annotations", async (kind) => {
+    const open = task();
+    const note = annotation({
+      id: `annotation-${kind}`,
+      kind,
+      dataJson: kind === "approval"
+        ? { decision: "approve", stage: "plan", feedback: "" }
+        : null,
+    });
+    const source = new FakeEventSource();
+    const store = createTaskLiveStore({
+      loadTasks: async () => [snapshot(open)],
+      eventSourceFactory: () => source,
+    });
+    await store.refresh();
+
+    source.emit("task.note", JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }));
+
+    expect(store.taskAnnotations(open.id)).toEqual([note]);
+    store.close();
+  });
+
   it("deduplicates repeated annotation ids", async () => {
     const open = task();
     const note = annotation();

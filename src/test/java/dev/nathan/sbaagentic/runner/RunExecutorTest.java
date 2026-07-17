@@ -73,6 +73,7 @@ class RunExecutorTest {
 
     @Test
     void rateLimitedCodexDoesNotFallBackToEnabledFakeEngine() {
+        when(apiClient.baseUrl()).thenReturn("http://127.0.0.1:8766");
         AtomicBoolean sessionExists = new AtomicBoolean();
         when(tmux.hasSession(anyString())).thenAnswer(invocation -> sessionExists.get());
         doAnswer(invocation -> {
@@ -123,7 +124,9 @@ class RunExecutorTest {
                 ACTOR_ID,
                 "open",
                 "Engine rate-limited and no fallback engine is configured/enabled.");
-        verify(tmux, times(1)).sendKeys(anyString(), eq("'codex-worker'"));
+        verify(tmux, times(1)).sendKeys(
+                anyString(), eq("export SBA_STAGE='build';"
+                        + " export SBA_BASE_URL='http://127.0.0.1:8766'; 'codex-worker'"));
         verify(apiClient, never()).completeTask(any(), any(), any(), any(), any(), any(), any());
         verify(shipExecutor, never()).ship(
                 any(), any(), any(), any(), any(), any(), any(), any());
@@ -187,7 +190,7 @@ class RunExecutorTest {
             }
 
             @Override
-            public List<String> command(String prompt, EngineConfig config) {
+            public List<String> command(String prompt, EngineConfig config, File worktreeDir) {
                 return List.of(executable);
             }
         };

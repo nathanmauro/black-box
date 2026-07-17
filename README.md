@@ -21,8 +21,8 @@ Black Box is a writable memory bus and coordination ledger for Codex, Claude Cod
 clients. Agents commit the reasoning worth preserving, coordinate through a SQLite-backed task
 queue, and recall exact decisions or completion handoffs in later sessions.
 
-It is deliberately not an agent runner. Black Box records intent, arbitrates ownership, and exposes
-state; your agents and orchestrators still execute the work.
+The Black Box server is deliberately not an agent runner. It records intent, arbitrates ownership,
+and exposes state; your agents and orchestrators still execute the work.
 
 | Remember | Coordinate | Observe | Stay local-first |
 | --- | --- | --- | --- |
@@ -227,29 +227,49 @@ the exception: the default `external` backend invokes the bundled Codex wrapper 
 transcript text through that vendor path. Set `SBA_SUMMARY_BACKEND=local` to use LM Studio or another
 local OpenAI-compatible server instead.
 
-## Board-driven FULL_AUTO (optional, config-gated)
+## Board-driven runner modes (optional, config-gated)
 
 Black Box also ships an optional external runner process: `java -jar sba-agentic.jar runner`, a CLI
 subcommand alongside `doctor`, `ingest`, `sessions`, and the other maintenance commands. A story
 submitted through the Board's New Story form, or through `createSpec` plus `enqueueTask` in lane
-`gate`, is checked for readiness and then driven through an isolated worktree, branch, configured
-engine, verification, and commit. Codex model and reasoning effort are configurable; a `fake` engine
-is available for tests. Push, pull-request creation, and merge occur only when the repo config
-allows them. The card moves live on the Board, and its tendril opens the worker session's full
-context.
+`gate`, records either `full_auto` or `sdlc` in its frozen spec and begins with the same deterministic
+readiness checks. Both modes use isolated worktrees, configured engines, verification, commits, live
+Board updates, and tendrils into worker-session context. A `fake` engine is available for tests.
+
+### FULL_AUTO
+
+Story readiness is the one human gate. A passing gate enqueues an `auto` task whose worker builds,
+verifies, and commits the change; the runner then owns shipping. Push, pull-request creation, and
+merge occur only when the repo config permits them and the existing fail-closed gates pass.
+
+### SDLC
+
+SDLC adds approval annotations after planning and review: `gate → plan → approval → build → review →
+approval → ship`. Plan and review workers receive read-only, no-commit contracts and post `plan` or
+`review` annotations before completing their stage with a Handoff. Plan approval enqueues the build
+in lane `auto`. The build uses the same execution path through a verified commit, but defers shipping,
+records its preserved branch and worktree, and enqueues `sdlc:review`. Review runs against that same
+worktree and posts advisory findings; review approval invokes the same shipping path as FULL_AUTO.
+
+Without the matching approval the runner makes no progress. A rejection records the feedback as a
+`progress` marker on the already-`done` stage task and enqueues or ships nothing. Approval never
+bypasses repo allowlists, danger settings, push and auto-merge configuration, credentials, or green
+check requirements.
 
 - The runner requires an explicit machine-local config, selected through `SBA_RUNNER_CONFIG` or
   `~/.blackbox/runner.json` by default. It is never committed; start from
   [`docs/runner-config.example.json`](docs/runner-config.example.json). The config allowlists repos
   and controls push, auto-merge, and danger settings.
-- Story readiness is the human gate. Downstream behavior fails closed: an unknown repo, danger
-  flag, red check, or missing credential produces local-only or blocked work, never a risky action.
+- Downstream behavior fails closed in both modes: an unknown repo, danger flag, red check, missing
+  approval, or missing credential produces local-only, waiting, or blocked work, never a risky action.
 - The Black Box server still never launches a worker or executes a task command. The runner is a
   separate process and an ordinary REST client, like any other agent or orchestrator.
 
-See the [FULL_AUTO architecture](docs/architecture.md#optional-full_auto-runner) and the
-[`FULL_AUTO board-driven runner` design spec](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md)
-for the full pipeline and guardrails.
+See the [FULL_AUTO architecture](docs/architecture.md#optional-full_auto-runner),
+[SDLC architecture](docs/architecture.md#optional-sdlc-runner-mode),
+[`FULL_AUTO board-driven runner` design spec](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md),
+and [`SDLC mode` design spec](docs/superpowers/specs/2026-07-16-sdlc-mode.md) for the full pipelines
+and guardrails.
 
 ## Run as a service
 
@@ -261,6 +281,22 @@ macOS launchd:
 
 The script builds the frontend and jar, restarts `com.nathan.sba-agentic` by default, and waits for a
 healthy status response. Use `scripts/black-box.plist.template` for a first-time LaunchAgent install.
+
+macOS board runner launchd:
+
+`scripts/deploy-runner-local.sh` deploys the already-built jar as the
+`com.nathan.blackbox-runner` launchd service. It does not build the jar; run
+`scripts/deploy-local.sh` first. Use `scripts/blackbox-runner.plist.template` for a first-time runner
+LaunchAgent install.
+
+Running the deploy script by hand starts or restarts the runner. This is not a passive service:
+starting it launches autonomous orchestration according to `~/.blackbox/runner.json`. The runner
+claims `gate` and `auto` tasks for FULL_AUTO stories and `gate`, `sdlc:plan`, `auto`, and
+`sdlc:review` tasks for SDLC stories; it also reacts to SDLC approval annotations. Both modes use the
+configured engine, repo, push, and auto-merge settings. Review
+[Board-driven runner modes](#board-driven-runner-modes-optional-config-gated) for the full behavior
+and [`docs/runner-config.example.json`](docs/runner-config.example.json) for the config shape before
+starting it.
 
 Linux systemd:
 
