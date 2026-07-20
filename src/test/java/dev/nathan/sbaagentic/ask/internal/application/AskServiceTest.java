@@ -5,12 +5,12 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.nathan.sbaagentic.ask.AskCitation;
+import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
 import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
@@ -87,10 +87,10 @@ class AskServiceTest {
         assertThat(response.citations()).extracting(AskCitation::snippet).containsExactly("Snippet one", "Snippet two");
     }
 
-    private static SbaProperties properties() {
-        SbaProperties properties = new SbaProperties();
-        properties.getAsk().setDefaultAskCitations(6);
-        properties.getAsk().setDefaultRetrieveResults(10);
+    private static AskProperties properties() {
+        AskProperties properties = new AskProperties();
+        properties.setDefaultAskCitations(6);
+        properties.setDefaultRetrieveResults(10);
         return properties;
     }
 

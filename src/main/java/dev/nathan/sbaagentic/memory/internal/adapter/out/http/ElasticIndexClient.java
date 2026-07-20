@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventRecorded;
@@ -36,12 +36,12 @@ public class ElasticIndexClient implements SearchIndex {
     private static final Set<String> TERMS_ENUM_FIELDS = Set.of(
             "sessionId", "source", "clientSessionId", "eventType", "turnId", "cwd", "toolName");
 
-    private final SbaProperties.Elasticsearch properties;
+    private final ElasticsearchProperties properties;
     private final RestClient restClient;
     private final AtomicBoolean indexReady = new AtomicBoolean();
 
-    public ElasticIndexClient(SbaProperties properties) {
-        this.properties = properties.getElasticsearch();
+    public ElasticIndexClient(ElasticsearchProperties properties) {
+        this.properties = properties;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(this.properties.getTimeout());
         requestFactory.setReadTimeout(this.properties.getTimeout());

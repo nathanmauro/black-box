@@ -1,8 +1,8 @@
 package dev.nathan.sbaagentic.summary.internal.application;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.Titles;
 import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
+import dev.nathan.sbaagentic.summary.SummaryProperties;
 import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
 import dev.nathan.sbaagentic.summary.internal.application.port.LocalSummaryModel;
 
@@ -11,15 +11,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class SummaryBackend implements ProjectMeldSummarizer {
 
-    private final SbaProperties.Summary properties;
+    private final SummaryProperties properties;
     private final LocalSummaryModel localAiClient;
     private final ExternalSummaryModel externalSummaryClient;
 
     public SummaryBackend(
-            SbaProperties properties,
+            SummaryProperties properties,
             LocalSummaryModel localAiClient,
             ExternalSummaryModel externalSummaryClient) {
-        this.properties = properties.getSummary();
+        this.properties = properties;
         this.localAiClient = localAiClient;
         this.externalSummaryClient = externalSummaryClient;
     }

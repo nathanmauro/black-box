@@ -5,11 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalUnavailable;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -20,13 +21,15 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class ElasticMemoryClient implements MemoryRetrievalOperations {
 
-    private final SbaProperties.Elasticsearch elasticsearch;
-    private final SbaProperties.Ask ask;
+    private final ElasticsearchProperties elasticsearch;
+    private final MemoryRetrievalProperties ask;
     private final RestClient restClient;
 
-    public ElasticMemoryClient(SbaProperties properties) {
-        this.elasticsearch = properties.getElasticsearch();
-        this.ask = properties.getAsk();
+    public ElasticMemoryClient(
+            ElasticsearchProperties elasticsearch,
+            MemoryRetrievalProperties ask) {
+        this.elasticsearch = elasticsearch;
+        this.ask = ask;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(this.elasticsearch.getTimeout());
         requestFactory.setReadTimeout(this.elasticsearch.getTimeout());
@@ -68,7 +71,7 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         return search(knnQuery(embedding, limit, ask));
     }
 
-    static Map<String, Object> bm25Query(String query, int limit, SbaProperties.Ask ask) {
+    static Map<String, Object> bm25Query(String query, int limit, MemoryRetrievalProperties ask) {
         Map<String, Object> multiMatch = new LinkedHashMap<>();
         multiMatch.put("query", query);
         multiMatch.put("fields", ask.getSearchFields());
@@ -89,7 +92,7 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         return body;
     }
 
-    static Map<String, Object> knnQuery(float[] embedding, int limit, SbaProperties.Ask ask) {
+    static Map<String, Object> knnQuery(float[] embedding, int limit, MemoryRetrievalProperties ask) {
         Map<String, Object> knn = new LinkedHashMap<>();
         knn.put("field", ask.getVectorField());
         knn.put("query_vector", embedding);

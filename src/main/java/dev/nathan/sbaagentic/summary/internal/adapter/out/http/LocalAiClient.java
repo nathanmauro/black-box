@@ -4,8 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.summary.internal.application.port.LocalSummaryModel;
 import dev.nathan.sbaagentic.recording.Titles;
@@ -36,11 +36,11 @@ public class LocalAiClient implements LocalSummaryModel, SummaryModelOperations 
     /** Folding rounds before we give up and clamp; each round shrinks the set by ~budget/part-size. */
     private static final int MAX_REDUCE_ROUNDS = 6;
 
-    private final SbaProperties.LocalAi properties;
+    private final SummaryModelProperties properties;
     private final RestClient restClient;
 
-    public LocalAiClient(SbaProperties properties) {
-        this.properties = properties.getLocalAi();
+    public LocalAiClient(SummaryModelProperties properties) {
+        this.properties = properties;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(this.properties.getTimeout());
         requestFactory.setReadTimeout(this.properties.getTimeout());

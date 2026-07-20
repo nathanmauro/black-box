@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.out.sse;
 
-import dev.nathan.sbaagentic.stream.EventBroadcaster;
-import dev.nathan.sbaagentic.stream.StreamEvents;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.EventBroadcaster;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
 import dev.nathan.sbaagentic.workflow.WorkflowPublication;
 import dev.nathan.sbaagentic.workflow.WorkflowTaskChanged;
 import dev.nathan.sbaagentic.workflow.WorkflowTaskNoted;

@@ -56,7 +56,7 @@ import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.stream.StreamEvents;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
 import dev.nathan.sbaagentic.workflow.SpecStatus;
@@ -69,7 +69,7 @@ import dev.nathan.sbaagentic.workflow.TaskEventType;
 import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 import dev.nathan.sbaagentic.workflow.TaskSpec;
 import dev.nathan.sbaagentic.workflow.TaskStatus;
-import dev.nathan.sbaagentic.web.ApiExceptionHandler;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.web.ApiExceptionHandler;
 import dev.nathan.sbaagentic.workflow.internal.adapter.in.web.TaskController;
 
 import org.junit.jupiter.api.Test;

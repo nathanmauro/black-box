@@ -2,7 +2,7 @@ package dev.nathan.sbaagentic.summary.internal.adapter.out.process;
 
 import java.util.Optional;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.summary.SummaryProperties;
 
 import org.junit.jupiter.api.Test;
 
@@ -12,8 +12,8 @@ class ExternalSummaryClientTest {
 
     @Test
     void sendsTranscriptToConfiguredCommandOnStdin() {
-        SbaProperties properties = new SbaProperties();
-        properties.getSummary().setExternalCommand("cat");
+        SummaryProperties properties = new SummaryProperties();
+        properties.setExternalCommand("cat");
         ExternalSummaryClient client = new ExternalSummaryClient(properties);
 
         Optional<String> summary = client.summarize("Session: test\n\n[UserPromptSubmit] explain the delay");
@@ -23,8 +23,8 @@ class ExternalSummaryClientTest {
 
     @Test
     void returnsEmptyWhenCommandOutputsNoUsableSummary() {
-        SbaProperties properties = new SbaProperties();
-        properties.getSummary().setExternalCommand("printf '   '");
+        SummaryProperties properties = new SummaryProperties();
+        properties.setExternalCommand("printf '   '");
         ExternalSummaryClient client = new ExternalSummaryClient(properties);
 
         assertThat(client.summarize("anything")).isEmpty();
@@ -32,8 +32,8 @@ class ExternalSummaryClientTest {
 
     @Test
     void posixShellCommandWorks() {
-        SbaProperties properties = new SbaProperties();
-        properties.getSummary().setExternalCommand("printf 'posix-ok'");
+        SummaryProperties properties = new SummaryProperties();
+        properties.setExternalCommand("printf 'posix-ok'");
         ExternalSummaryClient client = new ExternalSummaryClient(properties);
 
         Optional<String> summary = client.summarize("ignored");
@@ -43,8 +43,8 @@ class ExternalSummaryClientTest {
 
     @Test
     void missingCommandFailsCleanly() {
-        SbaProperties properties = new SbaProperties();
-        properties.getSummary().setExternalCommand("/definitely/not/a/real/sba-summary-command");
+        SummaryProperties properties = new SummaryProperties();
+        properties.setExternalCommand("/definitely/not/a/real/sba-summary-command");
         ExternalSummaryClient client = new ExternalSummaryClient(properties);
 
         assertThat(client.summarize("anything")).isEmpty();

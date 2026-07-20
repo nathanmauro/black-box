@@ -5,11 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorded;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 
@@ -35,8 +35,8 @@ class RecordingLifecyclePublicationTest {
         };
         EventIngestService service = new EventIngestService(
                 store,
-                new SbaProperties(),
-                new RedactionService(new SbaProperties()),
+                new IngestionProperties(),
+                new RedactionService(new IngestionProperties()),
                 published -> {
                     if (published instanceof EventRecorded recorded) {
                         sequence.add("recorded");

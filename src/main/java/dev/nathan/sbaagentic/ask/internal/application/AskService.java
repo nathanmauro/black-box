@@ -5,6 +5,7 @@ import java.util.List;
 import dev.nathan.sbaagentic.ask.AskCitation;
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
 import dev.nathan.sbaagentic.ask.AskOperations;
+import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
@@ -12,7 +13,6 @@ import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
 import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
 import dev.nathan.sbaagentic.ask.internal.domain.ReciprocalRankFusion;
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
@@ -27,17 +27,17 @@ public class AskService implements AskOperations {
     private final MemoryRetrievalOperations memoryRetriever;
     private final QueryEmbedder queryEmbedder;
     private final AnswerSynthesizer answerSynthesizer;
-    private final SbaProperties.Ask properties;
+    private final AskProperties properties;
 
     public AskService(
             MemoryRetrievalOperations memoryRetriever,
             QueryEmbedder queryEmbedder,
             AnswerSynthesizer answerSynthesizer,
-            SbaProperties properties) {
+            AskProperties properties) {
         this.memoryRetriever = memoryRetriever;
         this.queryEmbedder = queryEmbedder;
         this.answerSynthesizer = answerSynthesizer;
-        this.properties = properties.getAsk();
+        this.properties = properties;
     }
 
     public AskStatus status() {

@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
+import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
 import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
-import dev.nathan.sbaagentic.config.SbaProperties;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -17,11 +17,11 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class OllamaEmbeddingClient implements QueryEmbedder {
 
-    private final SbaProperties.Ask properties;
+    private final AskProperties properties;
     private final RestClient restClient;
 
-    public OllamaEmbeddingClient(SbaProperties properties) {
-        this.properties = properties.getAsk();
+    public OllamaEmbeddingClient(AskProperties properties) {
+        this.properties = properties;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(this.properties.getEmbeddingTimeout());
         requestFactory.setReadTimeout(this.properties.getEmbeddingTimeout());

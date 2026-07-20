@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,10 +13,10 @@ class ElasticMemoryClientTest {
 
     @Test
     void buildsBm25QueryAgainstMemoryTextAndMetadataFields() throws Exception {
-        SbaProperties properties = new SbaProperties();
+        MemoryRetrievalProperties properties = new MemoryRetrievalProperties();
 
         String json = objectMapper.writeValueAsString(
-                ElasticMemoryClient.bm25Query("agent memory", 7, properties.getAsk()));
+                ElasticMemoryClient.bm25Query("agent memory", 7, properties));
 
         assertThat(json)
                 .contains("\"size\":7")
@@ -34,11 +34,11 @@ class ElasticMemoryClientTest {
 
     @Test
     void buildsKnnQueryWithConfiguredVectorFieldAndDimensions() throws Exception {
-        SbaProperties properties = new SbaProperties();
-        properties.getAsk().setVectorField("memory_vector");
+        MemoryRetrievalProperties properties = new MemoryRetrievalProperties();
+        properties.setVectorField("memory_vector");
 
         String json = objectMapper.writeValueAsString(
-                ElasticMemoryClient.knnQuery(new float[] { 0.1f, 0.2f, 0.3f }, 5, properties.getAsk()));
+                ElasticMemoryClient.knnQuery(new float[] { 0.1f, 0.2f, 0.3f }, 5, properties));
 
         assertThat(json)
                 .contains("\"size\":5")
@@ -51,9 +51,9 @@ class ElasticMemoryClientTest {
 
     @Test
     void defaultsToAskMyHistoryAgentMemoryVectorField() {
-        SbaProperties properties = new SbaProperties();
+        MemoryRetrievalProperties properties = new MemoryRetrievalProperties();
 
-        assertThat(properties.getAsk().getVectorField()).isEqualTo("vector");
+        assertThat(properties.getVectorField()).isEqualTo("vector");
     }
 
     @Test

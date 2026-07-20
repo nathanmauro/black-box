@@ -1,6 +1,6 @@
 package dev.nathan.sbaagentic.summary;
 
-/** Transitional public model boundary; ask replaces this dependency with its own adapter. */
+/** Summary-owned model status and summarization boundary used by platform adapters. */
 public interface SummaryModelOperations {
 
     AiHealth health();

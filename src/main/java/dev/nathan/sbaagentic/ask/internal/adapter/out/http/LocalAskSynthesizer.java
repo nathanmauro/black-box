@@ -5,9 +5,10 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.ask.AskCitation;
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
+import dev.nathan.sbaagentic.ask.AskModelProperties;
+import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
 import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
-import dev.nathan.sbaagentic.config.SbaProperties;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -29,13 +30,13 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
             Do not use outside knowledge.
             """;
 
-    private final SbaProperties.LocalAi localAi;
-    private final SbaProperties.Ask ask;
+    private final AskModelProperties localAi;
+    private final AskProperties ask;
     private final RestClient restClient;
 
-    public LocalAskSynthesizer(SbaProperties properties) {
-        this.localAi = properties.getLocalAi();
-        this.ask = properties.getAsk();
+    public LocalAskSynthesizer(AskModelProperties localAi, AskProperties ask) {
+        this.localAi = localAi;
+        this.ask = ask;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(localAi.getTimeout());
         requestFactory.setReadTimeout(localAi.getTimeout());

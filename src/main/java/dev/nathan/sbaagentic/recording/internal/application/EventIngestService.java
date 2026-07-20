@@ -5,7 +5,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
@@ -24,13 +24,13 @@ public class EventIngestService implements EventRecorder {
     private static final Set<String> FINAL_EVENT_TYPES = Set.of("sessionend", "stop");
 
     private final RecordingStore repository;
-    private final SbaProperties properties;
+    private final IngestionProperties properties;
     private final RedactionService redactionService;
     private final ApplicationEventPublisher eventPublisher;
 
     public EventIngestService(
             RecordingStore repository,
-            SbaProperties properties,
+            IngestionProperties properties,
             RedactionService redactionService,
             ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
@@ -134,7 +134,7 @@ public class EventIngestService implements EventRecorder {
         if (value == null) {
             return null;
         }
-        int max = properties.getIngestion().getMaxTextLength();
+        int max = properties.getMaxTextLength();
         if (value.length() <= max) {
             return value;
         }

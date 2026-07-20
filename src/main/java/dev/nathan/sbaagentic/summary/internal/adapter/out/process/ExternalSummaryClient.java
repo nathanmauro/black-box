@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.summary.SummaryProperties;
 import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
 
 import org.springframework.stereotype.Component;
@@ -17,10 +17,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class ExternalSummaryClient implements ExternalSummaryModel {
 
-    private final SbaProperties.Summary properties;
+    private final SummaryProperties properties;
 
-    public ExternalSummaryClient(SbaProperties properties) {
-        this.properties = properties.getSummary();
+    public ExternalSummaryClient(SummaryProperties properties) {
+        this.properties = properties;
     }
 
     public Optional<String> summarize(String transcript) {

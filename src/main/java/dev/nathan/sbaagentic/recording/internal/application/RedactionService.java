@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 
 import org.springframework.stereotype.Service;
 
@@ -29,9 +29,9 @@ public class RedactionService {
     private final boolean enabled;
     private final List<RedactionRule> rules;
 
-    public RedactionService(SbaProperties properties) {
-        this.enabled = properties.getIngestion().isRedactEnabled();
-        List<String> customPatterns = properties.getIngestion().getRedactPatterns();
+    public RedactionService(IngestionProperties properties) {
+        this.enabled = properties.isRedactEnabled();
+        List<String> customPatterns = properties.getRedactPatterns();
         this.rules = customPatterns.isEmpty() ? builtInRules() : customRules(customPatterns);
     }
 

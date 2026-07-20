@@ -37,11 +37,11 @@ flowchart LR
         STREAM["SSE /api/stream<br/>wake hint"]
     end
 
-    subgraph Core["Black Box"]
-        TASK["TaskService<br/>lifecycle and Handoff completion"]
-        CONTEXT["ContextService<br/>structured capture and recall"]
-        REPO["TaskRepository and EventRepository"]
-        BROADCAST["EventBroadcaster<br/>best effort"]
+    subgraph Core["Black Box modules"]
+        WORKFLOW["workflow<br/>lifecycle and Handoff completion"]
+        MEMORY["memory<br/>structured recall and search"]
+        RECORDING["recording<br/>canonical event writes"]
+        BROADCAST["platform SSE hub<br/>best effort"]
     end
 
     DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>session_links · project_aliases")]
@@ -53,18 +53,18 @@ flowchart LR
     RUNNER --> REST
     HUMAN --> REST & UI
     UI --> REST
-    HOOK --> CONTEXT
-    MCP --> TASK & CONTEXT
-    REST --> TASK & CONTEXT
-    TASK --> REPO
-    TASK -->|"complete: capture normal Handoff"| CONTEXT
-    CONTEXT --> REPO
-    REPO --> DB
-    TASK -. "after durable mutation" .-> BROADCAST
-    CONTEXT -. "after durable event write" .-> BROADCAST
+    HOOK --> RECORDING
+    MCP --> WORKFLOW & MEMORY & RECORDING
+    REST --> WORKFLOW & MEMORY & RECORDING
+    WORKFLOW -->|"complete: capture normal Handoff"| RECORDING
+    MEMORY --> RECORDING
+    RECORDING --> DB
+    WORKFLOW --> DB
+    WORKFLOW -. "after durable mutation" .-> BROADCAST
+    RECORDING -. "after durable event write" .-> BROADCAST
     BROADCAST --> STREAM
     STREAM -. "refresh or try claim" .-> AGENTS & RUNNER & UI
-    CONTEXT -. "new event mirror when enabled" .-> ES
+    MEMORY -. "new event mirror when enabled" .-> ES
     DB -. "session summary only" .-> EXTERNAL
     DB -. "when SBA_SUMMARY_BACKEND=local" .-> LOCAL
 ```
@@ -79,6 +79,37 @@ SQLite remains authoritative if an SSE client disconnects, a broadcast fails, El
 offline, or a model backend is unavailable. Task row mutation and its `task_events` append commit in
 one SQLite transaction. The corresponding `task.*` frame is published afterward and may be missed;
 clients recover by fetching `GET /api/tasks`.
+
+## Java module graph
+
+The application is one deployable Spring Boot jar with eight Spring Modulith modules. Each feature
+owns its REST and MCP adapters, application services, domain rules, and outbound adapters beneath
+its module root. `platform` is the composition edge for bootstrap, CLI dispatch, generic web errors,
+SPA routing, SSE transport, configuration registration, and aggregation of feature-owned MCP tool
+callbacks. `runner` is packaged with the application but behaves as an external REST client and
+does not import server implementation types.
+
+```mermaid
+flowchart LR
+    PLATFORM["platform"] --> ASK["ask"]
+    PLATFORM --> MEMORY["memory"]
+    PLATFORM --> RECORDING["recording"]
+    PLATFORM --> RUNNER["runner"]
+    PLATFORM --> SUMMARY["summary"]
+    PLATFORM --> WORKFLOW["workflow"]
+    ASK --> MEMORY
+    MEMORY --> PROJECT["project"]
+    MEMORY --> RECORDING
+    PROJECT --> RECORDING
+    SUMMARY --> PROJECT
+    SUMMARY --> RECORDING
+    WORKFLOW --> RECORDING
+```
+
+Arrows point from a consumer to the public API it imports. No module may import another module's
+`internal` package. Recording is the canonical session/event boundary; optional projections and
+reactions happen after its SQLite write. The stable package rules and contributor guidance live in
+[`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
 
 ## The coordination loop
 
@@ -103,8 +134,8 @@ is what keeps the Black Box server a substrate rather than an executor.
 
 ## One contract, two adapters
 
-`AgenticController` and `AgenticTools` delegate these seven operations to the same `TaskService`.
-Success JSON uses the same field names and ISO-8601 timestamps on both surfaces.
+Workflow-owned REST and MCP adapters delegate these seven operations to the same application
+service. Success JSON uses the same field names and ISO-8601 timestamps on both surfaces.
 
 | Operation | REST | MCP tool | Input and result |
 | --- | --- | --- | --- |
@@ -269,14 +300,15 @@ selecting a project never infers work or broadens the authoritative queue query.
 
 ## Continuity and search components
 
-- **`EventIngestService` and `EventRepository`.** Normalize hook/API event payloads and persist
-  sessions plus structured events in SQLite.
-- **`ContextService`.** Capture and recall decisions, Handoffs, and observations by repo, topic, or
-  direct event id.
-- **`SearchService`.** Search SQLite events and optionally combine Elasticsearch hits.
-- **`ProjectAliasService`, `ProjectService`, and `ProjectMeldService`.** Resolve conservative logical
-  project identity, derive grouped project views, and build bounded meld artifacts from recorded
-  sessions.
+- **Recording.** Normalizes hook/API event payloads and persists sessions plus structured events in
+  SQLite behind recording-owned store ports.
+- **Memory.** Captures and recalls decisions, Handoffs, and observations by repo, topic, or direct
+  event id; searches SQLite events and optionally combines Elasticsearch hits.
+- **Project.** Resolves conservative logical project identity, derives grouped project views, and
+  builds bounded meld artifacts from recorded sessions.
+- **Summary.** Owns session finalization, local/external summary providers, and transcript exports.
+- **Ask.** Owns retrieval orchestration, query embedding, and grounded answer synthesis.
+- **Workflow.** Owns specs, tasks, annotations, lifecycle, session lineage, and DAG projection.
 - **SolidJS web UI.** Reads the same REST surfaces for Activity, Board, Recall, search, and supporting
   views, including the read-oriented Projects workspace and its explicit identity-curation controls;
   Vite assets are packaged into the Spring Boot

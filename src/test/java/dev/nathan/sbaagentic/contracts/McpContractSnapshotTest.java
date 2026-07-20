@@ -12,8 +12,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import dev.nathan.sbaagentic.mcp.AgenticTools;
-import dev.nathan.sbaagentic.mcp.RestJsonToolCallResultConverter;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
+import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.RestJsonToolCallResultConverter;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
 
 import org.junit.jupiter.api.Test;
 
@@ -69,14 +71,16 @@ class McpContractSnapshotTest {
                 .isSameAs(callbackProvider);
 
         List<String> annotatedNames = new ArrayList<>();
-        for (Method method : AgenticTools.class.getDeclaredMethods()) {
-            Tool tool = method.getAnnotation(Tool.class);
-            if (tool == null) {
-                continue;
-            }
-            annotatedNames.add(method.getName());
-            if (REST_JSON_TOOLS.contains(method.getName())) {
-                assertThat(tool.resultConverter()).isEqualTo(RestJsonToolCallResultConverter.class);
+        for (Class<?> toolGroup : List.of(MemoryMcpTools.class, SummaryMcpTools.class, WorkflowMcpTools.class)) {
+            for (Method method : toolGroup.getDeclaredMethods()) {
+                Tool tool = method.getAnnotation(Tool.class);
+                if (tool == null) {
+                    continue;
+                }
+                annotatedNames.add(method.getName());
+                if (REST_JSON_TOOLS.contains(method.getName())) {
+                    assertThat(tool.resultConverter()).isEqualTo(RestJsonToolCallResultConverter.class);
+                }
             }
         }
         assertThat(annotatedNames).hasSize(14).containsAll(REST_JSON_TOOLS);

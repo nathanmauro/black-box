@@ -1,5 +1,5 @@
 -- Schema/data fixture captured before the Java package refactor. agent_sessions intentionally lacks
--- title_rank so EventRepository's legacy migration remains part of the compatibility contract.
+-- title_rank keeps the pre-refactor schema migration in the compatibility contract.
 CREATE TABLE agent_sessions (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,

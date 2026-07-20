@@ -15,12 +15,13 @@ import java.util.Map;
 
 import com.samskivert.mustache.Mustache;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.summary.ExportTarget;
 import dev.nathan.sbaagentic.summary.SummaryExport;
 import dev.nathan.sbaagentic.summary.SummaryExportOperations;
+import dev.nathan.sbaagentic.summary.SummaryExportProperties;
+import dev.nathan.sbaagentic.summary.SummaryExportProperties.Target;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -40,18 +41,21 @@ public class SummaryExportService implements SummaryExportOperations {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
     private final RecordingCatalog repository;
-    private final SbaProperties properties;
+    private final SummaryExportProperties properties;
     private final ResourceLoader resourceLoader;
 
-    public SummaryExportService(RecordingCatalog repository, SbaProperties properties, ResourceLoader resourceLoader) {
+    public SummaryExportService(
+            RecordingCatalog repository,
+            SummaryExportProperties properties,
+            ResourceLoader resourceLoader) {
         this.repository = repository;
         this.properties = properties;
         this.resourceLoader = resourceLoader;
     }
 
     public List<ExportTarget> targets() {
-        return properties.getExports().getTargets().stream()
-                .filter(SbaProperties.Target::isEnabled)
+        return properties.getTargets().stream()
+                .filter(Target::isEnabled)
                 .map(target -> new ExportTarget(
                         target.getId(),
                         firstNonBlank(target.getLabel(), target.getId()),
@@ -66,25 +70,25 @@ public class SummaryExportService implements SummaryExportOperations {
             throw new ResponseStatusException(CONFLICT, "Session has no summary to export");
         }
 
-        SbaProperties.Target target = findTarget(targetId);
+        Target target = findTarget(targetId);
         if (!MARKDOWN_FILE.equalsIgnoreCase(firstNonBlank(target.getType(), MARKDOWN_FILE))) {
             throw new ResponseStatusException(BAD_REQUEST, "Unsupported export target type: " + target.getType());
         }
         return writeMarkdownFile(session, target);
     }
 
-    private SbaProperties.Target findTarget(String targetId) {
+    private Target findTarget(String targetId) {
         if (targetId == null || targetId.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "Export target id is required");
         }
-        return properties.getExports().getTargets().stream()
-                .filter(SbaProperties.Target::isEnabled)
+        return properties.getTargets().stream()
+                .filter(Target::isEnabled)
                 .filter(target -> targetId.equals(target.getId()))
                 .findFirst()
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Export target not found"));
     }
 
-    private SummaryExport writeMarkdownFile(AgentSession session, SbaProperties.Target target) {
+    private SummaryExport writeMarkdownFile(AgentSession session, Target target) {
         Path exportRoot = exportRoot(target);
         Map<String, Object> model = templateModel(session, target);
         Path notePath = exportRoot
@@ -112,7 +116,7 @@ public class SummaryExportService implements SummaryExportOperations {
                 exportRoot.relativize(notePath).toString());
     }
 
-    private Path exportRoot(SbaProperties.Target target) {
+    private Path exportRoot(Target target) {
         String configured = target.getDirectory();
         if (configured == null || configured.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST,
@@ -127,7 +131,7 @@ public class SummaryExportService implements SummaryExportOperations {
         return Path.of(configured).toAbsolutePath().normalize();
     }
 
-    private String loadTemplate(SbaProperties.Target target) throws IOException {
+    private String loadTemplate(Target target) throws IOException {
         String location = firstNonBlank(target.getTemplate(), "classpath:/exports/summary-markdown.mustache");
         Resource resource = resourceLoader.getResource(location);
         if (!resource.exists()) {
@@ -138,7 +142,7 @@ public class SummaryExportService implements SummaryExportOperations {
         }
     }
 
-    private static Map<String, Object> templateModel(AgentSession session, SbaProperties.Target target) {
+    private static Map<String, Object> templateModel(AgentSession session, Target target) {
         Map<String, Object> model = new LinkedHashMap<>();
         String cwd = session.cwd();
         model.put("targetId", target.getId());

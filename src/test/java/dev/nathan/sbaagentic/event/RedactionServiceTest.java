@@ -6,7 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 
 import org.junit.jupiter.api.Test;
 
@@ -107,8 +107,8 @@ class RedactionServiceTest {
 
     @Test
     void disabledRedactionPassesInputsThrough() {
-        SbaProperties properties = new SbaProperties();
-        properties.getIngestion().setRedactEnabled(false);
+        IngestionProperties properties = new IngestionProperties();
+        properties.setRedactEnabled(false);
         RedactionService redactionService = new RedactionService(properties);
         String text = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";
         Map<String, Object> input = Map.of("stdout", text);
@@ -129,8 +129,8 @@ class RedactionServiceTest {
 
     @Test
     void customPatternsReplaceDefaultPatterns() {
-        SbaProperties properties = new SbaProperties();
-        properties.getIngestion().setRedactPatterns(List.of("INTERNAL-[0-9]{4}"));
+        IngestionProperties properties = new IngestionProperties();
+        properties.setRedactPatterns(List.of("INTERNAL-[0-9]{4}"));
         RedactionService redactionService = new RedactionService(properties);
 
         assertThat(redactionService.redact("INTERNAL-1234 ghp_abcdefghijklmnopqrstuvwxyz0123456789AB"))
@@ -138,6 +138,6 @@ class RedactionServiceTest {
     }
 
     private static RedactionService redactionService() {
-        return new RedactionService(new SbaProperties());
+        return new RedactionService(new IngestionProperties());
     }
 }
