@@ -8,12 +8,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.event.EventIngestRequest;
-import dev.nathan.sbaagentic.event.EventIngestService;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.event.IngestResponse;
-import dev.nathan.sbaagentic.session.Titles;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Service;
 
@@ -44,10 +44,10 @@ public class ContextService {
     private static final int MAX_WITHIN_HOURS = 24 * 365;
     private static final int RECALL_LIMIT = 50;
 
-    private final EventIngestService ingestService;
-    private final EventRepository repository;
+    private final EventRecorder ingestService;
+    private final MemoryEventReader repository;
 
-    public ContextService(EventIngestService ingestService, EventRepository repository) {
+    public ContextService(EventRecorder ingestService, MemoryEventReader repository) {
         this.ingestService = ingestService;
         this.repository = repository;
     }

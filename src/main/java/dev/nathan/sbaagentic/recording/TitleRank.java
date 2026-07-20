@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.session;
+package dev.nathan.sbaagentic.recording;
 
 /**
  * Quality ranks for session titles. A stored title is only replaced when a

@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.search;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 public interface EventIndexSink {
 

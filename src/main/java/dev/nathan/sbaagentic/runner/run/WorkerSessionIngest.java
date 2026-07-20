@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
 
 import org.slf4j.Logger;

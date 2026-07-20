@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.session;
+package dev.nathan.sbaagentic.recording;
 
 /**
  * Single source of truth for how session titles are normalized: collapse

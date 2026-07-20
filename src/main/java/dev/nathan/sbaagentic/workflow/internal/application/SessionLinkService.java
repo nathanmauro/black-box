@@ -2,7 +2,7 @@ package dev.nathan.sbaagentic.workflow.internal.application;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.workflow.LinkDomainException;
 import dev.nathan.sbaagentic.workflow.LinkErrorCode;
@@ -21,9 +21,9 @@ import org.springframework.stereotype.Service;
 public class SessionLinkService implements SessionLineageOperations {
 
     private final SessionLinkStore repository;
-    private final EventRepository eventRepository;
+    private final RecordingCatalog eventRepository;
 
-    public SessionLinkService(SessionLinkStore repository, EventRepository eventRepository) {
+    public SessionLinkService(SessionLinkStore repository, RecordingCatalog eventRepository) {
         this.repository = repository;
         this.eventRepository = eventRepository;
     }

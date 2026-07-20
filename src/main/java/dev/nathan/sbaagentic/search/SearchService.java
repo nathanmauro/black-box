@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
 
 import org.springframework.stereotype.Service;
 
@@ -48,7 +48,7 @@ public class SearchService {
      */
     private static final long HARD_TTL_MILLIS = 10 * 60 * 1000L;
 
-    private final EventRepository repository;
+    private final MemoryEventReader repository;
     private final ElasticIndexClient elasticIndexClient;
 
     /**
@@ -61,7 +61,7 @@ public class SearchService {
     private volatile CacheEntry holder;
     private final AtomicBoolean refreshing = new AtomicBoolean();
 
-    public SearchService(EventRepository repository, ElasticIndexClient elasticIndexClient) {
+    public SearchService(MemoryEventReader repository, ElasticIndexClient elasticIndexClient) {
         this.repository = repository;
         this.elasticIndexClient = elasticIndexClient;
     }

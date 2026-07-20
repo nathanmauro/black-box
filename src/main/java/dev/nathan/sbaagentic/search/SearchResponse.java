@@ -3,7 +3,7 @@ package dev.nathan.sbaagentic.search;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentEvent;
 
 public record SearchResponse(
         String query,

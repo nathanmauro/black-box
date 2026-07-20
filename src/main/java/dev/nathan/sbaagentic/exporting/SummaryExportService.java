@@ -16,8 +16,8 @@ import java.util.Map;
 import com.samskivert.mustache.Mustache;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -36,11 +36,11 @@ public class SummaryExportService {
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
-    private final EventRepository repository;
+    private final RecordingCatalog repository;
     private final SbaProperties properties;
     private final ResourceLoader resourceLoader;
 
-    public SummaryExportService(EventRepository repository, SbaProperties properties, ResourceLoader resourceLoader) {
+    public SummaryExportService(RecordingCatalog repository, SbaProperties properties, ResourceLoader resourceLoader) {
         this.repository = repository;
         this.properties = properties;
         this.resourceLoader = resourceLoader;

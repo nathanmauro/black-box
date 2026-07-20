@@ -2,13 +2,13 @@ package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.event.EventFeedResponse;
-import dev.nathan.sbaagentic.event.EventIngestRequest;
-import dev.nathan.sbaagentic.event.EventIngestService;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.event.IngestResponse;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EventFeedResponse;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import jakarta.validation.Valid;
 
@@ -24,10 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class EventController {
 
-    private final EventIngestService ingestService;
-    private final EventRepository repository;
+    private final EventRecorder ingestService;
+    private final RecordingCatalog repository;
 
-    public EventController(EventIngestService ingestService, EventRepository repository) {
+    public EventController(EventRecorder ingestService, RecordingCatalog repository) {
         this.ingestService = ingestService;
         this.repository = repository;
     }

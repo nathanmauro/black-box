@@ -13,8 +13,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.junit.jupiter.api.Test;
 

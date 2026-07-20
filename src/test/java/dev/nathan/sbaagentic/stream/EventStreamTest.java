@@ -17,8 +17,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import dev.nathan.sbaagentic.event.EventIngestRequest;
-import dev.nathan.sbaagentic.event.EventIngestService;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
 
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +46,7 @@ class EventStreamTest {
     int port;
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
     EventBroadcaster broadcaster;

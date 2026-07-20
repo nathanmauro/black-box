@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.session;
+package dev.nathan.sbaagentic.recording;
 
 import java.time.Instant;
 

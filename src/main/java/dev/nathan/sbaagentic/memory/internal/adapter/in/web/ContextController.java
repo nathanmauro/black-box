@@ -6,7 +6,7 @@ import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 
 import jakarta.validation.Valid;
 

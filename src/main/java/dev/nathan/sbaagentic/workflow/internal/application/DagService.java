@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.workflow.DagEdge;
 import dev.nathan.sbaagentic.workflow.DagNode;
 import dev.nathan.sbaagentic.workflow.DagOperations;
@@ -29,12 +29,12 @@ public class DagService implements DagOperations {
 
     private final WorkflowOperations workflow;
     private final SessionLineageOperations sessionLinks;
-    private final EventRepository eventRepository;
+    private final RecordingCatalog eventRepository;
 
     public DagService(
             WorkflowOperations workflow,
             SessionLineageOperations sessionLinks,
-            EventRepository eventRepository) {
+            RecordingCatalog eventRepository) {
         this.workflow = workflow;
         this.sessionLinks = sessionLinks;
         this.eventRepository = eventRepository;

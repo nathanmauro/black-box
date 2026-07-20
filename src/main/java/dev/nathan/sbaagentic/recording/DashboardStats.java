@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
 
 import java.util.List;
 

@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.ai;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.session.Titles;
+import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Component;
 

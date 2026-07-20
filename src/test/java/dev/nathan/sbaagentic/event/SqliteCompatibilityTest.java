@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -8,7 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.project.ProjectAliasRepository;
 import dev.nathan.sbaagentic.project.ProjectAliasService;
-import dev.nathan.sbaagentic.session.TitleRank;
+import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
 
 import org.junit.jupiter.api.Test;
@@ -35,7 +37,7 @@ class SqliteCompatibilityTest {
         new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
 
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-        EventRepository events = new EventRepository(
+        RecordingSqlStore events = new RecordingSqlStore(
                 jdbc,
                 objectMapper,
                 new ProjectAliasService(new ProjectAliasRepository(jdbc)));
@@ -54,7 +56,7 @@ class SqliteCompatibilityTest {
                     assertThat(snapshot.spec().body()).isEqualTo("Frozen legacy spec");
                 });
 
-        EventRepository.Persisted persisted = events.persistEvent(
+        dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore.Persisted persisted = events.persistEvent(
                 new EventIngestRequest(
                         "codex",
                         "post-refactor-client",

@@ -10,9 +10,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.ai.SessionSummaryService;
-import dev.nathan.sbaagentic.event.EventIngestRequest;
-import dev.nathan.sbaagentic.event.EventIngestService;
-import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
 import dev.nathan.sbaagentic.search.SearchService;
 
@@ -23,8 +23,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class SbaCli implements ApplicationRunner {
 
-    private final EventIngestService ingestService;
-    private final EventRepository repository;
+    private final EventRecorder ingestService;
+    private final RecordingCatalog repository;
     private final SearchService searchService;
     private final SessionSummaryService summaryService;
     private final LocalAiClient localAiClient;
@@ -33,8 +33,8 @@ public class SbaCli implements ApplicationRunner {
     private final RunnerCli runnerCli;
 
     public SbaCli(
-            EventIngestService ingestService,
-            EventRepository repository,
+            EventRecorder ingestService,
+            RecordingCatalog repository,
             SearchService searchService,
             SessionSummaryService summaryService,
             LocalAiClient localAiClient,

@@ -716,7 +716,7 @@ class TaskApiContractTest {
         assertThat(registered).hasSize(14).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS);
 
         assertThat(AgenticTools.class.getConstructor(
-                dev.nathan.sbaagentic.event.EventRepository.class,
+                dev.nathan.sbaagentic.recording.RecordingCatalog.class,
                 dev.nathan.sbaagentic.context.ContextService.class,
                 dev.nathan.sbaagentic.search.SearchService.class,
                 dev.nathan.sbaagentic.ai.LocalAiClient.class)).isNotNull();

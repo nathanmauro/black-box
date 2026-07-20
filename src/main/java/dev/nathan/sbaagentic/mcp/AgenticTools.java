@@ -6,13 +6,13 @@ import java.util.Map;
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.project.ProjectSummaryTools;
 import dev.nathan.sbaagentic.recording.RecordingMemoryTools;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.workflow.TaskChange;
 import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 import dev.nathan.sbaagentic.workflow.TaskSpec;
@@ -49,7 +49,7 @@ public class AgenticTools {
 
     /** Preserves source compatibility for callers that only use the original seven tools. */
     public AgenticTools(
-            EventRepository repository,
+            RecordingCatalog repository,
             ContextService contextService,
             SearchService searchService,
             LocalAiClient localAiClient) {

@@ -7,7 +7,7 @@ import java.util.Optional;
 
 import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
 import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;

@@ -4,9 +4,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.search.EventIndexSink;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import jakarta.annotation.PreDestroy;
 
@@ -18,7 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * Holds the live Server-Sent Events subscribers and fans newly persisted events out to them.
  *
  * <p>Implemented as an {@link EventIndexSink} so it plugs into the existing ingest fan-out
- * ({@code EventIngestService} already iterates every registered sink after the canonical SQLite
+ * ({@code EventRecorder} already iterates every registered sink after the canonical SQLite
  * write) with no change to the ingest path. {@link #index(AgentSession, AgentEvent)} returns
  * {@code false} because broadcasting is not a durable search index — it must never flip the
  * ingest "indexed" flag, and a slow or gone subscriber must never break the canonical write.

@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 
 import java.time.Duration;
 import java.util.List;

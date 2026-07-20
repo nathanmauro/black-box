@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording.internal.application;
 
 import java.time.Instant;
 import java.util.List;
@@ -8,16 +8,21 @@ import java.util.Map;
 import dev.nathan.sbaagentic.ai.SessionFinalizationService;
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.project.ProjectAliasService;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.search.EventIndexSink;
-import dev.nathan.sbaagentic.session.TitleRank;
-import dev.nathan.sbaagentic.session.Titles;
+import dev.nathan.sbaagentic.recording.TitleRank;
+import dev.nathan.sbaagentic.recording.Titles;
+import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 
 import org.springframework.stereotype.Service;
 
 @Service
-public class EventIngestService {
+public class EventIngestService implements EventRecorder {
 
-    private final EventRepository repository;
+    private final RecordingStore repository;
     private final SbaProperties properties;
     private final List<EventIndexSink> indexSinks;
     private final SessionFinalizationService finalizationService;
@@ -25,7 +30,7 @@ public class EventIngestService {
     private final ProjectAliasService projectAliasService;
 
     public EventIngestService(
-            EventRepository repository,
+            RecordingStore repository,
             SbaProperties properties,
             List<EventIndexSink> indexSinks,
             SessionFinalizationService finalizationService,
@@ -39,6 +44,7 @@ public class EventIngestService {
         this.projectAliasService = projectAliasService;
     }
 
+    @Override
     public IngestResponse ingest(EventIngestRequest request) {
         EventIngestRequest normalized = normalize(request);
         Instant observedAt = normalized.observedAt() == null ? Instant.now() : normalized.observedAt();
@@ -47,7 +53,7 @@ public class EventIngestService {
         // SQLite is the source of truth: persist atomically first, then fan out to optional indexes.
         // Indexing runs outside the transaction so an external search backend can never hold the
         // database connection open or fail the canonical write.
-        EventRepository.Persisted persisted =
+        RecordingStore.Persisted persisted =
                 repository.persistEvent(normalized, observedAt, title.value(), title.rank());
         AgentEvent event = persisted.event();
         projectAliasService.discoverVerifiedAlias(persisted.session().cwd());

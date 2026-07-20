@@ -2,10 +2,10 @@ package dev.nathan.sbaagentic.context;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.event.IngestResponse;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +30,7 @@ class ContextLoopTest {
     ContextService contextService;
 
     @Autowired
-    EventRepository repository;
+    RecordingSqlStore repository;
 
     @Test
     void decisionRoundTripsAsStructuredIntentRecallableByRepo() {

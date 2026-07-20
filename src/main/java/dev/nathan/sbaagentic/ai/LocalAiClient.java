@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.session.Titles;
+import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;

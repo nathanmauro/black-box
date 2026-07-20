@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.time.Instant;
 import java.util.List;
@@ -28,10 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EventSearchFacetTest {
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
-    EventRepository repository;
+    RecordingSqlStore repository;
 
     @Autowired
     ProjectAliasService projectAliasService;

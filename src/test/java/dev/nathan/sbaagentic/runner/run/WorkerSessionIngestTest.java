@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

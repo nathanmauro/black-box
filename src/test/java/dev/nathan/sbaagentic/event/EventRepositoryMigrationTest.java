@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.nio.file.Path;
 
@@ -6,7 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.project.ProjectAliasRepository;
 import dev.nathan.sbaagentic.project.ProjectAliasService;
-import dev.nathan.sbaagentic.session.TitleRank;
+import dev.nathan.sbaagentic.recording.TitleRank;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,7 +53,7 @@ class EventRepositoryMigrationTest {
                 VALUES ('s1', 'claude', 'legacy-session', 'Old title', '2026-05-21T12:00:00Z', '2026-05-21T12:00:00Z', 3)
                 """);
 
-        EventRepository repository = new EventRepository(
+        RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
                 new ObjectMapper(),
                 new ProjectAliasService(new ProjectAliasRepository(jdbc)));

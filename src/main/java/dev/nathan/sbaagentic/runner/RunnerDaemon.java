@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
 import dev.nathan.sbaagentic.workflow.TaskChange;

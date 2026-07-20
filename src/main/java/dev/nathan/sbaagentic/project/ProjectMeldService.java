@@ -12,7 +12,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import dev.nathan.sbaagentic.ai.SummaryBackend;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

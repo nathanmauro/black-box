@@ -2,7 +2,7 @@ package dev.nathan.sbaagentic.project;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.stereotype.Service;
 

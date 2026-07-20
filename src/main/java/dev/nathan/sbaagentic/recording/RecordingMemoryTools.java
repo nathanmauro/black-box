@@ -6,11 +6,11 @@ import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.stereotype.Component;
 
@@ -24,12 +24,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class RecordingMemoryTools {
 
-    private final EventRepository repository;
+    private final RecordingCatalog repository;
     private final ContextService contextService;
     private final SearchService searchService;
 
     public RecordingMemoryTools(
-            EventRepository repository,
+            RecordingCatalog repository,
             ContextService contextService,
             SearchService searchService) {
         this.repository = repository;

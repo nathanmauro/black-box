@@ -3,8 +3,8 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.ai.LocalAiClient;
-import dev.nathan.sbaagentic.event.DashboardStats;
-import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.recording.DashboardStats;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.search.ElasticIndexClient;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,12 +15,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SystemController {
 
-    private final EventRepository repository;
+    private final RecordingCatalog repository;
     private final LocalAiClient localAiClient;
     private final ElasticIndexClient elasticIndexClient;
 
     public SystemController(
-            EventRepository repository,
+            RecordingCatalog repository,
             LocalAiClient localAiClient,
             ElasticIndexClient elasticIndexClient) {
         this.repository = repository;

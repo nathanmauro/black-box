@@ -1,12 +1,12 @@
-package dev.nathan.sbaagentic.session;
+package dev.nathan.sbaagentic.recording;
 
 import java.time.Instant;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.ai.SessionSummaryService;
-import dev.nathan.sbaagentic.event.EventIngestRequest;
-import dev.nathan.sbaagentic.event.EventIngestService;
-import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import org.junit.jupiter.api.Test;
 
@@ -24,10 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SessionTitleTest {
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
-    EventRepository repository;
+    RecordingSqlStore repository;
 
     @Autowired
     SessionSummaryService summaryService;

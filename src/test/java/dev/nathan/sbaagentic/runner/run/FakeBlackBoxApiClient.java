@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.workflow.SessionLink;
 import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;

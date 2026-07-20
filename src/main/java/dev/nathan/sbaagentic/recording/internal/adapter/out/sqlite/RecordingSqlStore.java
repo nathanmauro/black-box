@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -14,9 +14,18 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.project.ProjectAliasService;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.DashboardStats;
+import dev.nathan.sbaagentic.recording.EventFeedItem;
+import dev.nathan.sbaagentic.recording.EventFeedResponse;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.StorageStats;
+import dev.nathan.sbaagentic.recording.TitleRank;
+import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 import dev.nathan.sbaagentic.search.QueryFacets;
-import dev.nathan.sbaagentic.session.AgentSession;
-import dev.nathan.sbaagentic.session.TitleRank;
 
 import jakarta.annotation.PostConstruct;
 
@@ -26,7 +35,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-public class EventRepository {
+public class RecordingSqlStore implements RecordingStore, RecordingCatalog, MemoryEventReader {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -56,7 +65,7 @@ public class EventRepository {
     private final ObjectMapper objectMapper;
     private final ProjectAliasService projectAliasService;
 
-    public EventRepository(
+    public RecordingSqlStore(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ProjectAliasService projectAliasService) {
@@ -73,7 +82,7 @@ public class EventRepository {
      * skip this entirely.
      */
     @PostConstruct
-    void ensureSchema() {
+    public void ensureSchema() {
         // WAL lets concurrent agents (a Claude hook and a Codex hook firing at once) read while one
         // writes, instead of serializing behind a global lock. It is a persistent property of the
         // database file, so setting it once per boot is enough; busy_timeout (set per connection in
@@ -98,15 +107,13 @@ public class EventRepository {
      * leave a session whose count disagrees with its events.
      */
     @Transactional
-    public Persisted persistEvent(EventIngestRequest request, Instant observedAt, String title, int titleRank) {
+    @Override
+    public RecordingStore.Persisted persistEvent(
+            EventIngestRequest request, Instant observedAt, String title, int titleRank) {
         AgentSession session = findOrCreateSession(request, observedAt, title, titleRank);
         AgentEvent event = saveEvent(request, session, observedAt);
         AgentSession updated = findSessionById(session.id()).orElse(session);
-        return new Persisted(updated, event);
-    }
-
-    /** A persisted event and the session snapshot it landed in. */
-    public record Persisted(AgentSession session, AgentEvent event) {
+        return new RecordingStore.Persisted(updated, event);
     }
 
     public AgentSession findOrCreateSession(EventIngestRequest request, Instant observedAt, String title, int titleRank) {

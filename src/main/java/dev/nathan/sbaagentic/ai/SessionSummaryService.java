@@ -4,10 +4,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.session.AgentSession;
-import dev.nathan.sbaagentic.session.TitleRank;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.TitleRank;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,10 +20,10 @@ public class SessionSummaryService {
 
     private static final int MAX_BACKFILL_LIMIT = 25;
 
-    private final EventRepository repository;
+    private final RecordingCatalog repository;
     private final SummaryBackend summaryBackend;
 
-    public SessionSummaryService(EventRepository repository, SummaryBackend summaryBackend) {
+    public SessionSummaryService(RecordingCatalog repository, SummaryBackend summaryBackend) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
     }

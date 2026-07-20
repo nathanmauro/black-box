@@ -4,7 +4,7 @@ import java.util.List;
 
 import dev.nathan.sbaagentic.ai.SessionSummaryService;
 import dev.nathan.sbaagentic.exporting.SummaryExportService;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

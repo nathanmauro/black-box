@@ -12,7 +12,7 @@ import dev.nathan.sbaagentic.project.ProjectSavedMeld;
 import dev.nathan.sbaagentic.project.ProjectService;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;

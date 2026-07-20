@@ -18,7 +18,7 @@ import java.util.Optional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.workflow.SessionLink;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 import dev.nathan.sbaagentic.workflow.TaskChange;
