@@ -2,8 +2,8 @@ package dev.nathan.sbaagentic.workflow.internal.adapter.in.web;
 
 import java.util.UUID;
 
-import dev.nathan.sbaagentic.dag.DagResponse;
-import dev.nathan.sbaagentic.dag.DagService;
+import dev.nathan.sbaagentic.workflow.DagOperations;
+import dev.nathan.sbaagentic.workflow.DagResponse;
 import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import dev.nathan.sbaagentic.workflow.TaskErrorCode;
 
@@ -17,20 +17,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class DagController {
 
-    private final DagService dagService;
+    private final DagOperations dags;
 
-    public DagController(DagService dagService) {
-        this.dagService = dagService;
+    public DagController(DagOperations dags) {
+        this.dags = dags;
     }
 
     @GetMapping("/tasks/{taskId}/dag")
     public DagResponse taskDag(@PathVariable String taskId) {
-        return dagService.forTask(requireUuid(taskId));
+        return dags.forTask(requireUuid(taskId));
     }
 
     @GetMapping("/dag")
     public DagResponse dag(@RequestParam String sessionId) {
-        return dagService.forSession(sessionId);
+        return dags.forSession(sessionId);
     }
 
     private static String requireUuid(String value) {

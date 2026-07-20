@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.dag;
+package dev.nathan.sbaagentic.workflow.internal.application;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -8,9 +8,13 @@ import java.util.Map;
 import java.util.Optional;
 
 import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.workflow.DagEdge;
+import dev.nathan.sbaagentic.workflow.DagNode;
+import dev.nathan.sbaagentic.workflow.DagOperations;
+import dev.nathan.sbaagentic.workflow.DagResponse;
 import dev.nathan.sbaagentic.workflow.SessionLink;
 import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
-import dev.nathan.sbaagentic.session.AgentSession;
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskEvent;
 import dev.nathan.sbaagentic.workflow.TaskEventType;
@@ -21,7 +25,7 @@ import dev.nathan.sbaagentic.workflow.WorkflowOperations;
 import org.springframework.stereotype.Service;
 
 @Service
-public class DagService {
+public class DagService implements DagOperations {
 
     private final WorkflowOperations workflow;
     private final SessionLineageOperations sessionLinks;

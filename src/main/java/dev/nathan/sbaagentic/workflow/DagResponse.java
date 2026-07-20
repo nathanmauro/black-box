@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.dag;
+package dev.nathan.sbaagentic.workflow;
 
 import java.util.List;
 
