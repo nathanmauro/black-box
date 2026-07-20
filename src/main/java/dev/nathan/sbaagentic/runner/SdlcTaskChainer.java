@@ -3,9 +3,9 @@ package dev.nathan.sbaagentic.runner;
 import java.util.List;
 import java.util.Objects;
 
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
 
 import org.springframework.stereotype.Component;
 

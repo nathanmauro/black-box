@@ -14,8 +14,8 @@ import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
-import dev.nathan.sbaagentic.task.TaskAnnotation;
-import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskAnnotation;
+import dev.nathan.sbaagentic.workflow.TaskChange;
 
 import org.junit.jupiter.api.Test;
 

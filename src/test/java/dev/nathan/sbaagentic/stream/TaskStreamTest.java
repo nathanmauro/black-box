@@ -16,12 +16,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import dev.nathan.sbaagentic.task.ClaimTaskRequest;
-import dev.nathan.sbaagentic.task.CreateAnnotationRequest;
-import dev.nathan.sbaagentic.task.CreateSpecRequest;
-import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
-import dev.nathan.sbaagentic.task.TaskService;
-import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
+import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
+import dev.nathan.sbaagentic.workflow.CreateSpecRequest;
+import dev.nathan.sbaagentic.workflow.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -11,10 +11,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.link.SessionLink;
 import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
-import dev.nathan.sbaagentic.task.TaskAnnotation;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskAnnotation;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 
 final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 

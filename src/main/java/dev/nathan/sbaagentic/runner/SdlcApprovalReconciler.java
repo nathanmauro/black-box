@@ -20,12 +20,12 @@ import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskEventType;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

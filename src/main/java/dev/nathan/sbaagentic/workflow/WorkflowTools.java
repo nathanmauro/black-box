@@ -4,19 +4,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import dev.nathan.sbaagentic.task.ClaimTaskRequest;
-import dev.nathan.sbaagentic.task.CompleteTaskRequest;
-import dev.nathan.sbaagentic.task.CreateSpecRequest;
-import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
-import dev.nathan.sbaagentic.task.TaskQuery;
-import dev.nathan.sbaagentic.task.TaskService;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
-import dev.nathan.sbaagentic.task.UpdateTaskStatusRequest;
+import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
+import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
+import dev.nathan.sbaagentic.workflow.CreateSpecRequest;
+import dev.nathan.sbaagentic.workflow.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskDomainException;
+import dev.nathan.sbaagentic.workflow.TaskErrorCode;
+import dev.nathan.sbaagentic.workflow.TaskQuery;
+import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
+import dev.nathan.sbaagentic.workflow.UpdateTaskStatusRequest;
 
 import org.springframework.stereotype.Component;
 

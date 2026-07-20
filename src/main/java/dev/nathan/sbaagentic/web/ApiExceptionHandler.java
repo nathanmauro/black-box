@@ -4,8 +4,8 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 import dev.nathan.sbaagentic.link.LinkDomainException;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.workflow.TaskDomainException;
+import dev.nathan.sbaagentic.workflow.TaskErrorCode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

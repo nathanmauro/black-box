@@ -11,48 +11,40 @@ import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.link.SessionLink;
 import dev.nathan.sbaagentic.link.SessionLinkRepository;
 import dev.nathan.sbaagentic.session.AgentSession;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
-import dev.nathan.sbaagentic.task.TaskRepository;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskEventType;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.WorkflowOperations;
 
 import org.springframework.stereotype.Service;
 
 @Service
 public class DagService {
 
-    private final TaskRepository taskRepository;
+    private final WorkflowOperations workflow;
     private final SessionLinkRepository sessionLinkRepository;
     private final EventRepository eventRepository;
 
     public DagService(
-            TaskRepository taskRepository,
+            WorkflowOperations workflow,
             SessionLinkRepository sessionLinkRepository,
             EventRepository eventRepository) {
-        this.taskRepository = taskRepository;
+        this.workflow = workflow;
         this.sessionLinkRepository = sessionLinkRepository;
         this.eventRepository = eventRepository;
     }
 
     public DagResponse forTask(String taskId) {
         requireText(taskId, "Task id");
-        TaskSnapshot snapshot = taskRepository.findTask(taskId)
-                .orElseThrow(() -> new TaskDomainException(
-                        TaskErrorCode.TASK_NOT_FOUND,
-                        "Task not found: " + taskId,
-                        taskId,
-                        null,
-                        null));
+        TaskSnapshot snapshot = workflow.getTask(taskId);
         return buildForSpecs(List.of(snapshot.spec()));
     }
 
     public DagResponse forSession(String sessionId) {
         requireText(sessionId, "Session id");
-        List<TaskEvent> noteEvents = taskRepository.eventsByType(TaskEventType.NOTE);
+        List<TaskEvent> noteEvents = workflow.eventsByType(TaskEventType.NOTE);
         LinkedHashSet<String> matchingTaskIds = new LinkedHashSet<>();
         for (TaskEvent event : noteEvents) {
             workerSessionId(event)
@@ -65,15 +57,14 @@ public class DagService {
 
         LinkedHashMap<String, TaskSpec> specsById = new LinkedHashMap<>();
         for (String taskId : matchingTaskIds) {
-            taskRepository.findTask(taskId)
-                    .map(TaskSnapshot::spec)
-                    .ifPresent(spec -> specsById.putIfAbsent(spec.id(), spec));
+            TaskSpec spec = workflow.getTask(taskId).spec();
+            specsById.putIfAbsent(spec.id(), spec);
         }
         return buildForSpecs(List.copyOf(specsById.values()), noteEvents);
     }
 
     private DagResponse buildForSpecs(List<TaskSpec> specs) {
-        return buildForSpecs(specs, taskRepository.eventsByType(TaskEventType.NOTE));
+        return buildForSpecs(specs, workflow.eventsByType(TaskEventType.NOTE));
     }
 
     private DagResponse buildForSpecs(List<TaskSpec> specs, List<TaskEvent> noteEvents) {
@@ -91,7 +82,7 @@ public class DagService {
             String specNodeId = specNodeId(spec.id());
             nodes.putIfAbsent(specNodeId, new DagNode(
                     specNodeId, "spec", spec.title(), spec.status().value(), spec.id()));
-            for (Task task : taskRepository.listTasksBySpec(spec.id())) {
+            for (Task task : workflow.tasksForSpec(spec.id())) {
                 String taskNodeId = taskNodeId(task.id());
                 nodes.putIfAbsent(taskNodeId, new DagNode(
                         taskNodeId, "task", task.title(), task.status().value(), task.id()));

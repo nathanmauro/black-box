@@ -8,8 +8,8 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskEventType;
 
 import org.junit.jupiter.api.Test;
 

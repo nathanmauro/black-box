@@ -1,6 +1,6 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskChange;
 
 import org.springframework.stereotype.Component;
 

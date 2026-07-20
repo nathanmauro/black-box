@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.project.ProjectAliasRepository;
 import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.session.TitleRank;
-import dev.nathan.sbaagentic.task.TaskRepository;
+import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

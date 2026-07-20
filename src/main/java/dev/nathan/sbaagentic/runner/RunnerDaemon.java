@@ -21,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.event.IngestResponse;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
-import dev.nathan.sbaagentic.task.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskChange;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

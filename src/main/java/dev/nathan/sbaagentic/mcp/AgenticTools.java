@@ -13,9 +13,9 @@ import dev.nathan.sbaagentic.recording.RecordingMemoryTools;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.session.AgentSession;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
 import dev.nathan.sbaagentic.workflow.WorkflowTools;
 
 import org.springframework.ai.tool.annotation.Tool;

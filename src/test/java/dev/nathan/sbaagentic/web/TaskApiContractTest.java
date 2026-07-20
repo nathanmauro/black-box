@@ -14,13 +14,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.mcp.AgenticTools;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskRepository;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskDomainException;
+import dev.nathan.sbaagentic.workflow.TaskErrorCode;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

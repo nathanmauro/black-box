@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.stream;
 
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskAnnotation;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 
 /**
  * Lightweight payloads pushed over the {@code /api/stream} Server-Sent Events channel. These carry

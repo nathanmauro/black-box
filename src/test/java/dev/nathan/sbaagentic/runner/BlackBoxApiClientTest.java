@@ -11,8 +11,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
 
 import org.junit.jupiter.api.Test;
 

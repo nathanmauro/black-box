@@ -4,8 +4,8 @@ import java.util.UUID;
 
 import dev.nathan.sbaagentic.dag.DagResponse;
 import dev.nathan.sbaagentic.dag.DagService;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
+import dev.nathan.sbaagentic.workflow.TaskDomainException;
+import dev.nathan.sbaagentic.workflow.TaskErrorCode;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

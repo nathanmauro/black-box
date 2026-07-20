@@ -14,11 +14,11 @@ import java.util.stream.Stream;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskEventType;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -17,7 +17,7 @@ import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.CompletionDetector.CompletionResult;
-import dev.nathan.sbaagentic.task.Task;
+import dev.nathan.sbaagentic.workflow.Task;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

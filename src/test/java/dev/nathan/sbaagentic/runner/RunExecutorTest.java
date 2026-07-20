@@ -20,12 +20,12 @@ import dev.nathan.sbaagentic.runner.run.CompletionDetector.Outcome;
 import dev.nathan.sbaagentic.runner.run.GoalPromptBuilder;
 import dev.nathan.sbaagentic.runner.run.WorkerSessionIngest;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor;
-import dev.nathan.sbaagentic.task.SpecStatus;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.workflow.SpecStatus;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
