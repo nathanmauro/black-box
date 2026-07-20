@@ -9,6 +9,9 @@ import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecalledItem;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ContextLoopTest {
 
     @Autowired
-    ContextService contextService;
+    MemoryRecallOperations contextService;
 
     @Autowired
     RecordingCaptureOperations captureOperations;

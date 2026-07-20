@@ -7,9 +7,9 @@ import java.util.stream.Stream;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.context.ContextService;
-import dev.nathan.sbaagentic.context.RecallResult;
-import dev.nathan.sbaagentic.context.RecalledItem;
+import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
 import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
 import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
@@ -67,7 +67,7 @@ class TaskServiceIntegrationTest {
     TaskRepository repository;
 
     @Autowired
-    ContextService contextService;
+    MemoryRecallOperations contextService;
 
     @Autowired
     JdbcTemplate jdbcTemplate;

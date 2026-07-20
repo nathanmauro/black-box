@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.search;
+package dev.nathan.sbaagentic.memory.internal.application;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -7,18 +7,22 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.memory.QueryFacets;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
-import dev.nathan.sbaagentic.recording.QueryFacets;
 
 import org.springframework.stereotype.Service;
 
 @Service
-public class SearchService {
+public class SearchService implements MemorySearchOperations {
 
     /**
      * Curated field list served when Elasticsearch is off/unreachable so the query bar always has
      * something to autocomplete. Mirrors the {@code keyword} fields mapped in
-     * {@link ElasticIndexClient#ensureIndex()} ({@code source, eventType, toolName, cwd,
+     * the optional search index mapping ({@code source, eventType, toolName, cwd,
      * clientSessionId, sessionId, turnId}) plus the analyzed {@code text} fields ({@code title},
      * {@code text}), which are searchable but not aggregatable/enumerable (so value autocomplete on
      * them yields nothing — matching {@code _terms_enum}'s behavior on text fields).
@@ -51,14 +55,14 @@ public class SearchService {
     private static final long HARD_TTL_MILLIS = 10 * 60 * 1000L;
 
     private final MemoryEventReader repository;
-    private final ElasticIndexClient elasticIndexClient;
+    private final SearchIndex elasticIndexClient;
     private final ProjectScopeOperations projectScopes;
 
     /**
      * Single-entry, time-checked field-list cache. {@code holder} is the only mutable state and is
      * {@code volatile} so a value published by the loading thread is visible to all readers without
      * locking. {@code refreshing} is the single-flight latch that lets exactly one thread run the
-     * (potentially slow) {@link ElasticIndexClient#fieldCaps()} call at a time, so concurrent callers
+     * (potentially slow) search index field-capabilities call at a time, so concurrent callers
      * never stampede Elasticsearch.
      */
     private volatile CacheEntry holder;
@@ -66,7 +70,7 @@ public class SearchService {
 
     public SearchService(
             MemoryEventReader repository,
-            ElasticIndexClient elasticIndexClient,
+            SearchIndex elasticIndexClient,
             ProjectScopeOperations projectScopes) {
         this.repository = repository;
         this.elasticIndexClient = elasticIndexClient;
@@ -84,6 +88,11 @@ public class SearchService {
                 repository.searchEvents(query, scopes, safeLimit),
                 elasticSearchAllowed(facets) ? elasticIndexClient.search(query, safeLimit) : List.of(),
                 elasticIndexClient.health());
+    }
+
+    @Override
+    public ElasticHealth elasticHealth() {
+        return elasticIndexClient.health();
     }
 
     private static boolean elasticSearchAllowed(QueryFacets facets) {
@@ -247,7 +256,7 @@ public class SearchService {
             return map;
         }
 
-        static FieldInfo fromMap(Map<String, Object> map) {
+        public static FieldInfo fromMap(Map<String, Object> map) {
             Object name = map.get("name");
             Object type = map.get("type");
             return new FieldInfo(

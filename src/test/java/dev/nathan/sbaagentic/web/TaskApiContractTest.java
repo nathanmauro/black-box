@@ -717,8 +717,8 @@ class TaskApiContractTest {
 
         assertThat(AgenticTools.class.getConstructor(
                 dev.nathan.sbaagentic.recording.RecordingCatalog.class,
-                dev.nathan.sbaagentic.context.ContextService.class,
-                dev.nathan.sbaagentic.search.SearchService.class,
+                dev.nathan.sbaagentic.memory.MemoryRecallOperations.class,
+                dev.nathan.sbaagentic.memory.MemorySearchOperations.class,
                 dev.nathan.sbaagentic.recording.RecordingCaptureOperations.class,
                 dev.nathan.sbaagentic.ai.LocalAiClient.class)).isNotNull();
 

@@ -32,7 +32,8 @@ class PackageArchitectureTest {
      * A module enters this set in the same commit that completes its vertical migration. Legacy
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
-    private static final Set<String> FULLY_MIGRATED_MODULES = Set.of("project", "recording", "workflow");
+    private static final Set<String> FULLY_MIGRATED_MODULES =
+            Set.of("memory", "project", "recording", "workflow");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())

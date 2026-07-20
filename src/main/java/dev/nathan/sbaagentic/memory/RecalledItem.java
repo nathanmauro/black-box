@@ -1,10 +1,10 @@
-package dev.nathan.sbaagentic.context;
+package dev.nathan.sbaagentic.memory;
 
 import java.time.Instant;
 import java.util.List;
 
 /**
- * A single piece of prior agent intent surfaced by {@link ContextService#recall}.
+ * A single piece of prior agent intent surfaced by {@link MemoryRecallOperations#recall}.
  *
  * <p>This is the structured projection that makes Black Box more than a search box: instead of
  * returning raw text hits, recall returns the decision, its rationale, the alternatives that were

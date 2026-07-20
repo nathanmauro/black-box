@@ -4,8 +4,8 @@ import java.util.List;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
-import dev.nathan.sbaagentic.context.ContextService;
-import dev.nathan.sbaagentic.context.RecallResult;
+import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 
@@ -22,11 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class ContextController {
 
-    private final ContextService contextService;
+    private final MemoryRecallOperations contextService;
     private final RecordingCaptureOperations captureOperations;
 
     public ContextController(
-            ContextService contextService,
+            MemoryRecallOperations contextService,
             RecordingCaptureOperations captureOperations) {
         this.contextService = contextService;
         this.captureOperations = captureOperations;

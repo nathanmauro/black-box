@@ -23,7 +23,7 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
-import dev.nathan.sbaagentic.recording.QueryFacets;
+import dev.nathan.sbaagentic.recording.EventFeedQuery;
 
 import jakarta.annotation.PostConstruct;
 
@@ -252,7 +252,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String since,
             List<String> projectScopes,
             int limit) {
-        QueryFacets facets = QueryFacets.parse(query);
+        EventFeedQuery facets = EventFeedQuery.parse(query);
         FeedCursor beforeCursor = parseBefore(before);
         Instant sinceInstant = parseSince(since);
 

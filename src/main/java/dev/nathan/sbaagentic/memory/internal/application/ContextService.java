@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.context;
+package dev.nathan.sbaagentic.memory.internal.application;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -9,6 +9,9 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Service;
@@ -24,7 +27,7 @@ import org.springframework.stereotype.Service;
  * The event log is the source of truth; recall is a projection over it.
  */
 @Service
-public class ContextService {
+public class ContextService implements MemoryRecallOperations {
 
     public static final String KIND_DECISION = "decision";
     public static final String KIND_HANDOFF = "handoff";
@@ -52,6 +55,7 @@ public class ContextService {
      * directory (repo) and the captured text, so an agent can recall by where it is working or by
      * what it is working on. A blank scope returns the most recent intent across all repos.
      */
+    @Override
     public RecallResult recall(String scope, int withinHours, List<String> kinds) {
         List<String> resolvedKinds = resolveKinds(kinds);
         List<String> eventTypes = resolvedKinds.stream().map(EVENT_TYPE_BY_KIND::get).toList();

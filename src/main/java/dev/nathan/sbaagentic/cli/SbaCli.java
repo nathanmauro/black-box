@@ -13,8 +13,7 @@ import dev.nathan.sbaagentic.ai.SessionSummaryService;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.search.ElasticIndexClient;
-import dev.nathan.sbaagentic.search.SearchService;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -25,20 +24,18 @@ public class SbaCli implements ApplicationRunner {
 
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
-    private final SearchService searchService;
+    private final MemorySearchOperations searchService;
     private final SessionSummaryService summaryService;
     private final LocalAiClient localAiClient;
-    private final ElasticIndexClient elasticIndexClient;
     private final ObjectMapper objectMapper;
     private final RunnerCli runnerCli;
 
     public SbaCli(
             EventRecorder ingestService,
             RecordingCatalog repository,
-            SearchService searchService,
+            MemorySearchOperations searchService,
             SessionSummaryService summaryService,
             LocalAiClient localAiClient,
-            ElasticIndexClient elasticIndexClient,
             ObjectMapper objectMapper,
             RunnerCli runnerCli) {
         this.ingestService = ingestService;
@@ -46,7 +43,6 @@ public class SbaCli implements ApplicationRunner {
         this.searchService = searchService;
         this.summaryService = summaryService;
         this.localAiClient = localAiClient;
-        this.elasticIndexClient = elasticIndexClient;
         this.objectMapper = objectMapper;
         this.runnerCli = runnerCli;
     }
@@ -74,7 +70,7 @@ public class SbaCli implements ApplicationRunner {
         writeJson(Map.of(
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
-                "elasticsearch", elasticIndexClient.health()));
+                "elasticsearch", searchService.elasticHealth()));
     }
 
     private void sessions(ApplicationArguments args) throws IOException {

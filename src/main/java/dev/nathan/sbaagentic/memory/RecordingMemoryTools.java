@@ -1,16 +1,13 @@
-package dev.nathan.sbaagentic.recording;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.List;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
-import dev.nathan.sbaagentic.context.ContextService;
-import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.search.SearchResponse;
-import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 
 import org.springframework.stereotype.Component;
 
@@ -25,14 +22,14 @@ import org.springframework.stereotype.Component;
 public class RecordingMemoryTools {
 
     private final RecordingCatalog repository;
-    private final ContextService contextService;
-    private final SearchService searchService;
+    private final MemoryRecallOperations contextService;
+    private final MemorySearchOperations searchService;
     private final RecordingCaptureOperations captureOperations;
 
     public RecordingMemoryTools(
             RecordingCatalog repository,
-            ContextService contextService,
-            SearchService searchService,
+            MemoryRecallOperations contextService,
+            MemorySearchOperations searchService,
             RecordingCaptureOperations captureOperations) {
         this.repository = repository;
         this.contextService = contextService;

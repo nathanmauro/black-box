@@ -5,7 +5,7 @@ import java.util.Map;
 import dev.nathan.sbaagentic.ai.LocalAiClient;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.search.ElasticIndexClient;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,15 +17,15 @@ public class SystemController {
 
     private final RecordingCatalog repository;
     private final LocalAiClient localAiClient;
-    private final ElasticIndexClient elasticIndexClient;
+    private final MemorySearchOperations memorySearch;
 
     public SystemController(
             RecordingCatalog repository,
             LocalAiClient localAiClient,
-            ElasticIndexClient elasticIndexClient) {
+            MemorySearchOperations memorySearch) {
         this.repository = repository;
         this.localAiClient = localAiClient;
-        this.elasticIndexClient = elasticIndexClient;
+        this.memorySearch = memorySearch;
     }
 
     @GetMapping("/status")
@@ -33,7 +33,7 @@ public class SystemController {
         return Map.of(
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
-                "elasticsearch", elasticIndexClient.health());
+                "elasticsearch", memorySearch.elasticHealth());
     }
 
     @GetMapping("/stats")
@@ -48,6 +48,6 @@ public class SystemController {
 
     @GetMapping("/health/elasticsearch")
     public Object elasticsearchHealth() {
-        return elasticIndexClient.health();
+        return memorySearch.elasticHealth();
     }
 }

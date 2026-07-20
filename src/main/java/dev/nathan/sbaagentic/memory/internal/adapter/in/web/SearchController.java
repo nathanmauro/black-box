@@ -3,8 +3,8 @@ package dev.nathan.sbaagentic.memory.internal.adapter.in.web;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.search.SearchResponse;
-import dev.nathan.sbaagentic.search.SearchService;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SearchController {
 
-    private final SearchService searchService;
+    private final MemorySearchOperations searchService;
 
-    public SearchController(SearchService searchService) {
+    public SearchController(MemorySearchOperations searchService) {
         this.searchService = searchService;
     }
 

@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.search;
 
+import dev.nathan.sbaagentic.memory.internal.adapter.out.http.ElasticIndexClient;
+import dev.nathan.sbaagentic.memory.internal.application.SearchService;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;

@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.search;
+package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,6 +10,8 @@ import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventRecorded;
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
 
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
@@ -20,7 +22,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
-public class ElasticIndexClient {
+public class ElasticIndexClient implements SearchIndex {
 
     private static final List<String> SEARCH_FIELDS =
             List.of("text^4", "title^3", "cwd^2", "toolName", "eventType", "source", "clientSessionId");

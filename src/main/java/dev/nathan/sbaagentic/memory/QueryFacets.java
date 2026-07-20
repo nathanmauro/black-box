@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.recording;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -12,7 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.QueryFacets;
+import dev.nathan.sbaagentic.memory.QueryFacets;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;

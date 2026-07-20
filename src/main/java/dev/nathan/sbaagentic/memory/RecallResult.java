@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.context;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.List;
 

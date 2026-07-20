@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.search;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.List;
 import java.util.Map;

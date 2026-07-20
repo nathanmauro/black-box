@@ -5,6 +5,10 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.SearchService;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 
 import org.junit.jupiter.api.Test;
@@ -24,7 +28,7 @@ class SearchServiceTest {
     @Test
     void suppressesElasticsearchForExactGroupedProjectScopeAndNegativeFacets() {
         MemoryEventReader repository = mock(MemoryEventReader.class);
-        ElasticIndexClient elastic = mock(ElasticIndexClient.class);
+        SearchIndex elastic = mock(SearchIndex.class);
         ProjectScopeOperations projectScopes = mock(ProjectScopeOperations.class);
         when(projectScopes.scopesFor(anyString())).thenReturn(List.of("/project"));
         when(repository.searchEvents(anyString(), anyList(), anyInt())).thenReturn(List.<AgentEvent>of());
@@ -50,7 +54,7 @@ class SearchServiceTest {
     @Test
     void keepsElasticsearchForPlainSearchQueries() {
         MemoryEventReader repository = mock(MemoryEventReader.class);
-        ElasticIndexClient elastic = mock(ElasticIndexClient.class);
+        SearchIndex elastic = mock(SearchIndex.class);
         ProjectScopeOperations projectScopes = mock(ProjectScopeOperations.class);
         when(repository.searchEvents(anyString(), anyList(), anyInt())).thenReturn(List.<AgentEvent>of());
         when(elastic.search("recall bug", 10)).thenReturn(List.of(Map.of("id", "event-1")));
