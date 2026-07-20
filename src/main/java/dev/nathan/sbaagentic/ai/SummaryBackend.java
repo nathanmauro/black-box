@@ -2,11 +2,12 @@ package dev.nathan.sbaagentic.ai;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.Titles;
+import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
 
 import org.springframework.stereotype.Component;
 
 @Component
-public class SummaryBackend {
+public class SummaryBackend implements ProjectMeldSummarizer {
 
     private final SbaProperties.Summary properties;
     private final LocalAiClient localAiClient;
@@ -21,6 +22,7 @@ public class SummaryBackend {
         this.externalSummaryClient = externalSummaryClient;
     }
 
+    @Override
     public String summarize(String transcript) {
         if ("external".equalsIgnoreCase(properties.getBackend())) {
             return externalSummaryClient.summarize(transcript)

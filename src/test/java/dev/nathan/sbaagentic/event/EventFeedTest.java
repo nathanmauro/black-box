@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
+import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
 
 import org.junit.jupiter.api.Test;
 

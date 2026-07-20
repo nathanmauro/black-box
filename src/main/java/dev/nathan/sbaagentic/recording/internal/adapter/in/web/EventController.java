@@ -2,7 +2,6 @@ package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
@@ -11,6 +10,7 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.QueryFacets;
+import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
 
 import jakarta.validation.Valid;
 
@@ -28,12 +28,12 @@ public class EventController {
 
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
-    private final ProjectScopeOperations projectScopes;
+    private final ProjectScopeResolver projectScopes;
 
     public EventController(
             EventRecorder ingestService,
             RecordingCatalog repository,
-            ProjectScopeOperations projectScopes) {
+            ProjectScopeResolver projectScopes) {
         this.ingestService = ingestService;
         this.repository = repository;
         this.projectScopes = projectScopes;

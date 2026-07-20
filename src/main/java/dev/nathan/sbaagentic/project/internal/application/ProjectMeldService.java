@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.project;
+package dev.nathan.sbaagentic.project.internal.application;
+
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -11,8 +13,16 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import dev.nathan.sbaagentic.ai.SummaryBackend;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.project.ProjectMeldOperations;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
+import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldSessionRef;
+import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
+import dev.nathan.sbaagentic.project.ProjectSavedMeld;
+import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -22,7 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
 @Service
-public class ProjectMeldService {
+public class ProjectMeldService implements ProjectMeldOperations {
 
     private static final int MAX_SELECTED_SESSIONS = 8;
     private static final int MAX_EVIDENCE_PER_SESSION = 12;
@@ -33,13 +43,13 @@ public class ProjectMeldService {
     private static final String DIRECT = "direct";
     private static final String PROMPT_VERSION = "project-meld-v1";
 
-    private final ProjectRepository repository;
-    private final SummaryBackend summaryBackend;
+    private final ProjectCatalogStore repository;
+    private final ProjectMeldSummarizer summaryBackend;
     private final ProjectAliasService aliasService;
 
     public ProjectMeldService(
-            ProjectRepository repository,
-            SummaryBackend summaryBackend,
+            ProjectCatalogStore repository,
+            ProjectMeldSummarizer summaryBackend,
             ProjectAliasService aliasService) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;

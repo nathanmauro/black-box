@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.project;
+package dev.nathan.sbaagentic.project.internal.adapter.out.sqlite;
+
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -15,12 +17,20 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.project.ProjectAliasSnapshot;
+import dev.nathan.sbaagentic.project.ProjectSavedMeld;
+import dev.nathan.sbaagentic.project.ProjectMeldSessionRef;
+import dev.nathan.sbaagentic.project.ProjectScope;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.project.ProjectSummary;
+import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class ProjectRepository {
+public class ProjectRepository implements ProjectCatalogStore {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -48,19 +58,19 @@ public class ProjectRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    private final ProjectAliasService aliasService;
+    private final ProjectScopeOperations aliasService;
 
     public ProjectRepository(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ProjectAliasService aliasService) {
+            ProjectScopeOperations aliasService) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.aliasService = aliasService;
     }
 
     public List<ProjectSummary> summaries() {
-        ProjectAliasService.Snapshot aliases = aliasService.snapshot();
+        ProjectAliasSnapshot aliases = aliasService.snapshot();
         Map<String, MutableSummary> grouped = new LinkedHashMap<>();
         List<RawSessionSummary> sessions = jdbcTemplate.query("""
                 SELECT %s AS scope_key,

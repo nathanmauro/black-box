@@ -7,9 +7,9 @@ import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
-import dev.nathan.sbaagentic.project.ProjectMeldService;
+import dev.nathan.sbaagentic.project.ProjectMeldOperations;
 import dev.nathan.sbaagentic.project.ProjectSavedMeld;
-import dev.nathan.sbaagentic.project.ProjectService;
+import dev.nathan.sbaagentic.project.ProjectOperations;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -29,10 +29,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class ProjectController {
 
-    private final ProjectService projectService;
-    private final ProjectMeldService projectMeldService;
+    private final ProjectOperations projectService;
+    private final ProjectMeldOperations projectMeldService;
 
-    public ProjectController(ProjectService projectService, ProjectMeldService projectMeldService) {
+    public ProjectController(ProjectOperations projectService, ProjectMeldOperations projectMeldService) {
         this.projectService = projectService;
         this.projectMeldService = projectMeldService;
     }

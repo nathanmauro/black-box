@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.project;
+package dev.nathan.sbaagentic.project.internal.application;
+
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 
 import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
@@ -19,6 +21,12 @@ import java.util.Set;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.recording.EventRecorded;
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectAliasSnapshot;
+import dev.nathan.sbaagentic.project.ProjectScope;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,9 +51,9 @@ public class ProjectAliasService implements ProjectScopeOperations {
             "/.claude/worktrees/",
             "/.worktrees/");
 
-    private final ProjectAliasRepository repository;
+    private final ProjectAliasStore repository;
 
-    public ProjectAliasService(ProjectAliasRepository repository) {
+    public ProjectAliasService(ProjectAliasStore repository) {
         this.repository = repository;
     }
 
@@ -55,6 +63,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
         discoverVerifiedAlias(recorded.session().cwd());
     }
 
+    @Override
     public String resolve(String scope) {
         return snapshot().resolve(scope);
     }
@@ -64,11 +73,13 @@ public class ProjectAliasService implements ProjectScopeOperations {
         return snapshot().scopesFor(scope);
     }
 
+    @Override
     public List<ProjectScope> projectScopesFor(String scope) {
         return snapshot().projectScopesFor(scope);
     }
 
-    Snapshot snapshot() {
+    @Override
+    public ProjectAliasSnapshot snapshot() {
         return new Snapshot(repository.findAll());
     }
 
@@ -317,7 +328,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
     }
 
     /** Immutable request-level view used to expand alias chains without repeated JDBC lookups. */
-    final class Snapshot {
+    final class Snapshot implements ProjectAliasSnapshot {
 
         private final List<ProjectAlias> aliases;
         private final Map<String, ProjectAlias> aliasesByKey;
@@ -332,7 +343,8 @@ public class ProjectAliasService implements ProjectScopeOperations {
             this.aliasesByKey = Map.copyOf(indexed);
         }
 
-        String resolve(String scope) {
+        @Override
+        public String resolve(String scope) {
             String normalized = ProjectKeyCodec.canonicalize(scope);
             String cached = resolved.get(normalized);
             if (cached != null) {
@@ -362,7 +374,8 @@ public class ProjectAliasService implements ProjectScopeOperations {
             return current;
         }
 
-        List<String> scopesFor(String scope) {
+        @Override
+        public List<String> scopesFor(String scope) {
             String canonical = resolve(scope);
             LinkedHashSet<String> scopes = new LinkedHashSet<>();
             scopes.add(canonical);
@@ -374,7 +387,8 @@ public class ProjectAliasService implements ProjectScopeOperations {
             return List.copyOf(scopes);
         }
 
-        List<ProjectScope> projectScopesFor(String scope) {
+        @Override
+        public List<ProjectScope> projectScopesFor(String scope) {
             String canonical = resolve(scope);
             List<ProjectScope> scopes = new ArrayList<>();
             scopes.add(new ProjectScope(

@@ -8,8 +8,6 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.project.ProjectAliasRepository;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
 

@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.project;
+package dev.nathan.sbaagentic.project.internal.adapter.out.sqlite;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -6,11 +6,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class ProjectAliasRepository {
+public class ProjectAliasRepository implements ProjectAliasStore {
 
     private static final String NORMALIZED_SCOPE_SQL = """
             CASE

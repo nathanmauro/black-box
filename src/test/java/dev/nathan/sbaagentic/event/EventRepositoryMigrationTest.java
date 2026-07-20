@@ -6,8 +6,6 @@ import java.nio.file.Path;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.project.ProjectAliasRepository;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
 import dev.nathan.sbaagentic.recording.TitleRank;
 
 import org.junit.jupiter.api.Test;

@@ -1,18 +1,28 @@
-package dev.nathan.sbaagentic.project;
+package dev.nathan.sbaagentic.project.internal.application;
+
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 
 import java.util.List;
 
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectOperations;
+import dev.nathan.sbaagentic.project.ProjectSavedMeld;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.project.ProjectSummary;
+import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
 
 import org.springframework.stereotype.Service;
 
 @Service
-public class ProjectService {
+public class ProjectService implements ProjectOperations {
 
-    private final ProjectRepository repository;
+    private final ProjectCatalogStore repository;
     private final ProjectAliasService aliasService;
 
-    public ProjectService(ProjectRepository repository, ProjectAliasService aliasService) {
+    public ProjectService(ProjectCatalogStore repository, ProjectAliasService aliasService) {
         this.repository = repository;
         this.aliasService = aliasService;
     }
