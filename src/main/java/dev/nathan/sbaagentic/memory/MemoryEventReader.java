@@ -8,7 +8,11 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 /** Read-only event projections owned by memory rather than canonical recording persistence. */
 public interface MemoryEventReader {
 
-    List<AgentEvent> searchEvents(String query, int limit);
+    List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit);
+
+    default List<AgentEvent> searchEvents(String query, int limit) {
+        return searchEvents(query, List.of(), limit);
+    }
 
     List<String> distinctFieldValues(String field, String prefix, int limit);
 

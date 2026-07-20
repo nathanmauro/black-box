@@ -2,11 +2,12 @@ package dev.nathan.sbaagentic.memory.internal.adapter.in.web;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
-import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 
 import jakarta.validation.Valid;
 
@@ -22,19 +23,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContextController {
 
     private final ContextService contextService;
+    private final RecordingCaptureOperations captureOperations;
 
-    public ContextController(ContextService contextService) {
+    public ContextController(
+            ContextService contextService,
+            RecordingCaptureOperations captureOperations) {
         this.contextService = contextService;
+        this.captureOperations = captureOperations;
     }
 
     @PostMapping("/decisions")
     public IngestResponse captureDecision(@Valid @RequestBody CaptureDecisionRequest request) {
-        return contextService.captureDecision(request);
+        return captureOperations.captureDecision(request);
     }
 
     @PostMapping("/handoffs")
     public IngestResponse captureHandoff(@Valid @RequestBody CaptureHandoffRequest request) {
-        return contextService.captureHandoff(request);
+        return captureOperations.captureHandoff(request);
     }
 
     @GetMapping("/recall")

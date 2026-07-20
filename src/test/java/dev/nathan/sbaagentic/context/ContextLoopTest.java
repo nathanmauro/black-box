@@ -6,6 +6,9 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,11 +33,14 @@ class ContextLoopTest {
     ContextService contextService;
 
     @Autowired
+    RecordingCaptureOperations captureOperations;
+
+    @Autowired
     RecordingSqlStore repository;
 
     @Test
     void decisionRoundTripsAsStructuredIntentRecallableByRepo() {
-        contextService.captureDecision(new CaptureDecisionRequest(
+        captureOperations.captureDecision(new CaptureDecisionRequest(
                 "codex", "codex-1", "/tmp/acme-roundtrip",
                 "Use JWT refresh-rotation for auth",
                 "Stateless and horizontally scalable",
@@ -57,7 +63,7 @@ class ContextLoopTest {
 
     @Test
     void recallMatchesByTopicInTextNotJustRepo() {
-        contextService.captureDecision(new CaptureDecisionRequest(
+        captureOperations.captureDecision(new CaptureDecisionRequest(
                 "codex", "codex-topic", "/tmp/other-repo",
                 "Adopt structured logging with correlation ids",
                 "Traceability across services", List.of(), 0.6, List.of()));
@@ -70,7 +76,7 @@ class ContextLoopTest {
 
     @Test
     void handoffIsRecalledByDefaultAndCarriesOpenLoops() {
-        contextService.captureHandoff(new CaptureHandoffRequest(
+        captureOperations.captureHandoff(new CaptureHandoffRequest(
                 "claude", "claude-7", "/tmp/checkout",
                 "next-session",
                 "Wired the payment intent flow",
@@ -90,7 +96,7 @@ class ContextLoopTest {
 
     @Test
     void handoffEventIdIsADirectRecallKey() {
-        IngestResponse captured = contextService.captureHandoff(new CaptureHandoffRequest(
+        IngestResponse captured = captureOperations.captureHandoff(new CaptureHandoffRequest(
                 "codex", "codex-id-recall", "/tmp/id-recall",
                 "next-agent",
                 "Completed the queue adapter contract",
@@ -108,7 +114,7 @@ class ContextLoopTest {
 
     @Test
     void capturedIntentAlsoLandsAsAnEventOnTheTimeline() {
-        contextService.captureDecision(new CaptureDecisionRequest(
+        captureOperations.captureDecision(new CaptureDecisionRequest(
                 "codex", "codex-timeline", "/tmp/acme-timeline",
                 "Pin the SQLite driver version", "Reproducible builds", List.of(), 0.9, List.of()));
 
@@ -121,7 +127,7 @@ class ContextLoopTest {
 
     @Test
     void unmatchedScopeRecallsNothing() {
-        contextService.captureDecision(new CaptureDecisionRequest(
+        captureOperations.captureDecision(new CaptureDecisionRequest(
                 "codex", "codex-empty", "/tmp/zzz-isolated", "Something", null, null, 0.5, null));
 
         RecallResult none = contextService.recall("a-topic-that-does-not-exist-anywhere", 168, null);

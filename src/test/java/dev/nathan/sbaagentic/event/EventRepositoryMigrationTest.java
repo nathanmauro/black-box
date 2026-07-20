@@ -55,8 +55,7 @@ class EventRepositoryMigrationTest {
 
         RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
-                new ObjectMapper(),
-                new ProjectAliasService(new ProjectAliasRepository(jdbc)));
+                new ObjectMapper());
         repository.ensureSchema();
 
         // The legacy session keeps its title but is protected (LEGACY) so only an AI retitle replaces it.

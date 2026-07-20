@@ -719,6 +719,7 @@ class TaskApiContractTest {
                 dev.nathan.sbaagentic.recording.RecordingCatalog.class,
                 dev.nathan.sbaagentic.context.ContextService.class,
                 dev.nathan.sbaagentic.search.SearchService.class,
+                dev.nathan.sbaagentic.recording.RecordingCaptureOperations.class,
                 dev.nathan.sbaagentic.ai.LocalAiClient.class)).isNotNull();
 
         Method recent = AgenticTools.class.getMethod("recentSessions", int.class);

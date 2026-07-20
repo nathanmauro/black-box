@@ -39,8 +39,7 @@ class SqliteCompatibilityTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         RecordingSqlStore events = new RecordingSqlStore(
                 jdbc,
-                objectMapper,
-                new ProjectAliasService(new ProjectAliasRepository(jdbc)));
+                objectMapper);
         events.ensureSchema();
         TaskRepository tasks = new TaskRepository(jdbc, objectMapper);
 

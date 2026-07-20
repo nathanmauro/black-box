@@ -10,6 +10,7 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.project.ProjectSummaryTools;
 import dev.nathan.sbaagentic.recording.RecordingMemoryTools;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -52,9 +53,10 @@ public class AgenticTools {
             RecordingCatalog repository,
             ContextService contextService,
             SearchService searchService,
+            RecordingCaptureOperations captureOperations,
             LocalAiClient localAiClient) {
         this(
-                new RecordingMemoryTools(repository, contextService, searchService),
+                new RecordingMemoryTools(repository, contextService, searchService, captureOperations),
                 new ProjectSummaryTools(localAiClient),
                 null);
     }

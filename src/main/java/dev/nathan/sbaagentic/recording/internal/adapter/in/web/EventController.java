@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 
 import java.util.List;
 
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
@@ -9,6 +10,7 @@ import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.QueryFacets;
 
 import jakarta.validation.Valid;
 
@@ -26,10 +28,15 @@ public class EventController {
 
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
+    private final ProjectScopeOperations projectScopes;
 
-    public EventController(EventRecorder ingestService, RecordingCatalog repository) {
+    public EventController(
+            EventRecorder ingestService,
+            RecordingCatalog repository,
+            ProjectScopeOperations projectScopes) {
         this.ingestService = ingestService;
         this.repository = repository;
+        this.projectScopes = projectScopes;
     }
 
     @PostMapping("/events")
@@ -44,7 +51,11 @@ public class EventController {
             @RequestParam(required = false) String before,
             @RequestParam(required = false) String since,
             @RequestParam(defaultValue = "false") boolean meaningful) {
-        return repository.feed(q, meaningful, before, since, safeEventLimit(limit));
+        QueryFacets facets = QueryFacets.parse(q);
+        List<String> scopes = facets.groupCwd() == null
+                ? List.of()
+                : projectScopes.scopesFor(facets.groupCwd());
+        return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
     }
 
     @GetMapping("/sessions")

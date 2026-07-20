@@ -2,8 +2,8 @@ package dev.nathan.sbaagentic.recording;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
-import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -27,14 +27,17 @@ public class RecordingMemoryTools {
     private final RecordingCatalog repository;
     private final ContextService contextService;
     private final SearchService searchService;
+    private final RecordingCaptureOperations captureOperations;
 
     public RecordingMemoryTools(
             RecordingCatalog repository,
             ContextService contextService,
-            SearchService searchService) {
+            SearchService searchService,
+            RecordingCaptureOperations captureOperations) {
         this.repository = repository;
         this.contextService = contextService;
         this.searchService = searchService;
+        this.captureOperations = captureOperations;
     }
 
     public List<AgentSession> recentSessions(int limit) {
@@ -58,7 +61,7 @@ public class RecordingMemoryTools {
             List<String> alternatives,
             double confidence,
             List<String> openLoops) {
-        return contextService.captureDecision(new CaptureDecisionRequest(
+        return captureOperations.captureDecision(new CaptureDecisionRequest(
                 source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops));
     }
 
@@ -70,7 +73,7 @@ public class RecordingMemoryTools {
             String contextSummary,
             List<String> openLoops,
             String nextAction) {
-        return contextService.captureHandoff(new CaptureHandoffRequest(
+        return captureOperations.captureHandoff(new CaptureHandoffRequest(
                 source, clientSessionId, repo, toAgent, contextSummary, openLoops, nextAction));
     }
 
@@ -79,6 +82,6 @@ public class RecordingMemoryTools {
             String clientSessionId,
             String repo,
             String text) {
-        return contextService.captureObservation(source, clientSessionId, repo, text);
+        return captureOperations.captureObservation(source, clientSessionId, repo, text);
     }
 }

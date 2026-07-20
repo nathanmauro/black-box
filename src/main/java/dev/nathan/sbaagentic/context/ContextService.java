@@ -3,16 +3,12 @@ package dev.nathan.sbaagentic.context;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.EventIngestRequest;
-import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
-import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Service;
@@ -44,45 +40,12 @@ public class ContextService {
     private static final int MAX_WITHIN_HOURS = 24 * 365;
     private static final int RECALL_LIMIT = 50;
 
-    private final EventRecorder ingestService;
     private final MemoryEventReader repository;
 
-    public ContextService(EventRecorder ingestService, MemoryEventReader repository) {
-        this.ingestService = ingestService;
+    public ContextService(MemoryEventReader repository) {
         this.repository = repository;
     }
 
-    public IngestResponse captureDecision(CaptureDecisionRequest request) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("kind", KIND_DECISION);
-        metadata.put("decision", request.decision());
-        putIfPresent(metadata, "rationale", request.rationale());
-        putIfPresent(metadata, "alternatives", trimList(request.alternatives()));
-        putIfPresent(metadata, "openLoops", trimList(request.openLoops()));
-        putIfPresent(metadata, "confidence", request.confidence());
-        putIfPresent(metadata, "repo", request.repo());
-        return write(request.source(), request.clientSessionId(), request.repo(), "Decision",
-                renderDecision(request), metadata);
-    }
-
-    public IngestResponse captureHandoff(CaptureHandoffRequest request) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("kind", KIND_HANDOFF);
-        metadata.put("contextSummary", request.contextSummary());
-        putIfPresent(metadata, "toAgent", request.toAgent());
-        putIfPresent(metadata, "openLoops", trimList(request.openLoops()));
-        putIfPresent(metadata, "nextAction", request.nextAction());
-        putIfPresent(metadata, "repo", request.repo());
-        return write(request.source(), request.clientSessionId(), request.repo(), "Handoff",
-                renderHandoff(request), metadata);
-    }
-
-    public IngestResponse captureObservation(String source, String clientSessionId, String repo, String text) {
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("kind", KIND_OBSERVATION);
-        putIfPresent(metadata, "repo", repo);
-        return write(source, clientSessionId, repo, "Observation", text, metadata);
-    }
 
     /**
      * Reads prior intent back out. {@code scope} is matched against both the session's working
@@ -105,22 +68,6 @@ public class ContextService {
         return new RecallResult(trimmedScope, hours, resolvedKinds, items.size(), items);
     }
 
-    private IngestResponse write(String source, String clientSessionId, String repo, String eventType,
-            String text, Map<String, Object> metadata) {
-        return ingestService.ingest(new EventIngestRequest(
-                source,
-                clientSessionId,
-                null,
-                eventType,
-                "assistant",
-                text,
-                repo,
-                null,
-                null,
-                null,
-                metadata,
-                Instant.now()));
-    }
 
     private static List<String> resolveKinds(List<String> kinds) {
         if (kinds == null || kinds.isEmpty()) {
@@ -166,66 +113,13 @@ public class ContextService {
                 str(meta.get("toAgent")));
     }
 
-    private static String renderDecision(CaptureDecisionRequest request) {
-        StringBuilder body = new StringBuilder(request.decision().strip());
-        appendBlock(body, "Why", request.rationale());
-        appendList(body, "Considered", request.alternatives());
-        appendList(body, "Open loops", request.openLoops());
-        if (request.confidence() != null) {
-            body.append("\n\nConfidence: ").append(request.confidence());
-        }
-        return body.toString();
-    }
 
-    private static String renderHandoff(CaptureHandoffRequest request) {
-        StringBuilder body = new StringBuilder();
-        if (notBlank(request.toAgent())) {
-            body.append("Handoff to ").append(request.toAgent().strip()).append(": ");
-        }
-        body.append(request.contextSummary().strip());
-        appendList(body, "Open loops", request.openLoops());
-        appendBlock(body, "Next", request.nextAction());
-        return body.toString();
-    }
-
-    private static void appendBlock(StringBuilder body, String label, String value) {
-        if (notBlank(value)) {
-            body.append("\n\n").append(label).append(": ").append(value.strip());
-        }
-    }
-
-    private static void appendList(StringBuilder body, String label, List<String> values) {
-        List<String> trimmed = trimList(values);
-        if (trimmed != null) {
-            body.append("\n\n").append(label).append(": ").append(String.join("; ", trimmed));
-        }
-    }
-
-    private static List<String> trimList(List<String> values) {
-        if (values == null) {
-            return null;
-        }
-        List<String> out = new ArrayList<>();
-        for (String value : values) {
-            if (notBlank(value)) {
-                out.add(value.strip());
-            }
-        }
-        return out.isEmpty() ? null : out;
-    }
-
-    private static void putIfPresent(Map<String, Object> metadata, String key, Object value) {
-        if (value != null) {
-            metadata.put(key, value);
-        }
+    private static String firstNonBlank(String first, String second) {
+        return notBlank(first) ? first : second;
     }
 
     private static boolean notBlank(String value) {
         return value != null && !value.isBlank();
-    }
-
-    private static String firstNonBlank(String first, String second) {
-        return notBlank(first) ? first : second;
     }
 
     private static String str(Object value) {

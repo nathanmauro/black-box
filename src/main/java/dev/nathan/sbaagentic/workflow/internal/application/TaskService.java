@@ -5,8 +5,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
-import dev.nathan.sbaagentic.context.ContextService;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
@@ -50,7 +50,7 @@ public class TaskService implements WorkflowOperations {
     private final SpecStore specs;
     private final TaskLifecycleStore tasks;
     private final TaskHistoryStore history;
-    private final ContextService contextService;
+    private final RecordingCaptureOperations captureOperations;
     private final WorkflowPublication publication;
     private final TransactionTemplate transactionTemplate;
 
@@ -58,13 +58,13 @@ public class TaskService implements WorkflowOperations {
             SpecStore specs,
             TaskLifecycleStore tasks,
             TaskHistoryStore history,
-            ContextService contextService,
+            RecordingCaptureOperations captureOperations,
             WorkflowPublication publication,
             PlatformTransactionManager transactionManager) {
         this.specs = specs;
         this.tasks = tasks;
         this.history = history;
-        this.contextService = contextService;
+        this.captureOperations = captureOperations;
         this.publication = publication;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -223,7 +223,7 @@ public class TaskService implements WorkflowOperations {
 
         IngestResponse handoff;
         try {
-            handoff = contextService.captureHandoff(new CaptureHandoffRequest(
+            handoff = captureOperations.captureHandoff(new CaptureHandoffRequest(
                     request.source(),
                     request.clientSessionId(),
                     current.projectKey(),

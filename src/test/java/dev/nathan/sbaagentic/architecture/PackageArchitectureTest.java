@@ -32,7 +32,7 @@ class PackageArchitectureTest {
      * A module enters this set in the same commit that completes its vertical migration. Legacy
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
-    private static final Set<String> FULLY_MIGRATED_MODULES = Set.of("workflow");
+    private static final Set<String> FULLY_MIGRATED_MODULES = Set.of("recording", "workflow");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -111,7 +111,8 @@ class PackageArchitectureTest {
                         "com.fasterxml.jackson..",
                         "org.elasticsearch..",
                         "java.nio.file..",
-                        "java.io.."));
+                        "java.io..")
+                .allowEmptyShould(true));
         rules.add(noClasses()
                 .that().resideInAPackage(root + ".internal.application..")
                 .should().dependOnClassesThat().resideInAnyPackage(

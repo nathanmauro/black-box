@@ -16,7 +16,18 @@ public interface RecordingCatalog {
 
     List<AgentEvent> eventsForSession(String sessionId, int limit);
 
-    EventFeedResponse feed(String query, boolean meaningfulOnly, String before, String since, int limit);
+    EventFeedResponse feed(
+            String query,
+            boolean meaningfulOnly,
+            String before,
+            String since,
+            List<String> projectScopes,
+            int limit);
+
+    default EventFeedResponse feed(
+            String query, boolean meaningfulOnly, String before, String since, int limit) {
+        return feed(query, meaningfulOnly, before, since, List.of(), limit);
+    }
 
     void saveSummaryAndTitle(String sessionId, String summary, String title, int titleRank);
 

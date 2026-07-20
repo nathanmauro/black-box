@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.recording;
 
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
 
 import java.time.Instant;
 import java.util.List;
@@ -33,7 +34,7 @@ class EventSearchFacetTest {
     EventRecorder ingestService;
 
     @Autowired
-    RecordingSqlStore repository;
+    MemoryEventReader repository;
 
     @Autowired
     ProjectAliasService projectAliasService;
@@ -123,7 +124,9 @@ class EventSearchFacetTest {
                         "source:" + source + " project_exact:" + primary, 50)
                 .stream().map(AgentEvent::id).toList();
         List<String> groupedIds = repository.searchEvents(
-                        "source:" + source + " project_group:" + primary, 50)
+                        "source:" + source + " project_group:" + primary,
+                        projectAliasService.scopesFor(primary),
+                        50)
                 .stream().map(AgentEvent::id).toList();
 
         assertThat(exactIds).containsExactly(primaryId).doesNotContain(aliasId);

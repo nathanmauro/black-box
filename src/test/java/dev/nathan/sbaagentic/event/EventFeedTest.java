@@ -173,7 +173,12 @@ class EventFeedTest {
                 .containsExactly(primaryEvent.id())
                 .doesNotContain(aliasEvent.id());
         assertThat(repository.feed(
-                        "source:" + source + " project_group:" + primary, false, null, null, 10).items())
+                        "source:" + source + " project_group:" + primary,
+                        false,
+                        null,
+                        null,
+                        projectAliasService.scopesFor(primary),
+                        10).items())
                 .extracting(EventFeedItem::id)
                 .containsExactly(aliasEvent.id(), primaryEvent.id());
 

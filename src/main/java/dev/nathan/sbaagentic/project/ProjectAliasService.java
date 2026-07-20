@@ -31,7 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-public class ProjectAliasService {
+public class ProjectAliasService implements ProjectScopeOperations {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ProjectAliasService.class);
 
@@ -59,6 +59,7 @@ public class ProjectAliasService {
         return snapshot().resolve(scope);
     }
 
+    @Override
     public List<String> scopesFor(String scope) {
         return snapshot().scopesFor(scope);
     }

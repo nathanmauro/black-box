@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.search;
 
+import dev.nathan.sbaagentic.recording.QueryFacets;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;

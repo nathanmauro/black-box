@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.recording.QueryFacets;
 
 import org.springframework.stereotype.Service;
 
@@ -50,6 +52,7 @@ public class SearchService {
 
     private final MemoryEventReader repository;
     private final ElasticIndexClient elasticIndexClient;
+    private final ProjectScopeOperations projectScopes;
 
     /**
      * Single-entry, time-checked field-list cache. {@code holder} is the only mutable state and is
@@ -61,17 +64,24 @@ public class SearchService {
     private volatile CacheEntry holder;
     private final AtomicBoolean refreshing = new AtomicBoolean();
 
-    public SearchService(MemoryEventReader repository, ElasticIndexClient elasticIndexClient) {
+    public SearchService(
+            MemoryEventReader repository,
+            ElasticIndexClient elasticIndexClient,
+            ProjectScopeOperations projectScopes) {
         this.repository = repository;
         this.elasticIndexClient = elasticIndexClient;
+        this.projectScopes = projectScopes;
     }
 
     public SearchResponse search(String query, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         QueryFacets facets = QueryFacets.parse(query);
+        List<String> scopes = facets.groupCwd() == null
+                ? List.of()
+                : projectScopes.scopesFor(facets.groupCwd());
         return new SearchResponse(
                 query,
-                repository.searchEvents(query, safeLimit),
+                repository.searchEvents(query, scopes, safeLimit),
                 elasticSearchAllowed(facets) ? elasticIndexClient.search(query, safeLimit) : List.of(),
                 elasticIndexClient.health());
     }
