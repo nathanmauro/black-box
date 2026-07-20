@@ -2,8 +2,8 @@ package dev.nathan.sbaagentic.ask;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.ai.AiHealth;
-import dev.nathan.sbaagentic.ai.LocalAiClient;
+import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.config.SbaProperties;
 
 import org.springframework.stereotype.Component;
@@ -19,10 +19,10 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
             Do not use outside knowledge.
             """;
 
-    private final LocalAiClient localAiClient;
+    private final SummaryModelOperations localAiClient;
     private final SbaProperties.Ask properties;
 
-    public LocalAskSynthesizer(LocalAiClient localAiClient, SbaProperties properties) {
+    public LocalAskSynthesizer(SummaryModelOperations localAiClient, SbaProperties properties) {
         this.localAiClient = localAiClient;
         this.properties = properties.getAsk();
     }

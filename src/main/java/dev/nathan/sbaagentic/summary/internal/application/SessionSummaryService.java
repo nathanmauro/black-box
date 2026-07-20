@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.application;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,6 +8,8 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.TitleRank;
+import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -16,7 +18,7 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 import static org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
 
 @Service
-public class SessionSummaryService {
+public class SessionSummaryService implements SummaryOperations {
 
     private static final int MAX_BACKFILL_LIMIT = 25;
 
@@ -83,9 +85,6 @@ public class SessionSummaryService {
             summarized.add(summarize(session.id()));
         }
         return new SummaryBackfillResult(safeLimit, summarized.size(), summarized);
-    }
-
-    public record SummaryBackfillResult(int requested, int summarized, List<AgentSession> sessions) {
     }
 
     private static int summaryEventLimit(AgentSession session) {

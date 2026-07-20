@@ -1,4 +1,7 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.application;
+
+import dev.nathan.sbaagentic.summary.internal.adapter.out.http.LocalAiClient;
+import dev.nathan.sbaagentic.summary.internal.adapter.out.process.ExternalSummaryClient;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
 

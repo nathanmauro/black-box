@@ -1,6 +1,4 @@
-package dev.nathan.sbaagentic.project;
-
-import dev.nathan.sbaagentic.ai.LocalAiClient;
+package dev.nathan.sbaagentic.summary;
 
 import org.springframework.stereotype.Component;
 
@@ -8,9 +6,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProjectSummaryTools {
 
-    private final LocalAiClient localAiClient;
+    private final SummaryModelOperations localAiClient;
 
-    public ProjectSummaryTools(LocalAiClient localAiClient) {
+    public ProjectSummaryTools(SummaryModelOperations localAiClient) {
         this.localAiClient = localAiClient;
     }
 

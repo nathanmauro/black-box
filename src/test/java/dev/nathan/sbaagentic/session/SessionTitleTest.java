@@ -3,7 +3,7 @@ package dev.nathan.sbaagentic.recording;
 import java.time.Instant;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.ai.SessionSummaryService;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
@@ -30,7 +30,7 @@ class SessionTitleTest {
     RecordingSqlStore repository;
 
     @Autowired
-    SessionSummaryService summaryService;
+    SummaryOperations summaryService;
 
     @Test
     void higherQualityEventUpgradesTitleWhileLowerQualityDoesNot() {

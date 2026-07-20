@@ -2,8 +2,11 @@ package dev.nathan.sbaagentic.summary.internal.adapter.in.web;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.ai.SessionSummaryService;
-import dev.nathan.sbaagentic.exporting.SummaryExportService;
+import dev.nathan.sbaagentic.summary.ExportTarget;
+import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
+import dev.nathan.sbaagentic.summary.SummaryExport;
+import dev.nathan.sbaagentic.summary.SummaryExportOperations;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,12 +20,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SummaryController {
 
-    private final SessionSummaryService summaryService;
-    private final SummaryExportService summaryExportService;
+    private final SummaryOperations summaryService;
+    private final SummaryExportOperations summaryExportService;
 
     public SummaryController(
-            SessionSummaryService summaryService,
-            SummaryExportService summaryExportService) {
+            SummaryOperations summaryService,
+            SummaryExportOperations summaryExportService) {
         this.summaryService = summaryService;
         this.summaryExportService = summaryExportService;
     }
@@ -40,18 +43,18 @@ public class SummaryController {
     }
 
     @PostMapping("/sessions/summarize-missing")
-    public SessionSummaryService.SummaryBackfillResult summarizeMissing(
+    public SummaryBackfillResult summarizeMissing(
             @RequestParam(defaultValue = "10") int limit) {
         return summaryService.summarizeMissing(limit);
     }
 
     @GetMapping("/exports/targets")
-    public List<SummaryExportService.ExportTarget> exportTargets() {
+    public List<ExportTarget> exportTargets() {
         return summaryExportService.targets();
     }
 
     @PostMapping("/sessions/{sessionId}/exports/{targetId}")
-    public SummaryExportService.SummaryExport exportSummary(
+    public SummaryExport exportSummary(
             @PathVariable String sessionId,
             @PathVariable String targetId) {
         return summaryExportService.exportSummary(sessionId, targetId);

@@ -720,7 +720,7 @@ class TaskApiContractTest {
                 dev.nathan.sbaagentic.memory.MemoryRecallOperations.class,
                 dev.nathan.sbaagentic.memory.MemorySearchOperations.class,
                 dev.nathan.sbaagentic.recording.RecordingCaptureOperations.class,
-                dev.nathan.sbaagentic.ai.LocalAiClient.class)).isNotNull();
+                dev.nathan.sbaagentic.summary.SummaryModelOperations.class)).isNotNull();
 
         Method recent = AgenticTools.class.getMethod("recentSessions", int.class);
         Method search = AgenticTools.class.getMethod("searchSessions", String.class, int.class);

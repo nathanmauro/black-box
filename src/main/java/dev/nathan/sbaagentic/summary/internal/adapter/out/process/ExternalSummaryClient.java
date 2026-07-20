@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.adapter.out.process;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,11 +10,12 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
 
 import org.springframework.stereotype.Component;
 
 @Component
-public class ExternalSummaryClient {
+public class ExternalSummaryClient implements ExternalSummaryModel {
 
     private final SbaProperties.Summary properties;
 

@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.application;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,6 +9,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.SessionStopped;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 
 import jakarta.annotation.PreDestroy;
 
@@ -22,7 +23,7 @@ public class SessionFinalizationService {
 
     private static final Logger log = LoggerFactory.getLogger(SessionFinalizationService.class);
     private final RecordingCatalog repository;
-    private final SessionSummaryService summaryService;
+    private final SummaryOperations summaryService;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "sba-session-finalizer");
         thread.setDaemon(true);
@@ -30,7 +31,7 @@ public class SessionFinalizationService {
     });
     private final Set<String> pending = ConcurrentHashMap.newKeySet();
 
-    public SessionFinalizationService(RecordingCatalog repository, SessionSummaryService summaryService) {
+    public SessionFinalizationService(RecordingCatalog repository, SummaryOperations summaryService) {
         this.repository = repository;
         this.summaryService = summaryService;
     }

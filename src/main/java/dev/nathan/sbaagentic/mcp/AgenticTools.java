@@ -3,12 +3,12 @@ package dev.nathan.sbaagentic.mcp;
 import java.util.List;
 import java.util.Map;
 
-import dev.nathan.sbaagentic.ai.LocalAiClient;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.project.ProjectSummaryTools;
+import dev.nathan.sbaagentic.summary.ProjectSummaryTools;
 import dev.nathan.sbaagentic.memory.RecordingMemoryTools;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.memory.SearchResponse;
@@ -54,7 +54,7 @@ public class AgenticTools {
             MemoryRecallOperations contextService,
             MemorySearchOperations searchService,
             RecordingCaptureOperations captureOperations,
-            LocalAiClient localAiClient) {
+            SummaryModelOperations localAiClient) {
         this(
                 new RecordingMemoryTools(repository, contextService, searchService, captureOperations),
                 new ProjectSummaryTools(localAiClient),

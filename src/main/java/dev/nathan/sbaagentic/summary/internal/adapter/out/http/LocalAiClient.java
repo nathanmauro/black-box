@@ -1,10 +1,13 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.adapter.out.http;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
+import dev.nathan.sbaagentic.summary.internal.application.port.LocalSummaryModel;
 import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.http.HttpHeaders;
@@ -15,7 +18,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
-public class LocalAiClient {
+public class LocalAiClient implements LocalSummaryModel, SummaryModelOperations {
 
     /** Floor for the input budget so a misconfigured tiny value cannot make chunking/clamping degenerate. */
     private static final int MIN_BUDGET = 500;

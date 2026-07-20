@@ -8,8 +8,8 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.ai.LocalAiClient;
-import dev.nathan.sbaagentic.ai.SessionSummaryService;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -25,8 +25,8 @@ public class SbaCli implements ApplicationRunner {
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
     private final MemorySearchOperations searchService;
-    private final SessionSummaryService summaryService;
-    private final LocalAiClient localAiClient;
+    private final SummaryOperations summaryService;
+    private final SummaryModelOperations localAiClient;
     private final ObjectMapper objectMapper;
     private final RunnerCli runnerCli;
 
@@ -34,8 +34,8 @@ public class SbaCli implements ApplicationRunner {
             EventRecorder ingestService,
             RecordingCatalog repository,
             MemorySearchOperations searchService,
-            SessionSummaryService summaryService,
-            LocalAiClient localAiClient,
+            SummaryOperations summaryService,
+            SummaryModelOperations localAiClient,
             ObjectMapper objectMapper,
             RunnerCli runnerCli) {
         this.ingestService = ingestService;

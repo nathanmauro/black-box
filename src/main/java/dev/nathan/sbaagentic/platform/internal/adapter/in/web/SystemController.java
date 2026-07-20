@@ -2,7 +2,7 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
 import java.util.Map;
 
-import dev.nathan.sbaagentic.ai.LocalAiClient;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
@@ -16,12 +16,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class SystemController {
 
     private final RecordingCatalog repository;
-    private final LocalAiClient localAiClient;
+    private final SummaryModelOperations localAiClient;
     private final MemorySearchOperations memorySearch;
 
     public SystemController(
             RecordingCatalog repository,
-            LocalAiClient localAiClient,
+            SummaryModelOperations localAiClient,
             MemorySearchOperations memorySearch) {
         this.repository = repository;
         this.localAiClient = localAiClient;

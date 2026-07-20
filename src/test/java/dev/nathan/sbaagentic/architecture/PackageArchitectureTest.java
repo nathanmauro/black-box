@@ -33,7 +33,7 @@ class PackageArchitectureTest {
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
     private static final Set<String> FULLY_MIGRATED_MODULES =
-            Set.of("memory", "project", "recording", "workflow");
+            Set.of("memory", "project", "recording", "summary", "workflow");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -128,7 +128,8 @@ class PackageArchitectureTest {
         rules.add(classes()
                 .that().areAnnotatedWith(Repository.class)
                 .and().resideInAPackage(root + "..")
-                .should().resideInAPackage(root + ".internal.adapter.out.sqlite.."));
+                .should().resideInAPackage(root + ".internal.adapter.out.sqlite..")
+                .allowEmptyShould(true));
         return rules;
     }
 

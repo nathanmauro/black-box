@@ -10,8 +10,10 @@ import java.util.TreeSet;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.ai.AiHealth;
-import dev.nathan.sbaagentic.ai.SessionSummaryService;
+import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.ExportTarget;
+import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
+import dev.nathan.sbaagentic.summary.SummaryExport;
 import dev.nathan.sbaagentic.ask.AskCitation;
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
 import dev.nathan.sbaagentic.ask.AskRequest;
@@ -32,7 +34,6 @@ import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.StorageStats;
-import dev.nathan.sbaagentic.exporting.SummaryExportService;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.workflow.LinkErrorCode;
 import dev.nathan.sbaagentic.workflow.LinkType;
@@ -202,9 +203,9 @@ class WireContractFixtureTest {
                 entry("SessionLinkView", SessionLinkView.class),
                 entry("SessionRef", SessionRef.class),
                 entry("StorageStats", StorageStats.class),
-                entry("SummaryBackfillResult", SessionSummaryService.SummaryBackfillResult.class),
-                entry("SummaryExport", SummaryExportService.SummaryExport.class),
-                entry("ExportTarget", SummaryExportService.ExportTarget.class),
+                entry("SummaryBackfillResult", SummaryBackfillResult.class),
+                entry("SummaryExport", SummaryExport.class),
+                entry("ExportTarget", ExportTarget.class),
                 entry("Task", Task.class),
                 entry("TaskAnnotation", TaskAnnotation.class),
                 entry("TaskChange", TaskChange.class),

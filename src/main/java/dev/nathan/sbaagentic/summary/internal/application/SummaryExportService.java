@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.exporting;
+package dev.nathan.sbaagentic.summary.internal.application;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,6 +18,9 @@ import com.samskivert.mustache.Mustache;
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.summary.ExportTarget;
+import dev.nathan.sbaagentic.summary.SummaryExport;
+import dev.nathan.sbaagentic.summary.SummaryExportOperations;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -30,7 +33,7 @@ import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
-public class SummaryExportService {
+public class SummaryExportService implements SummaryExportOperations {
 
     private static final String MARKDOWN_FILE = "markdown-file";
     private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
@@ -212,15 +215,4 @@ public class SummaryExportService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    public record ExportTarget(String id, String label, String type) {
-    }
-
-    public record SummaryExport(
-            String sessionId,
-            String targetId,
-            String targetLabel,
-            String targetType,
-            String path,
-            String relativePath) {
-    }
 }

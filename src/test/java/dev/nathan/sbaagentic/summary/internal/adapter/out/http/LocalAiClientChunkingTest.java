@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ai;
+package dev.nathan.sbaagentic.summary.internal.adapter.out.http;
 
 import java.util.List;
 
