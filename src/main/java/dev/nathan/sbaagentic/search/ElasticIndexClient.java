@@ -9,7 +9,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dev.nathan.sbaagentic.config.SbaProperties;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -17,7 +20,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
-public class ElasticIndexClient implements EventIndexSink {
+public class ElasticIndexClient {
 
     private static final List<String> SEARCH_FIELDS =
             List.of("text^4", "title^3", "cwd^2", "toolName", "eventType", "source", "clientSessionId");
@@ -46,7 +49,6 @@ public class ElasticIndexClient implements EventIndexSink {
                 .build();
     }
 
-    @Override
     public boolean index(AgentSession session, AgentEvent event) {
         if (!properties.isEnabled()) {
             return false;
@@ -63,6 +65,14 @@ public class ElasticIndexClient implements EventIndexSink {
         }
         catch (RestClientException ex) {
             return false;
+        }
+    }
+
+    @EventListener
+    @Order(20)
+    public void indexRecordedEvent(EventRecorded recorded) {
+        if (index(recorded.session(), recorded.event())) {
+            recorded.markIndexed();
         }
     }
 

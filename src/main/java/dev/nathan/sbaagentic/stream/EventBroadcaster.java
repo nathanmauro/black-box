@@ -5,11 +5,13 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.search.EventIndexSink;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 
 import jakarta.annotation.PreDestroy;
 
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -17,14 +19,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * Holds the live Server-Sent Events subscribers and fans newly persisted events out to them.
  *
- * <p>Implemented as an {@link EventIndexSink} so it plugs into the existing ingest fan-out
- * ({@code EventRecorder} already iterates every registered sink after the canonical SQLite
- * write) with no change to the ingest path. {@link #index(AgentSession, AgentEvent)} returns
- * {@code false} because broadcasting is not a durable search index — it must never flip the
- * ingest "indexed" flag, and a slow or gone subscriber must never break the canonical write.
+ * <p>Reacts only after the canonical SQLite write. A slow or gone subscriber is isolated here and
+ * can never break ingestion.
  */
 @Component
-public class EventBroadcaster implements EventIndexSink {
+public class EventBroadcaster {
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
@@ -45,8 +44,11 @@ public class EventBroadcaster implements EventIndexSink {
         return emitter;
     }
 
-    @Override
-    public boolean index(AgentSession session, AgentEvent event) {
+    @EventListener
+    @Order(30)
+    public void broadcastRecordedEvent(EventRecorded recorded) {
+        AgentSession session = recorded.session();
+        AgentEvent event = recorded.event();
         try {
             publishEventAppended(new StreamEvents.EventAppended(
                     event.sessionId(),
@@ -67,7 +69,6 @@ public class EventBroadcaster implements EventIndexSink {
         } catch (RuntimeException ex) {
             // Broadcasting is best-effort; never let it break ingest.
         }
-        return false;
     }
 
     public void publishEventAppended(StreamEvents.EventAppended payload) {

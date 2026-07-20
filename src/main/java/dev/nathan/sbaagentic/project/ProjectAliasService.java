@@ -18,12 +18,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import dev.nathan.sbaagentic.recording.EventRecorded;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -44,6 +47,12 @@ public class ProjectAliasService {
 
     public ProjectAliasService(ProjectAliasRepository repository) {
         this.repository = repository;
+    }
+
+    @EventListener
+    @Order(10)
+    public void discoverRecordedProject(EventRecorded recorded) {
+        discoverVerifiedAlias(recorded.session().cwd());
     }
 
     public String resolve(String scope) {

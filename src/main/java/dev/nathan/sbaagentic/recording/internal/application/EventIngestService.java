@@ -1,47 +1,42 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
-import dev.nathan.sbaagentic.ai.SessionFinalizationService;
 import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
-import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.search.EventIndexSink;
+import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.Titles;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EventIngestService implements EventRecorder {
 
+    private static final Set<String> FINAL_EVENT_TYPES = Set.of("sessionend", "stop");
+
     private final RecordingStore repository;
     private final SbaProperties properties;
-    private final List<EventIndexSink> indexSinks;
-    private final SessionFinalizationService finalizationService;
     private final RedactionService redactionService;
-    private final ProjectAliasService projectAliasService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public EventIngestService(
             RecordingStore repository,
             SbaProperties properties,
-            List<EventIndexSink> indexSinks,
-            SessionFinalizationService finalizationService,
             RedactionService redactionService,
-            ProjectAliasService projectAliasService) {
+            ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.properties = properties;
-        this.indexSinks = indexSinks;
-        this.finalizationService = finalizationService;
         this.redactionService = redactionService;
-        this.projectAliasService = projectAliasService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -55,22 +50,24 @@ public class EventIngestService implements EventRecorder {
         // database connection open or fail the canonical write.
         RecordingStore.Persisted persisted =
                 repository.persistEvent(normalized, observedAt, title.value(), title.rank());
-        AgentEvent event = persisted.event();
-        projectAliasService.discoverVerifiedAlias(persisted.session().cwd());
-
-        boolean indexed = false;
-        for (EventIndexSink sink : indexSinks) {
-            indexed = sink.index(persisted.session(), event) || indexed;
+        EventRecorded recorded = new EventRecorded(persisted.session(), persisted.event());
+        eventPublisher.publishEvent(recorded);
+        if (isFinalEvent(recorded.event().eventType())) {
+            eventPublisher.publishEvent(new SessionStopped(recorded.session(), recorded.event()));
         }
-        finalizationService.summarizeAfterFinalEvent(persisted.session(), event);
 
         return new IngestResponse(
-                event.id(),
-                event.sessionId(),
-                event.source(),
-                event.clientSessionId(),
-                event.eventType(),
-                indexed);
+                recorded.event().id(),
+                recorded.event().sessionId(),
+                recorded.event().source(),
+                recorded.event().clientSessionId(),
+                recorded.event().eventType(),
+                recorded.indexed());
+    }
+
+    private static boolean isFinalEvent(String eventType) {
+        return eventType != null
+                && FINAL_EVENT_TYPES.contains(eventType.trim().toLowerCase(Locale.ROOT));
     }
 
     private EventIngestRequest normalize(EventIngestRequest request) {
