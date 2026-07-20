@@ -3,7 +3,7 @@ package dev.nathan.sbaagentic.ask.internal.adapter.in.web;
 import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
-import dev.nathan.sbaagentic.ask.AskService;
+import dev.nathan.sbaagentic.ask.AskOperations;
 import dev.nathan.sbaagentic.ask.AskStatus;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,9 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class AskController {
 
-    private final AskService askService;
+    private final AskOperations askService;
 
-    public AskController(AskService askService) {
+    public AskController(AskOperations askService) {
         this.askService = askService;
     }
 

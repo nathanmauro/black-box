@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -6,6 +6,10 @@ import java.util.List;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.MemoryHit;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalUnavailable;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -14,7 +18,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 @Component
-public class ElasticMemoryClient implements MemoryRetriever {
+public class ElasticMemoryClient implements MemoryRetrievalOperations {
 
     private final SbaProperties.Elasticsearch elasticsearch;
     private final SbaProperties.Ask ask;
@@ -33,25 +37,25 @@ public class ElasticMemoryClient implements MemoryRetriever {
     }
 
     @Override
-    public AskComponentStatus status() {
+    public MemoryRetrievalStatus status() {
         if (!elasticsearch.isEnabled()) {
-            return AskComponentStatus.disabled("elasticsearch disabled");
+            return MemoryRetrievalStatus.disabled("elasticsearch disabled");
         }
         try {
             // HEAD the memory index itself: a reachable cluster without the index is still an
             // unavailable ASK dependency, and the UI hides the workspace off this signal.
             restClient.head().uri("/{index}", ask.getMemoryIndex()).retrieve().toBodilessEntity();
-            return AskComponentStatus.available(ask.getMemoryIndex());
+            return MemoryRetrievalStatus.available(ask.getMemoryIndex());
         }
         catch (RestClientException ex) {
-            return AskComponentStatus.unavailable(ex.getMessage());
+            return MemoryRetrievalStatus.unavailable(ex.getMessage());
         }
     }
 
     @Override
     public List<MemoryHit> bm25(String query, int limit) {
         if (!elasticsearch.isEnabled()) {
-            throw new AskDependencyUnavailable("elasticsearch disabled");
+            throw new MemoryRetrievalUnavailable("elasticsearch disabled");
         }
         return search(bm25Query(query, limit, ask));
     }
@@ -59,7 +63,7 @@ public class ElasticMemoryClient implements MemoryRetriever {
     @Override
     public List<MemoryHit> knn(float[] embedding, int limit) {
         if (!elasticsearch.isEnabled()) {
-            throw new AskDependencyUnavailable("elasticsearch disabled");
+            throw new MemoryRetrievalUnavailable("elasticsearch disabled");
         }
         return search(knnQuery(embedding, limit, ask));
     }
@@ -109,7 +113,7 @@ public class ElasticMemoryClient implements MemoryRetriever {
             return mapHits(response);
         }
         catch (RestClientException ex) {
-            throw new AskDependencyUnavailable(ex.getMessage());
+            throw new MemoryRetrievalUnavailable(ex.getMessage());
         }
     }
 

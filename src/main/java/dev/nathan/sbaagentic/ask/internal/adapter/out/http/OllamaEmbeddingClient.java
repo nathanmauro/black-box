@@ -1,8 +1,11 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.ask.internal.adapter.out.http;
 
 import java.util.List;
 import java.util.Map;
 
+import dev.nathan.sbaagentic.ask.AskComponentStatus;
+import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
+import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
 import dev.nathan.sbaagentic.config.SbaProperties;
 
 import org.springframework.http.MediaType;

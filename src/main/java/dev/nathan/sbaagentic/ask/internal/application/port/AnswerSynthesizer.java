@@ -1,6 +1,10 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.ask.internal.application.port;
 
 import java.util.List;
+
+import dev.nathan.sbaagentic.ask.AskCitation;
+import dev.nathan.sbaagentic.ask.AskComponentStatus;
+import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
 
 @FunctionalInterface
 public interface AnswerSynthesizer {

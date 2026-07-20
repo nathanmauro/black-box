@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.config.SbaProperties;

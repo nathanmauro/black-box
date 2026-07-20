@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.memory;
 
 public record MemoryHit(
         String id,

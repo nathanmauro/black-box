@@ -1,10 +1,10 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.List;
 
-public interface MemoryRetriever {
+public interface MemoryRetrievalOperations {
 
-    AskComponentStatus status();
+    MemoryRetrievalStatus status();
 
     List<MemoryHit> bm25(String query, int limit);
 

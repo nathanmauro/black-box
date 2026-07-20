@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.ask.internal.application;
 
 public class AskDependencyUnavailable extends RuntimeException {
 

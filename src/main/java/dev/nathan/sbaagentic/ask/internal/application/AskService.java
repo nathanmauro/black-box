@@ -1,23 +1,36 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.ask.internal.application;
 
 import java.util.List;
 
+import dev.nathan.sbaagentic.ask.AskCitation;
+import dev.nathan.sbaagentic.ask.AskComponentStatus;
+import dev.nathan.sbaagentic.ask.AskOperations;
+import dev.nathan.sbaagentic.ask.AskRequest;
+import dev.nathan.sbaagentic.ask.AskResponse;
+import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
+import dev.nathan.sbaagentic.ask.AskStatus;
+import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
+import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
+import dev.nathan.sbaagentic.ask.internal.domain.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.MemoryHit;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
 
 import org.springframework.stereotype.Service;
 
 @Service
-public class AskService {
+public class AskService implements AskOperations {
 
     public static final String NO_HIT_ANSWER = "Answer not found in memory.";
 
-    private final MemoryRetriever memoryRetriever;
+    private final MemoryRetrievalOperations memoryRetriever;
     private final QueryEmbedder queryEmbedder;
     private final AnswerSynthesizer answerSynthesizer;
     private final SbaProperties.Ask properties;
 
     public AskService(
-            MemoryRetriever memoryRetriever,
+            MemoryRetrievalOperations memoryRetriever,
             QueryEmbedder queryEmbedder,
             AnswerSynthesizer answerSynthesizer,
             SbaProperties properties) {
@@ -28,7 +41,7 @@ public class AskService {
     }
 
     public AskStatus status() {
-        AskComponentStatus elastic = memoryRetriever.status();
+        AskComponentStatus elastic = componentStatus(memoryRetriever.status());
         AskComponentStatus embeddings = queryEmbedder.status();
         AskComponentStatus chat = answerSynthesizer.status();
         return new AskStatus(
@@ -136,6 +149,10 @@ public class AskService {
             return "unavailable";
         }
         return embeddings.available() ? "hybrid" : "bm25";
+    }
+
+    private static AskComponentStatus componentStatus(MemoryRetrievalStatus status) {
+        return new AskComponentStatus(status.enabled(), status.available(), status.detail());
     }
 
     private static String fallback(String value, String fallback) {

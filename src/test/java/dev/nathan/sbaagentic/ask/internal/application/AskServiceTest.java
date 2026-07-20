@@ -1,10 +1,19 @@
-package dev.nathan.sbaagentic.ask;
+package dev.nathan.sbaagentic.ask.internal.application;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import dev.nathan.sbaagentic.ask.AskCitation;
+import dev.nathan.sbaagentic.ask.AskRequest;
+import dev.nathan.sbaagentic.ask.AskResponse;
+import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
+import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
+import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
 import dev.nathan.sbaagentic.config.SbaProperties;
+import dev.nathan.sbaagentic.memory.MemoryHit;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
 
 import org.junit.jupiter.api.Test;
 
@@ -99,15 +108,15 @@ class AskServiceTest {
                 "Snippet " + id);
     }
 
-    private static final class FakeMemoryRetriever implements MemoryRetriever {
+    private static final class FakeMemoryRetriever implements MemoryRetrievalOperations {
         private final List<MemoryHit> lexicalHits = new ArrayList<>();
         private final List<MemoryHit> vectorHits = new ArrayList<>();
         private final AtomicBoolean vectorCalledRef = new AtomicBoolean();
         private boolean vectorCalled;
 
         @Override
-        public AskComponentStatus status() {
-            return AskComponentStatus.available("agent-memory");
+        public MemoryRetrievalStatus status() {
+            return MemoryRetrievalStatus.available("agent-memory");
         }
 
         @Override
