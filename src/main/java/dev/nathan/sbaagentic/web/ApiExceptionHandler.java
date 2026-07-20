@@ -3,7 +3,7 @@ package dev.nathan.sbaagentic.web;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
-import dev.nathan.sbaagentic.link.LinkDomainException;
+import dev.nathan.sbaagentic.workflow.LinkDomainException;
 import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import dev.nathan.sbaagentic.workflow.TaskErrorCode;
 

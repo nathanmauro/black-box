@@ -5,9 +5,9 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import dev.nathan.sbaagentic.link.CreateSessionLinkRequest;
-import dev.nathan.sbaagentic.link.LinkType;
-import dev.nathan.sbaagentic.link.SessionLinkService;
+import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.workflow.LinkType;
+import dev.nathan.sbaagentic.workflow.internal.application.SessionLinkService;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
 import dev.nathan.sbaagentic.workflow.CreateSpecRequest;

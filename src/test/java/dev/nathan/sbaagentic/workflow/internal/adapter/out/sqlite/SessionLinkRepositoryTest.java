@@ -1,4 +1,7 @@
-package dev.nathan.sbaagentic.link;
+package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
+
+import dev.nathan.sbaagentic.workflow.LinkType;
+import dev.nathan.sbaagentic.workflow.SessionLink;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

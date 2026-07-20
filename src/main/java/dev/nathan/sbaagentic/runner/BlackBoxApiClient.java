@@ -19,7 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.event.IngestResponse;
-import dev.nathan.sbaagentic.link.SessionLink;
+import dev.nathan.sbaagentic.workflow.SessionLink;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 import dev.nathan.sbaagentic.workflow.TaskChange;
 import dev.nathan.sbaagentic.workflow.TaskEvent;

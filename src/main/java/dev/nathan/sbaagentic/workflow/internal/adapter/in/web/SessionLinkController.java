@@ -1,9 +1,9 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.in.web;
 
-import dev.nathan.sbaagentic.link.CreateSessionLinkRequest;
-import dev.nathan.sbaagentic.link.SessionLink;
-import dev.nathan.sbaagentic.link.SessionLinkService;
-import dev.nathan.sbaagentic.link.SessionLinksResponse;
+import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
+import dev.nathan.sbaagentic.workflow.SessionLink;
+import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,19 +16,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class SessionLinkController {
 
-    private final SessionLinkService sessionLinkService;
+    private final SessionLineageOperations sessionLinks;
 
-    public SessionLinkController(SessionLinkService sessionLinkService) {
-        this.sessionLinkService = sessionLinkService;
+    public SessionLinkController(SessionLineageOperations sessionLinks) {
+        this.sessionLinks = sessionLinks;
     }
 
     @PostMapping("/session-links")
     public SessionLink createSessionLink(@RequestBody CreateSessionLinkRequest request) {
-        return sessionLinkService.createLink(request);
+        return sessionLinks.createLink(request);
     }
 
     @GetMapping("/sessions/{sessionId}/links")
     public SessionLinksResponse sessionLinks(@PathVariable String sessionId) {
-        return sessionLinkService.linksForSession(sessionId);
+        return sessionLinks.linksForSession(sessionId);
     }
 }

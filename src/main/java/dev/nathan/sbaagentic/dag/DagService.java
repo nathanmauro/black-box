@@ -8,8 +8,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import dev.nathan.sbaagentic.event.EventRepository;
-import dev.nathan.sbaagentic.link.SessionLink;
-import dev.nathan.sbaagentic.link.SessionLinkRepository;
+import dev.nathan.sbaagentic.workflow.SessionLink;
+import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
 import dev.nathan.sbaagentic.session.AgentSession;
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskEvent;
@@ -24,15 +24,15 @@ import org.springframework.stereotype.Service;
 public class DagService {
 
     private final WorkflowOperations workflow;
-    private final SessionLinkRepository sessionLinkRepository;
+    private final SessionLineageOperations sessionLinks;
     private final EventRepository eventRepository;
 
     public DagService(
             WorkflowOperations workflow,
-            SessionLinkRepository sessionLinkRepository,
+            SessionLineageOperations sessionLinks,
             EventRepository eventRepository) {
         this.workflow = workflow;
-        this.sessionLinkRepository = sessionLinkRepository;
+        this.sessionLinks = sessionLinks;
         this.eventRepository = eventRepository;
     }
 
@@ -95,7 +95,7 @@ public class DagService {
                     edges.add(new DagEdge(taskNodeId, sessionNodeId, "worker_session"));
                 }
 
-                for (SessionLink link : sessionLinkRepository.linksForTaskId(task.id())) {
+                for (SessionLink link : sessionLinks.linksForTask(task.id())) {
                     discovered.add(link.parentSessionId());
                     discovered.add(link.childSessionId());
                     String parentSessionNodeId = sessionNodeId(link.parentSessionId());
@@ -109,13 +109,13 @@ public class DagService {
         }
 
         for (String sessionId : List.copyOf(discovered)) {
-            for (SessionLink link : sessionLinkRepository.linksWhereParent(sessionId)) {
+            for (SessionLink link : sessionLinks.linksWhereParent(sessionId)) {
                 String childSessionNodeId = sessionNodeId(link.childSessionId());
                 nodes.putIfAbsent(childSessionNodeId, hydrateSessionNode(link.childSessionId()));
                 edges.add(new DagEdge(
                         sessionNodeId(sessionId), childSessionNodeId, link.linkType().value()));
             }
-            for (SessionLink link : sessionLinkRepository.linksWhereChild(sessionId)) {
+            for (SessionLink link : sessionLinks.linksWhereChild(sessionId)) {
                 String parentSessionNodeId = sessionNodeId(link.parentSessionId());
                 nodes.putIfAbsent(parentSessionNodeId, hydrateSessionNode(link.parentSessionId()));
                 edges.add(new DagEdge(
@@ -130,12 +130,12 @@ public class DagService {
         LinkedHashSet<DagEdge> edges = new LinkedHashSet<>();
         String sessionNodeId = sessionNodeId(sessionId);
         nodes.put(sessionNodeId, hydrateSessionNode(sessionId));
-        for (SessionLink link : sessionLinkRepository.linksWhereParent(sessionId)) {
+        for (SessionLink link : sessionLinks.linksWhereParent(sessionId)) {
             String childSessionNodeId = sessionNodeId(link.childSessionId());
             nodes.putIfAbsent(childSessionNodeId, hydrateSessionNode(link.childSessionId()));
             edges.add(new DagEdge(sessionNodeId, childSessionNodeId, link.linkType().value()));
         }
-        for (SessionLink link : sessionLinkRepository.linksWhereChild(sessionId)) {
+        for (SessionLink link : sessionLinks.linksWhereChild(sessionId)) {
             String parentSessionNodeId = sessionNodeId(link.parentSessionId());
             nodes.putIfAbsent(parentSessionNodeId, hydrateSessionNode(link.parentSessionId()));
             edges.add(new DagEdge(parentSessionNodeId, sessionNodeId, link.linkType().value()));

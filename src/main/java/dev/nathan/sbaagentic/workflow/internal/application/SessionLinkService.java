@@ -1,19 +1,29 @@
-package dev.nathan.sbaagentic.link;
+package dev.nathan.sbaagentic.workflow.internal.application;
 
 import java.util.List;
 
 import dev.nathan.sbaagentic.event.EventRepository;
+import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.workflow.LinkDomainException;
+import dev.nathan.sbaagentic.workflow.LinkErrorCode;
+import dev.nathan.sbaagentic.workflow.LinkType;
+import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
+import dev.nathan.sbaagentic.workflow.SessionLink;
+import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
+import dev.nathan.sbaagentic.workflow.SessionLinkView;
+import dev.nathan.sbaagentic.workflow.SessionRef;
+import dev.nathan.sbaagentic.workflow.internal.application.port.SessionLinkStore;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
-public class SessionLinkService {
+public class SessionLinkService implements SessionLineageOperations {
 
-    private final SessionLinkRepository repository;
+    private final SessionLinkStore repository;
     private final EventRepository eventRepository;
 
-    public SessionLinkService(SessionLinkRepository repository, EventRepository eventRepository) {
+    public SessionLinkService(SessionLinkStore repository, EventRepository eventRepository) {
         this.repository = repository;
         this.eventRepository = eventRepository;
     }
@@ -58,6 +68,21 @@ public class SessionLinkService {
                 .map(link -> view(link, link.childSessionId()))
                 .toList();
         return new SessionLinksResponse(parents, children);
+    }
+
+    @Override
+    public List<SessionLink> linksWhereParent(String sessionId) {
+        return repository.linksWhereParent(sessionId);
+    }
+
+    @Override
+    public List<SessionLink> linksWhereChild(String sessionId) {
+        return repository.linksWhereChild(sessionId);
+    }
+
+    @Override
+    public List<SessionLink> linksForTask(String taskId) {
+        return repository.linksForTaskId(taskId);
     }
 
     private SessionLinkView view(SessionLink link, String otherSessionId) {

@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.link;
+package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -6,13 +6,17 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import dev.nathan.sbaagentic.workflow.LinkType;
+import dev.nathan.sbaagentic.workflow.SessionLink;
+import dev.nathan.sbaagentic.workflow.internal.application.port.SessionLinkStore;
+
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class SessionLinkRepository {
+public class SessionLinkRepository implements SessionLinkStore {
 
     private final JdbcTemplate jdbcTemplate;
 

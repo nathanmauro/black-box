@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.link;
+package dev.nathan.sbaagentic.workflow;
 
 public record CreateSessionLinkRequest(
         String parentSessionId,
