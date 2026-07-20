@@ -46,6 +46,17 @@ describe("theme reader scrollbar contracts", () => {
   });
 });
 
+describe("theme conversation navigator contracts", () => {
+  it("keeps the desktop turn rail in the same bounded grid row as the transcript", () => {
+    expectRule(".detail-body", [
+      "grid-template-columns: 52px minmax(0, 1fr);",
+      "grid-template-rows: minmax(0, 1fr);",
+    ]);
+    expectRule(".timeline-pane", ["grid-row: 1;", "grid-column: 2;"]);
+    expectRule(".conversation-navigator", ["grid-row: 1;", "grid-column: 1;"]);
+  });
+});
+
 describe("theme route overflow contracts", () => {
   it("keeps search results and recall cards from widening the document", () => {
     expectRule(".page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
