@@ -68,8 +68,8 @@ import dev.nathan.sbaagentic.task.TaskEventType;
 import dev.nathan.sbaagentic.task.TaskSnapshot;
 import dev.nathan.sbaagentic.task.TaskSpec;
 import dev.nathan.sbaagentic.task.TaskStatus;
-import dev.nathan.sbaagentic.web.AgenticController;
 import dev.nathan.sbaagentic.web.ApiExceptionHandler;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.web.TaskController;
 
 import org.junit.jupiter.api.Test;
 
@@ -156,9 +156,9 @@ class WireContractFixtureTest {
         return new LinkedHashMap<>(Map.ofEntries(
                 entry("AgentEvent", AgentEvent.class),
                 entry("AgentSession", AgentSession.class),
-                entry("AgenticController.AnnotationBody", AgenticController.AnnotationBody.class),
-                entry("AgenticController.CompleteTaskBody", AgenticController.CompleteTaskBody.class),
-                entry("AgenticController.TaskStatusBody", AgenticController.TaskStatusBody.class),
+                entry("TaskController.AnnotationBody", TaskController.AnnotationBody.class),
+                entry("TaskController.CompleteTaskBody", TaskController.CompleteTaskBody.class),
+                entry("TaskController.TaskStatusBody", TaskController.TaskStatusBody.class),
                 entry("AiHealth", AiHealth.class),
                 entry("ApiError", ApiExceptionHandler.ApiError.class),
                 entry("ApiError.ErrorBody", ApiExceptionHandler.ApiError.ErrorBody.class),

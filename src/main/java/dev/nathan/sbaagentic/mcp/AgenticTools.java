@@ -2,31 +2,21 @@ package dev.nathan.sbaagentic.mcp;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import dev.nathan.sbaagentic.ai.LocalAiClient;
-import dev.nathan.sbaagentic.context.CaptureDecisionRequest;
-import dev.nathan.sbaagentic.context.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.context.ContextService;
 import dev.nathan.sbaagentic.context.RecallResult;
 import dev.nathan.sbaagentic.event.EventRepository;
 import dev.nathan.sbaagentic.event.IngestResponse;
+import dev.nathan.sbaagentic.project.ProjectSummaryTools;
+import dev.nathan.sbaagentic.recording.RecordingMemoryTools;
 import dev.nathan.sbaagentic.search.SearchResponse;
 import dev.nathan.sbaagentic.search.SearchService;
 import dev.nathan.sbaagentic.session.AgentSession;
-import dev.nathan.sbaagentic.task.ClaimTaskRequest;
-import dev.nathan.sbaagentic.task.CompleteTaskRequest;
-import dev.nathan.sbaagentic.task.CreateSpecRequest;
-import dev.nathan.sbaagentic.task.EnqueueTaskRequest;
 import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskDomainException;
-import dev.nathan.sbaagentic.task.TaskErrorCode;
-import dev.nathan.sbaagentic.task.TaskQuery;
-import dev.nathan.sbaagentic.task.TaskService;
 import dev.nathan.sbaagentic.task.TaskSnapshot;
 import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
-import dev.nathan.sbaagentic.task.UpdateTaskStatusRequest;
+import dev.nathan.sbaagentic.workflow.WorkflowTools;
 
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -43,24 +33,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgenticTools {
 
-    private final EventRepository repository;
-    private final ContextService contextService;
-    private final SearchService searchService;
-    private final LocalAiClient localAiClient;
-    private final TaskService taskService;
+    private final RecordingMemoryTools recordingMemoryTools;
+    private final ProjectSummaryTools projectSummaryTools;
+    private final WorkflowTools workflowTools;
 
     @Autowired
     public AgenticTools(
-            EventRepository repository,
-            ContextService contextService,
-            SearchService searchService,
-            LocalAiClient localAiClient,
-            TaskService taskService) {
-        this.repository = repository;
-        this.contextService = contextService;
-        this.searchService = searchService;
-        this.localAiClient = localAiClient;
-        this.taskService = taskService;
+            RecordingMemoryTools recordingMemoryTools,
+            ProjectSummaryTools projectSummaryTools,
+            WorkflowTools workflowTools) {
+        this.recordingMemoryTools = recordingMemoryTools;
+        this.projectSummaryTools = projectSummaryTools;
+        this.workflowTools = workflowTools;
     }
 
     /** Preserves source compatibility for callers that only use the original seven tools. */
@@ -69,20 +53,23 @@ public class AgenticTools {
             ContextService contextService,
             SearchService searchService,
             LocalAiClient localAiClient) {
-        this(repository, contextService, searchService, localAiClient, null);
+        this(
+                new RecordingMemoryTools(repository, contextService, searchService),
+                new ProjectSummaryTools(localAiClient),
+                null);
     }
 
     @Tool(description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input.")
     public List<AgentSession> recentSessions(
             @ToolParam(description = "Maximum number of sessions to return. Use 10 unless the user asks for more.") int limit) {
-        return repository.recentSessions(Math.max(1, Math.min(limit, 50)));
+        return recordingMemoryTools.recentSessions(limit);
     }
 
     @Tool(description = "Search captured local agent events and sessions by free text.")
     public SearchResponse searchSessions(
             @ToolParam(description = "Search query text.") String query,
             @ToolParam(description = "Maximum number of results to return.") int limit) {
-        return searchService.search(query, Math.max(1, Math.min(limit, 50)));
+        return recordingMemoryTools.searchSessions(query, limit);
     }
 
     @Tool(description = "Recall structured prior intent — decisions and handoffs that earlier agents "
@@ -97,7 +84,7 @@ public class AgenticTools {
                     + "week) unless you need a wider or narrower window.") int withinHours,
             @ToolParam(description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
                     + "'observation'. Leave empty to recall decisions and handoffs.") List<String> kinds) {
-        return contextService.recall(repoOrTopic, withinHours, kinds);
+        return recordingMemoryTools.recallContext(repoOrTopic, withinHours, kinds);
     }
 
     @Tool(description = "Commit a decision you made into the recorder so later agents can recall WHY, "
@@ -113,8 +100,8 @@ public class AgenticTools {
             @ToolParam(description = "Alternatives you considered and rejected.") List<String> alternatives,
             @ToolParam(description = "How confident you are, 0.0 to 1.0.") double confidence,
             @ToolParam(description = "Open loops: things this decision leaves unfinished or unverified.") List<String> openLoops) {
-        return contextService.captureDecision(new CaptureDecisionRequest(
-                source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops));
+        return recordingMemoryTools.captureDecision(
+                source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops);
     }
 
     @Tool(description = "Leave a handoff for whoever picks this work up next — another agent, another "
@@ -128,8 +115,8 @@ public class AgenticTools {
             @ToolParam(description = "What was done and where things stand.") String contextSummary,
             @ToolParam(description = "Open loops still outstanding.") List<String> openLoops,
             @ToolParam(description = "The single most useful next action.") String nextAction) {
-        return contextService.captureHandoff(new CaptureHandoffRequest(
-                source, clientSessionId, repo, toAgent, contextSummary, openLoops, nextAction));
+        return recordingMemoryTools.captureHandoff(
+                source, clientSessionId, repo, toAgent, contextSummary, openLoops, nextAction);
     }
 
     @Tool(description = "Capture a free-form observation or note into the local recorder.")
@@ -138,12 +125,12 @@ public class AgenticTools {
             @ToolParam(description = "Client session id or stable grouping key.") String clientSessionId,
             @ToolParam(description = "Repo path this note is about, if any.") String repo,
             @ToolParam(description = "Text to capture.") String text) {
-        return contextService.captureObservation(source, clientSessionId, repo, text);
+        return recordingMemoryTools.captureObservation(source, clientSessionId, repo, text);
     }
 
     @Tool(description = "Check the local AI backend status for LM Studio or another OpenAI-compatible local model server.")
     public Object localModelStatus() {
-        return localAiClient.health();
+        return projectSummaryTools.localModelStatus();
     }
 
     @Tool(
@@ -156,7 +143,7 @@ public class AgenticTools {
             @ToolParam(required = false,
                     description = "Optional provenance object such as repo, path, and sha.") Map<String, Object> specRef,
             @ToolParam(description = "Agent or source creating the spec.") String actor) {
-        return taskService.createSpec(new CreateSpecRequest(projectKey, title, body, specRef, actor));
+        return workflowTools.createSpec(projectKey, title, body, specRef, actor);
     }
 
     @Tool(
@@ -168,8 +155,7 @@ public class AgenticTools {
             @ToolParam(description = "Required exact routing lane, for example codex or claude.") String lane,
             @ToolParam(description = "Higher values are claimed first; equal values are FIFO.") int priority,
             @ToolParam(description = "Agent or source enqueuing the task.") String actor) {
-        return taskService.enqueueTask(new EnqueueTaskRequest(
-                requireUuid(specId, "Spec id"), title, lane, priority, actor));
+        return workflowTools.enqueueTask(specId, title, lane, priority, actor);
     }
 
     @Tool(
@@ -178,7 +164,7 @@ public class AgenticTools {
     public TaskChange claimNextTask(
             @ToolParam(description = "Required exact lane to claim from.") String lane,
             @ToolParam(description = "Agent identity that will own the claimed task.") String agent) {
-        return taskService.claimNextTask(new ClaimTaskRequest(lane, agent)).orElse(null);
+        return workflowTools.claimNextTask(lane, agent);
     }
 
     @Tool(
@@ -190,8 +176,7 @@ public class AgenticTools {
             @ToolParam(description = "Target status: blocked, open (reset), or cancelled.") String status,
             @ToolParam(required = false,
                     description = "Required nonblank reason when target status is blocked.") String blockedReason) {
-        return taskService.updateTaskStatus(new UpdateTaskStatusRequest(
-                requireUuid(taskId, "Task id"), actor, requireStatus(status), blockedReason));
+        return workflowTools.updateTaskStatus(taskId, actor, status, blockedReason);
     }
 
     @Tool(
@@ -205,14 +190,8 @@ public class AgenticTools {
             @ToolParam(description = "What was completed and where the work stands.") String summary,
             @ToolParam(required = false, description = "Optional remaining open loops.") List<String> openLoops,
             @ToolParam(description = "Required next action for the receiving agent.") String nextAction) {
-        return taskService.completeTask(new CompleteTaskRequest(
-                requireUuid(taskId, "Task id"),
-                actor,
-                source,
-                clientSessionId,
-                summary,
-                openLoops,
-                nextAction));
+        return workflowTools.completeTask(
+                taskId, actor, source, clientSessionId, summary, openLoops, nextAction);
     }
 
     @Tool(
@@ -228,13 +207,7 @@ public class AgenticTools {
             @ToolParam(required = false,
                     description = "Maximum snapshots to return, defaulting to 100 and clamped to 1 through 250.")
                     Integer limit) {
-        return taskService.listTasks(new TaskQuery(
-                        optionalFilter(projectKey),
-                        optionalFilter(lane),
-                        optionalStatus(status)))
-                .stream()
-                .limit(safeTaskLimit(limit))
-                .toList();
+        return workflowTools.listTasks(projectKey, lane, status, limit);
     }
 
     @Tool(
@@ -242,58 +215,6 @@ public class AgenticTools {
             resultConverter = RestJsonToolCallResultConverter.class)
     public TaskSpec getSpec(
             @ToolParam(description = "UUID of the spec to retrieve.") String specId) {
-        return taskService.getSpec(requireUuid(specId, "Spec id"));
-    }
-
-    private static int safeTaskLimit(Integer limit) {
-        if (limit == null) {
-            return 100;
-        }
-        return Math.max(1, Math.min(limit, 250));
-    }
-
-    private static String optionalFilter(String value) {
-        return value == null || value.isBlank() ? null : value;
-    }
-
-    private static TaskStatus optionalStatus(String value) {
-        return value == null || value.isBlank() ? null : parseStatus(value);
-    }
-
-    private static TaskStatus requireStatus(String value) {
-        if (value == null || value.isBlank()) {
-            throw validation("Task status is required");
-        }
-        return parseStatus(value);
-    }
-
-    private static TaskStatus parseStatus(String value) {
-        try {
-            return TaskStatus.fromValue(value);
-        }
-        catch (IllegalArgumentException ex) {
-            throw validation("Unknown task status: " + value);
-        }
-    }
-
-    private static String requireUuid(String value, String label) {
-        if (value == null || value.isBlank()) {
-            throw validation(label + " is required");
-        }
-        String normalized = value.strip();
-        try {
-            UUID parsed = UUID.fromString(normalized);
-            if (!parsed.toString().equalsIgnoreCase(normalized)) {
-                throw new IllegalArgumentException("Noncanonical UUID");
-            }
-            return parsed.toString();
-        }
-        catch (IllegalArgumentException ex) {
-            throw validation(label + " must be a UUID");
-        }
-    }
-
-    private static TaskDomainException validation(String message) {
-        return new TaskDomainException(TaskErrorCode.VALIDATION_FAILED, message, null, null, null);
+        return workflowTools.getSpec(specId);
     }
 }

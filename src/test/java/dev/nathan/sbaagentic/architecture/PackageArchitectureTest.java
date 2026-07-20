@@ -13,6 +13,7 @@ import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.lang.ArchRule;
 
 import org.junit.jupiter.api.Test;
@@ -33,7 +34,9 @@ class PackageArchitectureTest {
      */
     private static final Set<String> FULLY_MIGRATED_MODULES = Set.of();
 
-    private final JavaClasses classes = new ClassFileImporter().importPackages(BASE);
+    private final JavaClasses classes = new ClassFileImporter()
+            .withImportOption(new ImportOption.DoNotIncludeTests())
+            .importPackages(BASE);
 
     @Test
     void applicationBootstrapStaysAtTheRoot() {
