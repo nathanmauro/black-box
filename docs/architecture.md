@@ -1,5 +1,10 @@
 # Architecture
 
+The Java codebase follows the feature-first modular-monolith rules in
+[`docs/architecture/package-conventions.md`](architecture/package-conventions.md). Those rules make
+feature ownership, internal layering, and permitted cross-feature dependencies executable in the
+build while the wire and SQLite contracts described here remain stable.
+
 Black Box is a local-first memory and coordination substrate for coding agents. It owns two related
 loops:
 
