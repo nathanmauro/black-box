@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,12 +11,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.task.SpecStatus;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 
 import org.junit.jupiter.api.Test;
 

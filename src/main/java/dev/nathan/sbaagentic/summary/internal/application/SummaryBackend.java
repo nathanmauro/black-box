@@ -1,0 +1,75 @@
+package dev.nathan.sbaagentic.summary.internal.application;
+
+import dev.nathan.sbaagentic.recording.Titles;
+import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
+import dev.nathan.sbaagentic.summary.SummaryProperties;
+import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
+import dev.nathan.sbaagentic.summary.internal.application.port.LocalSummaryModel;
+
+import org.springframework.stereotype.Component;
+
+@Component
+public class SummaryBackend implements ProjectMeldSummarizer {
+
+    private final SummaryProperties properties;
+    private final LocalSummaryModel localAiClient;
+    private final ExternalSummaryModel externalSummaryClient;
+
+    public SummaryBackend(
+            SummaryProperties properties,
+            LocalSummaryModel localAiClient,
+            ExternalSummaryModel externalSummaryClient) {
+        this.properties = properties;
+        this.localAiClient = localAiClient;
+        this.externalSummaryClient = externalSummaryClient;
+    }
+
+    @Override
+    public String summarize(String transcript) {
+        if ("external".equalsIgnoreCase(properties.getBackend())) {
+            return externalSummaryClient.summarize(transcript)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "External summary command failed or produced no summary"));
+        }
+        return localAiClient.summarize(transcript);
+    }
+
+    public String title(String sourceText) {
+        if ("external".equalsIgnoreCase(properties.getBackend())) {
+            return titleFromSummary(sourceText);
+        }
+        return localAiClient.title(sourceText);
+    }
+
+    private static String titleFromSummary(String sourceText) {
+        if (sourceText == null || sourceText.isBlank()) {
+            return Titles.sanitize(null);
+        }
+        for (String line : sourceText.split("\\R")) {
+            String candidate = cleanTitleCandidate(line);
+            if (candidate.isBlank() || isGenericHeading(candidate)) {
+                continue;
+            }
+            return Titles.sanitize(candidate);
+        }
+        return Titles.sanitize(Titles.firstLine(sourceText));
+    }
+
+    private static String cleanTitleCandidate(String line) {
+        String candidate = line == null ? "" : line.strip();
+        candidate = candidate.replaceFirst("^#{1,6}\\s+", "");
+        candidate = candidate.replaceFirst("^[-*]\\s+", "");
+        candidate = candidate.replaceAll("^\\*\\*(.+)\\*\\*$", "$1");
+        candidate = candidate.replaceFirst("(?i)^(title|summary|recap)\\s*[:\\-]\\s*", "");
+        return candidate.strip();
+    }
+
+    private static boolean isGenericHeading(String candidate) {
+        String normalized = candidate.toLowerCase().replaceAll("[^a-z0-9 ]", "").strip();
+        return normalized.isBlank()
+                || normalized.equals("summary")
+                || normalized.equals("session summary")
+                || normalized.equals("recap")
+                || normalized.equals("session recap");
+    }
+}

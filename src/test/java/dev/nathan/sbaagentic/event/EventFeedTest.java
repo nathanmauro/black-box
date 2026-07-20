@@ -1,4 +1,6 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -7,7 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
+import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,10 +33,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class EventFeedTest {
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
-    EventRepository repository;
+    RecordingSqlStore repository;
 
     @Autowired
     JdbcTemplate jdbcTemplate;
@@ -171,7 +173,12 @@ class EventFeedTest {
                 .containsExactly(primaryEvent.id())
                 .doesNotContain(aliasEvent.id());
         assertThat(repository.feed(
-                        "source:" + source + " project_group:" + primary, false, null, null, 10).items())
+                        "source:" + source + " project_group:" + primary,
+                        false,
+                        null,
+                        null,
+                        projectAliasService.scopesFor(primary),
+                        10).items())
                 .extracting(EventFeedItem::id)
                 .containsExactly(aliasEvent.id(), primaryEvent.id());
 

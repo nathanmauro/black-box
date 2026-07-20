@@ -9,7 +9,7 @@ import dev.nathan.sbaagentic.runner.RepoConfig;
 import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
-import dev.nathan.sbaagentic.task.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

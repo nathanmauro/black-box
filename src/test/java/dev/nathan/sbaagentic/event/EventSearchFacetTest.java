@@ -1,4 +1,7 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
 
 import java.time.Instant;
 import java.util.List;
@@ -6,7 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
-import dev.nathan.sbaagentic.project.ProjectAliasService;
+import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,10 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EventSearchFacetTest {
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
-    EventRepository repository;
+    MemoryEventReader repository;
 
     @Autowired
     ProjectAliasService projectAliasService;
@@ -121,7 +124,9 @@ class EventSearchFacetTest {
                         "source:" + source + " project_exact:" + primary, 50)
                 .stream().map(AgentEvent::id).toList();
         List<String> groupedIds = repository.searchEvents(
-                        "source:" + source + " project_group:" + primary, 50)
+                        "source:" + source + " project_group:" + primary,
+                        projectAliasService.scopesFor(primary),
+                        50)
                 .stream().map(AgentEvent::id).toList();
 
         assertThat(exactIds).containsExactly(primaryId).doesNotContain(aliasId);

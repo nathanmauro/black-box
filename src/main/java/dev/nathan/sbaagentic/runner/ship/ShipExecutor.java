@@ -10,7 +10,7 @@ import java.util.Objects;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.RepoConfig;
 import dev.nathan.sbaagentic.runner.RunnerNaming;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;

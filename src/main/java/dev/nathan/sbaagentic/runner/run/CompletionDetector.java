@@ -8,12 +8,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
 
 import org.springframework.stereotype.Component;
 

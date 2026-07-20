@@ -1,0 +1,39 @@
+package dev.nathan.sbaagentic.runner.internal.client.blackbox;
+
+import java.util.Locale;
+
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum TaskEventType {
+    CREATED("task.created"),
+    CLAIMED("task.claimed"),
+    BLOCKED("task.blocked"),
+    COMPLETED("task.completed"),
+    NOTE("task.note"),
+    RESET("task.reset"),
+    CANCELLED("task.cancelled");
+
+    private final String value;
+
+    TaskEventType(String value) {
+        this.value = value;
+    }
+
+    @JsonValue
+    public String value() {
+        return value;
+    }
+
+    public static TaskEventType fromValue(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Task event type is required");
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        for (TaskEventType type : values()) {
+            if (type.value.equals(normalized)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Unknown task event type: " + value);
+    }
+}

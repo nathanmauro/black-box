@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.EngineConfig;
 import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.runner.RunnerNaming;
@@ -17,7 +17,7 @@ import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.CompletionDetector.CompletionResult;
-import dev.nathan.sbaagentic.task.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

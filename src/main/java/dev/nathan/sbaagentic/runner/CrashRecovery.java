@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,11 +16,11 @@ import java.util.stream.Stream;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskEvent;
-import dev.nathan.sbaagentic.task.TaskEventType;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

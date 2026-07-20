@@ -1,16 +1,18 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import dev.nathan.sbaagentic.runner.gate.GateEvaluator;
 import dev.nathan.sbaagentic.runner.gate.GateResult;
-import dev.nathan.sbaagentic.task.Task;
-import dev.nathan.sbaagentic.task.TaskChange;
-import dev.nathan.sbaagentic.task.TaskSnapshot;
-import dev.nathan.sbaagentic.task.TaskSpec;
-import dev.nathan.sbaagentic.task.TaskStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

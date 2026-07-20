@@ -1,4 +1,7 @@
-package dev.nathan.sbaagentic.event;
+package dev.nathan.sbaagentic.recording;
+
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -22,10 +25,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EventIngestServiceTest {
 
     @Autowired
-    EventIngestService ingestService;
+    EventRecorder ingestService;
 
     @Autowired
-    EventRepository repository;
+    RecordingSqlStore repository;
+
+    @Autowired
+    MemoryEventReader memory;
 
     @Test
     void ingestCreatesSessionAndSearchableEvent() {
@@ -45,7 +51,7 @@ class EventIngestServiceTest {
 
         assertThat(response.source()).isEqualTo("claude");
         assertThat(repository.findSession("claude", "session-1").orElseThrow().eventCount()).isEqualTo(1);
-        assertThat(repository.searchEvents("Spring Boot", 10))
+        assertThat(memory.searchEvents("Spring Boot", 10))
                 .extracting(AgentEvent::id)
                 .contains(response.eventId());
     }

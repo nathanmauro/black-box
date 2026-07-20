@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.search;
 
+import dev.nathan.sbaagentic.memory.internal.adapter.out.http.ElasticIndexClient;
+import dev.nathan.sbaagentic.memory.internal.application.SearchService;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -12,9 +15,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import dev.nathan.sbaagentic.config.SbaProperties;
-import dev.nathan.sbaagentic.event.AgentEvent;
-import dev.nathan.sbaagentic.session.AgentSession;
+import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
 
 import org.junit.jupiter.api.Test;
 
@@ -86,10 +89,10 @@ class ElasticIndexClientTest {
         });
         server.start();
         try {
-            SbaProperties properties = new SbaProperties();
-            properties.getElasticsearch().setEnabled(true);
-            properties.getElasticsearch().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-            properties.getElasticsearch().setTimeout(Duration.ofSeconds(2));
+            ElasticsearchProperties properties = new ElasticsearchProperties();
+            properties.setEnabled(true);
+            properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            properties.setTimeout(Duration.ofSeconds(2));
             ElasticIndexClient client = new ElasticIndexClient(properties);
 
             List<Map<String, Object>> hits = client.search("elstic smook", 7);
@@ -253,10 +256,10 @@ class ElasticIndexClientTest {
     }
 
     private static ElasticIndexClient client(HttpServer server, boolean enabled) {
-        SbaProperties properties = new SbaProperties();
-        properties.getElasticsearch().setEnabled(enabled);
-        properties.getElasticsearch().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-        properties.getElasticsearch().setTimeout(Duration.ofSeconds(2));
+        ElasticsearchProperties properties = new ElasticsearchProperties();
+        properties.setEnabled(enabled);
+        properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        properties.setTimeout(Duration.ofSeconds(2));
         return new ElasticIndexClient(properties);
     }
 
