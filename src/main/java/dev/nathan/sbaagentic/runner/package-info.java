@@ -1,2 +1,4 @@
-@org.springframework.modulith.ApplicationModule(displayName = "Runner")
+@org.springframework.modulith.ApplicationModule(
+        displayName = "Runner",
+        allowedDependencies = {})
 package dev.nathan.sbaagentic.runner;
