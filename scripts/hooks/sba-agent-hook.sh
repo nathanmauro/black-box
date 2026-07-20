@@ -33,11 +33,31 @@ TEXT="$(jq -r '
 TOOL_INPUT="$(jq -c '.tool_input // .toolInput // null' <<<"$PAYLOAD")"
 TOOL_OUTPUT="$(jq -c '.tool_response // .toolResponse // .tool_output // .toolOutput // null' <<<"$PAYLOAD")"
 
+# Hook names vary by client and version (for example UserPromptSubmit, user_prompt_submit, and
+# pre-tool-use). Compare a separator-free, case-insensitive key while preserving the original event
+# type in the recorded payload.
+EVENT_KEY="$(printf '%s' "$EVENT_TYPE" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+ROLE="agent"
+case "$EVENT_KEY" in
+  userpromptsubmit|beforesubmitprompt)
+    ROLE="user"
+    ;;
+  stop|assistantmessage)
+    if [[ -n "${TEXT//[[:space:]]/}" ]]; then
+      ROLE="assistant"
+    fi
+    ;;
+  pretooluse|posttooluse)
+    ROLE="tool"
+    ;;
+esac
+
 jq -n \
   --arg source "$SOURCE" \
   --arg clientSessionId "$SESSION_ID" \
   --arg turnId "$TURN_ID" \
   --arg eventType "$EVENT_TYPE" \
+  --arg role "$ROLE" \
   --arg text "$TEXT" \
   --arg cwd "$CWD" \
   --arg toolName "$TOOL_NAME" \
@@ -49,7 +69,7 @@ jq -n \
     clientSessionId: $clientSessionId,
     turnId: (if $turnId | length > 0 then $turnId else null end),
     eventType: $eventType,
-    role: "agent",
+    role: $role,
     text: (if $text | length > 0 then $text else null end),
     cwd: $cwd,
     toolName: (if $toolName | length > 0 then $toolName else null end),

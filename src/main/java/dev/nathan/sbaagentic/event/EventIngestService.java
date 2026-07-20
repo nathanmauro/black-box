@@ -69,13 +69,15 @@ public class EventIngestService {
 
     private EventIngestRequest normalize(EventIngestRequest request) {
         String text = truncate(blankToNull(redactionService.redact(request.text())));
+        String eventType = request.eventType().trim();
+        String role = normalizeRole(request.role(), eventType, text);
         Map<String, Object> metadata = redactMetadata(request.metadata());
         return new EventIngestRequest(
                 request.source().trim().toLowerCase(Locale.ROOT),
                 request.clientSessionId().trim(),
                 blankToNull(request.turnId()),
-                request.eventType().trim(),
-                blankToNull(request.role()),
+                eventType,
+                role,
                 text,
                 blankToNull(request.cwd()),
                 blankToNull(request.toolName()),
@@ -83,6 +85,24 @@ public class EventIngestService {
                 redactionService.redactDeep(request.toolOutput()),
                 metadata,
                 request.observedAt());
+    }
+
+    private String normalizeRole(String role, String eventType, String text) {
+        String normalizedRole = blankToNull(role);
+        if (normalizedRole == null || !normalizedRole.equalsIgnoreCase("agent")) {
+            return normalizedRole;
+        }
+
+        return switch (normalizeEventType(eventType)) {
+            case "userpromptsubmit", "beforesubmitprompt" -> "user";
+            case "stop", "assistantmessage" -> text == null ? normalizedRole : "assistant";
+            case "pretooluse", "posttooluse" -> "tool";
+            default -> normalizedRole;
+        };
+    }
+
+    private String normalizeEventType(String eventType) {
+        return eventType.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     @SuppressWarnings("unchecked")

@@ -1,9 +1,10 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, useContext } from "solid-js";
+import ConversationNavigator, { type ConversationNavigatorTurn } from "../components/ConversationNavigator";
 import DagView from "../components/DagView";
 import SourceDot from "../components/SourceDot";
 import SteerBox from "../components/SteerBox";
-import { EventRenderer } from "../components/events/EventRow";
+import { EventRenderer, ReaderText } from "../components/events/EventRow";
 import {
   getProjectSessions,
   getSessionDag,
@@ -14,7 +15,7 @@ import {
   type AgentSession,
   type ProjectSummary,
 } from "../lib/api";
-import { timeAgo, truncatePath } from "../lib/format";
+import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
 import { parseQuery } from "../lib/query";
 import { LiveStoreContext } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
@@ -41,6 +42,8 @@ type ProjectSessionResult = {
   projectKey: string;
   sessions: AgentSession[];
 };
+
+const DUPLICATE_PROMPT_WINDOW_MS = 2 * 60 * 1_000;
 
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
@@ -88,7 +91,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     () => (dagExpanded() && selectedId() ? selectedId() : undefined),
     (sessionId) => getSessionDag(sessionId),
   );
-  const [events] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
+  const [events, { refetch: refetchEvents }] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
     initialValue: [] as AgentEvent[],
   });
   const timelineEvents = createMemo(() => [...events()].reverse());
@@ -102,14 +105,31 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   );
   const promptTurns = createMemo(() => groupPromptTurns(visibleEvents()));
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
-  const promptOutline = createMemo(() => timelineEvents().filter(isPromptEvent));
+  const navigatorTurns = createMemo<ConversationNavigatorTurn[]>(() =>
+    promptTurns().flatMap((turn) => turn.prompt
+      ? [{
+          id: turn.id,
+          prompt: turn.prompt,
+          responses: turn.events.filter((event) => conversationRole(event) === "assistant"),
+        }]
+      : []),
+  );
 
   createEffect(() => {
-    if (!live || !searchParams.task) return;
+    if (!live || !selectedId()) return;
+    let refetchTimer: number | undefined;
     const unsubscribe = live.onSessionUpdated((update) => {
-      if (update.sessionId === selectedId()) void refetchTaskContext();
+      if (update.sessionId !== selectedId()) return;
+      window.clearTimeout(refetchTimer);
+      refetchTimer = window.setTimeout(() => {
+        void refetchEvents();
+        if (searchParams.task) void refetchTaskContext();
+      }, 180);
     });
-    onCleanup(unsubscribe);
+    onCleanup(() => {
+      window.clearTimeout(refetchTimer);
+      unsubscribe();
+    });
   });
 
   createEffect(() => {
@@ -292,7 +312,14 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                     <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
                       <For each={promptTurns()}>
                         {(turn) => (
-                          <section id={turn.id} classList={{ "prompt-turn": true, "prompt-turn--preamble": !turn.prompt }}>
+                          <section
+                            id={turn.id}
+                            classList={{
+                              "prompt-turn": true,
+                              "conversation-turn": true,
+                              "prompt-turn--preamble": !turn.prompt,
+                            }}
+                          >
                             <For each={turn.events}>
                               {(event) => (
                                 <div
@@ -302,16 +329,24 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                                     "event-flow-row--target": props.targetEventId === event.id,
                                   }}
                                 >
-                                  <EventRenderer event={event} />
+                                  <Show
+                                    when={conversationRole(event)}
+                                    fallback={<EventRenderer event={event} />}
+                                  >
+                                    {(role) => <ConversationMessage event={event} role={role()} />}
+                                  </Show>
                                 </div>
                               )}
                             </For>
+                            <Show when={turn.prompt && !turn.events.some((event) => conversationRole(event) === "assistant")}>
+                              <p class="conversation-response-missing">Agent response not captured for this turn.</p>
+                            </Show>
                           </section>
                         )}
                       </For>
                     </Show>
                   </div>
-                  <PromptOutline prompts={promptOutline()} />
+                  <ConversationNavigator turns={navigatorTurns()} />
                 </div>
               </>
             )}
@@ -359,44 +394,71 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function PromptOutline(props: { prompts: AgentEvent[] }) {
+function ConversationMessage(props: { event: AgentEvent; role: "user" | "assistant" }) {
+  const author = () => props.role === "user" ? "You" : sourceLabel(props.event.source);
+
   return (
-    <div class="prompt-outline" aria-label="Prompt outline">
-      <button type="button" class="prompt-outline-trigger" aria-haspopup="true">
-        <span>Prompts</span>
-        <strong>{props.prompts.length.toLocaleString()}</strong>
-      </button>
-      <nav class="prompt-outline-panel" aria-label="User prompt outline">
-        <Show when={props.prompts.length} fallback={<p>No user prompts captured.</p>}>
-          <For each={props.prompts}>
-            {(event, index) => (
-              <a href={`#prompt-${event.id}`} class="prompt-outline-item">
-                <span>{index() + 1}</span>
-                <strong>{eventTitle(event)}</strong>
-                <small>{timeAgo(event.observedAt)}</small>
-              </a>
-            )}
-          </For>
-        </Show>
-      </nav>
-    </div>
+    <article
+      class={`conversation-message conversation-message--${props.role}`}
+      style={{ "--conversation-source": sourceColor(props.event.source) }}
+    >
+      <header class="conversation-message-header">
+        <span class="conversation-message-author">
+          <Show
+            when={props.role === "assistant"}
+            fallback={<span class="conversation-message-you" aria-hidden="true">Y</span>}
+          >
+            <SourceDot source={props.event.source} />
+          </Show>
+          <strong>{author()}</strong>
+          <small>{props.role === "user" ? "prompt" : "agent response"}</small>
+        </span>
+        <time datetime={props.event.observedAt} title={formatDate(props.event.observedAt)}>
+          {timeAgo(props.event.observedAt)}
+        </time>
+      </header>
+      <Show when={props.event.text?.trim()} fallback={<p class="conversation-message-empty">Message text was not captured.</p>}>
+        {(text) => <ReaderText text={text()} />}
+      </Show>
+    </article>
   );
 }
 
 function isPromptEvent(event: AgentEvent): boolean {
-  return event.eventType === "UserPromptSubmit" || event.role === "user";
+  const type = normalizedEventType(event);
+  return normalizedRole(event) === "user"
+    || type === "userpromptsubmit"
+    || type === "beforesubmitprompt";
 }
 
 function isAssistantEvent(event: AgentEvent): boolean {
-  return event.eventType === "AssistantMessage" || event.role === "assistant";
+  const type = normalizedEventType(event);
+  if (normalizedRole(event) === "assistant") return Boolean(event.text?.trim());
+  return Boolean(event.text?.trim()) && (
+    type === "assistantmessage"
+    || type === "agentmessage"
+    || type === "agentresponse"
+    || type === "finalresponse"
+    || type === "stop"
+  );
 }
 
 function isMemoryEvent(event: AgentEvent): boolean {
-  return event.eventType === "Decision" || event.eventType === "Observation" || event.eventType === "Handoff";
+  const type = normalizedEventType(event);
+  return type === "decision" || type === "observation" || type === "handoff";
 }
 
 function isToolEvent(event: AgentEvent): boolean {
-  return Boolean(event.toolName || event.toolInputJson || event.toolOutputJson || event.role === "tool" || /ToolUse$/.test(event.eventType));
+  const type = normalizedEventType(event);
+  return Boolean(
+    event.toolName
+    || event.toolInputJson
+    || event.toolOutputJson
+    || normalizedRole(event) === "tool"
+    || type.includes("tooluse")
+    || type.includes("toolresult")
+    || type.includes("tooloutput"),
+  );
 }
 
 function isPrimaryReaderEvent(event: AgentEvent): boolean {
@@ -407,13 +469,15 @@ function groupPromptTurns(events: AgentEvent[]): PromptTurn[] {
   const turns: PromptTurn[] = [];
   for (const event of events) {
     if (isPromptEvent(event)) {
+      const current = turns[turns.length - 1];
+      if (current && isDuplicatePrompt(current, event)) continue;
       turns.push({ id: `prompt-${event.id}`, prompt: event, events: [event] });
       continue;
     }
 
     const current = turns[turns.length - 1];
     if (current) {
-      current.events.push(event);
+      appendUniqueEvent(current, event);
     } else {
       turns.push({ id: `prompt-preamble-${event.id}`, prompt: null, events: [event] });
     }
@@ -421,10 +485,54 @@ function groupPromptTurns(events: AgentEvent[]): PromptTurn[] {
   return turns;
 }
 
-function eventTitle(event: AgentEvent): string {
-  const text = event.text?.trim();
-  if (text) return text.length > 92 ? `${text.slice(0, 89)}...` : text;
-  return event.eventType || "User prompt";
+function isDuplicatePrompt(turn: PromptTurn, event: AgentEvent): boolean {
+  const prompt = turn.prompt;
+  if (!prompt || turn.events.some((candidate) => conversationRole(candidate) === "assistant")) return false;
+
+  const promptText = normalizedConversationText(prompt.text);
+  const eventText = normalizedConversationText(event.text);
+  if (!promptText || promptText !== eventText) return false;
+
+  const promptTurnId = prompt.turnId?.trim();
+  const eventTurnId = event.turnId?.trim();
+  if (promptTurnId && eventTurnId && promptTurnId === eventTurnId) return true;
+
+  const promptTime = Date.parse(prompt.observedAt);
+  const eventTime = Date.parse(event.observedAt);
+  return Number.isFinite(promptTime)
+    && Number.isFinite(eventTime)
+    && Math.abs(eventTime - promptTime) <= DUPLICATE_PROMPT_WINDOW_MS;
+}
+
+function appendUniqueEvent(turn: PromptTurn, event: AgentEvent) {
+  const identity = conversationIdentity(event);
+  if (identity && turn.events.some((candidate) => conversationIdentity(candidate) === identity)) return;
+  turn.events.push(event);
+}
+
+function conversationIdentity(event: AgentEvent): string | null {
+  const role = conversationRole(event);
+  const text = event.text?.replace(/\s+/g, " ").trim();
+  return role && text ? `${role}:${text}` : null;
+}
+
+function normalizedConversationText(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function conversationRole(event: AgentEvent): "user" | "assistant" | null {
+  if (isMemoryEvent(event) || isToolEvent(event)) return null;
+  if (isPromptEvent(event)) return "user";
+  if (isAssistantEvent(event)) return "assistant";
+  return null;
+}
+
+function normalizedEventType(event: AgentEvent): string {
+  return String(event.eventType ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+}
+
+function normalizedRole(event: AgentEvent): string {
+  return String(event.role ?? "").trim().toLowerCase();
 }
 
 function formatDate(iso: string | null | undefined): string {

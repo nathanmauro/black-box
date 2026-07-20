@@ -342,7 +342,8 @@ reference.
 Black Box does not capture agent sessions until you opt in.
 
 - `scripts/hooks/sba-agent-hook.sh` normalizes supported Claude Code or Codex hook payloads and posts
-  them to `/api/events`.
+  them to `/api/events`. Prompt, final-response, and tool hooks receive semantic `user`, `assistant`,
+  and `tool` roles so Browse can reconstruct the recorded conversation.
 - `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code
   `SessionStart` and prints a bounded context block.
 
@@ -352,6 +353,8 @@ instruction in `AGENTS.md` works well.
 Hook smoke test:
 
 ```bash
+scripts/test-agent-hook.sh
+
 printf '{"hook_event_name":"UserPromptSubmit","session_id":"hook-test","prompt":"hello","cwd":"%s"}' "$PWD" |
   SBA_AGENT_SOURCE=manual scripts/hooks/sba-agent-hook.sh
 ```

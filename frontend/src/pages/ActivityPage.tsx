@@ -11,7 +11,7 @@ type ActivityMode = "stream" | "browse" | SearchMode;
 
 const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
   { id: "stream", label: "Stream", hint: "global event firehose" },
-  { id: "browse", label: "Browse", hint: "session rail and prompt reader" },
+  { id: "browse", label: "Browse", hint: "session rail and conversation reader" },
   { id: "find", label: "Find", hint: "faceted event search" },
   { id: "ask", label: "Ask", hint: "synthesized answer with citations" },
 ];

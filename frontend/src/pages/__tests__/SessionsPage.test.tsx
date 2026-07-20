@@ -80,8 +80,8 @@ const events: AgentEvent[] = [
     sessionId: "session-1",
     source: "codex",
     clientSessionId: "client-1",
-    eventType: "AssistantMessage",
-    role: "assistant",
+    eventType: "Stop",
+    role: "agent",
     text: "I made the reading view calmer.",
     observedAt: "2026-06-22T20:01:00Z",
   },
@@ -91,7 +91,7 @@ const events: AgentEvent[] = [
     source: "codex",
     clientSessionId: "client-1",
     eventType: "UserPromptSubmit",
-    role: "user",
+    role: "agent",
     text: "Focus the session reader.",
     observedAt: "2026-06-22T20:00:00Z",
   },
@@ -239,7 +239,7 @@ describe("SessionsPage", () => {
     expect(within(rail).getByText("Focused session")).toBeInTheDocument();
   });
 
-  it("defaults to a prompt-focused reader with memory events opt-in and tools hidden", async () => {
+  it("renders live-shaped prompts and agent responses with memory events opt-in and tools hidden", async () => {
     render(() => <SessionsPage />);
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
@@ -254,12 +254,15 @@ describe("SessionsPage", () => {
 
     expect(document.querySelector(".outline-pane")).not.toBeInTheDocument();
     expect(document.querySelector(".timeline-pane .virtual-spacer")).not.toBeInTheDocument();
-    const promptOutline = document.querySelector(".prompt-outline");
-    expect(promptOutline).toBeInTheDocument();
-    expect(within(promptOutline as HTMLElement).getByText("Focus the session reader.").closest("a")).toHaveAttribute(
+    const conversationOutline = screen.getByRole("navigation", { name: "Conversation outline" });
+    expect(conversationOutline).toBeInTheDocument();
+    expect(within(conversationOutline).getByRole("link", { name: "Turn 1: Focus the session reader." })).toHaveAttribute(
       "href",
       "#prompt-evt-user",
     );
+    expect(within(promptTurns[0] as HTMLElement).getByText("You")).toBeInTheDocument();
+    expect(within(promptTurns[0] as HTMLElement).getByText("Codex")).toBeInTheDocument();
+    expect(within(promptTurns[0] as HTMLElement).getByText("agent response")).toBeInTheDocument();
 
     expect(screen.queryByText("Use the calmer session layout")).not.toBeInTheDocument();
     expect(screen.queryByText("Reader should keep memory cards behind a layer toggle.")).not.toBeInTheDocument();
@@ -270,6 +273,139 @@ describe("SessionsPage", () => {
     expect(await screen.findByText("Use the calmer session layout")).toBeInTheDocument();
     expect(screen.getByText("Reader should keep memory cards behind a layer toggle.")).toBeInTheDocument();
     expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+  });
+
+  it("groups event-name variants, deduplicates repeated responses, and navigates with dock proximity", async () => {
+    const variantEvents: AgentEvent[] = [
+      {
+        id: "evt-blank-stop",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "Stop",
+        role: "agent",
+        text: "   ",
+        observedAt: "2026-06-22T20:06:00Z",
+      },
+      {
+        id: "evt-session-end",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "SessionEnd",
+        role: "agent",
+        text: "Lifecycle metadata should stay hidden.",
+        observedAt: "2026-06-22T20:05:00Z",
+      },
+      {
+        id: "evt-stop-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "Stop",
+        role: "agent",
+        text: "Second captured response.",
+        observedAt: "2026-06-22T20:04:00Z",
+      },
+      {
+        id: "evt-response-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "assistant",
+        text: "Second captured response.",
+        observedAt: "2026-06-22T20:03:59Z",
+      },
+      {
+        id: "evt-user-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "user_prompt_submit",
+        role: "agent",
+        text: "Show me the second exchange.",
+        observedAt: "2026-06-22T20:03:00Z",
+      },
+      {
+        id: "evt-stop-1",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "Stop",
+        role: "agent",
+        text: "First captured response.",
+        observedAt: "2026-06-22T20:02:00Z",
+      },
+      {
+        id: "evt-user-1-archive",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "user",
+        text: "  SHOW me the first   exchange. ",
+        observedAt: "2026-06-22T20:01:01Z",
+      },
+      {
+        id: "evt-user-1",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "beforeSubmitPrompt",
+        role: "agent",
+        text: "Show me the first exchange.",
+        observedAt: "2026-06-22T20:01:00Z",
+      },
+      {
+        id: "evt-session-start",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "SessionStart",
+        role: "agent",
+        text: "Startup metadata should stay hidden.",
+        observedAt: "2026-06-22T20:00:00Z",
+      },
+    ];
+    vi.mocked(getSessionEvents).mockResolvedValue(variantEvents);
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(() => <SessionsPage />);
+
+    await waitFor(() => expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2));
+    const turns = document.querySelectorAll(".prompt-turn");
+    expect(within(turns[0] as HTMLElement).getByText("Show me the first exchange.")).toBeInTheDocument();
+    expect(within(turns[0] as HTMLElement).queryByText(/SHOW me the first/)).not.toBeInTheDocument();
+    expect(within(turns[0] as HTMLElement).getByText("First captured response.")).toBeInTheDocument();
+    expect(within(turns[1] as HTMLElement).getByText("Show me the second exchange.")).toBeInTheDocument();
+    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(1);
+    expect(screen.queryByText("Lifecycle metadata should stay hidden.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Startup metadata should stay hidden.")).not.toBeInTheDocument();
+
+    const outline = screen.getByRole("navigation", { name: "Conversation outline" });
+    const first = within(outline).getByRole("link", { name: "Turn 1: Show me the first exchange." });
+    const second = within(outline).getByRole("link", { name: "Turn 2: Show me the second exchange." });
+    expect(first).toHaveAttribute("href", "#prompt-evt-user-1");
+    expect(second).toHaveAttribute("href", "#prompt-evt-user-2");
+
+    fireEvent.mouseEnter(second);
+    const markers = outline.querySelectorAll(".conversation-navigator-item");
+    expect(markers[0]).toHaveAttribute("data-distance", "1");
+    expect(markers[1]).toHaveAttribute("data-distance", "0");
+    expect(markers[1]).toHaveAttribute("data-preview", "true");
+    expect(within(outline).getByText("Codex response")).toBeInTheDocument();
+
+    first.focus();
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    expect(second).toHaveFocus();
+    fireEvent.click(second);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start", behavior: "smooth" });
+    expect(second).toHaveAttribute("aria-current", "location");
   });
 
   it("uses a flat session rail scoped to the selected project", async () => {
@@ -382,8 +518,8 @@ describe("SessionsPage", () => {
   it("reveals and highlights a target event", async () => {
     render(() => <SessionsPage selectedSessionId="session-1" targetEventId="evt-decision" />);
 
-    const target = await screen.findByText("Use the calmer session layout");
-    const row = target.closest(".event-flow-row");
+    await screen.findAllByText("Use the calmer session layout");
+    const row = document.getElementById("event-evt-decision");
     expect(row).toHaveClass("event-flow-row--target");
   });
 });

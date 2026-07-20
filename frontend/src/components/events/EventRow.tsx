@@ -80,7 +80,7 @@ export function eventHeadline(event: AgentEvent): string {
   return event.toolName || event.role || event.eventType || "Event";
 }
 
-function ReaderText(props: { text: string }) {
+export function ReaderText(props: { text: string }) {
   const [expanded, setExpanded] = createSignal(false);
   const compact = () => shouldCompactText(props.text);
   const collapsed = () => compact() && !expanded();

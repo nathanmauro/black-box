@@ -51,6 +51,38 @@ class EventIngestServiceTest {
     }
 
     @Test
+    void genericAgentRoleIsDerivedFromNormalizedHookEventTypes() {
+        assertThat(ingestAndRead("role-user-prompt", "UserPromptSubmit", "agent", "First prompt").role())
+                .isEqualTo("user");
+        assertThat(ingestAndRead("role-before-prompt", "before_submit_prompt", "AGENT", "Second prompt").role())
+                .isEqualTo("user");
+        assertThat(ingestAndRead("role-assistant-message", "assistant-message", "agent", "Answer").role())
+                .isEqualTo("assistant");
+        assertThat(ingestAndRead("role-stop", "s-top", "agent", "Finished").role())
+                .isEqualTo("assistant");
+        assertThat(ingestAndRead("role-pre-tool", "pre_tool_use", "agent", null).role())
+                .isEqualTo("tool");
+        assertThat(ingestAndRead("role-post-tool", "PostToolUse", "agent", null).role())
+                .isEqualTo("tool");
+        assertThat(ingestAndRead("role-empty-stop", "s.top", "agent", "   ").role())
+                .isEqualTo("agent");
+        assertThat(ingestAndRead("role-unknown", "CustomHook", "agent", "Unknown event").role())
+                .isEqualTo("agent");
+    }
+
+    @Test
+    void explicitSemanticRolesArePreserved() {
+        assertThat(ingestAndRead("explicit-assistant", "UserPromptSubmit", "assistant", "Archive response").role())
+                .isEqualTo("assistant");
+        assertThat(ingestAndRead("explicit-user", "AssistantMessage", "user", "Archive prompt").role())
+                .isEqualTo("user");
+        assertThat(ingestAndRead("explicit-tool", "s-top", "tool", "Tool result").role())
+                .isEqualTo("tool");
+        assertThat(ingestAndRead("explicit-note", "PostToolUse", "note", "Saved observation").role())
+                .isEqualTo("note");
+    }
+
+    @Test
     void finalLifecycleEventSchedulesBlackBoxOwnedSummary() {
         ingestService.ingest(new EventIngestRequest(
                 "codex",
@@ -122,5 +154,26 @@ class EventIngestServiceTest {
                 .doesNotContain("abcdefghi");
         assertThat(repository.findSession("codex", "session-redaction").orElseThrow().title())
                 .isEqualTo("password=[REDACTED]");
+    }
+
+    private AgentEvent ingestAndRead(String clientSessionId, String eventType, String role, String text) {
+        IngestResponse response = ingestService.ingest(new EventIngestRequest(
+                "codex",
+                clientSessionId,
+                "turn-1",
+                eventType,
+                role,
+                text,
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-05-21T12:03:00Z")));
+
+        return repository.eventsForSession(response.sessionId(), 10).stream()
+                .filter(candidate -> candidate.id().equals(response.eventId()))
+                .findFirst()
+                .orElseThrow();
     }
 }
