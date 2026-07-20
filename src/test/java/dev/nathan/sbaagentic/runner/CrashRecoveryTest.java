@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,15 +13,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.workflow.SpecStatus;
-import dev.nathan.sbaagentic.workflow.Task;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.TaskEventType;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-import dev.nathan.sbaagentic.workflow.TaskStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

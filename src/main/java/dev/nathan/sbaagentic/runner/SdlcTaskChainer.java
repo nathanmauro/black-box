@@ -1,11 +1,13 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.util.List;
 import java.util.Objects;
 
-import dev.nathan.sbaagentic.workflow.Task;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
-import dev.nathan.sbaagentic.workflow.TaskStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 
 import org.springframework.stereotype.Component;
 

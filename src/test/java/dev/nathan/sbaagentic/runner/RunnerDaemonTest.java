@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.util.List;
 import java.util.concurrent.Executor;
 

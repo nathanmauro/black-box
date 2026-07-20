@@ -15,7 +15,7 @@ import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser.ParsedStory;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 
 import org.springframework.stereotype.Component;
 

@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -18,10 +20,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
-import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

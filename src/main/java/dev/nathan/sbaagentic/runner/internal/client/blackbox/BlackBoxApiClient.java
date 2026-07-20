@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.runner;
+package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,14 +18,6 @@ import java.util.Optional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -48,7 +40,7 @@ public class BlackBoxApiClient {
         return baseUrl;
     }
 
-    BlackBoxApiClient(ObjectMapper objectMapper, String baseUrl) {
+    public BlackBoxApiClient(ObjectMapper objectMapper, String baseUrl) {
         this.objectMapper = objectMapper;
         this.baseUrl = stripTrailingSlash(baseUrl);
         this.httpClient = HttpClient.newBuilder()

@@ -7,15 +7,15 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.RepoConfig;
 import dev.nathan.sbaagentic.runner.RunnerNaming;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
-import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
 
 import org.junit.jupiter.api.Test;
 

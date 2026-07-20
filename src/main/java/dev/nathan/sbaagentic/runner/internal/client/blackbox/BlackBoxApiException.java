@@ -1,4 +1,4 @@
-package dev.nathan.sbaagentic.runner;
+package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
 public class BlackBoxApiException extends RuntimeException {
 

@@ -33,7 +33,7 @@ class PackageArchitectureTest {
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
     private static final Set<String> FULLY_MIGRATED_MODULES =
-            Set.of("ask", "memory", "project", "recording", "summary", "workflow");
+            Set.of("ask", "memory", "project", "recording", "runner", "summary", "workflow");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -124,7 +124,8 @@ class PackageArchitectureTest {
                         root + ".internal.adapter.in.web..",
                         root + ".internal.adapter.in.mcp..",
                         root + ".internal.adapter.in.cli..")
-                .should().dependOnClassesThat().areAnnotatedWith(Repository.class));
+                .should().dependOnClassesThat().areAnnotatedWith(Repository.class)
+                .allowEmptyShould(true));
         rules.add(classes()
                 .that().areAnnotatedWith(Repository.class)
                 .and().resideInAPackage(root + "..")

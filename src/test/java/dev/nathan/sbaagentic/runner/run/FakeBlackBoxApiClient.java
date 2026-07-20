@@ -8,13 +8,13 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-import dev.nathan.sbaagentic.runner.BlackBoxApiClient;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SessionLink;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 
 final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 
