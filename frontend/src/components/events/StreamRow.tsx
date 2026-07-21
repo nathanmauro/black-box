@@ -8,6 +8,7 @@ import { EventRenderer, eventHeadline } from "./EventRow";
 type StreamRowProps = {
   item: EventFeedItem;
   expanded: boolean;
+  sessionHref: string;
   onToggle: () => void;
 };
 
@@ -15,20 +16,14 @@ export default function StreamRow(props: StreamRowProps) {
   const item = () => props.item;
   const headline = () => eventHeadline(item());
 
-  function toggle(event: MouseEvent) {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-    event.preventDefault();
-    props.onToggle();
-  }
-
   return (
     <article classList={{ "stream-row-wrap": true, "stream-row-wrap--expanded": props.expanded }}>
-      <A
-        href={`/sessions/${encodeURIComponent(item().sessionId)}`}
+      <button
+        type="button"
         class="stream-row"
         aria-expanded={props.expanded}
         aria-label={`${headline()} in ${truncatePath(item().cwd)}`}
-        onClick={toggle}
+        onClick={props.onToggle}
       >
         <SourceDot source={item().source} />
         <KindBadge kind={item().eventType} />
@@ -37,9 +32,18 @@ export default function StreamRow(props: StreamRowProps) {
         </span>
         <strong title={headline()}>{headline()}</strong>
         <time dateTime={item().observedAt}>{timeAgo(item().observedAt)}</time>
-      </A>
+      </button>
       {props.expanded ? (
         <div class={`stream-row-expanded stream-row-expanded--${kindClass(item().eventType)}`}>
+          <div class="stream-row-expanded-head">
+            <span>
+              <small>session</small>
+              <strong>{item().sessionTitle || item().clientSessionId}</strong>
+            </span>
+            <A href={props.sessionHref} class="stream-session-link">
+              View session <span aria-hidden="true">→</span>
+            </A>
+          </div>
           <EventRenderer event={item()} />
         </div>
       ) : null}

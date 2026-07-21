@@ -43,16 +43,31 @@ test("clicking a stream row expands it inline with the full event card", async (
   await page.goto("/");
   const decisionRow = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
   await expect(decisionRow).toBeVisible();
-  await expect(decisionRow).toHaveAttribute("href", /\/sessions\//);
+  await expect(decisionRow).toHaveAttribute("type", "button");
 
   await decisionRow.click();
   await expect(decisionRow).toHaveAttribute("aria-expanded", "true");
   const expanded = page.locator(".stream-row-expanded");
   await expect(expanded).toBeVisible();
+  await expect(expanded.getByRole("link", { name: "View session" })).toHaveAttribute("href", /view=browse.*session=.*event=/);
   await expect(expanded.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
 
   await decisionRow.click();
   await expect(page.locator(".stream-row-expanded")).toHaveCount(0);
+});
+
+test("the explicit Stream action opens the exact event in Browse", async ({ page }) => {
+  await page.goto("/");
+  const decisionRow = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
+  await decisionRow.click();
+  await page.locator(".stream-row-expanded").getByRole("link", { name: "View session" }).click();
+
+  await expect(page).toHaveURL(/view=browse/);
+  await expect(page).toHaveURL(/session=/);
+  await expect(page).toHaveURL(/event=/);
+  await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+  await expect(page.locator(".event-flow-row--target")).toBeVisible();
 });
 
 test("a newly ingested event flows into the stream live", async ({ page, request }) => {

@@ -7,6 +7,7 @@ import SteerBox from "../components/SteerBox";
 import { EventRenderer, ReaderText } from "../components/events/EventRow";
 import {
   getProjectSessions,
+  getSession,
   getSessionDag,
   getSessionEvents,
   getSessions,
@@ -16,6 +17,7 @@ import {
   type ProjectSummary,
 } from "../lib/api";
 import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
+import { projectMatchesSession } from "../lib/projects";
 import { parseQuery } from "../lib/query";
 import { LiveStoreContext } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
@@ -74,12 +76,33 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     if (!projectKey || result?.projectKey !== projectKey) return [];
     return sourceFilter.matches(result.sessions);
   });
-  const sessions = createMemo(() => (props.project ? scopedProjectSessions() : allSessions()));
+  const requestedSessionId = createMemo(() => props.selectedSessionId || params.sessionId || "");
+  const [requestedSession] = createResource(
+    requestedSessionId,
+    async (id) => {
+      if (!id) return null;
+      try {
+        return await getSession(id);
+      } catch {
+        return null;
+      }
+    },
+    { initialValue: null as AgentSession | null },
+  );
+  const sessions = createMemo(() => {
+    const listed = props.project ? scopedProjectSessions() : allSessions();
+    const requested = requestedSession();
+    if (!requested || listed.some((session) => session.id === requested.id)) return listed;
+    if (props.project && !projectMatchesSession(props.project, requested)) return listed;
+    if (!sourceFilter.matches([requested]).length) return listed;
+    return [requested, ...listed];
+  });
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
   const selectedId = createMemo(() => {
     const scopedSessions = filteredSessions();
-    const requestedId = props.selectedSessionId || params.sessionId || "";
+    const requestedId = requestedSessionId();
     if (requestedId && scopedSessions.some((session) => session.id === requestedId)) return requestedId;
+    if (requestedId && requestedSession.loading) return "";
     return props.defaultToFirst ? scopedSessions[0]?.id ?? "" : "";
   });
   const selectedSession = createMemo(() => filteredSessions().find((session) => session.id === selectedId()));

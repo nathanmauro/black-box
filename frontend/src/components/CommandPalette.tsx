@@ -20,7 +20,7 @@ type CommandItem = {
 };
 
 const NAV_ITEMS = [
-  { id: "nav-activity", label: "Activity", path: "/", meta: "browse sessions, find events, or ask memory" },
+  { id: "nav-activity", label: "Activity", path: "/", meta: "filter events, browse sessions, or ask memory" },
   { id: "nav-projects", label: "Projects", path: "/projects", meta: "inspect grouped project history and storylines" },
   { id: "nav-board", label: "Board", path: "/board", meta: "inspect the live agent task queue" },
   { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
@@ -63,7 +63,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
         kind: "event" as const,
         eventKind: event.eventType,
         run: () => {
-          navigate(`/sessions/${encodeURIComponent(event.sessionId)}`);
+          navigate(`/?view=browse&session=${encodeURIComponent(event.sessionId)}&event=${encodeURIComponent(event.id)}`);
           close();
         },
       })) || [];
@@ -71,11 +71,11 @@ export default function CommandPalette(props: CommandPaletteProps) {
       ? [
           {
             id: "search-query",
-            label: `Search for "${query().trim()}"`,
-            meta: "open Activity Find",
+            label: `Filter Stream for "${query().trim()}"`,
+            meta: "filter Activity Stream",
             kind: "search" as const,
             run: () => {
-              navigate(`/?view=find&q=${encodeURIComponent(query().trim())}`);
+              navigate(`/?q=${encodeURIComponent(query().trim())}`);
               close();
             },
           },
@@ -138,7 +138,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
             class="palette-input"
             value={query()}
             onInput={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Jump to session or search..."
+            placeholder="Jump to session or filter Stream..."
             autocomplete="off"
           />
           <div class="palette-results" role="listbox">

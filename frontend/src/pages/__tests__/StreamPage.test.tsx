@@ -73,21 +73,33 @@ describe("StreamPage", () => {
   it("renders compact stream rows from the event feed", async () => {
     render(() => <StreamPage />);
 
-    const row = await screen.findByRole("link", { name: /Make stream default/ });
-    expect(row).toHaveAttribute("href", "/sessions/session-1");
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    expect(row).toHaveAttribute("aria-expanded", "false");
     expect(within(row).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true });
+
+    fireEvent.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "View session" })).toHaveAttribute(
+      "href",
+      "/?view=browse&session=session-1&event=event-1",
+    );
   });
 
   it("passes selected project as a hidden stream facet", async () => {
     render(() => <StreamPage project={selectedProject} />);
 
-    await screen.findByRole("link", { name: /Make stream default/ });
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
     expect(getEventFeed).toHaveBeenCalledWith({
       limit: 100,
       q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
+    fireEvent.click(row);
+    expect(screen.getByRole("link", { name: "View session" })).toHaveAttribute(
+      "href",
+      "/?view=browse&session=session-1&event=event-1&project=sba-key",
+    );
   });
 
   it("does not fetch globally while project scope is pending", async () => {
@@ -104,11 +116,11 @@ describe("StreamPage", () => {
     const [project, setProject] = createSignal<ProjectSummary | null>(null);
     render(() => <StreamPage project={project()} />);
 
-    expect(await screen.findByRole("link", { name: /Global row must not leak/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Global row must not leak/ })).toBeInTheDocument();
     setProject(selectedProject);
 
     expect(await screen.findByText("Scoped feed unavailable")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Global row must not leak/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Global row must not leak/ })).not.toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
       q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
@@ -134,7 +146,7 @@ describe("StreamPage", () => {
 
   it("uses facet chips to narrow the URL query", async () => {
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "codex" }));
 
@@ -145,7 +157,7 @@ describe("StreamPage", () => {
   it("renders exclude chips from negative facets", async () => {
     [params, setParams] = createStore<{ q?: string }>({ q: "-kind:PostToolUse" });
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     expect(screen.getByRole("button", { name: "kind != PostToolUse" })).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "-kind:PostToolUse", meaningful: true });
@@ -153,7 +165,7 @@ describe("StreamPage", () => {
 
   it("refetches when meaningful-only filtering changes", async () => {
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByLabelText("meaningful events only"));
 
@@ -166,11 +178,11 @@ describe("StreamPage", () => {
       .mockResolvedValueOnce(feed([eventItem("event-2", "Browse mode preserved")]));
 
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByRole("link", { name: /Browse mode preserved/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Browse mode preserved/ })).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
       q: "",
@@ -187,7 +199,7 @@ describe("StreamPage", () => {
       .mockResolvedValueOnce(feed([eventItem("event-scoped", "New scope row")]));
 
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Original scope row/ });
+    await screen.findByRole("button", { name: /Original scope row/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
@@ -196,12 +208,12 @@ describe("StreamPage", () => {
     await waitFor(() =>
       expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
     );
-    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /New scope row/ })).toBeInTheDocument();
 
     stalePage.resolve(feed([eventItem("event-stale", "Stale old scope row")]));
     await Promise.resolve();
 
-    await waitFor(() => expect(screen.queryByRole("link", { name: /Stale old scope row/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Stale old scope row/ })).not.toBeInTheDocument());
   });
 
   it("clears pagination while a primary stream reload is pending", async () => {
@@ -212,7 +224,7 @@ describe("StreamPage", () => {
       .mockResolvedValueOnce(feed([eventItem("event-stale", "Stale page row")]));
 
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Original scope row/ });
+    await screen.findByRole("button", { name: /Original scope row/ });
 
     setParams({ q: "kind:Decision" });
     await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
@@ -222,7 +234,7 @@ describe("StreamPage", () => {
     expect(getEventFeed).toHaveBeenCalledTimes(2);
 
     primaryReload.resolve(feed([eventItem("event-scoped", "New scope row")]));
-    expect(await screen.findByRole("link", { name: /New scope row/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /New scope row/ })).toBeInTheDocument();
   });
 
   it("uses pending live rows for head refetch and new-count dedupe", async () => {
@@ -236,7 +248,7 @@ describe("StreamPage", () => {
 
     try {
       render(() => <StreamPage />);
-      await screen.findByRole("link", { name: /Existing row/ });
+      await screen.findByRole("button", { name: /Existing row/ });
       const feedEl = document.querySelector(".stream-feed") as HTMLElement;
       feedEl.scrollTop = 120;
       vi.useFakeTimers();
@@ -262,7 +274,7 @@ describe("StreamPage", () => {
     getEventFeed.mockResolvedValueOnce(feed(cappedRows, "2026-07-01T11:00:00Z|event-cap-499"));
 
     render(() => <StreamPage />);
-    await screen.findByRole("link", { name: /Capped row 0/ });
+    await screen.findByRole("button", { name: /Capped row 0/ });
 
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });

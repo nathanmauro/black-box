@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getProjectSessions, getSessionDag, getSessionEvents, getSessions, getTaskDag } from "../../lib/api";
+import { getProjectSessions, getSession, getSessionDag, getSessionEvents, getSessions, getTaskDag } from "../../lib/api";
 import type { AgentEvent, AgentSession, DagResponse } from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
@@ -120,6 +120,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     getSessions: vi.fn(async () => sessions),
+    getSession: vi.fn(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
     getTaskDag: vi.fn(async () => ({ nodes: [], edges: [] })),
@@ -133,6 +134,8 @@ beforeEach(() => {
   vi.mocked(createSessionsResource).mockClear();
   vi.mocked(getSessions).mockReset();
   vi.mocked(getSessions).mockResolvedValue(sessions);
+  vi.mocked(getSession).mockReset();
+  vi.mocked(getSession).mockImplementation(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]);
   vi.mocked(getProjectSessions).mockReset();
   vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
   vi.mocked(getSessionEvents).mockReset();
@@ -430,6 +433,28 @@ describe("SessionsPage", () => {
     expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 2_000);
     expect(createSessionsResource).not.toHaveBeenCalled();
     expect(getSessions).not.toHaveBeenCalled();
+  });
+
+  it("hydrates an exact session that is outside the recent session rail", async () => {
+    const oldSession: AgentSession = {
+      id: "session-old",
+      source: "codex",
+      clientSessionId: "client-old",
+      title: "Older exact session",
+      cwd: "/Users/nathan/Developer/proj/sba-agentic",
+      summary: "Loaded directly by id.",
+      startedAt: "2026-05-01T20:00:00Z",
+      lastSeenAt: "2026-05-01T20:10:00Z",
+      eventCount: 3,
+    };
+    vi.mocked(getSessions).mockResolvedValue([sessions[0]]);
+    vi.mocked(getSession).mockResolvedValue(oldSession);
+
+    render(() => <SessionsPage selectedSessionId="session-old" defaultToFirst />);
+
+    expect(await screen.findByRole("heading", { name: "Older exact session" })).toBeInTheDocument();
+    expect(getSession).toHaveBeenCalledWith("session-old");
+    expect(getSessionEvents).toHaveBeenCalledWith("session-old", 2_000);
   });
 
   it("clears previous project sessions while the next project is loading", async () => {

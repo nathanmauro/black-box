@@ -41,7 +41,7 @@ describe("theme reader scrollbar contracts", () => {
     expect(css).toContain(".event-card p,");
     expect(css).toContain(".event-rationale");
     expect(css).toContain("white-space: pre-wrap;");
-    expect(css).toContain(".payload-details pre");
+    expect(css).toContain(".tool-payload-block");
     expect(css).toContain("overflow-wrap: anywhere;");
   });
 });

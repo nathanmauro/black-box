@@ -7,6 +7,7 @@ import DecisionCard from "./DecisionCard";
 import HandoffCard from "./HandoffCard";
 import ObservationCard from "./ObservationCard";
 import { looksLikeJson, parseJsonObject } from "./eventData";
+import ToolPayload, { payloadText } from "./ToolPayload";
 
 type EventRowProps = {
   event: AgentEvent;
@@ -50,23 +51,13 @@ export default function EventRow(props: EventRowProps) {
         {event().toolName ? <span>{event().toolName}</span> : null}
         <span>seq {event().turnId || event().id.slice(0, 8)}</span>
       </div>
-      {event().text && !looksLikeJson(event().text) ? <ReaderText text={event().text ?? ""} /> : null}
+      {event().text && !looksLikeJson(event().text) && !duplicatesToolOutput(event()) ? <ReaderText text={event().text ?? ""} /> : null}
       {event().toolInputJson || event().toolOutputJson ? (
-        <details class="payload-details">
-          <summary>tool payload</summary>
-          {event().toolInputJson ? (
-            <>
-              <span class="payload-label">input</span>
-              <pre>{prettyJson(event().toolInputJson)}</pre>
-            </>
-          ) : null}
-          {event().toolOutputJson ? (
-            <>
-              <span class="payload-label">output</span>
-              <pre>{prettyJson(event().toolOutputJson)}</pre>
-            </>
-          ) : null}
-        </details>
+        <ToolPayload
+          toolName={event().toolName}
+          inputJson={event().toolInputJson}
+          outputJson={event().toolOutputJson}
+        />
       ) : null}
     </article>
   );
@@ -75,7 +66,7 @@ export default function EventRow(props: EventRowProps) {
 export function eventHeadline(event: AgentEvent): string {
   const input = parseJsonObject(event.toolInputJson);
   const key = input ? primaryArgKey(input) : null;
-  if (key && input) return truncatePath(String(input[key]));
+  if (key && input) return commandHeadline(String(input[key]), event.toolName);
   if (event.text && !looksLikeJson(event.text)) return event.text || "";
   return event.toolName || event.role || event.eventType || "Event";
 }
@@ -117,16 +108,23 @@ function primaryArgKey(args: Record<string, unknown>): string | null {
   return Object.keys(args).find((key) => typeof args[key] === "string" && String(args[key]).trim()) || null;
 }
 
-function prettyJson(raw: string | null | undefined): string {
-  if (!raw) return "";
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
-}
-
 function shouldCompactText(text: string): boolean {
   if (text.length > COMPACT_TEXT_CHARS) return true;
   return text.split(/\r?\n/).filter((line) => line.trim()).length > COMPACT_TEXT_LINES;
+}
+
+function duplicatesToolOutput(event: AgentEvent): boolean {
+  if (!event.text || !event.toolOutputJson) return false;
+  return payloadText(event.toolOutputJson)?.trim() === event.text.trim();
+}
+
+function commandHeadline(value: string, toolName: string | null | undefined): string {
+  const patchFile = /^\*\*\*\s+(?:Update|Add|Delete) File:\s*(.+)$/mu.exec(value)?.[1];
+  if (String(toolName || "").toLowerCase() === "apply_patch" && patchFile) {
+    return `Patch ${truncatePath(patchFile.trim())}`;
+  }
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const firstUseful = lines.find((line) => !line.startsWith("#")) ?? lines[0] ?? value.trim();
+  const suffix = lines.length > 1 ? ` +${lines.length - 1} lines` : "";
+  return `${truncatePath(firstUseful).slice(0, 180)}${suffix}`;
 }

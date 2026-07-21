@@ -45,7 +45,7 @@ describe("App shell", () => {
     expect(within(utilityNav).getByRole("link", { name: "Browse" })).toHaveAttribute("href", "/?view=browse");
     expect(within(utilityNav).getByRole("link", { name: "Projects" })).toHaveAttribute("href", "/projects");
     expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
-    expect(within(utilityNav).getByRole("link", { name: "Search" })).toHaveAttribute("href", "/search");
+    expect(within(utilityNav).queryByRole("link", { name: "Search" })).not.toBeInTheDocument();
     expect(within(utilityNav).getByRole("link", { name: "Board" })).toHaveAttribute("href", "/board");
     expect(within(utilityNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();

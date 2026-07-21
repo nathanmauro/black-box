@@ -9,6 +9,7 @@ import {
   deleteProjectAlias,
   enqueueTask,
   getSessionDag,
+  getSession,
   getSessionLinks,
   getSpec,
   getTaskDag,
@@ -50,6 +51,23 @@ afterEach(() => {
 });
 
 describe("Phase 2 API helpers", () => {
+  it("gets an exact session by its stable id", async () => {
+    const payload: AgentSession = {
+      id: "session/old",
+      source: "codex",
+      clientSessionId: "client-old",
+      title: "Older session",
+      startedAt: "2026-05-01T12:00:00Z",
+      lastSeenAt: "2026-05-01T12:05:00Z",
+      eventCount: 4,
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(getSession(payload.id)).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%2Fold", expect.anything());
+  });
+
   it("builds the recall query from scope, window, and selected kinds", async () => {
     const scope = "/Users/nathan/Developer/proj/sba-agentic";
     const payload: RecallResult = {

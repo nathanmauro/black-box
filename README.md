@@ -186,8 +186,7 @@ recallContext({
 
 ## Product surfaces
 
-- **Activity** — the global event stream, session browser, faceted Find workspace, and optional Ask
-  surface.
+- **Activity** — the filterable global event stream, session browser, and optional Ask surface.
 - **Projects** — a searchable logical-project workspace that groups verified worktree scopes without
   rewriting recorded paths. Inspect constituent scopes, recent sessions, Hybrid Storyline evidence,
   and saved synthesis, or explicitly merge and undo ambiguous catalog scopes.
@@ -196,7 +195,6 @@ recallContext({
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
   `createSpec.projectKey` when enqueueing work.
 - **Recall** — focused Decision, Handoff, and Observation retrieval by repo or topic.
-- **Search** — local SQLite search with optional Elasticsearch results.
 
 Open them directly:
 
@@ -204,7 +202,6 @@ Open them directly:
 - [Projects](http://localhost:8766/projects)
 - [Board](http://localhost:8766/board)
 - [Recall](http://localhost:8766/recall)
-- [Search](http://localhost:8766/search)
 
 ## Trust and data boundaries
 

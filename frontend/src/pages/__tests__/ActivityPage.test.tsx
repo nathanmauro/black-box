@@ -38,6 +38,7 @@ const sessions: AgentSession[] = [
 const navigate = vi.fn();
 const apiMocks = vi.hoisted(() => ({
   askStatus: vi.fn(),
+  getSession: vi.fn(),
   getSessions: vi.fn(),
   getSessionEvents: vi.fn(),
   getEventFeed: vi.fn(),
@@ -75,6 +76,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     askStatus: apiMocks.askStatus,
+    getSession: apiMocks.getSession,
     getSessions: apiMocks.getSessions,
     getSessionEvents: apiMocks.getSessionEvents,
     getEventFeed: apiMocks.getEventFeed,
@@ -108,6 +110,8 @@ beforeEach(() => {
   });
   apiMocks.getSessions.mockReset();
   apiMocks.getSessions.mockResolvedValue(sessions);
+  apiMocks.getSession.mockReset();
+  apiMocks.getSession.mockImplementation(async (id: string) => sessions.find((session) => session.id === id));
   apiMocks.getSessionEvents.mockReset();
   apiMocks.getSessionEvents.mockResolvedValue([]);
   apiMocks.getEventFeed.mockReset();
@@ -180,14 +184,14 @@ beforeEach(() => {
 });
 
 describe("ActivityPage", () => {
-  it("combines session browsing and find/ask work into one workspace", async () => {
+  it("combines stream, session browsing, and Ask in one workspace", async () => {
     render(() => <ActivityPage />);
 
     expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
     expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
     expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "false");
-    expect(within(modes).getByRole("tab", { name: "Find" })).toBeInTheDocument();
+    expect(within(modes).queryByRole("tab", { name: "Find" })).not.toBeInTheDocument();
     expect(within(modes).getByRole("tab", { name: "Ask" })).toBeInTheDocument();
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Browse" }));
@@ -207,46 +211,22 @@ describe("ActivityPage", () => {
     await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
 
-    fireEvent.click(within(modes).getByRole("tab", { name: "Find" }));
-    expect(screen.getByLabelText("Search query")).toBeInTheDocument();
-    expect(screen.getByText("Source")).toBeInTheDocument();
-    expect(screen.getByLabelText("meaningful events only")).toBeInTheDocument();
-
     fireEvent.click(within(modes).getByRole("tab", { name: "Ask" }));
     expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
   });
 
-  it("opens Search results inside the Activity session reader", async () => {
+  it("normalizes legacy Activity Find URLs into the Stream without losing the query", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({
       q: "focused",
       view: "find",
     });
-    apiMocks.getSessionEvents.mockResolvedValue([
-      {
-        id: "event-frontend-build",
-        sessionId: "session-1",
-        source: "codex",
-        clientSessionId: "client-1",
-        eventType: "UserPromptSubmit",
-        role: "user",
-        text: "Open the focused session from search.",
-        observedAt: "2026-06-22T20:04:00Z",
-      },
-    ]);
     render(() => <ActivityPage />);
 
-    expect(await screen.findByLabelText("Search query")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("link", { name: /Open the focused session from search/ }));
-
-    await waitFor(() => expect(params.view).toBe("browse"));
-    expect(params.q).toBeUndefined();
-    expect(params.session).toBe("session-1");
-    expect(params.event).toBe("event-frontend-build");
-
+    await waitFor(() => expect(params.view).toBeUndefined());
+    expect(params.q).toBe("focused");
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
-    await waitFor(() => expect(document.getElementById("event-event-frontend-build")).toHaveClass("event-flow-row--target"));
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "focused", meaningful: true }));
   });
 
   it("selects a shared Activity project and stores it in the URL", async () => {
@@ -324,21 +304,6 @@ describe("ActivityPage", () => {
     expect(apiMocks.getProjectSessions).not.toHaveBeenCalled();
     expect(screen.getByText("Resolving project scope…")).toBeInTheDocument();
     expect(document.querySelector(".sessions-page")).not.toBeInTheDocument();
-  });
-
-  it("defers Activity Find searches while a URL project is unresolved", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({
-      project: "sba-key",
-      q: "kind:Decision",
-      view: "find",
-    });
-    apiMocks.getProjects.mockImplementation(() => new Promise(() => undefined));
-
-    render(() => <ActivityPage />);
-
-    expect(await screen.findByLabelText("Search query")).toBeInTheDocument();
-    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
-    expect(apiMocks.search).not.toHaveBeenCalled();
   });
 
   it("shows a project picker error when project loading fails", async () => {

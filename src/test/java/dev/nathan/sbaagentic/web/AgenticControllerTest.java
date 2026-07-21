@@ -88,6 +88,35 @@ class AgenticControllerTest {
     }
 
     @Test
+    void getsOneSessionByItsStableId() throws Exception {
+        String body = mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "direct-session-lookup",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "Open this exact session.",
+                                  "observedAt": "2026-05-01T12:05:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String sessionId = objectMapper.readTree(body).path("sessionId").asText();
+
+        mockMvc.perform(get("/api/sessions/{sessionId}", sessionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(sessionId))
+                .andExpect(jsonPath("$.clientSessionId").value("direct-session-lookup"));
+
+        mockMvc.perform(get("/api/sessions/{sessionId}", "missing-session"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void eventFeedEndpointReturnsEnvelopeFiltersAndClientErrors() throws Exception {
         String key = "feed-http-" + UUID.randomUUID().toString().replace("-", "");
         mockMvc.perform(post("/api/events")

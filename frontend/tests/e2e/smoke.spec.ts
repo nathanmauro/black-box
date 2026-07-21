@@ -12,7 +12,7 @@ test("activity workspace is stream-first with browse one tab away", async ({ pag
 
   const modes = page.getByRole("tablist", { name: "Activity mode" });
   await expect(modes.getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
-  await expect(modes.getByRole("tab", { name: "Find" })).toBeVisible();
+  await expect(modes.getByRole("tab", { name: "Find" })).toHaveCount(0);
   await expect(modes.getByRole("tab", { name: "Ask" })).toBeVisible();
 
   await page.goto("/?view=browse");
@@ -40,28 +40,26 @@ test("Activity project picker scopes the current session rail and reader", async
   await expect(page.getByText("No summary captured yet.")).toBeVisible();
 });
 
-test("faceted search filters to one source", async ({ page }) => {
+test("legacy Search URLs preserve their query in the Stream", async ({ page }) => {
   await page.goto("/search?q=source%3Acodex");
-  // The codex decision headline shows; the claude-only prompt should not appear here.
+  await expect(page).toHaveURL(/\/?q=source%3Acodex/);
+  await expect(page.getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
-  await expect(page.getByText("Decisions & handoffs")).toBeVisible();
   await expect(page.getByText("Rewrite the UI to match agent-observatory")).toHaveCount(0);
-  await page.screenshot({ path: `${SHOT_DIR}/search.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOT_DIR}/stream-legacy-search.png`, fullPage: true });
 });
 
-test("Activity Find result opens the session reader in place", async ({ page }) => {
+test("legacy Activity Find URLs normalize to the Stream", async ({ page }) => {
   await page.goto("/?view=find&q=source%3Acodex");
+  await expect(page).toHaveURL(/\/?q=source%3Acodex/);
+  await expect(page.getByRole("tab", { name: "Find" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toBeVisible();
-  await page.getByText("Use SolidJS + Vite for the UI rewrite").first().click();
-
-  await expect(page).toHaveURL(/session=/);
-  await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
 });
 
-test("search facet suggestions close after selection and dismissal", async ({ page }) => {
-  await page.goto("/search");
-  const input = page.getByLabel("Search query");
+test("stream facet suggestions close after selection and dismissal", async ({ page }) => {
+  await page.goto("/");
+  const input = page.getByLabel("Stream query");
 
   await input.fill("kind:Dec");
   await expect(page.getByRole("listbox")).toBeVisible();
@@ -69,7 +67,7 @@ test("search facet suggestions close after selection and dismissal", async ({ pa
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await expect(input).toHaveValue("kind:Decision ");
 
-  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
   const activeFacet = page.locator(".facet-chip--active");
   await expect(activeFacet).toContainText("Decision");
   await expect(page.getByRole("listbox")).toHaveCount(0);
@@ -89,12 +87,14 @@ test("search facet suggestions close after selection and dismissal", async ({ pa
 });
 
 test("session detail renders a structured decision card", async ({ page }) => {
-  await page.goto("/search?q=source%3Acodex");
-  await page.getByText("Use SolidJS + Vite for the UI rewrite").first().click();
-  await expect(page).toHaveURL(/\/sessions\//);
+  await page.goto("/?q=source%3Acodex");
+  const row = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
+  await row.click();
+  await page.getByRole("link", { name: "View session" }).click();
+  await expect(page).toHaveURL(/view=browse/);
+  await expect(page).toHaveURL(/event=/);
   await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
-  await page.getByLabel("Show memory events").check();
-  // Decision card surfaces rationale + open loops when memory events are explicitly enabled.
+  await expect(page.locator(".event-flow-row--target")).toBeVisible();
   await expect(page.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/session-detail.png`, fullPage: true });
 });
@@ -102,7 +102,7 @@ test("session detail renders a structured decision card", async ({ page }) => {
 test("command palette jumps to a session", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Meta+k");
-  const input = page.getByPlaceholder("Jump to session or search...");
+  const input = page.getByPlaceholder("Jump to session or filter Stream...");
   await expect(input).toBeVisible();
   await input.fill("Frontend build");
   await page.keyboard.press("Enter");

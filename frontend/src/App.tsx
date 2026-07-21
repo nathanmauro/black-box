@@ -8,7 +8,7 @@ type AppProps = {
   children?: JSX.Element;
 };
 
-type UtilityLinkId = "stream" | "browse" | "projects" | "board" | "recall" | "search";
+type UtilityLinkId = "stream" | "browse" | "projects" | "board" | "recall";
 
 const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; icon: UtilityIconKind }> = [
   { id: "stream", href: "/", label: "Stream", icon: "activity" },
@@ -16,7 +16,6 @@ const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; ico
   { id: "projects", href: "/projects", label: "Projects", icon: "projects" },
   { id: "board", href: "/board", label: "Board", icon: "board" },
   { id: "recall", href: "/recall", label: "Recall", icon: "recall" },
-  { id: "search", href: "/search", label: "Search", icon: "search" },
 ];
 
 export default function App(props: AppProps) {
@@ -123,7 +122,7 @@ function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string
   return active ? "utility-icon-link active" : "utility-icon-link";
 }
 
-type UtilityIconKind = "activity" | "browse" | "projects" | "board" | "recall" | "search" | "sources";
+type UtilityIconKind = "activity" | "browse" | "projects" | "board" | "recall" | "sources";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
@@ -169,15 +168,6 @@ function UtilityIcon(props: { kind: UtilityIconKind }) {
       <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
         <path d="M6.5 5.4a5.4 5.4 0 1 1-1.2 6" />
         <path d="M5.4 3.2v2.6h2.7" />
-      </svg>
-    );
-  }
-
-  if (props.kind === "search") {
-    return (
-      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="8.8" cy="8.8" r="4.8" />
-        <path d="m12.5 12.5 3.2 3.2" />
       </svg>
     );
   }

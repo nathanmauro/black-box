@@ -43,7 +43,7 @@ describe("CommandPalette", () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);
 
-    fireEvent.input(screen.getByPlaceholderText("Jump to session or search..."), { target: { value: "projects" } });
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), { target: { value: "projects" } });
     fireEvent.click(await screen.findByRole("option", { name: /Projects/ }));
 
     expect(navigate).toHaveBeenCalledWith("/projects");
@@ -54,7 +54,7 @@ describe("CommandPalette", () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);
 
-    fireEvent.input(screen.getByPlaceholderText("Jump to session or search..."), { target: { value: "board" } });
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), { target: { value: "board" } });
     fireEvent.click(await screen.findByRole("option", { name: /Board/ }));
 
     expect(navigate).toHaveBeenCalledWith("/board");
@@ -68,6 +68,19 @@ describe("CommandPalette", () => {
     fireEvent.click(await screen.findByRole("option", { name: /Focused session/ }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/?view=browse&session=session-1"));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("sends free-form queries to the Activity Stream", async () => {
+    const onClose = vi.fn();
+    render(() => <CommandPalette open onClose={onClose} />);
+
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
+      target: { value: "kind:PostToolUse" },
+    });
+    fireEvent.click(await screen.findByRole("option", { name: /Filter Stream for/ }));
+
+    expect(navigate).toHaveBeenCalledWith("/?q=kind%3APostToolUse");
     expect(onClose).toHaveBeenCalled();
   });
 });

@@ -37,7 +37,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   let loadToken = 0;
 
   const live = useLiveStore();
-  const [params, setParams] = useSearchParams<{ q?: string }>();
+  const [params, setParams] = useSearchParams<{ q?: string; project?: string }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
   const [meaningfulOnly, setMeaningfulOnly] = createSignal(true);
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
@@ -335,6 +335,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
               <StreamRow
                 item={item}
                 expanded={expandedId() === item.id}
+                sessionHref={sessionHref(item, props.project)}
                 onToggle={() => setExpandedId((current) => (current === item.id ? null : item.id))}
               />
             )}
@@ -371,6 +372,16 @@ function appendProjectGroupScope(query: string, canonicalKey: string): string {
 
 function quoteHiddenFacet(value: string): string {
   return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
+function sessionHref(item: EventFeedItem, project: ProjectSummary | null | undefined): string {
+  const query = new URLSearchParams({
+    view: "browse",
+    session: item.sessionId,
+    event: item.id,
+  });
+  if (project) query.set("project", project.projectKey);
+  return `/?${query.toString()}`;
 }
 
 function createSignalResource<TSource, TResult>(

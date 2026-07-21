@@ -4,15 +4,14 @@ import ProjectPicker from "../components/ProjectPicker";
 import { getProjects } from "../lib/api";
 import { findProjectByIdentifier, readRememberedProjectKey, rememberProjectKey } from "../lib/projects";
 import SessionsPage from "./SessionsPage";
-import SearchPage, { type SearchMode } from "./SearchPage";
+import SearchPage from "./SearchPage";
 import StreamPage from "./StreamPage";
 
-type ActivityMode = "stream" | "browse" | SearchMode;
+type ActivityMode = "stream" | "browse" | "ask";
 
 const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
   { id: "stream", label: "Stream", hint: "global event firehose" },
   { id: "browse", label: "Browse", hint: "session rail and conversation reader" },
-  { id: "find", label: "Find", hint: "faceted event search" },
   { id: "ask", label: "Ask", hint: "synthesized answer with citations" },
 ];
 
@@ -33,6 +32,9 @@ export default function ActivityPage() {
   });
 
   createEffect(() => setModeSignal(modeFromParams(params)));
+  createEffect(() => {
+    if (params.view === "find") setParams({ view: undefined });
+  });
   createEffect(() => {
     if (params.project !== undefined || projects.loading || projects.error) return;
     const remembered = rememberedProjectKey();
@@ -84,18 +86,13 @@ export default function ActivityPage() {
     setParams({ session: id, event: undefined });
   }
 
-  function openSearchResult(sessionId: string, eventId?: string) {
-    setModeSignal("browse");
-    setParams({ session: sessionId, event: eventId, q: undefined, view: "browse" });
-  }
-
   return (
     <section class="activity-page">
       <header class="activity-header">
         <div class="activity-title">
           <p class="eyebrow">workspace</p>
           <h1>Activity</h1>
-          <p>Browse sessions, find events, and ask recorded memory from one surface.</p>
+          <p>Filter recorded activity, browse session transcripts, and ask memory from one surface.</p>
         </div>
 
         <ProjectPicker
@@ -152,13 +149,12 @@ export default function ActivityPage() {
                 />
               </Show>
             </Match>
-            <Match when={mode() === "find" || mode() === "ask"}>
+            <Match when={mode() === "ask"}>
               <SearchPage
-                mode={mode() as SearchMode}
+                mode="ask"
                 showModeTabs={false}
                 project={selectedProject()}
                 projectScopePending={projectScopePending()}
-                onSelectSession={openSearchResult}
               />
             </Match>
             <Match when={mode() === "stream"}>
@@ -173,7 +169,6 @@ export default function ActivityPage() {
 
 function modeFromParams(params: { q?: string; view?: string }): ActivityMode {
   if (params.view === "ask") return "ask";
-  if (params.view === "find") return "find";
   if (params.view === "browse") return "browse";
   return "stream";
 }
