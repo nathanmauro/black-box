@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class EventIngestService implements EventRecorder {
 
-    private static final Set<String> FINAL_EVENT_TYPES = Set.of("sessionend", "stop");
+    private static final Set<String> FINAL_EVENT_TYPES = Set.of("sessionend", "stop", "subagentstop");
 
     private final RecordingStore repository;
     private final IngestionProperties properties;
