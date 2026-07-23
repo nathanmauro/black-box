@@ -48,11 +48,48 @@ public class CodexEngine implements Engine {
                 });
             }
         }
+        // Codex's TUI stalls unattended workers on a one-time "do you trust this
+        // directory?" prompt for any repo root it has never seen. Its -c parser splits
+        // keys on every dot with no quoted-segment support, so a
+        // projects."<path>".trust_level key can never address a filesystem path — the
+        // whole table has to ride in the TOML-parsed value under the single-segment
+        // "projects" key instead.
+        if (worktreeDir != null) {
+            command.add("-c");
+            command.add("projects={" + trustedProjectEntries(worktreeDir) + "}");
+        }
         // End-of-options marker: goal prompts can open with story frontmatter ("---"),
         // which codex's argument parser would otherwise reject as a malformed flag.
         command.add("--");
         command.add(prompt);
         return List.copyOf(command);
+    }
+
+    // Codex looks projects up by the process's physical cwd (symlinks resolved), so the
+    // absolute path alone misses when the worktree sits behind a symlink such as
+    // /tmp -> /private/tmp. Emit both forms whenever they differ.
+    private static String trustedProjectEntries(File worktreeDir) {
+        String absolute = worktreeDir.getAbsolutePath();
+        String canonical;
+        try {
+            canonical = worktreeDir.getCanonicalPath();
+        }
+        catch (IOException ex) {
+            canonical = absolute;
+        }
+        StringBuilder entries = new StringBuilder(trustedProjectEntry(absolute));
+        if (!canonical.equals(absolute)) {
+            entries.append(',').append(trustedProjectEntry(canonical));
+        }
+        return entries.toString();
+    }
+
+    private static String trustedProjectEntry(String path) {
+        return "\"" + tomlEscape(path) + "\"={trust_level=\"trusted\"}";
+    }
+
+    private static String tomlEscape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     // A linked worktree's .git is a pointer file: "gitdir: <repo>/.git/worktrees/<name>".

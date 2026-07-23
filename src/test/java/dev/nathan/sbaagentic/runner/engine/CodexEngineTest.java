@@ -81,6 +81,64 @@ class CodexEngineTest {
     }
 
     @Test
+    void worktreeDirIsPreTrustedBeforeEndOfOptionsMarker(@TempDir File worktree) throws IOException {
+        List<String> command = engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", "workspace-write", null, true),
+                worktree);
+
+        String override = projectsOverride(command);
+        assertThat(override).contains(
+                "\"" + worktree.getCanonicalPath() + "\"={trust_level=\"trusted\"}");
+        assertThat(command.indexOf(override)).isLessThan(command.indexOf("--"));
+    }
+
+    @Test
+    void symlinkedWorktreeEmitsBothRawAndPhysicalTrustEntries(@TempDir File tempDir) throws IOException {
+        File real = new File(tempDir, "real");
+        assertThat(real.mkdir()).isTrue();
+        File link = new File(tempDir, "link");
+        Files.createSymbolicLink(link.toPath(), real.toPath());
+
+        String override = projectsOverride(engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", "workspace-write", null, true),
+                link));
+
+        assertThat(override).contains("\"" + link.getAbsolutePath() + "\"={trust_level=\"trusted\"}");
+        assertThat(override).contains("\"" + link.getCanonicalPath() + "\"={trust_level=\"trusted\"}");
+    }
+
+    @Test
+    void quotesInWorktreePathAreTomlEscaped(@TempDir File tempDir) {
+        File weird = new File(tempDir, "we\"ird");
+
+        String override = projectsOverride(engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", "workspace-write", null, true),
+                weird));
+
+        assertThat(override).contains("we\\\"ird");
+    }
+
+    @Test
+    void nullWorktreeGetsNoTrustOverride() {
+        List<String> command = engine.command(
+                "prompt",
+                new EngineConfig("codex", "gpt-5.6-sol", "ultra", null, null, true),
+                null);
+
+        assertThat(String.join(" ", command)).doesNotContain("projects=");
+    }
+
+    private static String projectsOverride(List<String> command) {
+        return command.stream()
+                .filter(arg -> arg.startsWith("projects={"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no projects override in " + command));
+    }
+
+    @Test
     void dashLeadingPromptIsNeverParsedAsFlag() {
         List<String> command = engine.command(
                 "--shout looks like a flag",
