@@ -45,17 +45,23 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
         return MethodToolCallbackProvider.builder().toolObjects(this).build().getToolCallbacks();
     }
 
+    private static int clampLimit(Integer limit) {
+        return limit == null ? 10 : Math.max(1, Math.min(limit, 50));
+    }
+
     @Tool(description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input.")
     public List<AgentSession> recentSessions(
-            @ToolParam(description = "Maximum number of sessions to return. Use 10 unless the user asks for more.") int limit) {
-        return recordingCatalog.recentSessions(Math.max(1, Math.min(limit, 50)));
+            @ToolParam(required = false,
+                    description = "Maximum number of sessions to return. Omit for 10.") Integer limit) {
+        return recordingCatalog.recentSessions(clampLimit(limit));
     }
 
     @Tool(description = "Search captured local agent events and sessions by free text.")
     public SearchResponse searchSessions(
             @ToolParam(description = "Search query text.") String query,
-            @ToolParam(description = "Maximum number of results to return.") int limit) {
-        return memorySearch.search(query, Math.max(1, Math.min(limit, 50)));
+            @ToolParam(required = false,
+                    description = "Maximum number of results to return. Omit for 10.") Integer limit) {
+        return memorySearch.search(query, clampLimit(limit));
     }
 
     @Tool(description = "Recall structured prior intent — decisions and handoffs that earlier agents "
@@ -66,11 +72,13 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             @ToolParam(description = "Repo path or topic to anchor recall to. Matches the working "
                     + "directory of prior sessions or the captured text. Leave blank for the most "
                     + "recent intent across all repos.") String repoOrTopic,
-            @ToolParam(description = "Only recall intent observed within this many hours. Use 168 (one "
-                    + "week) unless you need a wider or narrower window.") int withinHours,
-            @ToolParam(description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
-                    + "'observation'. Leave empty to recall decisions and handoffs.") List<String> kinds) {
-        return memoryRecall.recall(repoOrTopic, withinHours, kinds);
+            @ToolParam(required = false,
+                    description = "Only recall intent observed within this many hours. Omit for 168 "
+                    + "(one week).") Integer withinHours,
+            @ToolParam(required = false,
+                    description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
+                    + "'observation'. Omit to recall decisions and handoffs.") List<String> kinds) {
+        return memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds);
     }
 
     @Tool(description = "Commit a decision you made into the recorder so later agents can recall WHY, "
@@ -84,7 +92,8 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             @ToolParam(description = "The decision you made, in one line.") String decision,
             @ToolParam(description = "Why you chose it.") String rationale,
             @ToolParam(description = "Alternatives you considered and rejected.") List<String> alternatives,
-            @ToolParam(description = "How confident you are, 0.0 to 1.0.") double confidence,
+            @ToolParam(required = false,
+                    description = "How confident you are, 0.0 to 1.0. Omit if unsure.") Double confidence,
             @ToolParam(description = "Open loops: things this decision leaves unfinished or unverified.") List<String> openLoops) {
         return captureOperations.captureDecision(new CaptureDecisionRequest(
                 source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops));

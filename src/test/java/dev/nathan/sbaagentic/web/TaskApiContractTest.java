@@ -719,10 +719,10 @@ class TaskApiContractTest {
                 .collect(Collectors.toSet());
         assertThat(registered).hasSize(14).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS);
 
-        Method recent = MemoryMcpTools.class.getMethod("recentSessions", int.class);
-        Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, int.class);
+        Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
+        Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);
         Method recall = MemoryMcpTools.class.getMethod(
-                "recallContext", String.class, int.class, List.class);
+                "recallContext", String.class, Integer.class, List.class);
         Method decision = MemoryMcpTools.class.getMethod(
                 "captureDecision",
                 String.class,
@@ -731,7 +731,7 @@ class TaskApiContractTest {
                 String.class,
                 String.class,
                 List.class,
-                double.class,
+                Double.class,
                 List.class);
         Method handoff = MemoryMcpTools.class.getMethod(
                 "captureHandoff",

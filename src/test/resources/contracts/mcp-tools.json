@@ -1,5 +1,5 @@
 [
-  {"name":"captureDecision","required":["alternatives","clientSessionId","confidence","decision","openLoops","rationale","repo","source"],"properties":{"alternatives":{"type":"array","items":{"type":"string"}},"clientSessionId":{"type":"string"},"confidence":{"type":"number"},"decision":{"type":"string"},"openLoops":{"type":"array","items":{"type":"string"}},"rationale":{"type":"string"},"repo":{"type":"string"},"source":{"type":"string"}}},
+  {"name":"captureDecision","required":["alternatives","clientSessionId","decision","openLoops","rationale","repo","source"],"properties":{"alternatives":{"type":"array","items":{"type":"string"}},"clientSessionId":{"type":"string"},"confidence":{"type":"number"},"decision":{"type":"string"},"openLoops":{"type":"array","items":{"type":"string"}},"rationale":{"type":"string"},"repo":{"type":"string"},"source":{"type":"string"}}},
   {"name":"captureHandoff","required":["clientSessionId","contextSummary","nextAction","openLoops","repo","source","toAgent"],"properties":{"clientSessionId":{"type":"string"},"contextSummary":{"type":"string"},"nextAction":{"type":"string"},"openLoops":{"type":"array","items":{"type":"string"}},"repo":{"type":"string"},"source":{"type":"string"},"toAgent":{"type":"string"}}},
   {"name":"captureObservation","required":["clientSessionId","repo","source","text"],"properties":{"clientSessionId":{"type":"string"},"repo":{"type":"string"},"source":{"type":"string"},"text":{"type":"string"}}},
   {"name":"claimNextTask","required":["agent","lane"],"properties":{"agent":{"type":"string"},"lane":{"type":"string"}}},
@@ -9,8 +9,8 @@
   {"name":"getSpec","required":["specId"],"properties":{"specId":{"type":"string"}}},
   {"name":"listTasks","required":[],"properties":{"lane":{"type":"string"},"limit":{"type":"integer"},"projectKey":{"type":"string"},"status":{"type":"string"}}},
   {"name":"localModelStatus","required":[],"properties":{}},
-  {"name":"recallContext","required":["kinds","repoOrTopic","withinHours"],"properties":{"kinds":{"type":"array","items":{"type":"string"}},"repoOrTopic":{"type":"string"},"withinHours":{"type":"integer"}}},
-  {"name":"recentSessions","required":["limit"],"properties":{"limit":{"type":"integer"}}},
-  {"name":"searchSessions","required":["limit","query"],"properties":{"limit":{"type":"integer"},"query":{"type":"string"}}},
+  {"name":"recallContext","required":["repoOrTopic"],"properties":{"kinds":{"type":"array","items":{"type":"string"}},"repoOrTopic":{"type":"string"},"withinHours":{"type":"integer"}}},
+  {"name":"recentSessions","required":[],"properties":{"limit":{"type":"integer"}}},
+  {"name":"searchSessions","required":["query"],"properties":{"limit":{"type":"integer"},"query":{"type":"string"}}},
   {"name":"updateTaskStatus","required":["actor","status","taskId"],"properties":{"actor":{"type":"string"},"blockedReason":{"type":"string"},"status":{"type":"string"},"taskId":{"type":"string"}}}
 ]
