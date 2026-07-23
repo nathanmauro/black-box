@@ -144,10 +144,11 @@ service. Success JSON uses the same field names and ISO-8601 timestamps on both 
 | Claim next | `POST /api/tasks/claim` | `claimNextTask` | `lane`, `agent` → claimed snapshot/event; REST `204` and MCP `null` when none is eligible |
 | Update status | `PATCH /api/tasks/{taskId}` | `updateTaskStatus` | `taskId`, `actor`, `status`, optional `blockedReason` → changed snapshot/event |
 | Complete | `POST /api/tasks/{taskId}/complete` | `completeTask` | `taskId`, claimant `actor`, `source`, `clientSessionId`, `summary`, `openLoops`, `nextAction` → done snapshot/event with `resultHandoffId` |
-| List tasks | `GET /api/tasks` | `listTasks` | optional exact `projectKey`, `lane`, `status`, bounded `limit` → task/spec snapshots |
+| List tasks | `GET /api/tasks` | `listTasks` | optional exact `projectKey`, `lane`, `status`, bounded `limit`; REST also accepts `offset` (default zero, negatives clamp to zero) plus repeatable or comma-separated `excludeStatus` values → task/spec snapshots |
 | Get spec | `GET /api/specs/{specId}` | `getSpec` | `specId` → full frozen spec |
 
-List limits default to 100 and clamp to 1–250. REST task errors have
+List limits default to 100 and clamp to 1–250. REST list offsets default to zero and negative values
+clamp to zero; filtering and deterministic paging are applied in SQLite. REST task errors have
 `{error: {status, type, message}}`. MCP task errors are marked as errors and include a parseable
 `error` object with stable lowercase `type`, uppercase `code`, message, and task/current/target
 status fields when relevant. The domain types are `VALIDATION_FAILED`, `SPEC_NOT_FOUND`,

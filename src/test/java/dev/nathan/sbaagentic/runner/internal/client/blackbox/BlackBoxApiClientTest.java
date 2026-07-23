@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -16,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BlackBoxApiClientTest {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     @Test
     void claimTaskParsesTaskChangeResponse() throws Exception {
@@ -103,7 +108,51 @@ class BlackBoxApiClientTest {
         try {
             assertThat(client(server).listTasks("done", "sdlc:review")).isEmpty();
             assertThat(query.get())
-                    .isEqualTo("status=done&lane=sdlc%3Areview&limit=250");
+                    .isEqualTo("status=done&lane=sdlc%3Areview&limit=250&offset=0");
+        }
+        finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void listTasksByStatusAggregatesEveryPage() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<TaskSnapshot> tasks = tasks(251, TaskStatus.DONE);
+        List<String> queries = new ArrayList<>();
+        server.createContext("/api/tasks", exchange -> {
+            queries.add(exchange.getRequestURI().getRawQuery());
+            respondPage(exchange, tasks);
+        });
+        server.start();
+        try {
+            assertThat(client(server).listTasks("done"))
+                    .extracting(snapshot -> snapshot.task().id())
+                    .containsExactlyElementsOf(tasks.stream().map(snapshot -> snapshot.task().id()).toList());
+            assertThat(queries).containsExactly(
+                    "status=done&limit=250&offset=0",
+                    "status=done&limit=250&offset=250");
+        }
+        finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void nullStatusLaneScanExcludesCancelledAndAggregatesEveryPage() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        List<TaskSnapshot> tasks = tasks(251, TaskStatus.OPEN);
+        List<String> queries = new ArrayList<>();
+        server.createContext("/api/tasks", exchange -> {
+            queries.add(exchange.getRequestURI().getRawQuery());
+            respondPage(exchange, tasks);
+        });
+        server.start();
+        try {
+            assertThat(client(server).listTasks(null, "auto")).hasSize(251);
+            assertThat(queries).containsExactly(
+                    "lane=auto&excludeStatus=cancelled&limit=250&offset=0",
+                    "lane=auto&excludeStatus=cancelled&limit=250&offset=250");
         }
         finally {
             server.stop(0);
@@ -111,9 +160,57 @@ class BlackBoxApiClientTest {
     }
 
     private static BlackBoxApiClient client(HttpServer server) {
-        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         return new BlackBoxApiClient(
-                objectMapper, "http://127.0.0.1:" + server.getAddress().getPort());
+                OBJECT_MAPPER, "http://127.0.0.1:" + server.getAddress().getPort());
+    }
+
+    private static List<TaskSnapshot> tasks(int count, TaskStatus status) {
+        Instant createdAt = Instant.parse("2026-07-15T12:00:00Z");
+        TaskSpec spec = new TaskSpec(
+                "spec-1",
+                "/tmp/project",
+                "Runner story",
+                "# Goal",
+                null,
+                SpecStatus.ACTIVE,
+                "test",
+                createdAt,
+                createdAt);
+        List<TaskSnapshot> tasks = new ArrayList<>();
+        for (int index = 0; index < count; index++) {
+            tasks.add(new TaskSnapshot(new Task(
+                    "task-" + index,
+                    spec.id(),
+                    spec.projectKey(),
+                    "Runner task " + index,
+                    "auto",
+                    status,
+                    0,
+                    "test",
+                    null,
+                    null,
+                    null,
+                    createdAt,
+                    createdAt), spec));
+        }
+        return tasks;
+    }
+
+    private static void respondPage(HttpExchange exchange, List<TaskSnapshot> tasks) throws IOException {
+        int offset = queryInt(exchange, "offset");
+        int fromIndex = Math.min(offset, tasks.size());
+        int toIndex = Math.min(offset + 250, tasks.size());
+        respondJson(exchange, OBJECT_MAPPER.writeValueAsString(tasks.subList(fromIndex, toIndex)));
+    }
+
+    private static int queryInt(HttpExchange exchange, String name) {
+        for (String parameter : exchange.getRequestURI().getRawQuery().split("&")) {
+            String prefix = name + "=";
+            if (parameter.startsWith(prefix)) {
+                return Integer.parseInt(parameter.substring(prefix.length()));
+            }
+        }
+        throw new AssertionError("Missing query parameter: " + name);
     }
 
     private static void respondJson(HttpExchange exchange, String body) throws IOException {
