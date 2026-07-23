@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { privateTmuxEnv } from "./runtime-safety";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -75,12 +76,11 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
     const runnerDbPath = path.join(scratchDir, "runner-e2e.db");
     runnerDaemon = spawn("java", ["-jar", "target/sba-agentic-0.1.0.jar", "runner"], {
       cwd: REPO_ROOT,
-      env: {
-        ...process.env,
+      env: privateTmuxEnv({
         SBA_RUNNER_CONFIG: runnerConfigPath,
         SBA_BASE_URL: baseURL,
         SBA_DATASOURCE_URL: `jdbc:sqlite:${runnerDbPath}`,
-      },
+      }),
     });
     pipeRunnerOutput(runnerDaemon);
 
@@ -119,6 +119,15 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
       await expect(annotations.getByText(/Worktree created/)).toBeVisible({ timeout: 60_000 });
       await expect(annotations.getByText(/Engine 'fake' launched/)).toBeVisible({ timeout: 60_000 });
       await page.screenshot({ path: `${SHOT_DIR}/full-auto-annotations.png`, fullPage: true });
+    });
+
+    await test.step("Worker tmux session lives on the run-private socket only", () => {
+      const sessionName = `bb-run-${autoTaskId.slice(0, 8)}`;
+      execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
+      expect(
+        () => execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore" }),
+        "worker session must not exist on the shared default tmux server",
+      ).toThrow();
     });
 
     await test.step("Tendril opens the ingested worker session", async () => {
@@ -178,6 +187,7 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
       if (!autoTaskId) return;
       execFileSync("tmux", ["kill-session", "-t", `bb-run-${autoTaskId.slice(0, 8)}`], {
         stdio: "ignore",
+        env: privateTmuxEnv(),
       });
     });
     await cleanupStep("scratch repository", () => {

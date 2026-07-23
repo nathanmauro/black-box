@@ -58,6 +58,20 @@ export function assertProtectedRuntimeUnchanged(
   }
 }
 
+/**
+ * Env for any harness process that may start or address tmux sessions. Pinning TMUX_TMPDIR to
+ * the run-private socket directory keeps the whole run on a private tmux server, so harness env
+ * (SBA_BASE_URL, the isolated datasource) never becomes the global environment of the shared
+ * default server that real runner workers later inherit from.
+ */
+export function privateTmuxEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const tmuxTmpDir = process.env.SBA_E2E_TMUX_TMPDIR;
+  if (!tmuxTmpDir) {
+    throw new Error("SBA_E2E_TMUX_TMPDIR must be set before the E2E harness touches tmux");
+  }
+  return { ...process.env, ...overrides, TMUX_TMPDIR: tmuxTmpDir };
+}
+
 export function safetySnapshotPath(tempDir: string): string {
   return path.join(tempDir, "protected-runtime-before.json");
 }

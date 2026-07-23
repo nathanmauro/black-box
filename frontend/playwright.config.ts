@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { assertSafeSeedBaseUrl } from "./src/e2e/seedData";
@@ -20,12 +21,20 @@ assertSafeE2ePaths(tempDir, dbPath);
 process.env.SBA_E2E_TEMP_DIR = tempDir;
 process.env.SBA_E2E_DB_PATH = dbPath;
 process.env.SBA_E2E_RUN_TOKEN = runToken;
+// The run's whole tmux world lives on a private server so harness env never becomes the
+// shared default tmux server's global environment. Unix socket paths cap at ~104 bytes on
+// macOS, so the socket dir is a short sibling of the run temp dir, not inside it.
+const tmuxTmpDir = process.env.SBA_E2E_TMUX_TMPDIR
+  || path.join(os.tmpdir(), `bb-tmux-${runToken.slice(0, 8)}`);
+process.env.SBA_E2E_TMUX_TMPDIR = tmuxTmpDir;
+mkdirSync(tmuxTmpDir, { recursive: true, mode: 0o700 });
 const serverCommand = [
   "sh -c '",
   "set -eu; child=; owned=0; ",
   "cleanup() { ",
   "  code=$?; trap - EXIT INT TERM; ",
   "  if [ -n \"$child\" ] && kill -0 \"$child\" 2>/dev/null; then kill \"$child\" 2>/dev/null || true; wait \"$child\" 2>/dev/null || true; fi; ",
+  "  TMUX_TMPDIR=\"$SBA_E2E_TMUX_TMPDIR\" tmux kill-server 2>/dev/null || true; ",
   "  if [ \"$owned\" = 1 ]; then node frontend/src/e2e/e2ePreflight.mjs cleanup || code=$?; fi; ",
   "  exit \"$code\"; ",
   "}; ",
@@ -58,6 +67,7 @@ export default defineConfig({
     blackBoxE2eDbPath: dbPath,
     blackBoxE2eTempDir: tempDir,
     blackBoxE2eRunToken: runToken,
+    blackBoxE2eTmuxTmpDir: tmuxTmpDir,
   },
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -81,6 +91,8 @@ export default defineConfig({
       SBA_E2E_DB_PATH: dbPath,
       SBA_E2E_TEMP_DIR: tempDir,
       SBA_E2E_RUN_TOKEN: runToken,
+      SBA_E2E_TMUX_TMPDIR: tmuxTmpDir,
+      TMUX_TMPDIR: tmuxTmpDir,
       SBA_PORT: port,
       SBA_BIND_ADDRESS: host,
       SBA_DATASOURCE_URL: `jdbc:sqlite:${dbPath}`,

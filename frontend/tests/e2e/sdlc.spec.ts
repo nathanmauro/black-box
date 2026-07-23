@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { privateTmuxEnv } from "./runtime-safety";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -268,12 +269,11 @@ async function createSdlcStory(
 function startRunner(harness: StoryHarness, baseURL: string): ChildProcess {
   const child = spawn("java", ["-jar", "target/sba-agentic-0.1.0.jar", "runner"], {
     cwd: REPO_ROOT,
-    env: {
-      ...process.env,
+    env: privateTmuxEnv({
       SBA_RUNNER_CONFIG: harness.runnerConfigPath,
       SBA_BASE_URL: baseURL,
       SBA_DATASOURCE_URL: `jdbc:sqlite:${path.join(harness.scratchDir, "runner-e2e.db")}`,
-    },
+    }),
   });
   pipeRunnerOutput(child);
   return child;
@@ -401,11 +401,11 @@ async function cleanupHarness(request: APIRequestContext, harness: StoryHarness)
     await cleanupStep(`tmux session ${taskId}`, () => {
       const sessionName = `bb-run-${taskId.slice(0, 8)}`;
       try {
-        execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore" });
+        execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
       } catch {
         return;
       }
-      execFileSync("tmux", ["kill-session", "-t", sessionName], { stdio: "ignore" });
+      execFileSync("tmux", ["kill-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
     });
     await cleanupStep(`synthetic rollout ${taskId}`, () => {
       fs.rmSync(path.join(os.homedir(), ".codex", "sessions", "blackbox-e2e", `${taskId}.jsonl`), {
