@@ -961,6 +961,7 @@ a {
 .session-children-loading { color: var(--text-dim); font-size: 12px; padding: 6px 10px; margin: 0; }
 .session-row--child { padding-top: 6px; padding-bottom: 6px; }
 .agent-type-badge { display: inline-block; padding: 1px 6px; border: 1px solid var(--border); border-radius: 999px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+.session-lineage { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 
 .empty-detail { display: flex; flex-direction: column; gap: 6px; justify-content: center; align-items: center; height: 100%; color: var(--text-dim); }
 .empty-detail h1 { color: var(--text-bright); margin: 0; }

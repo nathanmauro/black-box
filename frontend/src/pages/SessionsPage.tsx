@@ -122,6 +122,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     () => (dagExpanded() && selectedId() ? selectedId() : undefined),
     (sessionId) => getSessionDag(sessionId),
   );
+  const [lineageDag, { refetch: refetchLineageDag }] = createResource(
+    () => (!searchParams.task && selectedId() ? selectedId() : undefined),
+    (sessionId) => getSessionDag(sessionId),
+  );
+  const lineageDagData = createMemo(() => {
+    if (searchParams.task || lineageDag.error) return null;
+    const dag = lineageDag();
+    return dag && dag.nodes.length > 1 ? dag : null;
+  });
   const railSessionIds = createMemo(() => sessions().map((session) => session.id));
   const [childCounts, { refetch: refetchChildCounts }] = createResource(
     () => railSessionIds().join(","),
@@ -172,6 +181,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         void refetchEvents();
         void refetchChildCounts();
         if (searchParams.task) void refetchTaskContext();
+        if (!searchParams.task) void refetchLineageDag();
       }, 180);
     });
     onCleanup(() => {
@@ -373,6 +383,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                     </Show>
                   </div>
                 </header>
+
+                <Show when={lineageDagData()}>
+                  {(dag) => (
+                    <section class="session-lineage">
+                      <span class="eyebrow">lineage</span>
+                      <DagView dag={dag()} currentSessionId={selectedId()} />
+                    </section>
+                  )}
+                </Show>
 
                 <div class="detail-body">
                   <div class="timeline-pane">

@@ -177,7 +177,6 @@ describe("SessionsPage", () => {
 
     expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
     expect(getTaskDag).not.toHaveBeenCalled();
-    expect(getSessionDag).not.toHaveBeenCalled();
   });
 
   it("renders active task context with an enabled steer box", async () => {
@@ -606,6 +605,37 @@ describe("SessionsPage", () => {
 
     fireEvent.click(expander);
     expect(within(rail).queryByText("code-reviewer", { selector: ".agent-type-badge" })).not.toBeInTheDocument();
+  });
+
+  it("shows the lineage DAG for a session whose DAG has more than one node", async () => {
+    vi.mocked(getSessionDag).mockResolvedValue({
+      nodes: [
+        { id: "session-1", type: "session", label: "Focused session", ref: "/sessions/session-1" },
+        { id: "child-1", type: "session", label: "code-reviewer", ref: "/sessions/child-1" },
+      ],
+      edges: [{ from: "session-1", to: "child-1", type: "spawned" }],
+    });
+
+    render(() => <SessionsPage />);
+
+    expect(await screen.findByText("code-reviewer", { selector: ".dag-label" })).toBeInTheDocument();
+    const lineage = document.querySelector(".session-lineage") as HTMLElement;
+    expect(lineage).toBeInTheDocument();
+    expect(lineage.querySelector('[data-node-id="session-1"]')).toHaveClass("dag-node--current");
+    expect(getSessionDag).toHaveBeenCalledWith("session-1");
+    expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
+  });
+
+  it("keeps the lineage DAG hidden when the session DAG has a single node", async () => {
+    vi.mocked(getSessionDag).mockResolvedValue({
+      nodes: [{ id: "session-1", type: "session", label: "Focused session", ref: "/sessions/session-1" }],
+      edges: [],
+    });
+
+    render(() => <SessionsPage />);
+
+    await waitFor(() => expect(getSessionDag).toHaveBeenCalledWith("session-1"));
+    expect(document.querySelector(".session-lineage")).not.toBeInTheDocument();
   });
 });
 
