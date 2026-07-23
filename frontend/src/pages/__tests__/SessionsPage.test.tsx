@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getProjectSessions, getSession, getSessionDag, getSessionEvents, getSessions, getTaskDag } from "../../lib/api";
-import type { AgentEvent, AgentSession, DagResponse } from "../../lib/api";
+import { getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessions, getTaskDag } from "../../lib/api";
+import type { AgentEvent, AgentSession, DagResponse, SessionLinksResponse } from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
@@ -97,6 +97,21 @@ const events: AgentEvent[] = [
   },
 ];
 
+const childLinks: SessionLinksResponse = {
+  parents: [],
+  children: [
+    {
+      linkId: "link-1",
+      parentSessionId: "session-1",
+      childSessionId: "child-1",
+      linkType: "spawned",
+      taskId: null,
+      createdAt: "2026-06-22T20:05:00Z",
+      session: { id: "child-1", title: "code-reviewer", source: "claude" },
+    },
+  ],
+};
+
 vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
   return {
@@ -125,6 +140,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getSessionEvents: vi.fn(async () => events),
     getTaskDag: vi.fn(async () => ({ nodes: [], edges: [] })),
     getSessionDag: vi.fn(async () => ({ nodes: [], edges: [] })),
+    getSessionLinks: vi.fn(async () => ({ parents: [], children: [] })),
+    getSessionChildCounts: vi.fn(async () => ({})),
   };
 });
 
@@ -144,6 +161,10 @@ beforeEach(() => {
   vi.mocked(getTaskDag).mockResolvedValue({ nodes: [], edges: [] });
   vi.mocked(getSessionDag).mockReset();
   vi.mocked(getSessionDag).mockResolvedValue({ nodes: [], edges: [] });
+  vi.mocked(getSessionLinks).mockReset();
+  vi.mocked(getSessionLinks).mockResolvedValue({ parents: [], children: [] });
+  vi.mocked(getSessionChildCounts).mockReset();
+  vi.mocked(getSessionChildCounts).mockResolvedValue({});
   vi.mocked(sourceFilter.key).mockReset();
   vi.mocked(sourceFilter.key).mockReturnValue("");
   vi.mocked(sourceFilter.matches).mockReset();
@@ -546,6 +567,45 @@ describe("SessionsPage", () => {
     await screen.findAllByText("Use the calmer session layout");
     const row = document.getElementById("event-evt-decision");
     expect(row).toHaveClass("event-flow-row--target");
+  });
+
+  it("renders an expander with the batch child count for parent sessions", async () => {
+    vi.mocked(getSessionChildCounts).mockResolvedValue({ "session-1": 2 });
+
+    render(() => <SessionsPage />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByRole("button", { name: "Toggle 2 subagent sessions" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(getSessionChildCounts).toHaveBeenCalledWith(["session-1", "session-2"]);
+    expect(getSessions).toHaveBeenCalledWith(2_000);
+    const cockpitRow = within(rail).getByText("Cockpit cleanup").closest(".session-row-block") as HTMLElement;
+    expect(within(cockpitRow).queryByRole("button", { name: /subagent sessions/ })).not.toBeInTheDocument();
+    expect(getSessionLinks).not.toHaveBeenCalled();
+  });
+
+  it("lazy-loads child rows with agent type badges on expand and collapses locally", async () => {
+    vi.mocked(getSessionChildCounts).mockResolvedValue({ "session-1": 1 });
+    vi.mocked(getSessionLinks).mockResolvedValue(childLinks);
+
+    render(() => <SessionsPage />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    const expander = await within(rail).findByRole("button", { name: "Toggle 1 subagent sessions" });
+    expect(getSessionLinks).not.toHaveBeenCalled();
+
+    fireEvent.click(expander);
+    await waitFor(() => expect(getSessionLinks).toHaveBeenCalledWith("session-1"));
+    expect(await within(rail).findByText("code-reviewer", { selector: ".agent-type-badge" })).toBeInTheDocument();
+    expect(expander).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(within(rail).getByText("code-reviewer", { selector: ".session-row--child strong" }));
+    expect(navigate).toHaveBeenCalledWith("/sessions/child-1");
+
+    fireEvent.click(expander);
+    expect(within(rail).queryByText("code-reviewer", { selector: ".agent-type-badge" })).not.toBeInTheDocument();
   });
 });
 
