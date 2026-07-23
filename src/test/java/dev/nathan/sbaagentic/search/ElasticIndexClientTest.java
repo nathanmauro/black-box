@@ -281,7 +281,8 @@ class ElasticIndexClientTest {
                 null,
                 observedAt,
                 observedAt,
-                1);
+                1,
+                null);
     }
 
     private static AgentEvent event() {

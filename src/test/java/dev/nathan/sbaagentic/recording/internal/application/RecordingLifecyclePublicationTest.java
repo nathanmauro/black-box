@@ -25,7 +25,7 @@ class RecordingLifecyclePublicationTest {
         Instant observedAt = Instant.parse("2026-07-20T13:00:00Z");
         AgentSession session = new AgentSession(
                 "session-id", "codex", "client-id", "Stop", "/repo", null,
-                observedAt, observedAt, 1);
+                observedAt, observedAt, 1, null);
         AgentEvent event = new AgentEvent(
                 "event-id", session.id(), "codex", "client-id", "turn-1", "Stop",
                 "assistant", "done", null, null, null, Map.of(), observedAt);

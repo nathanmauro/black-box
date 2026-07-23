@@ -94,6 +94,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             // Existing titles predate ranking; protect them so only an AI retitle replaces them.
             jdbcTemplate.update("UPDATE agent_sessions SET title_rank = ?", TitleRank.LEGACY);
         }
+        boolean hasSpawnedBy = columns.stream()
+                .anyMatch(column -> "spawned_by".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasSpawnedBy) {
+            jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN spawned_by TEXT");
+        }
     }
 
     /**
@@ -192,7 +197,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public Optional<AgentSession> findSession(String source, String clientSessionId) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                       FROM agent_sessions
                      WHERE source = ? AND client_session_id = ?
                     """, this::mapSession, source, clientSessionId));
@@ -205,7 +210,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public Optional<AgentSession> findSessionById(String id) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                       FROM agent_sessions
                      WHERE id = ?
                     """, this::mapSession, id));
@@ -217,7 +222,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     public List<AgentSession> recentSessions(int limit) {
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                   FROM agent_sessions
                  ORDER BY last_seen_at DESC
                  LIMIT ?
@@ -226,7 +231,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     public List<AgentSession> recentSessionsMissingSummary(int limit) {
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                   FROM agent_sessions
                  WHERE summary IS NULL OR trim(summary) = ''
                  ORDER BY last_seen_at DESC
@@ -428,7 +433,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 rs.getString("summary"),
                 Instant.parse(rs.getString("started_at")),
                 Instant.parse(rs.getString("last_seen_at")),
-                rs.getLong("event_count"));
+                rs.getLong("event_count"),
+                rs.getString("spawned_by"));
     }
 
     private AgentEvent mapEvent(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

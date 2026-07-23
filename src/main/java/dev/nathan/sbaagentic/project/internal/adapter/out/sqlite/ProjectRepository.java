@@ -122,7 +122,7 @@ public class ProjectRepository implements ProjectCatalogStore {
         args.add(limit);
         return jdbcTemplate.query("""
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
-                       s.started_at, s.last_seen_at, s.event_count
+                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by
                   FROM agent_sessions s
                  WHERE %s IN (%s)
                  ORDER BY s.last_seen_at DESC
@@ -141,7 +141,7 @@ public class ProjectRepository implements ProjectCatalogStore {
         args.addAll(sessionIds);
         return jdbcTemplate.query("""
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
-                       s.started_at, s.last_seen_at, s.event_count
+                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by
                   FROM agent_sessions s
                  WHERE %s IN (%s)
                    AND s.id IN (%s)
@@ -411,7 +411,8 @@ public class ProjectRepository implements ProjectCatalogStore {
                 rs.getString("summary"),
                 Instant.parse(rs.getString("started_at")),
                 Instant.parse(rs.getString("last_seen_at")),
-                rs.getLong("event_count"));
+                rs.getLong("event_count"),
+                rs.getString("spawned_by"));
     }
 
     private ProjectTimelineBlock mapTimelineBlock(ResultSet rs, int rowNum) throws SQLException {
