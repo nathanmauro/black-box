@@ -182,4 +182,83 @@ class EventIngestServiceTest {
                 .findFirst()
                 .orElseThrow();
     }
+
+    @Test
+    void subagentStartMintsChildSessionStampedWithParentAndAgentTypeTitle() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-1:agent-abc",
+                null,
+                "SubagentStart",
+                "agent",
+                null,
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-abc",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "parent-1"),
+                Instant.parse("2026-07-22T12:00:00Z")));
+
+        AgentSession child = repository.findSession("claude", "parent-1:agent-abc").orElseThrow();
+        assertThat(child.spawnedBy()).isEqualTo("parent-1");
+        assertThat(child.title()).isEqualTo("code-reviewer");
+    }
+
+    @Test
+    void subagentStopAloneMintsChildAndLaterEventsNeverClearSpawnedBy() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-2:agent-def",
+                null,
+                "SubagentStop",
+                "assistant",
+                "Reviewed the diff and found two issues.",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-def",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "parent-2"),
+                Instant.parse("2026-07-22T12:01:00Z")));
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-2:agent-def",
+                null,
+                "PostToolUse",
+                "tool",
+                null,
+                "/tmp/project",
+                "shell",
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T12:02:00Z")));
+
+        assertThat(repository.findSession("claude", "parent-2:agent-def").orElseThrow().spawnedBy())
+                .isEqualTo("parent-2");
+    }
+
+    @Test
+    void ordinaryEventsWithoutSubagentMetadataStayUnspawned() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "plain-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Hello",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T12:03:00Z")));
+
+        assertThat(repository.findSession("claude", "plain-parent").orElseThrow().spawnedBy()).isNull();
+    }
 }

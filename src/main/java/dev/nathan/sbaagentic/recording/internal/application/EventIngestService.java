@@ -127,6 +127,10 @@ public class EventIngestService implements EventRecorder {
         if (request.toolName() != null && !request.toolName().isBlank()) {
             return new TitleCandidate(Titles.sanitize(request.toolName() + " via " + request.eventType()), TitleRank.TOOL);
         }
+        Object agentType = request.metadata().get("agentType");
+        if (agentType instanceof String type && !type.isBlank()) {
+            return new TitleCandidate(Titles.sanitize(type), TitleRank.FALLBACK);
+        }
         return new TitleCandidate(Titles.sanitize(request.source() + " " + request.eventType()), TitleRank.FALLBACK);
     }
 

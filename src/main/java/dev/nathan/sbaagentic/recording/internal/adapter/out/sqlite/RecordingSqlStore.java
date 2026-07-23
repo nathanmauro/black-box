@@ -5,6 +5,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -122,15 +123,19 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         // higher-ranked one. ON CONFLICT makes find-or-create race-free: two concurrent first events
         // for the same session can't double-insert or trip the UNIQUE constraint. started_at and
         // event_count are set only on insert, so an existing session keeps its origin and count.
+        // spawned_by is stamped on insert and COALESCE-preserved on conflict: once a session knows
+        // its parent, later events (which carry no parent ref) can never clear or overwrite it.
         String id = UUID.randomUUID().toString();
+        String spawnedBy = spawnedByFrom(request);
         jdbcTemplate.update("""
                 INSERT INTO agent_sessions (
-                    id, source, client_session_id, title, title_rank, cwd, started_at, last_seen_at, event_count
+                    id, source, client_session_id, title, title_rank, cwd, spawned_by, started_at, last_seen_at, event_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT (source, client_session_id) DO UPDATE SET
                     last_seen_at = excluded.last_seen_at,
                     cwd = COALESCE(excluded.cwd, agent_sessions.cwd),
+                    spawned_by = COALESCE(agent_sessions.spawned_by, excluded.spawned_by),
                     title = CASE WHEN excluded.title_rank > agent_sessions.title_rank
                                  THEN excluded.title ELSE agent_sessions.title END,
                     title_rank = CASE WHEN excluded.title_rank > agent_sessions.title_rank
@@ -142,9 +147,28 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 title,
                 titleRank,
                 blankToNull(request.cwd()),
+                spawnedBy,
                 observedAt.toString(),
                 observedAt.toString());
         return findSession(request.source(), request.clientSessionId()).orElseThrow();
+    }
+
+    /**
+     * Lineage stamp: only SubagentStart/SubagentStop events carry a parent reference in metadata.
+     * Event-type matching mirrors {@code EventIngestService}'s normalization (lowercase, alnum only).
+     */
+    private static String spawnedByFrom(EventIngestRequest request) {
+        String type = request.eventType() == null
+                ? ""
+                : request.eventType().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        if (!"subagentstart".equals(type) && !"subagentstop".equals(type)) {
+            return null;
+        }
+        Object parent = request.metadata() == null ? null : request.metadata().get("parentClientSessionId");
+        if (parent instanceof String value && !value.isBlank()) {
+            return value.trim();
+        }
+        return null;
     }
 
     public AgentEvent saveEvent(EventIngestRequest request, AgentSession session, Instant observedAt) {
