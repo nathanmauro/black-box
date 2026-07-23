@@ -51,7 +51,16 @@ export function assertProtectedRuntimeUnchanged(
   if (before.databasePath !== after.databasePath || before.databaseIdentity !== after.databaseIdentity) {
     throw new Error(`Production database identity changed during E2E: ${before.databasePath || "unknown"}`);
   }
-  if (before.syntheticEventRows !== after.syntheticEventRows) {
+  // A null count means the measurement itself failed, not that rows appeared —
+  // reporting it as a leak sends whoever reads the failure hunting for phantom rows.
+  const measuredBoth = before.syntheticEventRows !== null && after.syntheticEventRows !== null;
+  if ((before.syntheticEventRows === null) !== (after.syntheticEventRows === null)) {
+    throw new Error(
+      `Could not verify the production database against synthetic E2E leaks: `
+        + `row count unmeasurable on one side (${before.syntheticEventRows} -> ${after.syntheticEventRows})`,
+    );
+  }
+  if (measuredBoth && before.syntheticEventRows !== after.syntheticEventRows) {
     throw new Error(
       `Synthetic E2E events leaked into the production database: ${before.syntheticEventRows} -> ${after.syntheticEventRows}`,
     );
@@ -126,24 +135,30 @@ function databaseIdentity(databasePath: string): string {
 }
 
 function syntheticEventRows(databasePath: string): number | null {
-  try {
-    const output = execFileSync("sqlite3", ["-readonly", databasePath, `
-      SELECT count(*)
-      FROM agent_events
-      WHERE client_session_id IN (
-        'black-box-e2e-codex-ui-rewrite',
-        'black-box-e2e-codex-frontend-build',
-        'black-box-e2e-claude-design-prompt',
-        'black-box-e2e-codex-release-worktree',
-        'black-box-saga-e2e-completion-session'
-      );
-    `], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const count = Number(output.trim());
-    return Number.isInteger(count) ? count : null;
-  } catch {
-    return null;
+  // The live service checkpoints its WAL while we read; a single attempt can
+  // catch a transient SQLITE_BUSY and turn one unlucky moment into a null.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) execFileSync("sleep", ["0.3"]);
+    try {
+      const output = execFileSync("sqlite3", ["-readonly", databasePath, `
+        SELECT count(*)
+        FROM agent_events
+        WHERE client_session_id IN (
+          'black-box-e2e-codex-ui-rewrite',
+          'black-box-e2e-codex-frontend-build',
+          'black-box-e2e-claude-design-prompt',
+          'black-box-e2e-codex-release-worktree',
+          'black-box-saga-e2e-completion-session'
+        );
+      `], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const count = Number(output.trim());
+      if (Number.isInteger(count)) return count;
+    } catch {
+      // fall through to the next attempt
+    }
   }
+  return null;
 }
