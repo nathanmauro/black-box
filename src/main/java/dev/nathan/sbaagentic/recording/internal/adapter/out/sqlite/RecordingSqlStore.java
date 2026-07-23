@@ -19,6 +19,7 @@ import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
@@ -94,6 +95,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             // Existing titles predate ranking; protect them so only an AI retitle replaces them.
             jdbcTemplate.update("UPDATE agent_sessions SET title_rank = ?", TitleRank.LEGACY);
         }
+        boolean hasSpawnedBy = columns.stream()
+                .anyMatch(column -> "spawned_by".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasSpawnedBy) {
+            jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN spawned_by TEXT");
+        }
     }
 
     /**
@@ -117,15 +123,19 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         // higher-ranked one. ON CONFLICT makes find-or-create race-free: two concurrent first events
         // for the same session can't double-insert or trip the UNIQUE constraint. started_at and
         // event_count are set only on insert, so an existing session keeps its origin and count.
+        // spawned_by is stamped on insert and COALESCE-preserved on conflict: once a session knows
+        // its parent, later events (which carry no parent ref) can never clear or overwrite it.
         String id = UUID.randomUUID().toString();
+        String spawnedBy = spawnedByFrom(request);
         jdbcTemplate.update("""
                 INSERT INTO agent_sessions (
-                    id, source, client_session_id, title, title_rank, cwd, started_at, last_seen_at, event_count
+                    id, source, client_session_id, title, title_rank, cwd, spawned_by, started_at, last_seen_at, event_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT (source, client_session_id) DO UPDATE SET
                     last_seen_at = excluded.last_seen_at,
                     cwd = COALESCE(excluded.cwd, agent_sessions.cwd),
+                    spawned_by = COALESCE(agent_sessions.spawned_by, excluded.spawned_by),
                     title = CASE WHEN excluded.title_rank > agent_sessions.title_rank
                                  THEN excluded.title ELSE agent_sessions.title END,
                     title_rank = CASE WHEN excluded.title_rank > agent_sessions.title_rank
@@ -137,9 +147,27 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 title,
                 titleRank,
                 blankToNull(request.cwd()),
+                spawnedBy,
                 observedAt.toString(),
                 observedAt.toString());
         return findSession(request.source(), request.clientSessionId()).orElseThrow();
+    }
+
+    /**
+     * Lineage stamp: only SubagentStart/SubagentStop events carry a parent reference in metadata.
+     * Event-type matching routes through the shared {@link EventTypes#normalize(String)} so this
+     * agrees with {@code EventIngestService} and {@code SubagentLinkListener}.
+     */
+    private static String spawnedByFrom(EventIngestRequest request) {
+        String type = EventTypes.normalize(request.eventType());
+        if (!"subagentstart".equals(type) && !"subagentstop".equals(type)) {
+            return null;
+        }
+        Object parent = request.metadata() == null ? null : request.metadata().get("parentClientSessionId");
+        if (parent instanceof String value && !value.isBlank()) {
+            return value.trim();
+        }
+        return null;
     }
 
     public AgentEvent saveEvent(EventIngestRequest request, AgentSession session, Instant observedAt) {
@@ -192,7 +220,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public Optional<AgentSession> findSession(String source, String clientSessionId) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                       FROM agent_sessions
                      WHERE source = ? AND client_session_id = ?
                     """, this::mapSession, source, clientSessionId));
@@ -205,7 +233,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public Optional<AgentSession> findSessionById(String id) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                       FROM agent_sessions
                      WHERE id = ?
                     """, this::mapSession, id));
@@ -216,9 +244,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     }
 
     public List<AgentSession> recentSessions(int limit) {
+        return recentSessions(limit, false);
+    }
+
+    public List<AgentSession> recentSessions(int limit, boolean includeChildren) {
+        // Parents-only is the default view everywhere (REST list, MCP recentSessions, CLI):
+        // spawned_by children surface through their parent's links, not the flat rail.
+        String filter = includeChildren ? "" : " WHERE spawned_by IS NULL\n";
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                   FROM agent_sessions
+                """ + filter + """
                  ORDER BY last_seen_at DESC
                  LIMIT ?
                 """, this::mapSession, limit);
@@ -226,7 +262,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     public List<AgentSession> recentSessionsMissingSummary(int limit) {
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                   FROM agent_sessions
                  WHERE summary IS NULL OR trim(summary) = ''
                  ORDER BY last_seen_at DESC
@@ -428,7 +464,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 rs.getString("summary"),
                 Instant.parse(rs.getString("started_at")),
                 Instant.parse(rs.getString("last_seen_at")),
-                rs.getLong("event_count"));
+                rs.getLong("event_count"),
+                rs.getString("spawned_by"));
     }
 
     private AgentEvent mapEvent(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

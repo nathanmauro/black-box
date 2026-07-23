@@ -11,5 +11,6 @@ public record AgentSession(
         String summary,
         Instant startedAt,
         Instant lastSeenAt,
-        long eventCount) {
+        long eventCount,
+        String spawnedBy) {
 }

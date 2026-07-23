@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.workflow.internal.application.port;
 
 import java.util.List;
+import java.util.Map;
 
 import dev.nathan.sbaagentic.workflow.LinkType;
 import dev.nathan.sbaagentic.workflow.SessionLink;
@@ -14,4 +15,6 @@ public interface SessionLinkStore {
     List<SessionLink> linksWhereChild(String sessionId);
 
     List<SessionLink> linksForTaskId(String taskId);
+
+    Map<String, Long> childCounts(List<String> parentSessionIds);
 }

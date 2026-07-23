@@ -5,6 +5,7 @@ export type AgentSession = {
   title: string;
   cwd?: string | null;
   summary?: string | null;
+  spawnedBy?: string | null;
   startedAt: string;
   lastSeenAt: string;
   eventCount: number;
@@ -475,8 +476,10 @@ export class ApiError extends Error {
   }
 }
 
-export function getSessions(limit = 250): Promise<AgentSession[]> {
-  return getJson(`/api/sessions?limit=${encodeURIComponent(limit)}`);
+export function getSessions(limit = 250, includeChildren = false): Promise<AgentSession[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (includeChildren) params.set("includeChildren", "true");
+  return getJson(`/api/sessions?${params.toString()}`);
 }
 
 export function getSession(id: string): Promise<AgentSession> {
@@ -600,6 +603,23 @@ export function createSessionLink(request: CreateSessionLinkRequest): Promise<Se
 
 export function getSessionLinks(sessionId: string): Promise<SessionLinksResponse> {
   return getJson(`/api/sessions/${encodeURIComponent(sessionId)}/links`);
+}
+
+const CHILD_COUNT_BATCH_SIZE = 100;
+
+// Tomcat rejects an oversized request line (default 8KB) before the app ever sees it, and the
+// rail can carry up to 250 session ids — well past that limit as one `?ids=` query string.
+// Chunk into batches of 100 (well under the limit) and merge; ≤100 ids stays a single request.
+export async function getSessionChildCounts(ids: string[]): Promise<Record<string, number>> {
+  if (!ids.length) return Promise.resolve({});
+  const batches: string[][] = [];
+  for (let index = 0; index < ids.length; index += CHILD_COUNT_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + CHILD_COUNT_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    batches.map((batch) => getJson<Record<string, number>>(`/api/session-links/child-counts?ids=${batch.map(encodeURIComponent).join(",")}`)),
+  );
+  return results.reduce<Record<string, number>>((merged, batch) => ({ ...merged, ...batch }), {});
 }
 
 export function getTaskDag(taskId: string): Promise<DagResponse> {

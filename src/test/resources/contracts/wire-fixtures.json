@@ -1,7 +1,7 @@
 {
   "records": {
     "AgentEvent": {"id":"event-1","sessionId":"session-1","source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","toolName":null,"toolInputJson":null,"toolOutputJson":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z"},
-    "AgentSession": {"id":"session-1","source":"codex","clientSessionId":"client-1","title":"Refactor","cwd":"/repo","summary":"summary","startedAt":"2026-07-20T11:00:00Z","lastSeenAt":"2026-07-20T12:00:00Z","eventCount":1},
+    "AgentSession": {"id":"session-1","source":"codex","clientSessionId":"client-1","title":"Refactor","cwd":"/repo","summary":"summary","startedAt":"2026-07-20T11:00:00Z","lastSeenAt":"2026-07-20T12:00:00Z","eventCount":1,"spawnedBy":null},
     "TaskController.AnnotationBody": {"actor":"worker","kind":"progress","text":"halfway","dataJson":{}},
     "TaskController.CompleteTaskBody": {"actor":"worker","source":"codex","clientSessionId":"client-1","summary":"done","openLoops":[],"nextAction":"verify"},
     "TaskController.TaskStatusBody": {"actor":"worker","status":"blocked","blockedReason":"waiting"},

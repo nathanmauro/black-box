@@ -15,6 +15,7 @@ GET /api/recall
 GET /api/search
 GET /api/search/fields
 GET /api/search/values
+GET /api/session-links/child-counts
 GET /api/sessions
 GET /api/sessions/{sessionId}
 GET /api/sessions/{sessionId}/events

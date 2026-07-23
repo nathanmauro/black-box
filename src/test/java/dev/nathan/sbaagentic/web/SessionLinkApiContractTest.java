@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -126,6 +127,40 @@ class SessionLinkApiContractTest {
         mockMvc.perform(get("/api/sessions/child/links"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.parents[0].taskId").value(taskId));
+    }
+
+    @Test
+    void childCountsGroupsChildrenByParentForRequestedIds() throws Exception {
+        mockMvc.perform(post("/api/session-links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(linkJson("parent-a", "child-1", "spawned", null)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/session-links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(linkJson("parent-a", "child-2", "spawned", null)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/session-links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(linkJson("parent-b", "child-3", "continued", null)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/session-links/child-counts")
+                        .param("ids", "parent-a,parent-b,parent-none"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$['parent-a']").value(2))
+                .andExpect(jsonPath("$['parent-b']").value(1))
+                .andExpect(jsonPath("$['parent-none']").doesNotExist());
+    }
+
+    @Test
+    void childCountsRequiresIdsAndReturnsEmptyObjectForBlankIds() throws Exception {
+        mockMvc.perform(get("/api/session-links/child-counts"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("missing_parameter"));
+
+        mockMvc.perform(get("/api/session-links/child-counts").param("ids", ""))
+                .andExpect(status().isOk())
+                .andExpect(content().json("{}"));
     }
 
     private String linkJson(

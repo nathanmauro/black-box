@@ -3,7 +3,10 @@ package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.workflow.LinkType;
@@ -93,6 +96,25 @@ public class SessionLinkRepository implements SessionLinkStore {
                  WHERE task_id = ?
                  ORDER BY %s ASC
                 """.formatted(sortableInstant("created_at")), this::mapLink, taskId);
+    }
+
+    public Map<String, Long> childCounts(List<String> parentSessionIds) {
+        if (parentSessionIds == null || parentSessionIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(", ", Collections.nCopies(parentSessionIds.size(), "?"));
+        Map<String, Long> counts = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                SELECT parent_session_id, COUNT(*) AS child_count
+                  FROM session_links
+                 WHERE parent_session_id IN (%s)
+                 GROUP BY parent_session_id
+                """.formatted(placeholders),
+                rs -> {
+                    counts.put(rs.getString("parent_session_id"), rs.getLong("child_count"));
+                },
+                parentSessionIds.toArray());
+        return counts;
     }
 
     private SessionLink mapLink(ResultSet rs, int rowNum) throws SQLException {

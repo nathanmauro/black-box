@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +33,9 @@ class EventIngestServiceTest {
 
     @Autowired
     MemoryEventReader memory;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void ingestCreatesSessionAndSearchableEvent() {
@@ -181,5 +185,187 @@ class EventIngestServiceTest {
                 .filter(candidate -> candidate.id().equals(response.eventId()))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    @Test
+    void subagentStartMintsChildSessionStampedWithParentAndAgentTypeTitle() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-1:agent-abc",
+                null,
+                "SubagentStart",
+                "agent",
+                null,
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-abc",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "parent-1"),
+                Instant.parse("2026-07-22T12:00:00Z")));
+
+        AgentSession child = repository.findSession("claude", "parent-1:agent-abc").orElseThrow();
+        assertThat(child.spawnedBy()).isEqualTo("parent-1");
+        assertThat(child.title()).isEqualTo("code-reviewer");
+    }
+
+    @Test
+    void subagentStopAloneMintsChildAndLaterEventsNeverClearSpawnedBy() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-2:agent-def",
+                null,
+                "SubagentStop",
+                "assistant",
+                "Reviewed the diff and found two issues.",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-def",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "parent-2"),
+                Instant.parse("2026-07-22T12:01:00Z")));
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "parent-2:agent-def",
+                null,
+                "PostToolUse",
+                "tool",
+                null,
+                "/tmp/project",
+                "shell",
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T12:02:00Z")));
+
+        assertThat(repository.findSession("claude", "parent-2:agent-def").orElseThrow().spawnedBy())
+                .isEqualTo("parent-2");
+    }
+
+    @Test
+    void ordinaryEventsWithoutSubagentMetadataStayUnspawned() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "plain-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Hello",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T12:03:00Z")));
+
+        assertThat(repository.findSession("claude", "plain-parent").orElseThrow().spawnedBy()).isNull();
+    }
+
+    @Test
+    void recentSessionsHidesChildrenByDefaultAndRevealsThemOnRequest() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "list-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Parent prompt",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T14:00:00Z")));
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "list-parent:agent-9",
+                null,
+                "SubagentStart",
+                "agent",
+                null,
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-9",
+                        "agentType", "explorer",
+                        "parentClientSessionId", "list-parent"),
+                Instant.parse("2026-07-22T14:00:01Z")));
+
+        // The one-arg overload is what the MCP recentSessions tool and the CLI call: parents only.
+        assertThat(repository.recentSessions(50))
+                .extracting(AgentSession::clientSessionId)
+                .contains("list-parent")
+                .doesNotContain("list-parent:agent-9");
+        assertThat(repository.recentSessions(50, true))
+                .extracting(AgentSession::clientSessionId)
+                .contains("list-parent", "list-parent:agent-9");
+    }
+
+    @Test
+    void snakeCaseSubagentStopEventStampsLinksAndFinalizesThroughTheSharedNormalizer() {
+        // Regression for a divergent eventType normalizer: RecordingSqlStore.spawnedByFrom and
+        // EventIngestService.isFinalEvent used to strip separators while SubagentLinkListener only
+        // lowercased, so a snake_case "subagent_stop" (which the hook's fixtures explicitly emit)
+        // stamped spawned_by but never created the link or finalized the session. All three effects
+        // now share dev.nathan.sbaagentic.recording.EventTypes.normalize.
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "snake-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Parent prompt",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-23T15:00:00Z")));
+
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "snake-parent:agent-snake",
+                null,
+                "subagent_stop",
+                "assistant",
+                "Reviewed the diff via the snake_case event name.",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-snake",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "snake-parent"),
+                Instant.parse("2026-07-23T15:00:01Z")));
+
+        AgentSession parent = repository.findSession("claude", "snake-parent").orElseThrow();
+        AgentSession child = repository.findSession("claude", "snake-parent:agent-snake").orElseThrow();
+
+        // Effect 1: spawned_by stamped (RecordingSqlStore.spawnedByFrom).
+        assertThat(child.spawnedBy()).isEqualTo("snake-parent");
+
+        // Effect 2: a SPAWNED session_links row created (SubagentLinkListener).
+        List<Map<String, Object>> links = jdbcTemplate.queryForList(
+                "SELECT parent_session_id, child_session_id, link_type "
+                        + "FROM session_links WHERE child_session_id = ?",
+                child.id());
+        assertThat(links).singleElement().satisfies(row -> {
+            assertThat(row.get("parent_session_id")).isEqualTo(parent.id());
+            assertThat(row.get("link_type")).isEqualTo("spawned");
+        });
+
+        // Effect 3: session finalized — SessionStopped fired and the summary path ran
+        // (EventIngestService.isFinalEvent).
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(
+                repository.findSession("claude", "snake-parent:agent-snake").orElseThrow().summary())
+                .contains("Reviewed the diff via the snake_case event name."));
     }
 }

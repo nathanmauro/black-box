@@ -8,9 +8,11 @@ import {
   createTaskAnnotation,
   deleteProjectAlias,
   enqueueTask,
+  getSessionChildCounts,
   getSessionDag,
   getSession,
   getSessionLinks,
+  getSessions,
   getSpec,
   getTaskDag,
   getTaskEvents,
@@ -459,5 +461,79 @@ describe("task API helpers", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dag?sessionId=session%2Fwith%20space");
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+});
+
+describe("subagent lineage API helpers", () => {
+  it("carries the spawnedBy lineage hint on sessions", () => {
+    expectTypeOf<AgentSession>().toMatchTypeOf<{ spawnedBy?: string | null }>();
+  });
+
+  it("requests parent sessions by default and passes includeChildren explicitly", async () => {
+    const fetchMock = stubJson([] as AgentSession[]);
+
+    await getSessions(2_000);
+    await getSessions(50, true);
+
+    const first = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://blackbox.test");
+    expect(first.pathname).toBe("/api/sessions");
+    expect(first.searchParams.get("limit")).toBe("2000");
+    expect(first.searchParams.has("includeChildren")).toBe(false);
+
+    const second = new URL(String(fetchMock.mock.calls[1]?.[0]), "http://blackbox.test");
+    expect(second.searchParams.get("limit")).toBe("50");
+    expect(second.searchParams.get("includeChildren")).toBe("true");
+  });
+
+  it("batches child counts through the session-links child-counts endpoint", async () => {
+    const fetchMock = stubJson<Record<string, number>>({ "session-1": 2 });
+
+    await expect(getSessionChildCounts(["session-1", "session/2"])).resolves.toEqual({ "session-1": 2 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/session-links/child-counts?ids=session-1,session%2F2");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("resolves an empty child-count batch without touching the network", async () => {
+    const fetchMock = stubJson<Record<string, number>>({});
+
+    await expect(getSessionChildCounts([])).resolves.toEqual({});
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("chunks more than 100 ids into multiple requests and merges the results", async () => {
+    // Tomcat's default 8KB request-line limit rejects a single ?ids= query for the rail's up-to-250
+    // sessions; batching keeps every request well under that.
+    const ids = Array.from({ length: 137 }, (_, index) => `session-${index}`);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://blackbox.test");
+      const batchIds = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+      const payload: Record<string, number> = {};
+      for (const id of batchIds) payload[id] = 1;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getSessionChildCounts(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      const url = new URL(String(call[0]), "http://blackbox.test");
+      const batchIds = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+      expect(batchIds.length).toBeLessThanOrEqual(100);
+    }
+    expect(Object.keys(result)).toHaveLength(137);
+    expect(result["session-0"]).toBe(1);
+    expect(result["session-136"]).toBe(1);
+  });
+
+  it("keeps a single request for exactly 100 ids", async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `session-${index}`);
+    const fetchMock = stubJson<Record<string, number>>({ "session-0": 1 });
+
+    await getSessionChildCounts(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

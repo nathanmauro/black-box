@@ -32,6 +32,8 @@ TEXT="$(jq -r '
 ' <<<"$PAYLOAD")"
 TOOL_INPUT="$(jq -c '.tool_input // .toolInput // null' <<<"$PAYLOAD")"
 TOOL_OUTPUT="$(jq -c '.tool_response // .toolResponse // .tool_output // .toolOutput // null' <<<"$PAYLOAD")"
+AGENT_ID="$(jq -r '.agent_id // .agentId // empty' <<<"$PAYLOAD")"
+AGENT_TYPE="$(jq -r '.agent_type // .agentType // empty' <<<"$PAYLOAD")"
 
 # Hook names vary by client and version (for example UserPromptSubmit, user_prompt_submit, and
 # pre-tool-use). Compare a separator-free, case-insensitive key while preserving the original event
@@ -42,7 +44,7 @@ case "$EVENT_KEY" in
   userpromptsubmit|beforesubmitprompt)
     ROLE="user"
     ;;
-  stop|assistantmessage)
+  stop|assistantmessage|subagentstop)
     if [[ -n "${TEXT//[[:space:]]/}" ]]; then
       ROLE="assistant"
     fi
@@ -51,6 +53,21 @@ case "$EVENT_KEY" in
     ROLE="tool"
     ;;
 esac
+
+# Subagent hooks fire in the PARENT session: the payload's session_id is the parent's id and
+# agent_id is unique per spawn. Derive the child session key "<parent>:<agent_id>" and carry the
+# lineage in metadata (SubagentStart keeps the default agent role above). Non-subagent events
+# never enter this branch, so their output stays byte-identical.
+SUBAGENT_METADATA="null"
+if [[ "$EVENT_KEY" == "subagentstart" || "$EVENT_KEY" == "subagentstop" ]] && [[ -n "$AGENT_ID" ]]; then
+  PARENT_SESSION_ID="$SESSION_ID"
+  SESSION_ID="${PARENT_SESSION_ID}:${AGENT_ID}"
+  SUBAGENT_METADATA="$(jq -n \
+    --arg agentId "$AGENT_ID" \
+    --arg agentType "$AGENT_TYPE" \
+    --arg parentClientSessionId "$PARENT_SESSION_ID" \
+    '{agentId: $agentId, agentType: $agentType, parentClientSessionId: $parentClientSessionId}')"
+fi
 
 jq -n \
   --arg source "$SOURCE" \
@@ -64,6 +81,7 @@ jq -n \
   --argjson toolInput "$TOOL_INPUT" \
   --argjson toolOutput "$TOOL_OUTPUT" \
   --argjson raw "$PAYLOAD" \
+  --argjson subagent "$SUBAGENT_METADATA" \
   '{
     source: $source,
     clientSessionId: $clientSessionId,
@@ -75,7 +93,7 @@ jq -n \
     toolName: (if $toolName | length > 0 then $toolName else null end),
     toolInput: $toolInput,
     toolOutput: $toolOutput,
-    metadata: { rawHook: $raw },
+    metadata: ({ rawHook: $raw } + ($subagent // {})),
     observedAt: now | todateiso8601
   }' |
 curl -fsS --max-time 3 \

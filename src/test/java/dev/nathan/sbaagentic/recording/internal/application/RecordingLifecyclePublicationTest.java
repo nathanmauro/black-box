@@ -25,7 +25,7 @@ class RecordingLifecyclePublicationTest {
         Instant observedAt = Instant.parse("2026-07-20T13:00:00Z");
         AgentSession session = new AgentSession(
                 "session-id", "codex", "client-id", "Stop", "/repo", null,
-                observedAt, observedAt, 1);
+                observedAt, observedAt, 1, null);
         AgentEvent event = new AgentEvent(
                 "event-id", session.id(), "codex", "client-id", "turn-1", "Stop",
                 "assistant", "done", null, null, null, Map.of(), observedAt);
@@ -53,5 +53,43 @@ class RecordingLifecyclePublicationTest {
 
         assertThat(sequence).containsExactly("persisted", "recorded", "stopped");
         assertThat(response.indexed()).isTrue();
+    }
+
+    @Test
+    void subagentStopIsAFinalEventThatPublishesSessionStopped() {
+        List<String> sequence = new ArrayList<>();
+        Instant observedAt = Instant.parse("2026-07-22T13:00:00Z");
+        AgentSession session = new AgentSession(
+                "child-session-id", "claude", "parent-1:agent-abc", "code-reviewer", "/repo", null,
+                observedAt, observedAt, 1, "parent-1");
+        AgentEvent event = new AgentEvent(
+                "event-id", session.id(), "claude", "parent-1:agent-abc", null, "SubagentStop",
+                "assistant", "done", null, null, null,
+                Map.of("agentId", "agent-abc", "agentType", "code-reviewer", "parentClientSessionId", "parent-1"),
+                observedAt);
+        RecordingStore store = (request, at, title, titleRank) -> {
+            sequence.add("persisted");
+            return new RecordingStore.Persisted(session, event);
+        };
+        EventIngestService service = new EventIngestService(
+                store,
+                new IngestionProperties(),
+                new RedactionService(new IngestionProperties()),
+                published -> {
+                    if (published instanceof EventRecorded) {
+                        sequence.add("recorded");
+                    }
+                    else if (published instanceof SessionStopped) {
+                        sequence.add("stopped");
+                    }
+                });
+
+        service.ingest(new EventIngestRequest(
+                "claude", "parent-1:agent-abc", null, "SubagentStop", "assistant", "done", "/repo",
+                null, null, null,
+                Map.of("agentId", "agent-abc", "agentType", "code-reviewer", "parentClientSessionId", "parent-1"),
+                observedAt));
+
+        assertThat(sequence).containsExactly("persisted", "recorded", "stopped");
     }
 }

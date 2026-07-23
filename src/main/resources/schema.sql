@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     started_at TEXT NOT NULL,
     last_seen_at TEXT NOT NULL,
     event_count INTEGER NOT NULL DEFAULT 0,
+    spawned_by TEXT,
     UNIQUE (source, client_session_id)
 );
 

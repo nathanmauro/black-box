@@ -8,13 +8,16 @@ import { EventRenderer, ReaderText } from "../components/events/EventRow";
 import {
   getProjectSessions,
   getSession,
+  getSessionChildCounts,
   getSessionDag,
   getSessionEvents,
+  getSessionLinks,
   getSessions,
   getTaskDag,
   type AgentEvent,
   type AgentSession,
   type ProjectSummary,
+  type SessionLink,
 } from "../lib/api";
 import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
 import { projectMatchesSession } from "../lib/projects";
@@ -67,7 +70,12 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const [projectSessions] = createResource(
     () => props.project?.projectKey,
     async (projectKey): Promise<ProjectSessionResult | null> =>
-      projectKey ? { projectKey, sessions: await getProjectSessions(projectKey, 2_000) } : null,
+      projectKey
+        ? {
+            projectKey,
+            sessions: (await getProjectSessions(projectKey, 2_000)).filter((s) => !s.spawnedBy),
+          }
+        : null,
     { initialValue: null as ProjectSessionResult | null },
   );
   const scopedProjectSessions = createMemo(() => {
@@ -114,6 +122,35 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     () => (dagExpanded() && selectedId() ? selectedId() : undefined),
     (sessionId) => getSessionDag(sessionId),
   );
+  const [lineageDag, { refetch: refetchLineageDag }] = createResource(
+    () => (!searchParams.task && selectedId() ? selectedId() : undefined),
+    (sessionId) => getSessionDag(sessionId),
+  );
+  const lineageDagData = createMemo(() => {
+    if (searchParams.task || lineageDag.error) return null;
+    const dag = lineageDag();
+    return dag && dag.nodes.length > 1 ? dag : null;
+  });
+  const railSessionIds = createMemo(() => sessions().map((session) => session.id));
+  const [childCounts, { refetch: refetchChildCounts }] = createResource(
+    () => railSessionIds().join(","),
+    async () => getSessionChildCounts(railSessionIds()),
+    { initialValue: {} as Record<string, number> },
+  );
+  // Reading a resource in the errored state throws — guard the same way lineageDagData guards
+  // lineageDag.error, so a rejected batch (e.g. a chunk request failing) degrades the rail to "no
+  // expanders" instead of crashing the whole session list (there is no ErrorBoundary above this).
+  const childCountsData = createMemo<Record<string, number>>(() => (childCounts.error ? {} : childCounts()));
+  const [expandedParents, setExpandedParents] = createSignal<ReadonlySet<string>>(new Set<string>());
+  const isExpanded = (id: string) => expandedParents().has(id);
+  const toggleExpanded = (id: string) => {
+    setExpandedParents((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [events, { refetch: refetchEvents }] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
     initialValue: [] as AgentEvent[],
   });
@@ -146,7 +183,9 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       window.clearTimeout(refetchTimer);
       refetchTimer = window.setTimeout(() => {
         void refetchEvents();
+        void refetchChildCounts();
         if (searchParams.task) void refetchTaskContext();
+        if (!searchParams.task) void refetchLineageDag();
       }, 180);
     });
     onCleanup(() => {
@@ -264,19 +303,38 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
             <div class="session-rows">
               <For each={filteredSessions()}>
                 {(session) => (
-                  <button
-                    type="button"
-                    classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
-                    onClick={() => selectSession(session.id)}
-                  >
-                    <SourceDot source={session.source} />
-                    <span class="session-row-main">
-                      <strong>{session.title || session.clientSessionId}</strong>
-                      <small>
-                        {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} · {timeAgo(session.lastSeenAt)}
-                      </small>
-                    </span>
-                  </button>
+                  <div class="session-row-block">
+                    <div class="session-row-line">
+                      <button
+                        type="button"
+                        classList={{ "session-row": true, "session-row--active": session.id === selectedId() }}
+                        onClick={() => selectSession(session.id)}
+                      >
+                        <SourceDot source={session.source} />
+                        <span class="session-row-main">
+                          <strong>{session.title || session.clientSessionId}</strong>
+                          <small>
+                            {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} · {timeAgo(session.lastSeenAt)}
+                          </small>
+                        </span>
+                      </button>
+                      <Show when={(childCountsData()[session.id] ?? 0) > 0}>
+                        <button
+                          type="button"
+                          class="session-expander"
+                          aria-expanded={isExpanded(session.id)}
+                          aria-label={`Toggle ${childCountsData()[session.id]} subagent sessions`}
+                          onClick={() => toggleExpanded(session.id)}
+                        >
+                          <span aria-hidden="true">{isExpanded(session.id) ? "−" : "+"}</span>
+                          {childCountsData()[session.id]}
+                        </button>
+                      </Show>
+                    </div>
+                    <Show when={isExpanded(session.id)}>
+                      <SessionChildRows parentId={session.id} onSelect={selectSession} />
+                    </Show>
+                  </div>
                 )}
               </For>
             </div>
@@ -330,6 +388,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                   </div>
                 </header>
 
+                <Show when={lineageDagData()}>
+                  {(dag) => (
+                    <section class="session-lineage">
+                      <span class="eyebrow">lineage</span>
+                      <DagView dag={dag()} currentSessionId={selectedId()} />
+                    </section>
+                  )}
+                </Show>
+
                 <div class="detail-body">
                   <div class="timeline-pane">
                     <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
@@ -378,6 +445,38 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       </section>
     </>
   );
+}
+
+function SessionChildRows(props: { parentId: string; onSelect: (id: string) => void }) {
+  const [links] = createResource(
+    () => props.parentId,
+    async (parentId) => (await getSessionLinks(parentId)).children,
+    { initialValue: [] as SessionLink[] },
+  );
+
+  return (
+    <div class="session-children" role="group" aria-label="Subagent sessions">
+      <Show when={!links.loading} fallback={<p class="session-children-loading">Loading subagents…</p>}>
+        <For each={links()}>
+          {(link) => (
+            <button type="button" class="session-row session-row--child" onClick={() => props.onSelect(link.session.id)}>
+              <SourceDot source={link.session.source} />
+              <span class="session-row-main">
+                <strong>{link.session.title.trim() || link.session.id}</strong>
+                <small>
+                  <span class="agent-type-badge">{agentTypeLabel(link)}</span>
+                </small>
+              </span>
+            </button>
+          )}
+        </For>
+      </Show>
+    </div>
+  );
+}
+
+function agentTypeLabel(link: SessionLink): string {
+  return link.session.title.trim() || "subagent";
 }
 
 function filterSessions<T extends { source: string; title?: string | null; clientSessionId: string; cwd?: string | null }>(

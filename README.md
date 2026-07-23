@@ -340,12 +340,45 @@ Black Box does not capture agent sessions until you opt in.
 
 - `scripts/hooks/sba-agent-hook.sh` normalizes supported Claude Code or Codex hook payloads and posts
   them to `/api/events`. Prompt, final-response, and tool hooks receive semantic `user`, `assistant`,
-  and `tool` roles so Browse can reconstruct the recorded conversation.
+  and `tool` roles so Browse can reconstruct the recorded conversation. `SubagentStart` and
+  `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
+  the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
+  can nest subagents under their parent.
 - `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code
   `SessionStart` and prints a bounded context block.
 
 Codex sessions should call `recallContext` through MCP near the start of relevant work. A short
 instruction in `AGENTS.md` works well.
+
+### Subagent lineage (Claude Code)
+
+`SubagentStart`/`SubagentStop` hooks fire in the parent session; the bridge derives the child
+session identity from `session_id` + `agent_id`. Registration is user-global (not in-repo): add
+both events to `~/.claude/settings.json` with a wildcard matcher, alongside any existing hook
+entries, passing `claude` as the source argument:
+
+```json
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "/ABSOLUTE/PATH/TO/sba-agentic/scripts/hooks/sba-agent-hook.sh claude" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "command": "/ABSOLUTE/PATH/TO/sba-agentic/scripts/hooks/sba-agent-hook.sh claude" }
+        ]
+      }
+    ]
+  }
+}
+```
 
 Hook smoke test:
 
@@ -353,6 +386,9 @@ Hook smoke test:
 scripts/test-agent-hook.sh
 
 printf '{"hook_event_name":"UserPromptSubmit","session_id":"hook-test","prompt":"hello","cwd":"%s"}' "$PWD" |
+  SBA_AGENT_SOURCE=manual scripts/hooks/sba-agent-hook.sh
+
+printf '{"hook_event_name":"SubagentStart","session_id":"hook-test","agent_type":"Explore","agent_id":"hook-test-agent"}' |
   SBA_AGENT_SOURCE=manual scripts/hooks/sba-agent-hook.sh
 ```
 

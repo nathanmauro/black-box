@@ -41,6 +41,9 @@ const apiMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getSessions: vi.fn(),
   getSessionEvents: vi.fn(),
+  getSessionChildCounts: vi.fn(),
+  getSessionLinks: vi.fn(),
+  getSessionDag: vi.fn(),
   getEventFeed: vi.fn(),
   getProjects: vi.fn(),
   getProjectSessions: vi.fn(),
@@ -79,6 +82,9 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getSession: apiMocks.getSession,
     getSessions: apiMocks.getSessions,
     getSessionEvents: apiMocks.getSessionEvents,
+    getSessionChildCounts: apiMocks.getSessionChildCounts,
+    getSessionLinks: apiMocks.getSessionLinks,
+    getSessionDag: apiMocks.getSessionDag,
     getEventFeed: apiMocks.getEventFeed,
     getProjects: apiMocks.getProjects,
     getProjectSessions: apiMocks.getProjectSessions,
@@ -114,6 +120,12 @@ beforeEach(() => {
   apiMocks.getSession.mockImplementation(async (id: string) => sessions.find((session) => session.id === id));
   apiMocks.getSessionEvents.mockReset();
   apiMocks.getSessionEvents.mockResolvedValue([]);
+  apiMocks.getSessionChildCounts.mockReset();
+  apiMocks.getSessionChildCounts.mockResolvedValue({});
+  apiMocks.getSessionLinks.mockReset();
+  apiMocks.getSessionLinks.mockResolvedValue({ parents: [], children: [] });
+  apiMocks.getSessionDag.mockReset();
+  apiMocks.getSessionDag.mockResolvedValue({ nodes: [], edges: [] });
   apiMocks.getEventFeed.mockReset();
   apiMocks.getEventFeed.mockResolvedValue({
     limit: 100,

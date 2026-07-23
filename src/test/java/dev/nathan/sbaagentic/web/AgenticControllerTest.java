@@ -1052,4 +1052,48 @@ class AgenticControllerTest {
         }
         return values;
     }
+
+    @Test
+    void sessionListHidesSubagentChildrenUnlessIncludeChildrenIsSet() throws Exception {
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "lineage-parent",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "Spawn a reviewer subagent.",
+                                  "observedAt": "2026-07-02T12:10:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude",
+                                  "clientSessionId": "lineage-parent:agent-1",
+                                  "eventType": "SubagentStart",
+                                  "role": "agent",
+                                  "metadata": {
+                                    "agentId": "agent-1",
+                                    "agentType": "code-reviewer",
+                                    "parentClientSessionId": "lineage-parent"
+                                  },
+                                  "observedAt": "2026-07-02T12:10:01Z"
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/sessions").param("limit", "200"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent')].title").value(hasItem("Spawn a reviewer subagent.")))
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent:agent-1')]").isEmpty());
+
+        mockMvc.perform(get("/api/sessions").param("limit", "200").param("includeChildren", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent:agent-1')].spawnedBy")
+                        .value(hasItem("lineage-parent")));
+    }
 }
