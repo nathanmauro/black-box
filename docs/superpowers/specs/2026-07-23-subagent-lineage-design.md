@@ -131,8 +131,11 @@ new field, param, and endpoint. Architecture ratchet must stay green.
   self-describing key (parent recoverable, link repairable).
 - **Hook not registered at all:** nothing changes — subagent events simply
   don't arrive, exactly today's behavior.
-- **Nested spawns** (a child key becoming someone's parent) compose naturally:
-  keys concatenate, links chain, the DAG walker already handles depth.
+- **Nested spawns:** single-level lineage is guaranteed. A subagent spawning
+  its own subagent attaches to the top-level session, not the intermediate
+  child — hook payloads carry the root `session_id`, so keys never concatenate
+  past one level. True multi-level nesting would need Claude Code to expose the
+  spawning agent's identity in the payload; out of scope here.
 
 ## Testing
 
