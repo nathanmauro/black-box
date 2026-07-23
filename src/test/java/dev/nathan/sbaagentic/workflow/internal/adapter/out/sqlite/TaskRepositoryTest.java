@@ -190,6 +190,52 @@ class TaskRepositoryTest {
     }
 
     @Test
+    void listTasksExcludesStatusesInSql() {
+        TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
+        Task open = repository.enqueueTask(spec.id(), "open", "codex", 5, "manual").snapshot().task();
+        Task done = repository.enqueueTask(spec.id(), "done", "codex", 5, "manual").snapshot().task();
+        Task cancelled = repository.enqueueTask(spec.id(), "cancelled", "codex", 5, "manual")
+                .snapshot().task();
+        jdbcTemplate.update("UPDATE tasks SET status = 'done' WHERE id = ?", done.id());
+        jdbcTemplate.update("UPDATE tasks SET status = 'cancelled' WHERE id = ?", cancelled.id());
+
+        assertThat(repository.listTasks(new TaskQuery(
+                        null,
+                        "codex",
+                        null,
+                        List.of(TaskStatus.DONE, TaskStatus.CANCELLED),
+                        10,
+                        0)))
+                .extracting(snapshot -> snapshot.task().id())
+                .containsExactly(open.id());
+    }
+
+    @Test
+    void listTasksPaginatesStableTiesWithoutDuplicatesOrGaps() {
+        TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
+        List<Task> tasks = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            tasks.add(repository.enqueueTask(spec.id(), "task-" + index, "codex", 5, "manual")
+                    .snapshot().task());
+        }
+        jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:00:00Z'");
+
+        List<String> expected = tasks.stream()
+                .map(Task::id)
+                .sorted()
+                .toList();
+        List<String> actual = new ArrayList<>();
+        for (int offset = 0; offset < 7; offset += 3) {
+            repository.listTasks(new TaskQuery(null, "codex", null, List.of(), 3, offset)).stream()
+                    .map(snapshot -> snapshot.task().id())
+                    .forEach(actual::add);
+        }
+
+        assertThat(actual).containsExactlyElementsOf(expected);
+        assertThat(actual).doesNotHaveDuplicates();
+    }
+
+    @Test
     void pooledConnectionsEnforceForeignKeysAndRetainBusyTimeout() throws Exception {
         List<Connection> connections = new ArrayList<>();
         try {

@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.in.web;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -66,14 +67,16 @@ public class TaskController {
             @RequestParam(required = false) String projectKey,
             @RequestParam(required = false) String lane,
             @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "100") int limit) {
+            @RequestParam(required = false) List<String> excludeStatus,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
         return taskService.listTasks(new TaskQuery(
-                        optionalFilter(projectKey),
-                        optionalFilter(lane),
-                        optionalStatus(status)))
-                .stream()
-                .limit(safeTaskLimit(limit))
-                .toList();
+                optionalFilter(projectKey),
+                optionalFilter(lane),
+                optionalStatus(status),
+                optionalStatuses(excludeStatus),
+                safeTaskLimit(limit),
+                Math.max(0, offset)));
     }
 
     @PostMapping("/tasks/claim")
@@ -150,6 +153,19 @@ public class TaskController {
 
     private static TaskStatus optionalStatus(String value) {
         return value == null || value.isBlank() ? null : parseStatus(value);
+    }
+
+    private static List<TaskStatus> optionalStatuses(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .flatMap(value -> Arrays.stream(value.split(",")))
+                .map(String::strip)
+                .filter(value -> !value.isEmpty())
+                .map(TaskController::parseStatus)
+                .distinct()
+                .toList();
     }
 
     private static TaskStatus requireStatus(String value) {
