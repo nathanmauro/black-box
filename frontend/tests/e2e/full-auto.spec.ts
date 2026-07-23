@@ -185,10 +185,13 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
     });
     await cleanupStep("runner tmux session", () => {
       if (!autoTaskId) return;
-      execFileSync("tmux", ["kill-session", "-t", `bb-run-${autoTaskId.slice(0, 8)}`], {
-        stdio: "ignore",
-        env: privateTmuxEnv(),
-      });
+      const sessionName = `bb-run-${autoTaskId.slice(0, 8)}`;
+      try {
+        execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
+      } catch {
+        return;
+      }
+      execFileSync("tmux", ["kill-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
     });
     await cleanupStep("scratch repository", () => {
       if (scratchDir) fs.rmSync(scratchDir, { recursive: true, force: true });
@@ -200,7 +203,13 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
       if (rolloutFilePath) fs.rmSync(rolloutFilePath, { force: true });
     });
     await cleanupStep("synthetic Codex rollout directory", () => {
-      if (rolloutFilePath) fs.rmdirSync(path.dirname(rolloutFilePath));
+      // The sessions dir is shared across runs — a crashed run's leftover rollout
+      // must not turn this run's cleanup into an ENOTEMPTY warning.
+      if (!rolloutFilePath) return;
+      const rolloutDir = path.dirname(rolloutFilePath);
+      if (fs.existsSync(rolloutDir) && fs.readdirSync(rolloutDir).length === 0) {
+        fs.rmdirSync(rolloutDir);
+      }
     });
   }
 });
