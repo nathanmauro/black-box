@@ -8,9 +8,11 @@ import {
   createTaskAnnotation,
   deleteProjectAlias,
   enqueueTask,
+  getSessionChildCounts,
   getSessionDag,
   getSession,
   getSessionLinks,
+  getSessions,
   getSpec,
   getTaskDag,
   getTaskEvents,
@@ -459,5 +461,44 @@ describe("task API helpers", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/dag?sessionId=session%2Fwith%20space");
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+});
+
+describe("subagent lineage API helpers", () => {
+  it("carries the spawnedBy lineage hint on sessions", () => {
+    expectTypeOf<AgentSession>().toMatchTypeOf<{ spawnedBy?: string | null }>();
+  });
+
+  it("requests parent sessions by default and passes includeChildren explicitly", async () => {
+    const fetchMock = stubJson([] as AgentSession[]);
+
+    await getSessions(2_000);
+    await getSessions(50, true);
+
+    const first = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://blackbox.test");
+    expect(first.pathname).toBe("/api/sessions");
+    expect(first.searchParams.get("limit")).toBe("2000");
+    expect(first.searchParams.has("includeChildren")).toBe(false);
+
+    const second = new URL(String(fetchMock.mock.calls[1]?.[0]), "http://blackbox.test");
+    expect(second.searchParams.get("limit")).toBe("50");
+    expect(second.searchParams.get("includeChildren")).toBe("true");
+  });
+
+  it("batches child counts through the session-links child-counts endpoint", async () => {
+    const fetchMock = stubJson<Record<string, number>>({ "session-1": 2 });
+
+    await expect(getSessionChildCounts(["session-1", "session/2"])).resolves.toEqual({ "session-1": 2 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/session-links/child-counts?ids=session-1,session%2F2");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("resolves an empty child-count batch without touching the network", async () => {
+    const fetchMock = stubJson<Record<string, number>>({});
+
+    await expect(getSessionChildCounts([])).resolves.toEqual({});
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
