@@ -81,7 +81,10 @@ The hook makes exactly one POST per event — the host-turn contract is unchange
   unchanged (parent ref rides in `metadata`).
 - `/api/sessions` and session listing default to `WHERE spawned_by IS NULL`;
   additive `includeChildren=true` param restores the flat view. The `memory`
-  module's `recentSessions`/`searchSessions` inherit the same default.
+  module's `recentSessions` inherits the same parents-only default (it calls
+  the one-arg `RecordingCatalog.recentSessions`); `searchSessions` intentionally
+  routes through `memorySearch` unfiltered, so free-text search still surfaces
+  child-session hits — that recall is correct, not a gap.
 - Final-event detection adds `subagentstop`.
 
 **workflow** (`allowedDependencies = "recording"` — unchanged):
