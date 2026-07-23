@@ -57,6 +57,16 @@ describe("theme conversation navigator contracts", () => {
   });
 });
 
+describe("theme session lineage contracts", () => {
+  it("bounds the DAG viewport so the transcript remains usable below it", () => {
+    expectRule(".session-lineage .dag-stage", [
+      "height: clamp(180px, 34vh, 300px);",
+      "min-height: 0;",
+    ]);
+    expectRule(".dag-stage", ["overflow: auto;"]);
+  });
+});
+
 describe("theme route overflow contracts", () => {
   it("keeps search results and recall cards from widening the document", () => {
     expectRule(".page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
