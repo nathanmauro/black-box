@@ -240,6 +240,13 @@ external REST client of Black Box:
 6. **Complete.** `completeTask` records the usual recallable Handoff with the summary, branch, pull
    request, merge state, open loops, and next action.
 
+On daemon restart, crash recovery resets runner-owned tasks whose tmux session is gone. A surviving
+session is adopted only when its deterministic worktree still exists beneath a currently configured
+repo: the runner registers it for steering, resumes completion polling on the worker pool from the
+task's claim/update time, and applies an already-posted or later `done`/`blocked` report. If the
+adopted session ends without a report, or its worktree cannot be found safely, the task returns to
+`open` with a recovery annotation.
+
 Fail-closed behavior is the invariant: an unknown repo, a danger flag, a red check, or a missing
 credential degrades the run to local-only or blocked state, never to a risky action.
 

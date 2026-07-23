@@ -201,6 +201,16 @@ public final class WorkerRunExecutor {
             log.warn("Worker session ingest failed for task {}", task.id(), ex);
         }
 
+        return finalizeCompletion(result, tmuxSessionName, runStart);
+    }
+
+    /**
+     * Maps the deterministic completion detector contract into the outcome consumed by every
+     * runner stage. Crash recovery uses the same mapping when it re-attaches to a surviving run.
+     */
+    public static WorkerRunResult finalizeCompletion(
+            CompletionResult result, String tmuxSessionName, Instant startedAt) {
+        Objects.requireNonNull(result, "Completion result is required");
         return new WorkerRunResult(
                 switch (result.outcome()) {
                     case DONE -> WorkerOutcome.DONE;
@@ -209,7 +219,15 @@ public final class WorkerRunExecutor {
                 },
                 result.detail(),
                 tmuxSessionName,
-                runStart);
+                startedAt);
+    }
+
+    public static Duration runTimeout() {
+        return RUN_TIMEOUT;
+    }
+
+    public static Duration completionPollInterval() {
+        return COMPLETION_POLL_INTERVAL;
     }
 
     public void finish(String taskId, String tmuxSessionName) {

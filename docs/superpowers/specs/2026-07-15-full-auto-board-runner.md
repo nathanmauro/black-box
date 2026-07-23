@@ -153,6 +153,10 @@ task is cancelled. (A "revise & resubmit" prefill on blocked cards is a stretch 
   posts a `progress` annotation confirming injection.
 - **Crash recovery**: on startup the runner reconciles: tasks it owns (claimedBy =
   its actor id) whose tmux session is gone → reset to `open` with an annotation;
+  surviving sessions with a worktree under a configured repo are registered and watched
+  asynchronously from the task claim/update timestamp so reports posted during downtime are
+  honored; an adopted session that ends without a report, or has no safe worktree, resets to
+  `open` with an annotation;
   orphaned worktrees pruned only when clean, else annotated + left for inspection.
 
 ## Server additions (storage + broadcast only)

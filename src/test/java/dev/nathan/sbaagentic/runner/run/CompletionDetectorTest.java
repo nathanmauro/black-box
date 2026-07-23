@@ -35,6 +35,7 @@ class CompletionDetectorTest {
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.DONE);
         assertThat(result.detail()).isEqualTo("green");
+        assertThat(result.reported()).isTrue();
     }
 
     @Test
@@ -53,6 +54,7 @@ class CompletionDetectorTest {
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.BLOCKED);
         assertThat(result.detail()).isEqualTo("need human input");
+        assertThat(result.reported()).isTrue();
     }
 
     @Test
@@ -70,6 +72,7 @@ class CompletionDetectorTest {
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.BLOCKED);
         assertThat(result.detail()).isEqualTo("tmux session ended without a completion report");
+        assertThat(result.reported()).isFalse();
     }
 
     @Test
