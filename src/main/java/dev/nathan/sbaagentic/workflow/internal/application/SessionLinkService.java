@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.workflow.internal.application;
 
 import java.util.List;
+import java.util.Map;
 
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
@@ -83,6 +84,21 @@ public class SessionLinkService implements SessionLineageOperations {
     @Override
     public List<SessionLink> linksForTask(String taskId) {
         return repository.linksForTaskId(taskId);
+    }
+
+    @Override
+    public Map<String, Long> childCounts(List<String> sessionIds) {
+        if (sessionIds == null) {
+            return Map.of();
+        }
+        List<String> ids = sessionIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return repository.childCounts(ids);
     }
 
     private SessionLinkView view(SessionLink link, String otherSessionId) {
