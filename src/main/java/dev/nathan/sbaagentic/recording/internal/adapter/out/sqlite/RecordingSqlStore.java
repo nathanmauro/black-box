@@ -5,7 +5,6 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,6 +19,7 @@ import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
@@ -155,12 +155,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     /**
      * Lineage stamp: only SubagentStart/SubagentStop events carry a parent reference in metadata.
-     * Event-type matching mirrors {@code EventIngestService}'s normalization (lowercase, alnum only).
+     * Event-type matching routes through the shared {@link EventTypes#normalize(String)} so this
+     * agrees with {@code EventIngestService} and {@code SubagentLinkListener}.
      */
     private static String spawnedByFrom(EventIngestRequest request) {
-        String type = request.eventType() == null
-                ? ""
-                : request.eventType().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        String type = EventTypes.normalize(request.eventType());
         if (!"subagentstart".equals(type) && !"subagentstop".equals(type)) {
             return null;
         }

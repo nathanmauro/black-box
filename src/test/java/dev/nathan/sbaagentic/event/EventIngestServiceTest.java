@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +33,9 @@ class EventIngestServiceTest {
 
     @Autowired
     MemoryEventReader memory;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void ingestCreatesSessionAndSearchableEvent() {
@@ -302,5 +306,66 @@ class EventIngestServiceTest {
         assertThat(repository.recentSessions(50, true))
                 .extracting(AgentSession::clientSessionId)
                 .contains("list-parent", "list-parent:agent-9");
+    }
+
+    @Test
+    void snakeCaseSubagentStopEventStampsLinksAndFinalizesThroughTheSharedNormalizer() {
+        // Regression for a divergent eventType normalizer: RecordingSqlStore.spawnedByFrom and
+        // EventIngestService.isFinalEvent used to strip separators while SubagentLinkListener only
+        // lowercased, so a snake_case "subagent_stop" (which the hook's fixtures explicitly emit)
+        // stamped spawned_by but never created the link or finalized the session. All three effects
+        // now share dev.nathan.sbaagentic.recording.EventTypes.normalize.
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "snake-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Parent prompt",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-23T15:00:00Z")));
+
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "snake-parent:agent-snake",
+                null,
+                "subagent_stop",
+                "assistant",
+                "Reviewed the diff via the snake_case event name.",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-snake",
+                        "agentType", "code-reviewer",
+                        "parentClientSessionId", "snake-parent"),
+                Instant.parse("2026-07-23T15:00:01Z")));
+
+        AgentSession parent = repository.findSession("claude", "snake-parent").orElseThrow();
+        AgentSession child = repository.findSession("claude", "snake-parent:agent-snake").orElseThrow();
+
+        // Effect 1: spawned_by stamped (RecordingSqlStore.spawnedByFrom).
+        assertThat(child.spawnedBy()).isEqualTo("snake-parent");
+
+        // Effect 2: a SPAWNED session_links row created (SubagentLinkListener).
+        List<Map<String, Object>> links = jdbcTemplate.queryForList(
+                "SELECT parent_session_id, child_session_id, link_type "
+                        + "FROM session_links WHERE child_session_id = ?",
+                child.id());
+        assertThat(links).singleElement().satisfies(row -> {
+            assertThat(row.get("parent_session_id")).isEqualTo(parent.id());
+            assertThat(row.get("link_type")).isEqualTo("spawned");
+        });
+
+        // Effect 3: session finalized — SessionStopped fired and the summary path ran
+        // (EventIngestService.isFinalEvent).
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(
+                repository.findSession("claude", "snake-parent:agent-snake").orElseThrow().summary())
+                .contains("Reviewed the diff via the snake_case event name."));
     }
 }

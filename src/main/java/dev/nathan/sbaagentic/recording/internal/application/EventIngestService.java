@@ -9,6 +9,7 @@ import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.TitleRank;
@@ -66,8 +67,7 @@ public class EventIngestService implements EventRecorder {
     }
 
     private static boolean isFinalEvent(String eventType) {
-        return eventType != null
-                && FINAL_EVENT_TYPES.contains(eventType.trim().toLowerCase(Locale.ROOT));
+        return FINAL_EVENT_TYPES.contains(EventTypes.normalize(eventType));
     }
 
     private EventIngestRequest normalize(EventIngestRequest request) {
@@ -105,7 +105,7 @@ public class EventIngestService implements EventRecorder {
     }
 
     private String normalizeEventType(String eventType) {
-        return eventType.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        return EventTypes.normalize(eventType);
     }
 
     @SuppressWarnings("unchecked")

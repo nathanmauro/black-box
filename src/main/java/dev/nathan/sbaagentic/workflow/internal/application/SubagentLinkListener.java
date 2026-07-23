@@ -1,12 +1,12 @@
 package dev.nathan.sbaagentic.workflow.internal.application;
 
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventRecorded;
+import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.workflow.LinkDomainException;
@@ -69,10 +69,7 @@ public class SubagentLinkListener {
     }
 
     private static boolean isSubagentLifecycleEvent(String eventType) {
-        if (eventType == null) {
-            return false;
-        }
-        String normalized = eventType.toLowerCase(Locale.ROOT);
+        String normalized = EventTypes.normalize(eventType);
         return normalized.equals("subagentstart") || normalized.equals("subagentstop");
     }
 
