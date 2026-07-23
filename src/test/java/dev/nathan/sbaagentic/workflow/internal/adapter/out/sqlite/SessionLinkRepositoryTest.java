@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 
+import java.util.List;
+import java.util.Map;
+
 import dev.nathan.sbaagentic.workflow.LinkType;
 import dev.nathan.sbaagentic.workflow.SessionLink;
 
@@ -74,6 +77,24 @@ class SessionLinkRepositoryTest {
         repository.createLink("parent-d", "child-d", LinkType.SPAWNED, null);
 
         assertThat(repository.linksForTaskId("task-1")).containsExactly(first, second);
+    }
+
+    @Test
+    void childCountsGroupsLinksByRequestedParents() {
+        repository.createLink("parent-a", "child-1", LinkType.SPAWNED, null);
+        repository.createLink("parent-a", "child-2", LinkType.CONTINUED, null);
+        repository.createLink("parent-b", "child-3", LinkType.SPAWNED, "task-1");
+        repository.createLink("parent-c", "child-4", LinkType.SPAWNED, null);
+
+        assertThat(repository.childCounts(List.of("parent-a", "parent-b", "parent-missing")))
+                .containsExactlyInAnyOrderEntriesOf(Map.of("parent-a", 2L, "parent-b", 1L));
+    }
+
+    @Test
+    void childCountsWithoutIdsReturnsEmptyMap() {
+        repository.createLink("parent-a", "child-1", LinkType.SPAWNED, null);
+
+        assertThat(repository.childCounts(List.of())).isEmpty();
     }
 
     @Test
