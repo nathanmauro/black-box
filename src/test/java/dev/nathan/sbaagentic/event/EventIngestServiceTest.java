@@ -261,4 +261,46 @@ class EventIngestServiceTest {
 
         assertThat(repository.findSession("claude", "plain-parent").orElseThrow().spawnedBy()).isNull();
     }
+
+    @Test
+    void recentSessionsHidesChildrenByDefaultAndRevealsThemOnRequest() {
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "list-parent",
+                null,
+                "UserPromptSubmit",
+                "user",
+                "Parent prompt",
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(),
+                Instant.parse("2026-07-22T14:00:00Z")));
+        ingestService.ingest(new EventIngestRequest(
+                "claude",
+                "list-parent:agent-9",
+                null,
+                "SubagentStart",
+                "agent",
+                null,
+                "/tmp/project",
+                null,
+                null,
+                null,
+                Map.of(
+                        "agentId", "agent-9",
+                        "agentType", "explorer",
+                        "parentClientSessionId", "list-parent"),
+                Instant.parse("2026-07-22T14:00:01Z")));
+
+        // The one-arg overload is what the MCP recentSessions tool and the CLI call: parents only.
+        assertThat(repository.recentSessions(50))
+                .extracting(AgentSession::clientSessionId)
+                .contains("list-parent")
+                .doesNotContain("list-parent:agent-9");
+        assertThat(repository.recentSessions(50, true))
+                .extracting(AgentSession::clientSessionId)
+                .contains("list-parent", "list-parent:agent-9");
+    }
 }

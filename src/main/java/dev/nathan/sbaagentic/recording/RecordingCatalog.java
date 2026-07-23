@@ -12,6 +12,9 @@ public interface RecordingCatalog {
 
     List<AgentSession> recentSessions(int limit);
 
+    /** Flat listing that also includes subagent children; {@link #recentSessions(int)} hides them. */
+    List<AgentSession> recentSessions(int limit, boolean includeChildren);
+
     List<AgentSession> recentSessionsMissingSummary(int limit);
 
     List<AgentEvent> eventsForSession(String sessionId, int limit);

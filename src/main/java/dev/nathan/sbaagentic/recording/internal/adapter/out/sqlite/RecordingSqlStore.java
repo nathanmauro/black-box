@@ -245,9 +245,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     }
 
     public List<AgentSession> recentSessions(int limit) {
+        return recentSessions(limit, false);
+    }
+
+    public List<AgentSession> recentSessions(int limit, boolean includeChildren) {
+        // Parents-only is the default view everywhere (REST list, MCP recentSessions, CLI):
+        // spawned_by children surface through their parent's links, not the flat rail.
+        String filter = includeChildren ? "" : " WHERE spawned_by IS NULL\n";
         return jdbcTemplate.query("""
                 SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
                   FROM agent_sessions
+                """ + filter + """
                  ORDER BY last_seen_at DESC
                  LIMIT ?
                 """, this::mapSession, limit);

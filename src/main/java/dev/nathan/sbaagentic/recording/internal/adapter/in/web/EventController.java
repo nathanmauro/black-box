@@ -60,8 +60,10 @@ public class EventController {
     }
 
     @GetMapping("/sessions")
-    public List<AgentSession> sessions(@RequestParam(defaultValue = "25") int limit) {
-        return repository.recentSessions(safeLimit(limit));
+    public List<AgentSession> sessions(
+            @RequestParam(defaultValue = "25") int limit,
+            @RequestParam(defaultValue = "false") boolean includeChildren) {
+        return repository.recentSessions(safeLimit(limit), includeChildren);
     }
 
     @GetMapping("/sessions/{sessionId}")
