@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,8 @@ public class BlackBoxApiClient {
 
     private static final String DEFAULT_BASE_URL = "http://127.0.0.1:8766";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(35);
+    private static final int TASK_PAGE_SIZE = 250;
+    private static final int MAX_TASK_PAGE_REQUESTS = 101;
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -121,29 +124,41 @@ public class BlackBoxApiClient {
     }
 
     public List<TaskSnapshot> listTasks(String status) {
-        // Always request the server's maximum row cap: the default of 100 silently hides
-        // tasks on busy lanes (a live cleanup pass missed 11 tasks past the default cap).
-        String path = "/api/tasks?limit=250";
-        if (status != null && !status.isBlank()) {
-            path += "&status=" + queryValue(status);
-        }
-        HttpResponse<String> response = send("GET", path, null);
-        requireSuccess("GET", path, response);
-        return read(response.body(), new TypeReference<>() { }, response.statusCode());
+        return listTasksByPage(status, null);
     }
 
     public List<TaskSnapshot> listTasks(String status, String lane) {
-        StringBuilder path = new StringBuilder("/api/tasks?");
-        if (status != null && !status.isBlank()) {
-            path.append("status=").append(queryValue(status)).append('&');
+        return listTasksByPage(status, lane);
+    }
+
+    private List<TaskSnapshot> listTasksByPage(String status, String lane) {
+        List<TaskSnapshot> tasks = new ArrayList<>();
+        for (int requestIndex = 0; requestIndex < MAX_TASK_PAGE_REQUESTS; requestIndex++) {
+            List<String> parameters = new ArrayList<>();
+            if (status != null && !status.isBlank()) {
+                parameters.add("status=" + queryValue(status));
+            }
+            if (lane != null && !lane.isBlank()) {
+                parameters.add("lane=" + queryValue(lane));
+            }
+            if (status == null || status.isBlank()) {
+                parameters.add("excludeStatus=" + queryValue("cancelled"));
+            }
+            parameters.add("limit=" + TASK_PAGE_SIZE);
+            parameters.add("offset=" + (requestIndex * TASK_PAGE_SIZE));
+
+            String path = "/api/tasks?" + String.join("&", parameters);
+            HttpResponse<String> response = send("GET", path, null);
+            requireSuccess("GET", path, response);
+            List<TaskSnapshot> page = read(response.body(), new TypeReference<>() { }, response.statusCode());
+            tasks.addAll(page);
+            if (page.size() < TASK_PAGE_SIZE) {
+                return tasks;
+            }
         }
-        if (lane != null && !lane.isBlank()) {
-            path.append("lane=").append(queryValue(lane)).append('&');
-        }
-        path.append("limit=250");
-        HttpResponse<String> response = send("GET", path.toString(), null);
-        requireSuccess("GET", path.toString(), response);
-        return read(response.body(), new TypeReference<>() { }, response.statusCode());
+        throw new IllegalStateException(
+                "Black Box task listing exceeded the safety limit of "
+                        + MAX_TASK_PAGE_REQUESTS + " page requests");
     }
 
     public SessionLink createSessionLink(

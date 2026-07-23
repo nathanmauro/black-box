@@ -4,6 +4,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -195,9 +196,27 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
             sql.append(" AND t.status = ?");
             args.add(normalized.status().value());
         }
+        if (!normalized.excludeStatuses().isEmpty()) {
+            sql.append(" AND t.status NOT IN (")
+                    .append(String.join(", ", Collections.nCopies(
+                            normalized.excludeStatuses().size(), "?")))
+                    .append(")");
+            normalized.excludeStatuses().stream()
+                    .map(TaskStatus::value)
+                    .forEach(args::add);
+        }
         sql.append(" ORDER BY t.priority DESC, ")
                 .append(sortableInstant("t.created_at"))
-                .append(" ASC");
+                .append(" ASC, t.id ASC");
+        if (normalized.limit() != null) {
+            sql.append(" LIMIT ? OFFSET ?");
+            args.add(normalized.limit());
+            args.add(Math.max(0, normalized.offset()));
+        }
+        else if (normalized.offset() > 0) {
+            sql.append(" LIMIT -1 OFFSET ?");
+            args.add(normalized.offset());
+        }
         return jdbcTemplate.query(sql.toString(), this::mapSnapshot, args.toArray());
     }
 

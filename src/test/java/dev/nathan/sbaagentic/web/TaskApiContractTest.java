@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.web;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -508,6 +509,9 @@ class TaskApiContractTest {
         for (int i = 0; i < 251; i++) {
             workflowTools.enqueueTask(bulkSpec.id(), "bulk-" + i, "codex", 0, "planner");
         }
+        TaskChange cancelled = workflowTools.enqueueTask(
+                bulkSpec.id(), "cancelled", "codex", 20_000, "planner");
+        workflowTools.updateTaskStatus(cancelled.snapshot().task().id(), "operator", "cancelled", null);
         TaskSpec otherSpec = workflowTools.createSpec(PROJECT + "/other", "other", "body", null, "planner");
         TaskChange other = workflowTools.enqueueTask(otherSpec.id(), "other", "claude", 10_000, "planner");
 
@@ -521,6 +525,49 @@ class TaskApiContractTest {
                 .andReturn());
         assertThat(restBounded)
                 .isEqualTo(objectMapper.valueToTree(workflowTools.listTasks(PROJECT, "codex", "open", 999)));
+
+        JsonNode finalPage = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("lane", "codex")
+                        .param("status", "open")
+                        .param("limit", "250")
+                        .param("offset", "250"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andReturn());
+        List<String> pagedIds = new ArrayList<>(taskIds(restBounded));
+        pagedIds.addAll(taskIds(finalPage));
+        assertThat(pagedIds).hasSize(251).doesNotHaveDuplicates();
+
+        JsonNode firstOpen = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("status", "open")
+                        .param("limit", "1"))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode clampedOffset = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("status", "open")
+                        .param("limit", "1")
+                        .param("offset", "-20"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(clampedOffset).isEqualTo(firstOpen);
+
+        JsonNode repeatedExclusions = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("excludeStatus", "cancelled", "done")
+                        .param("limit", "250"))
+                .andExpect(status().isOk())
+                .andReturn());
+        JsonNode commaSeparatedExclusions = json(mockMvc.perform(get("/api/tasks")
+                        .param("projectKey", PROJECT)
+                        .param("excludeStatus", "cancelled,done")
+                        .param("limit", "250"))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(commaSeparatedExclusions).isEqualTo(repeatedExclusions);
+        assertThat(taskIds(repeatedExclusions)).doesNotContain(cancelled.snapshot().task().id());
 
         JsonNode unfiltered = json(mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
@@ -570,6 +617,9 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$.error.type").value("spec_not_found"));
 
         mockMvc.perform(get("/api/tasks").param("status", "running"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+        mockMvc.perform(get("/api/tasks").param("excludeStatus", "cancelled,running"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.type").value("validation_failed"));
         mockMvc.perform(get("/api/tasks").param("limit", "not-an-int"))
@@ -838,6 +888,12 @@ class TaskApiContractTest {
 
     private static Set<String> ids(JsonNode array) {
         return array.findValuesAsText("id").stream().collect(Collectors.toSet());
+    }
+
+    private static List<String> taskIds(JsonNode array) {
+        List<String> ids = new ArrayList<>();
+        array.forEach(snapshot -> ids.add(snapshot.at("/task/id").asText()));
+        return ids;
     }
 
     private static String specJson(String projectKey, String title, String body) {
