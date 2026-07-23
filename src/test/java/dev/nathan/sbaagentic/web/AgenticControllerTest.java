@@ -29,7 +29,9 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:agentic-controller-test?mode=memory&cache=shared",
+        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",

@@ -18,7 +18,11 @@ import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:event-ingest-test?mode=memory&cache=shared",
+        // A real temp *file* DB, not cache=shared memory: shared-cache table locks ignore
+        // busy_timeout and throw SQLITE_LOCKED the instant an async summary/link listener
+        // collides with an ingest UPSERT. A file DB takes the production WAL + busy_timeout
+        // path, so contention waits instead of erroring. ${random.uuid} keeps runs fresh.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-ingest-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false"

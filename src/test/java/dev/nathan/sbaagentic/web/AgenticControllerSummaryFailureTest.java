@@ -13,7 +13,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:agentic-controller-summary-failure-test?mode=memory&cache=shared",
+        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-summary-failure-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.elasticsearch.enabled=false",
         "sba.ask.embedding-enabled=false",

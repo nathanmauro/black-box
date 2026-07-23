@@ -26,7 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * behavior that distinguishes Black Box from a read-only timeline, so it earns direct coverage.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:context-loop-test?mode=memory&cache=shared",
+        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-context-loop-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.elasticsearch.enabled=false"
 })

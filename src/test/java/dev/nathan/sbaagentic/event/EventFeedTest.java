@@ -25,7 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * meaningful-event narrowing, keyset pagination, and live head refetch windows.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:event-feed-test?mode=memory&cache=shared",
+        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-feed-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false"

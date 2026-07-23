@@ -23,7 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * leaving plain free-text search behaviour unchanged.
  */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:file:event-facet-test?mode=memory&cache=shared",
+        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-facet-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false"
