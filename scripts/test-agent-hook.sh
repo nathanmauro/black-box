@@ -112,3 +112,95 @@ assert_event \
   '{"hook_event_name":"Notification","message":"Build finished"}' \
   "agent" \
   "Notification"
+
+assert_subagent_event() {
+  local label="$1"
+  local payload="$2"
+  local expected_role="$3"
+  local expected_event_type="$4"
+  local expected_client_session_id="$5"
+  local expected_agent_id="$6"
+  local expected_agent_type="$7"
+  local expected_parent="$8"
+  local expected_text="$9"
+
+  assert_event "$label" "$payload" "$expected_role" "$expected_event_type"
+
+  local actual_client_session_id
+  local actual_agent_id
+  local actual_agent_type
+  local actual_parent
+  local actual_text
+  actual_client_session_id="$(jq -r '.clientSessionId' "$CAPTURE")"
+  actual_agent_id="$(jq -r '.metadata.agentId // ""' "$CAPTURE")"
+  actual_agent_type="$(jq -r '.metadata.agentType // ""' "$CAPTURE")"
+  actual_parent="$(jq -r '.metadata.parentClientSessionId // ""' "$CAPTURE")"
+  actual_text="$(jq -r '.text // ""' "$CAPTURE")"
+
+  if [[ "$actual_client_session_id" != "$expected_client_session_id" ]]; then
+    echo "$label: expected clientSessionId=$expected_client_session_id, got clientSessionId=$actual_client_session_id" >&2
+    jq . "$CAPTURE" >&2
+    exit 1
+  fi
+  if [[ "$actual_agent_id" != "$expected_agent_id" ]]; then
+    echo "$label: expected metadata.agentId=$expected_agent_id, got metadata.agentId=$actual_agent_id" >&2
+    jq . "$CAPTURE" >&2
+    exit 1
+  fi
+  if [[ "$actual_agent_type" != "$expected_agent_type" ]]; then
+    echo "$label: expected metadata.agentType=$expected_agent_type, got metadata.agentType=$actual_agent_type" >&2
+    jq . "$CAPTURE" >&2
+    exit 1
+  fi
+  if [[ "$actual_parent" != "$expected_parent" ]]; then
+    echo "$label: expected metadata.parentClientSessionId=$expected_parent, got metadata.parentClientSessionId=$actual_parent" >&2
+    jq . "$CAPTURE" >&2
+    exit 1
+  fi
+  if [[ "$actual_text" != "$expected_text" ]]; then
+    echo "$label: expected text=$expected_text, got text=$actual_text" >&2
+    jq . "$CAPTURE" >&2
+    exit 1
+  fi
+}
+
+assert_subagent_event \
+  "subagent start derives child session" \
+  '{"session_id":"parent-abc","hook_event_name":"SubagentStart","agent_type":"Explore","agent_id":"agent-uuid-1"}' \
+  "agent" \
+  "SubagentStart" \
+  "parent-abc:agent-uuid-1" \
+  "agent-uuid-1" \
+  "Explore" \
+  "parent-abc" \
+  ""
+assert_subagent_event \
+  "subagent stop with final text" \
+  '{"session_id":"parent-abc","hook_event_name":"SubagentStop","agent_type":"Explore","agent_id":"agent-uuid-1","last_assistant_message":"Explored the repository tree"}' \
+  "assistant" \
+  "SubagentStop" \
+  "parent-abc:agent-uuid-1" \
+  "agent-uuid-1" \
+  "Explore" \
+  "parent-abc" \
+  "Explored the repository tree"
+assert_subagent_event \
+  "subagent stop without final text" \
+  '{"session_id":"parent-abc","hook_event_name":"SubagentStop","agent_type":"Explore","agent_id":"agent-uuid-1"}' \
+  "agent" \
+  "SubagentStop" \
+  "parent-abc:agent-uuid-1" \
+  "agent-uuid-1" \
+  "Explore" \
+  "parent-abc" \
+  ""
+assert_subagent_event \
+  "snake-case subagent stop" \
+  '{"session_id":"parent-abc","hook_event_name":"subagent_stop","agent_type":"general-purpose","agent_id":"agent-uuid-2","last_assistant_message":"Refactor complete"}' \
+  "assistant" \
+  "subagent_stop" \
+  "parent-abc:agent-uuid-2" \
+  "agent-uuid-2" \
+  "general-purpose" \
+  "parent-abc" \
+  "Refactor complete"
