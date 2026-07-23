@@ -6,16 +6,25 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executor;
 import java.util.stream.Stream;
 
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
+import dev.nathan.sbaagentic.runner.run.CompletionDetector;
+import dev.nathan.sbaagentic.runner.run.CompletionDetector.CompletionResult;
+import dev.nathan.sbaagentic.runner.run.WorkerRunExecutor;
+import dev.nathan.sbaagentic.runner.run.WorkerRunExecutor.WorkerOutcome;
+import dev.nathan.sbaagentic.runner.run.WorkerRunExecutor.WorkerRunResult;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
@@ -25,6 +34,7 @@ import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -37,19 +47,47 @@ public class CrashRecovery {
     private final TmuxController tmux;
     private final ProcessRunner processRunner;
     private final StoryFrontmatterParser frontmatterParser;
+    private final CompletionDetector completionDetector;
+    private final ActiveRunRegistry activeRunRegistry;
 
+    @Autowired
     public CrashRecovery(
             BlackBoxApiClient apiClient,
             TmuxController tmux,
             ProcessRunner processRunner,
-            StoryFrontmatterParser frontmatterParser) {
+            StoryFrontmatterParser frontmatterParser,
+            CompletionDetector completionDetector,
+            ActiveRunRegistry activeRunRegistry) {
         this.apiClient = apiClient;
         this.tmux = tmux;
         this.processRunner = processRunner;
         this.frontmatterParser = frontmatterParser;
+        this.completionDetector = completionDetector;
+        this.activeRunRegistry = activeRunRegistry;
+    }
+
+    CrashRecovery(
+            BlackBoxApiClient apiClient,
+            TmuxController tmux,
+            ProcessRunner processRunner,
+            StoryFrontmatterParser frontmatterParser) {
+        this(
+                apiClient,
+                tmux,
+                processRunner,
+                frontmatterParser,
+                new CompletionDetector(apiClient, tmux, processRunner),
+                new ActiveRunRegistry());
     }
 
     public void reconcile(RunnerConfig config, String actorId) {
+        reconcile(config, actorId, Runnable::run);
+    }
+
+    public void reconcile(
+            RunnerConfig config,
+            String actorId,
+            Executor adoptedWatcherExecutor) {
         List<TaskSnapshot> inProgress = apiClient.listTasks("in_progress");
         Set<String> activeWorktreeNames = new HashSet<>();
         boolean sdlcStateKnown = protectSdlcReviewWorktrees(activeWorktreeNames, actorId);
@@ -63,26 +101,216 @@ public class CrashRecovery {
 
             String sessionName = RunnerNaming.tmuxSessionName(taskId);
             if (tmux.hasSession(sessionName)) {
+                Optional<Path> worktree = configuredWorktree(config, taskId);
+                if (worktree.isEmpty()) {
+                    resetToOpen(
+                            taskId,
+                            actorId,
+                            "Crash recovery: tmux session " + sessionName
+                                    + " is alive, but worktree " + RunnerNaming.worktreeDirName(taskId)
+                                    + " was not found under any configured repo; task reset to open.");
+                    continue;
+                }
                 activeWorktreeNames.add(worktreeName);
+                adopt(
+                        snapshot.task(),
+                        worktree.orElseThrow(),
+                        sessionName,
+                        actorId,
+                        adoptedWatcherExecutor);
                 continue;
             }
 
-            apiClient.updateTaskStatus(taskId, actorId, "open", null);
-            apiClient.annotate(
+            resetToOpen(
                     taskId,
                     actorId,
-                    "progress",
-                    "Crash recovery: tmux session " + sessionName + " not found; task reset to open.",
-                    null);
+                    "Crash recovery: tmux session " + sessionName
+                            + " not found; task reset to open.");
         }
 
         if (sdlcStateKnown) {
-            for (RepoConfig repo : config.repos()) {
+            for (RepoConfig repo : safeList(config.repos())) {
                 pruneOrphanedWorktrees(repo, activeWorktreeNames);
             }
         }
         else {
             log.warn("Skipping orphaned worktree pruning because SDLC preservation state is unavailable");
+        }
+    }
+
+    private Optional<Path> configuredWorktree(RunnerConfig config, String taskId) {
+        for (RepoConfig repo : safeList(config.repos())) {
+            if (repo == null || repo.path() == null || repo.path().isBlank()) {
+                continue;
+            }
+            Path repoPath = Path.of(repo.path()).toAbsolutePath().normalize();
+            Path worktreesRoot = repoPath.resolve(".worktrees").normalize();
+            Path candidate = repoPath.resolve(RunnerNaming.worktreeDirName(taskId)).normalize();
+            if (candidate.startsWith(worktreesRoot) && Files.isDirectory(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void adopt(
+            Task task,
+            Path worktree,
+            String sessionName,
+            String actorId,
+            Executor adoptedWatcherExecutor) {
+        Instant since = task.updatedAt() == null ? Instant.EPOCH : task.updatedAt();
+        activeRunRegistry.register(task.id(), sessionName);
+        annotateBestEffort(
+                task.id(),
+                actorId,
+                "Crash recovery: adopted live tmux session " + sessionName
+                        + " and resumed completion watching.");
+        try {
+            adoptedWatcherExecutor.execute(
+                    () -> watchAdopted(task, worktree, sessionName, actorId, since));
+        }
+        catch (RuntimeException ex) {
+            activeRunRegistry.deregister(task.id(), sessionName);
+            log.error("Unable to submit adopted watcher for task {}; resetting it to open", task.id(), ex);
+            resetToOpenBestEffort(
+                    task.id(),
+                    actorId,
+                    "Crash recovery: unable to start a watcher for live tmux session "
+                            + sessionName + "; task reset to open.");
+        }
+    }
+
+    private void watchAdopted(
+            Task task,
+            Path worktree,
+            String sessionName,
+            String actorId,
+            Instant since) {
+        try {
+            CompletionResult completion = completionDetector.awaitCompletion(
+                    task.id(),
+                    sessionName,
+                    worktree.toFile(),
+                    WorkerRunExecutor.runTimeout(),
+                    WorkerRunExecutor.completionPollInterval(),
+                    since);
+            WorkerRunResult result = WorkerRunExecutor.finalizeCompletion(
+                    completion, sessionName, since);
+            applyAdoptedOutcome(task, sessionName, actorId, completion, result);
+        }
+        catch (RuntimeException ex) {
+            log.error("Adopted watcher failed for task {}; resetting it to open", task.id(), ex);
+            resetToOpenBestEffort(
+                    task.id(),
+                    actorId,
+                    "Crash recovery: adopted watcher failed: " + message(ex)
+                            + "; task reset to open.");
+        }
+        finally {
+            activeRunRegistry.deregister(task.id(), sessionName);
+        }
+    }
+
+    private void applyAdoptedOutcome(
+            Task task,
+            String sessionName,
+            String actorId,
+            CompletionResult completion,
+            WorkerRunResult result) {
+        if (result.outcome() == WorkerOutcome.DONE) {
+            apiClient.completeTask(
+                    task.id(),
+                    actorId,
+                    "cli",
+                    "blackbox-runner-recovery-" + task.id(),
+                    isBlank(result.detail())
+                            ? "Adopted worker reported done after runner restart."
+                            : result.detail(),
+                    List.of(),
+                    "Review the recovered worker result and continue any stage-specific follow-up.");
+            annotateBestEffort(
+                    task.id(),
+                    actorId,
+                    "Crash recovery: adopted run reported done; task finalized from its completion report.");
+            killSessionBestEffort(sessionName);
+            return;
+        }
+
+        if (result.outcome() == WorkerOutcome.BLOCKED && completion.reported()) {
+            apiClient.updateTaskStatus(task.id(), actorId, "blocked", result.detail());
+            annotateBestEffort(
+                    task.id(),
+                    actorId,
+                    "Crash recovery: adopted run reported blocked; task marked blocked.");
+            killSessionBestEffort(sessionName);
+            return;
+        }
+
+        if (result.outcome() == WorkerOutcome.BLOCKED) {
+            if (!tmux.hasSession(sessionName)) {
+                resetToOpen(
+                        task.id(),
+                        actorId,
+                        "Crash recovery: adopted tmux session " + sessionName
+                                + " ended without a completion report; task reset to open.");
+            }
+            else {
+                log.info(
+                        "Adopted watcher for task {} was interrupted while tmux session {} remains alive; "
+                                + "leaving the task in progress for the next recovery pass",
+                        task.id(),
+                        sessionName);
+            }
+            return;
+        }
+
+        if (result.outcome() == WorkerOutcome.TIMED_OUT) {
+            String reason = "Run timed out after 45m. " + result.detail();
+            apiClient.updateTaskStatus(task.id(), actorId, "blocked", reason);
+            annotateBestEffort(
+                    task.id(),
+                    actorId,
+                    "Crash recovery: adopted run timed out and was marked blocked.");
+            killSessionBestEffort(sessionName);
+            return;
+        }
+
+        throw new IllegalStateException(
+                "Unexpected adopted worker outcome " + result.outcome());
+    }
+
+    private void resetToOpen(String taskId, String actorId, String annotation) {
+        apiClient.updateTaskStatus(taskId, actorId, "open", null);
+        apiClient.annotate(taskId, actorId, "progress", annotation, null);
+    }
+
+    private void resetToOpenBestEffort(String taskId, String actorId, String annotation) {
+        try {
+            resetToOpen(taskId, actorId, annotation);
+        }
+        catch (RuntimeException ex) {
+            log.error("Unable to reset task {} to open during crash recovery", taskId, ex);
+        }
+    }
+
+    private void annotateBestEffort(String taskId, String actorId, String annotation) {
+        try {
+            apiClient.annotate(taskId, actorId, "progress", annotation, null);
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to annotate crash recovery state for task {}", taskId, ex);
+        }
+    }
+
+    private void killSessionBestEffort(String sessionName) {
+        try {
+            if (tmux.hasSession(sessionName)) {
+                tmux.killSession(sessionName);
+            }
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to kill adopted tmux session {}", sessionName, ex);
         }
     }
 
@@ -284,5 +512,15 @@ public class CrashRecovery {
 
     private static <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String message(Throwable error) {
+        return error.getMessage() == null || error.getMessage().isBlank()
+                ? error.getClass().getSimpleName()
+                : error.getMessage();
     }
 }
