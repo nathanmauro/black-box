@@ -501,4 +501,39 @@ describe("subagent lineage API helpers", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("chunks more than 100 ids into multiple requests and merges the results", async () => {
+    // Tomcat's default 8KB request-line limit rejects a single ?ids= query for the rail's up-to-250
+    // sessions; batching keeps every request well under that.
+    const ids = Array.from({ length: 137 }, (_, index) => `session-${index}`);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://blackbox.test");
+      const batchIds = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+      const payload: Record<string, number> = {};
+      for (const id of batchIds) payload[id] = 1;
+      return new Response(JSON.stringify(payload), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getSessionChildCounts(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      const url = new URL(String(call[0]), "http://blackbox.test");
+      const batchIds = (url.searchParams.get("ids") ?? "").split(",").filter(Boolean);
+      expect(batchIds.length).toBeLessThanOrEqual(100);
+    }
+    expect(Object.keys(result)).toHaveLength(137);
+    expect(result["session-0"]).toBe(1);
+    expect(result["session-136"]).toBe(1);
+  });
+
+  it("keeps a single request for exactly 100 ids", async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `session-${index}`);
+    const fetchMock = stubJson<Record<string, number>>({ "session-0": 1 });
+
+    await getSessionChildCounts(ids);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

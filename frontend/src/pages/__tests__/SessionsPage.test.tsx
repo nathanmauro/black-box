@@ -212,9 +212,9 @@ describe("SessionsPage", () => {
     vi.mocked(getSessionDag).mockResolvedValue({
       nodes: [
         { id: "task-1", type: "task", label: "Implement card detail", status: "in_progress", ref: "/tasks/task-1" },
-        { id: "session-1", type: "session", label: "Worker tendril 1", ref: "/sessions/session-1" },
+        { id: "session:session-1", type: "session", label: "Worker tendril 1", ref: "session-1" },
       ],
-      edges: [{ from: "task-1", to: "session-1", type: "worker_session" }],
+      edges: [{ from: "task-1", to: "session:session-1", type: "worker_session" }],
     });
 
     render(() => <SessionsPage />);
@@ -223,7 +223,7 @@ describe("SessionsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "View session DAG" }));
     await waitFor(() => expect(getSessionDag).toHaveBeenCalledWith("session-1"));
     expect(await screen.findByText("Worker tendril 1", { selector: ".dag-label" })).toBeInTheDocument();
-    expect(document.querySelector('[data-node-id="session-1"]')).toHaveClass("dag-node--current");
+    expect(document.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
   });
 
   it("filters the session rail by text, project, and source facets", async () => {
@@ -568,6 +568,17 @@ describe("SessionsPage", () => {
     expect(row).toHaveClass("event-flow-row--target");
   });
 
+  it("keeps the session rail rendered when the batch child-count request is rejected", async () => {
+    vi.mocked(getSessionChildCounts).mockRejectedValue(new Error("request-uri too large"));
+
+    render(() => <SessionsPage />);
+
+    const rail = document.querySelector(".session-list-pane") as HTMLElement;
+    expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
+    expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: /subagent sessions/ })).not.toBeInTheDocument();
+  });
+
   it("renders an expander with the batch child count for parent sessions", async () => {
     vi.mocked(getSessionChildCounts).mockResolvedValue({ "session-1": 2 });
 
@@ -610,10 +621,10 @@ describe("SessionsPage", () => {
   it("shows the lineage DAG for a session whose DAG has more than one node", async () => {
     vi.mocked(getSessionDag).mockResolvedValue({
       nodes: [
-        { id: "session-1", type: "session", label: "Focused session", ref: "/sessions/session-1" },
-        { id: "child-1", type: "session", label: "code-reviewer", ref: "/sessions/child-1" },
+        { id: "session:session-1", type: "session", label: "Focused session", ref: "session-1" },
+        { id: "session:child-1", type: "session", label: "code-reviewer", ref: "child-1" },
       ],
-      edges: [{ from: "session-1", to: "child-1", type: "spawned" }],
+      edges: [{ from: "session:session-1", to: "session:child-1", type: "spawned" }],
     });
 
     render(() => <SessionsPage />);
@@ -621,14 +632,14 @@ describe("SessionsPage", () => {
     expect(await screen.findByText("code-reviewer", { selector: ".dag-label" })).toBeInTheDocument();
     const lineage = document.querySelector(".session-lineage") as HTMLElement;
     expect(lineage).toBeInTheDocument();
-    expect(lineage.querySelector('[data-node-id="session-1"]')).toHaveClass("dag-node--current");
+    expect(lineage.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
     expect(getSessionDag).toHaveBeenCalledWith("session-1");
     expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
   });
 
   it("keeps the lineage DAG hidden when the session DAG has a single node", async () => {
     vi.mocked(getSessionDag).mockResolvedValue({
-      nodes: [{ id: "session-1", type: "session", label: "Focused session", ref: "/sessions/session-1" }],
+      nodes: [{ id: "session:session-1", type: "session", label: "Focused session", ref: "session-1" }],
       edges: [],
     });
 

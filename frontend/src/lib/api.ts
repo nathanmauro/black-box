@@ -605,9 +605,21 @@ export function getSessionLinks(sessionId: string): Promise<SessionLinksResponse
   return getJson(`/api/sessions/${encodeURIComponent(sessionId)}/links`);
 }
 
-export function getSessionChildCounts(ids: string[]): Promise<Record<string, number>> {
+const CHILD_COUNT_BATCH_SIZE = 100;
+
+// Tomcat rejects an oversized request line (default 8KB) before the app ever sees it, and the
+// rail can carry up to 250 session ids — well past that limit as one `?ids=` query string.
+// Chunk into batches of 100 (well under the limit) and merge; ≤100 ids stays a single request.
+export async function getSessionChildCounts(ids: string[]): Promise<Record<string, number>> {
   if (!ids.length) return Promise.resolve({});
-  return getJson(`/api/session-links/child-counts?ids=${ids.map(encodeURIComponent).join(",")}`);
+  const batches: string[][] = [];
+  for (let index = 0; index < ids.length; index += CHILD_COUNT_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + CHILD_COUNT_BATCH_SIZE));
+  }
+  const results = await Promise.all(
+    batches.map((batch) => getJson<Record<string, number>>(`/api/session-links/child-counts?ids=${batch.map(encodeURIComponent).join(",")}`)),
+  );
+  return results.reduce<Record<string, number>>((merged, batch) => ({ ...merged, ...batch }), {});
 }
 
 export function getTaskDag(taskId: string): Promise<DagResponse> {

@@ -137,6 +137,10 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     async () => getSessionChildCounts(railSessionIds()),
     { initialValue: {} as Record<string, number> },
   );
+  // Reading a resource in the errored state throws — guard the same way lineageDagData guards
+  // lineageDag.error, so a rejected batch (e.g. a chunk request failing) degrades the rail to "no
+  // expanders" instead of crashing the whole session list (there is no ErrorBoundary above this).
+  const childCountsData = createMemo<Record<string, number>>(() => (childCounts.error ? {} : childCounts()));
   const [expandedParents, setExpandedParents] = createSignal<ReadonlySet<string>>(new Set<string>());
   const isExpanded = (id: string) => expandedParents().has(id);
   const toggleExpanded = (id: string) => {
@@ -314,16 +318,16 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                           </small>
                         </span>
                       </button>
-                      <Show when={(childCounts()[session.id] ?? 0) > 0}>
+                      <Show when={(childCountsData()[session.id] ?? 0) > 0}>
                         <button
                           type="button"
                           class="session-expander"
                           aria-expanded={isExpanded(session.id)}
-                          aria-label={`Toggle ${childCounts()[session.id]} subagent sessions`}
+                          aria-label={`Toggle ${childCountsData()[session.id]} subagent sessions`}
                           onClick={() => toggleExpanded(session.id)}
                         >
                           <span aria-hidden="true">{isExpanded(session.id) ? "−" : "+"}</span>
-                          {childCounts()[session.id]}
+                          {childCountsData()[session.id]}
                         </button>
                       </Show>
                     </div>

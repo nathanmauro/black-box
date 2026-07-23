@@ -86,7 +86,7 @@ export default function DagView(props: DagViewProps) {
                   node={node}
                   current={
                     (node.type === "task" && props.currentTaskId === node.id)
-                    || (node.type === "session" && props.currentSessionId === node.id)
+                    || (node.type === "session" && props.currentSessionId === sessionRef(node))
                   }
                 />
               )}
@@ -159,8 +159,15 @@ function columnFor(node: DagNode): number {
 
 function nodeHref(node: DagNode): string | null {
   if (node.type === "task") return `/board?task=${encodeURIComponent(node.id)}`;
-  if (node.type === "session") return `/sessions/${encodeURIComponent(node.id)}`;
+  if (node.type === "session") return `/sessions/${encodeURIComponent(sessionRef(node))}`;
   return null;
+}
+
+// Backend session node ids are wire-prefixed ("session:<uuid>"), never the raw session id a
+// session href or a currentSessionId comparison needs. `ref` carries that raw id; fall back to
+// stripping the prefix from `id` if `ref` is ever absent.
+function sessionRef(node: DagNode): string {
+  return node.ref || node.id.replace(/^session:/, "");
 }
 
 function nodeColor(node: DagNode): string {
