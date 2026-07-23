@@ -204,3 +204,56 @@ assert_subagent_event \
   "general-purpose" \
   "parent-abc" \
   "Refactor complete"
+
+# Byte-identical contract for non-subagent events: raw session key, metadata is rawHook only.
+assert_event \
+  "plain stop keeps raw session key" \
+  '{"hook_event_name":"Stop","session_id":"plain-session","last_assistant_message":"done"}' \
+  "assistant" \
+  "Stop"
+if [[ "$(jq -r '.clientSessionId' "$CAPTURE")" != "plain-session" ]]; then
+  echo "plain stop keeps raw session key: clientSessionId was rewritten" >&2
+  jq . "$CAPTURE" >&2
+  exit 1
+fi
+if [[ "$(jq -r '.metadata | keys | join(",")' "$CAPTURE")" != "rawHook" ]]; then
+  echo "plain stop keeps raw session key: metadata gained unexpected keys" >&2
+  jq . "$CAPTURE" >&2
+  exit 1
+fi
+
+# A subagent event without agent_id must not derive a child key.
+assert_event \
+  "subagent start without agent id stays plain" \
+  '{"session_id":"parent-abc","hook_event_name":"SubagentStart","agent_type":"Explore"}' \
+  "agent" \
+  "SubagentStart"
+if [[ "$(jq -r '.clientSessionId' "$CAPTURE")" != "parent-abc" ]]; then
+  echo "subagent start without agent id stays plain: clientSessionId was rewritten" >&2
+  jq . "$CAPTURE" >&2
+  exit 1
+fi
+
+# Never-fail contract: real curl on PATH, recorder unreachable -> still exit 0.
+set +e
+printf '%s' '{"hook_event_name":"SubagentStop","session_id":"p","agent_id":"a","agent_type":"Explore","last_assistant_message":"done"}' |
+  SBA_AGENTIC_URL="http://127.0.0.1:1" SBA_AGENT_SOURCE=fixture-source "$HOOK"
+HOOK_STATUS=$?
+set -e
+if [[ "$HOOK_STATUS" -ne 0 ]]; then
+  echo "never-fail with recorder down: expected exit 0, got $HOOK_STATUS" >&2
+  exit 1
+fi
+echo "never-fail with recorder down: exit=0"
+
+# Never-fail contract: non-JSON stdin is wrapped as RawText and still exits 0.
+set +e
+printf '%s' 'not json at all' |
+  SBA_AGENTIC_URL="http://127.0.0.1:1" SBA_AGENT_SOURCE=fixture-source "$HOOK"
+HOOK_STATUS=$?
+set -e
+if [[ "$HOOK_STATUS" -ne 0 ]]; then
+  echo "never-fail with non-JSON stdin: expected exit 0, got $HOOK_STATUS" >&2
+  exit 1
+fi
+echo "never-fail with non-JSON stdin: exit=0"
