@@ -618,7 +618,7 @@ describe("SessionsPage", () => {
     expect(within(rail).queryByText("code-reviewer", { selector: ".agent-type-badge" })).not.toBeInTheDocument();
   });
 
-  it("shows the lineage DAG for a session whose DAG has more than one node", async () => {
+  it("shows the compact lineage rail and opens its horizontal relationship map", async () => {
     vi.mocked(getSessionDag).mockResolvedValue({
       nodes: [
         { id: "session:session-1", type: "session", label: "Focused session", ref: "session-1" },
@@ -629,7 +629,14 @@ describe("SessionsPage", () => {
 
     render(() => <SessionsPage />);
 
-    expect(await screen.findByText("code-reviewer", { selector: ".dag-label" })).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: "Agent lineage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Current agent: Focused session" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Subagent: code-reviewer" })).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Expand lineage map" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("region", { name: "Agent lineage map" })).toBeInTheDocument();
+    expect(document.querySelector(".dag-stage--lineage")).toBeInTheDocument();
     const lineage = document.querySelector(".session-lineage") as HTMLElement;
     expect(lineage).toBeInTheDocument();
     expect(lineage.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
@@ -637,10 +644,13 @@ describe("SessionsPage", () => {
     expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
   });
 
-  it("keeps the lineage DAG hidden when the session DAG has a single node", async () => {
+  it("keeps the lineage dock hidden when the DAG has no related agent session", async () => {
     vi.mocked(getSessionDag).mockResolvedValue({
-      nodes: [{ id: "session:session-1", type: "session", label: "Focused session", ref: "session-1" }],
-      edges: [],
+      nodes: [
+        { id: "task-1", type: "task", label: "Task context", ref: "task-1" },
+        { id: "session:session-1", type: "session", label: "Focused session", ref: "session-1" },
+      ],
+      edges: [{ from: "task-1", to: "session:session-1", type: "worker_session" }],
     });
 
     render(() => <SessionsPage />);

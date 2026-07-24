@@ -2,6 +2,7 @@ import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, useContext } from "solid-js";
 import ConversationNavigator, { type ConversationNavigatorTurn } from "../components/ConversationNavigator";
 import DagView from "../components/DagView";
+import SessionLineage from "../components/SessionLineage";
 import SourceDot from "../components/SourceDot";
 import SteerBox from "../components/SteerBox";
 import { EventRenderer, ReaderText } from "../components/events/EventRow";
@@ -129,7 +130,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const lineageDagData = createMemo(() => {
     if (searchParams.task || lineageDag.error) return null;
     const dag = lineageDag();
-    return dag && dag.nodes.length > 1 ? dag : null;
+    return dag && dag.nodes.filter((node) => node.type === "session").length > 1 ? dag : null;
   });
   const railSessionIds = createMemo(() => sessions().map((session) => session.id));
   const [childCounts, { refetch: refetchChildCounts }] = createResource(
@@ -390,10 +391,11 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
                 <Show when={lineageDagData()}>
                   {(dag) => (
-                    <section class="session-lineage">
-                      <span class="eyebrow">lineage</span>
-                      <DagView dag={dag()} currentSessionId={selectedId()} />
-                    </section>
+                    <SessionLineage
+                      dag={dag()}
+                      currentSessionId={selectedId()}
+                      onSelectSession={selectSession}
+                    />
                   )}
                 </Show>
 

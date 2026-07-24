@@ -7,7 +7,7 @@ vi.mock("@solidjs/router", () => ({
   useNavigate: () => navigateSpy,
 }));
 
-const { default: DagView, layoutDag } = await import("./DagView");
+const { default: DagView, layoutDag, layoutLineageDag } = await import("./DagView");
 
 const fixture: DagResponse = {
   nodes: [
@@ -25,6 +25,22 @@ const fixture: DagResponse = {
     { from: "task-2", to: "session:session-2", type: "worker_session" },
     { from: "session:session-2", to: "session:session-3", type: "continued" },
     { from: "missing-task", to: "session:session-3", type: "worker_session" },
+  ],
+};
+
+const lineageFixture: DagResponse = {
+  nodes: [
+    { id: "session:parent", type: "session", label: "Coordinator", ref: "parent" },
+    { id: "session:reviewer", type: "session", label: "Reviewer", ref: "reviewer" },
+    { id: "session:tester", type: "session", label: "Tester", ref: "tester" },
+    { id: "session:verifier", type: "session", label: "Verifier", ref: "verifier" },
+    { id: "task-1", type: "task", label: "Task context", ref: "task-1" },
+  ],
+  edges: [
+    { from: "session:parent", to: "session:reviewer", type: "spawned" },
+    { from: "session:parent", to: "session:tester", type: "spawned" },
+    { from: "session:parent", to: "session:verifier", type: "continued" },
+    { from: "task-1", to: "session:parent", type: "worker_session" },
   ],
 };
 
@@ -64,6 +80,22 @@ describe("layoutDag", () => {
   });
 });
 
+describe("layoutLineageDag", () => {
+  it("lays out session relationships from left to right without task or spec nodes", () => {
+    const layout = layoutLineageDag(lineageFixture);
+    const parent = layout.nodes.find((node) => node.id === "session:parent");
+    const children = layout.nodes.filter((node) => node.id !== "session:parent");
+
+    expect(layout.nodes).toHaveLength(4);
+    expect(parent?.column).toBe(0);
+    expect(children.every((node) => node.column === 1)).toBe(true);
+    expect(children.every((node) => node.x > (parent?.x ?? 0))).toBe(true);
+    expect(new Set(children.map((node) => node.y)).size).toBe(children.length);
+    expect(layout.edges).toHaveLength(3);
+    expect(layout.width).toBeGreaterThan(layout.height);
+  });
+});
+
 describe("DagView", () => {
   beforeEach(() => {
     navigateSpy.mockClear();
@@ -99,5 +131,23 @@ describe("DagView", () => {
 
     expect(screen.getByText("No DAG data yet.")).toBeInTheDocument();
     expect(container.querySelector("svg")).not.toBeInTheDocument();
+  });
+
+  it("renders the lineage layout with curved edges and delegates session navigation", () => {
+    const selectSession = vi.fn();
+    const { container } = render(() => (
+      <DagView
+        dag={lineageFixture}
+        currentSessionId="parent"
+        layout="lineage"
+        onSelectSession={selectSession}
+      />
+    ));
+
+    expect(screen.getByRole("region", { name: "Agent lineage DAG" })).toHaveClass("dag-stage--lineage");
+    expect(container.querySelectorAll(".dag-edges path")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("link", { name: "Open session: Reviewer" }));
+    expect(selectSession).toHaveBeenCalledWith("reviewer");
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 });

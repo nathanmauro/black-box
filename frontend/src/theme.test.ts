@@ -58,9 +58,24 @@ describe("theme conversation navigator contracts", () => {
 });
 
 describe("theme session lineage contracts", () => {
-  it("bounds the DAG viewport so the transcript remains usable below it", () => {
-    expectRule(".session-lineage .dag-stage", [
-      "height: clamp(180px, 34vh, 300px);",
+  it("keeps a compact dock in flow while the animated lineage lens floats above the transcript", () => {
+    expectRule(".session-lineage", [
+      "position: relative;",
+      "flex: none;",
+    ]);
+    expectRule(".lineage-dock", ["min-height: 46px;"]);
+    expectRule(".lineage-lens", [
+      "position: absolute;",
+      "pointer-events: none;",
+      "transform: translateY(-10px) scale(0.965, 0.18);",
+      "transform-origin: right top;",
+    ]);
+    expectRule(".lineage-lens--open", [
+      "pointer-events: auto;",
+      "transform: translateY(0) scale(1);",
+    ]);
+    expectRule(".lineage-lens .dag-stage", [
+      "height: clamp(200px, 32vh, 240px);",
       "min-height: 0;",
     ]);
     expectRule(".dag-stage", ["overflow: auto;"]);
