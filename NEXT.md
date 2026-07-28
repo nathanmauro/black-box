@@ -64,6 +64,19 @@ Honest limits below.
 - **A repo path or event id stays lexical on purpose.** One `scope` cannot express both a
   location and a subject; embedding a path would rank in-repo events by similarity to a path
   string and perturb the recency ordering that "what was decided here lately" depends on.
+- **Recall always returns up to `limit` items, even when nothing is relevant.** kNN returns the
+  *nearest* vectors, not the *relevant* ones. Ask about something the corpus does not cover and
+  you still get a full page of confidently-scored, unrelated intent. Before this slice a
+  no-match query returned **zero rows**; now it returns plausible-looking noise, which for a
+  tool meant to stop agents re-deciding settled things is a genuine hazard. **Treat `score` as
+  a ranking signal within one query, never as evidence that a result is relevant.**
+
+  I deliberately did **not** add a relevance floor: on this corpus real matches score ~0.62–0.69
+  cosine while the baseline cluster sits at ~0.58–0.64, so any threshold I could pick tonight
+  would be a guess that silently drops good hits. The honest fix is (a) surface the true cosine
+  similarity instead of the RRF fusion score — the current `score` values (~0.016) are RRF
+  artifacts and mean nothing to a caller — and then (b) set a floor from measured data. That is
+  the top follow-up.
 - **The eval fixture is self-contaminating.** The spec quotes its six queries verbatim and now
   lives in the corpus, so lexical matches that text and RRF can promote it over the true
   semantic winner. That is exactly why the live API missed a query the eval scored at rank 1.
@@ -83,20 +96,26 @@ that is your call, not an unattended one.
 
 ## Open loops (ranked)
 
-1. Fleet PRs **#21** (adopt-alive) and **#22** (pagination, stacked) — untouched tonight per
+1. **Make `score` mean something, then gate on it.** `RecalledItem.score` currently carries the
+   Reciprocal-Rank-Fusion score (~0.016), which is an internal ranking artifact with no
+   interpretation for a caller. Surface the semantic cosine similarity instead, measure the
+   score distribution over the real corpus, and only then apply a relevance floor so recall can
+   honestly return *nothing* when it has nothing. This is the difference between a memory bus
+   and a plausible-noise generator.
+2. Fleet PRs **#21** (adopt-alive) and **#22** (pagination, stacked) — untouched tonight per
    your instruction, still awaiting review/merge + the pinned
    `CODEX_GOALS_DIR=~/.codex-goals/runs/2026/07/22-194034 fleet-review.sh sba-agentic <1|2>` acks.
-2. **`ask` has the same prefix defect this slice just fixed** — its `OllamaEmbeddingClient` sends
+3. **`ask` has the same prefix defect this slice just fixed** — its `OllamaEmbeddingClient` sends
    a bare prompt with no `search_query:` prefix, so its retrieval is degraded the same measured
    way. Its `knn` also still targets the foreign Elasticsearch `agent-memory` index this app
    never writes to. Pointing `ask` at the new SQLite vector store would fix both and delete code.
-3. **Two embedding HTTP clients now exist** (`ask` and `memory`). Correct shape is one embedder
+4. **Two embedding HTTP clients now exist** (`ask` and `memory`). Correct shape is one embedder
    in `memory` consumed by `ask` through a public port; `memory` could not import `ask`'s
    because `ask → memory` and the cycle trips the ratchets.
-4. A separate `query` parameter on recall, so a caller can say "in THIS repo, about THAT topic".
-5. Tier 2: semantic search over the full event corpus — this is where sqlite-vec earns its keep
+5. A separate `query` parameter on recall, so a caller can say "in THIS repo, about THAT topic".
+6. Tier 2: semantic search over the full event corpus — this is where sqlite-vec earns its keep
    (208k × 768 float32 ≈ 640 MB, too large for the in-memory brute-force path).
-6. Re-embedding after a model or dimension change is **not** automatic — `content_hash` covers
+7. Re-embedding after a model or dimension change is **not** automatic — `content_hash` covers
    the text, not the model, so a model swap silently orphans existing vectors.
 
 ## Gotchas (carried forward)
