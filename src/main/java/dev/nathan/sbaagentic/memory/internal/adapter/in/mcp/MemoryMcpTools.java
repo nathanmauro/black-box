@@ -69,9 +69,10 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             + "already settled. Returns the decision, its rationale, alternatives weighed, open loops, "
             + "and confidence, not raw text hits.")
     public RecallResult recallContext(
-            @ToolParam(description = "Repo path or topic to anchor recall to. Matches the working "
-                    + "directory of prior sessions or the captured text. Leave blank for the most "
-                    + "recent intent across all repos.") String repoOrTopic,
+            @ToolParam(description = "Repo path, repo name, event id, or topic. Matching ids, "
+                    + "working directories, repo metadata, or captured text anchor both lexical "
+                    + "and semantic candidates; otherwise this is a semantic topic query. Leave "
+                    + "blank for the most recent intent across all repos.") String repoOrTopic,
             @ToolParam(required = false,
                     description = "Only recall intent observed within this many hours. Omit for 168 "
                     + "(one week).") Integer withinHours,

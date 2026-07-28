@@ -7,10 +7,12 @@ import java.util.List;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.SessionSummaryRecorded;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -24,10 +26,15 @@ public class SessionSummaryService implements SummaryOperations {
 
     private final RecordingCatalog repository;
     private final SummaryBackend summaryBackend;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public SessionSummaryService(RecordingCatalog repository, SummaryBackend summaryBackend) {
+    public SessionSummaryService(
+            RecordingCatalog repository,
+            SummaryBackend summaryBackend,
+            ApplicationEventPublisher eventPublisher) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
+        this.eventPublisher = eventPublisher;
     }
 
     public AgentSession summarize(String sessionId) {
@@ -68,7 +75,9 @@ public class SessionSummaryService implements SummaryOperations {
                     "Summary backend failed or produced no summary", ex);
         }
         repository.saveSummaryAndTitle(sessionId, summary, summaryBackend.title(summary), TitleRank.AI);
-        return repository.findSessionById(sessionId).orElse(session);
+        AgentSession updated = repository.findSessionById(sessionId).orElse(session);
+        eventPublisher.publishEvent(new SessionSummaryRecorded(updated));
+        return updated;
     }
 
     public AgentSession summarize(String source, String clientSessionId) {

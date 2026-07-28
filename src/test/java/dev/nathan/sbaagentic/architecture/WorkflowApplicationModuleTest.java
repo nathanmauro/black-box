@@ -18,7 +18,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest(module = "workflow", mode = BootstrapMode.DIRECT_DEPENDENCIES)
 @EnableConfigurationProperties(IngestionProperties.class)
-@TestPropertySource(properties = "spring.datasource.url=jdbc:sqlite:target/workflow-module-test.db")
+@TestPropertySource(properties = {
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-workflow-module-test-${random.uuid}.db",
+        "sba.memory.embedding.enabled=false"
+})
 class WorkflowApplicationModuleTest {
 
     @MockitoBean

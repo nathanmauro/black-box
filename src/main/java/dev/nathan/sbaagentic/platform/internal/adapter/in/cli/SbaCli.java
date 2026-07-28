@@ -13,6 +13,8 @@ import dev.nathan.sbaagentic.summary.SummaryOperations;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 
 import org.springframework.boot.ApplicationArguments;
@@ -25,6 +27,7 @@ public class SbaCli implements ApplicationRunner {
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
     private final MemorySearchOperations searchService;
+    private final MemoryEmbeddingOperations memoryEmbeddingOperations;
     private final SummaryOperations summaryService;
     private final SummaryModelOperations localAiClient;
     private final ObjectMapper objectMapper;
@@ -34,6 +37,7 @@ public class SbaCli implements ApplicationRunner {
             EventRecorder ingestService,
             RecordingCatalog repository,
             MemorySearchOperations searchService,
+            MemoryEmbeddingOperations memoryEmbeddingOperations,
             SummaryOperations summaryService,
             SummaryModelOperations localAiClient,
             ObjectMapper objectMapper,
@@ -41,6 +45,7 @@ public class SbaCli implements ApplicationRunner {
         this.ingestService = ingestService;
         this.repository = repository;
         this.searchService = searchService;
+        this.memoryEmbeddingOperations = memoryEmbeddingOperations;
         this.summaryService = summaryService;
         this.localAiClient = localAiClient;
         this.objectMapper = objectMapper;
@@ -59,6 +64,7 @@ public class SbaCli implements ApplicationRunner {
             case "sessions" -> sessions(args);
             case "search" -> search(args, positional);
             case "ingest" -> ingest(args);
+            case "embeddings-backfill" -> embeddingsBackfill(args);
             case "summarize" -> summarize(positional);
             case "summarize-missing" -> summarizeMissing(args);
             case "runner" -> runnerCli.run(args);
@@ -120,6 +126,13 @@ public class SbaCli implements ApplicationRunner {
         writeJson(summaryService.summarizeMissing(limit(args, 10)));
     }
 
+    private void embeddingsBackfill(ApplicationArguments args) throws IOException {
+        writeJson(memoryEmbeddingOperations.backfillEmbeddings(new MemoryEmbeddingBackfillRequest(
+                flag(args, "apply"),
+                optionInt(args, "batch-size", 100),
+                optionInt(args, "progress-every", 250))));
+    }
+
     private void usage() {
         System.out.println("""
                 Usage:
@@ -127,6 +140,7 @@ public class SbaCli implements ApplicationRunner {
                   sba-agentic sessions [--limit=25]
                   sba-agentic search <query> [--limit=25]
                   sba-agentic ingest --source=manual --session=my-session --type=ManualCapture --text='note'
+                  sba-agentic embeddings-backfill [--apply] [--batch-size=100] [--progress-every=250]
                   sba-agentic summarize <session-id>
                   sba-agentic summarize-missing [--limit=10]
                   sba-agentic runner
@@ -141,6 +155,21 @@ public class SbaCli implements ApplicationRunner {
     private static int limit(ApplicationArguments args, int defaultValue) {
         String value = option(args, "limit", Integer.toString(defaultValue));
         return Math.max(1, Math.min(Integer.parseInt(value), 250));
+    }
+
+    private static int optionInt(ApplicationArguments args, String name, int defaultValue) {
+        return Integer.parseInt(option(args, name, Integer.toString(defaultValue)));
+    }
+
+    private static boolean flag(ApplicationArguments args, String name) {
+        List<String> values = args.getOptionValues(name);
+        if (values == null) {
+            return false;
+        }
+        if (values.isEmpty()) {
+            return true;
+        }
+        return Boolean.parseBoolean(values.getFirst());
     }
 
     private static String option(ApplicationArguments args, String name, String defaultValue) {

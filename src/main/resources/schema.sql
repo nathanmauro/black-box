@@ -54,6 +54,20 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_observed
 CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
     ON agent_events (source, event_type, observed_at DESC);
 
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+    target_kind  TEXT NOT NULL,          -- 'event' | 'session_summary'
+    target_id    TEXT NOT NULL,          -- agent_events.id | agent_sessions.id
+    model        TEXT NOT NULL,
+    dimensions   INTEGER NOT NULL,
+    vector       BLOB NOT NULL,          -- little-endian float32, dimensions * 4 bytes
+    content_hash TEXT NOT NULL,          -- re-embed only when source text changes
+    embedded_at  TEXT NOT NULL,
+    PRIMARY KEY (target_kind, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
+    ON memory_embeddings (model, dimensions);
+
 CREATE TABLE IF NOT EXISTS session_melds (
     id TEXT PRIMARY KEY,
     project_key TEXT NOT NULL,

@@ -12,10 +12,10 @@ import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
 import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
-import dev.nathan.sbaagentic.ask.internal.domain.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
+import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 
 import org.springframework.stereotype.Service;
 

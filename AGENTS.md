@@ -15,8 +15,11 @@ Default to normal prose: concise, direct, professional, and complete.
 ## Working here
 
 - Treat this as a product repo, not the Cockpit private control-plane repo.
-- Keep public docs honest: do not claim semantic/vector search, streaming UI behavior, or other
-  roadmap items until they exist and are verified.
+- Keep public docs honest: semantic/vector recall currently surfaces structured intent
+  (`Decision`, `Handoff`, `Observation`) only. The memory index also stores session-summary
+  vectors for backfill/future retrieval, but recall does not return summaries today; the full event
+  corpus is not semantically indexed. Do not claim streaming UI behavior or other roadmap items
+  until they exist and are verified.
 - Avoid committing private machine state: local databases, `.codex` or `.claude` configs, IDE files,
   hook payload dumps, credentials, env files, and absolute workstation paths unless clearly marked as
   examples.

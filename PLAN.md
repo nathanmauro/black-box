@@ -31,7 +31,9 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 - SQLite is the canonical store in the public story; Elasticsearch is explicitly optional/secondary and never led with.
 - Local model is the only outbound dependency, and only for summaries.
 - Showcase assets are reproducible: `docs/assets/demo.gif` comes from `./scripts/record-demo.sh`; the Activity, Board, and Recall captures use isolated synthetic data.
-- Keep honest: no semantic/vector search; task updates use SSE wake-up hints while SQLite remains authoritative.
+- Keep honest: semantic/vector recall covers structured intent and session summaries only; the full
+  event corpus is not semantically indexed. Task updates use SSE wake-up hints while SQLite remains
+  authoritative.
 
 ## Docs delivered
 
@@ -48,7 +50,7 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
    - explicit retitle endpoint / MCP tool, or
    - early-session retitle rules that only replace weak fallback titles, or
    - local-AI title suggestion with user-visible confirmation.
-2. Roadmap candidates (do not claim yet): semantic/vector recall, live event streaming to the UI.
+2. Roadmap candidates (do not claim yet): full-corpus semantic search, live event streaming to the UI.
 3. Diagram/flow documentation workflow: install or standardize on draw.io Desktop for polished flow diagrams, keep Excalidraw for fast whiteboard sketches, and use Mermaid for repo-native diagrams in Markdown.
 
 ## Done since this plan was written

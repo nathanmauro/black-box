@@ -22,6 +22,8 @@ import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.workflow.DagEdge;
@@ -184,6 +186,8 @@ class WireContractFixtureTest {
                 entry("EventFeedResponse", EventFeedResponse.class),
                 entry("EventIngestRequest", EventIngestRequest.class),
                 entry("IngestResponse", IngestResponse.class),
+                entry("MemoryEmbeddingBackfillRequest", MemoryEmbeddingBackfillRequest.class),
+                entry("MemoryEmbeddingBackfillResult", MemoryEmbeddingBackfillResult.class),
                 entry("ProjectAlias", ProjectAlias.class),
                 entry("ProjectAliasRequest", ProjectAliasRequest.class),
                 entry("ProjectMeldPreviewRequest", ProjectMeldPreviewRequest.class),

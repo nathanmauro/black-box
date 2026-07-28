@@ -10,11 +10,11 @@ spring:
       # and the rare writer-vs-writer overlap waits briefly instead of erroring.
       maximum-pool-size: 4
       connection-test-query: SELECT 1
-      connection-init-sql: PRAGMA busy_timeout=5000
       # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's
-      # foreign-key setting is connection-local, so a one-time startup PRAGMA would be insufficient.
+      # connection-local settings need to be applied to every physical connection.
       data-source-properties:
         foreign_keys: "true"
+        busy_timeout: "5000"
   sql:
     init:
       mode: always
@@ -92,6 +92,18 @@ sba:
     index-name: ${SBA_ELASTICSEARCH_INDEX:sba-agentic-events}
     number-of-replicas: ${SBA_ELASTICSEARCH_REPLICAS:0}
     timeout: 5s
+  memory:
+    embedding:
+      enabled: ${SBA_MEMORY_EMBEDDING_ENABLED:true}
+      base-url: ${SBA_MEMORY_EMBEDDING_URL:http://localhost:11434}
+      path: ${SBA_MEMORY_EMBEDDING_PATH:/api/embeddings}
+      model: ${SBA_MEMORY_EMBEDDING_MODEL:nomic-embed-text}
+      dimensions: ${SBA_MEMORY_EMBEDDING_DIMENSIONS:768}
+      timeout: 5s
+      document-prefix: "${SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX:search_document: }"
+      query-prefix: "${SBA_MEMORY_EMBEDDING_QUERY_PREFIX:search_query: }"
+    vector:
+      sqlite-vec-path: ${SBA_SQLITE_VEC_PATH:}
   ask:
     memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
     vector-field: ${SBA_ASK_VECTOR_FIELD:vector}

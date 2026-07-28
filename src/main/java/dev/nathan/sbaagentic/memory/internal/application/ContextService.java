@@ -3,15 +3,25 @@ package dev.nathan.sbaagentic.memory.internal.application;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Predicate;
 
-import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.RecalledItem;
+import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
+import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore.ScoredKey;
+import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
+import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Service;
@@ -42,11 +52,19 @@ public class ContextService implements MemoryRecallOperations {
     private static final int DEFAULT_WITHIN_HOURS = 168;
     private static final int MAX_WITHIN_HOURS = 24 * 365;
     private static final int RECALL_LIMIT = 50;
+    private static final String VECTOR_EVENT_PREFIX = "event:";
 
     private final MemoryEventReader repository;
+    private final TextEmbedder embedder;
+    private final MemoryVectorStore vectorStore;
 
-    public ContextService(MemoryEventReader repository) {
+    public ContextService(
+            MemoryEventReader repository,
+            TextEmbedder embedder,
+            MemoryVectorStore vectorStore) {
         this.repository = repository;
+        this.embedder = embedder;
+        this.vectorStore = vectorStore;
     }
 
 
@@ -66,10 +84,132 @@ public class ContextService implements MemoryRecallOperations {
                 ? null
                 : "%" + trimmedScope.toLowerCase(Locale.ROOT) + "%";
 
-        List<RecalledItem> items = repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT).stream()
-                .map(ContextService::toRecalledItem)
+        List<AgentEvent> lexicalEvents = repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT);
+        Map<String, AgentEvent> eventsById = new LinkedHashMap<>();
+        List<MemoryHit> lexicalHits = lexicalEvents.stream()
+                .peek(event -> eventsById.putIfAbsent(event.id(), event))
+                .map(event -> toMemoryHit(event, 0.0))
                 .toList();
-        return new RecallResult(trimmedScope, hours, resolvedKinds, items.size(), items);
+
+        SemanticRecall semantic = semanticRecall(trimmedScope, eventTypes, since, eventsById);
+        List<MemoryHit> rankedHits = semantic.available()
+                ? ReciprocalRankFusion.fuse(lexicalHits, semantic.hits(), RECALL_LIMIT)
+                : ReciprocalRankFusion.fuse(lexicalHits, List.of(), RECALL_LIMIT);
+        String mode = semantic.available() ? "hybrid" : "lexical";
+
+        List<RecalledItem> items = rankedHits.stream()
+                .map(hit -> toRecalledItem(eventsById.get(hit.id()), hit.score()))
+                .filter(Objects::nonNull)
+                .toList();
+        return new RecallResult(trimmedScope, hours, resolvedKinds, items.size(), items, mode);
+    }
+
+    private SemanticRecall semanticRecall(
+            String trimmedScope,
+            List<String> eventTypes,
+            Instant since,
+            Map<String, AgentEvent> eventsById) {
+        if (trimmedScope == null || trimmedScope.isBlank()) {
+            return SemanticRecall.unavailable();
+        }
+        // A repo path or a session id is a LOCATION, not a subject. Embedding one and ranking
+        // in-repo events by similarity to it produces a near-arbitrary order, and fusing that
+        // into the lexical arm would perturb the recency ordering that "what was decided in this
+        // repo lately" — the dominant use of recall — depends on. Stay lexical for those, and
+        // engage semantic recall only for topic-shaped scopes.
+        if (pathOrIdScope(trimmedScope)) {
+            return SemanticRecall.unavailable();
+        }
+        try {
+            if (!embedder.available()) {
+                return SemanticRecall.unavailable();
+            }
+            Map<String, RecallCandidate> candidatesByKey = semanticCandidates(eventTypes, since);
+            Predicate<String> keyFilter = semanticKeyFilter(candidatesByKey, trimmedScope);
+            EmbeddingVector query = embedder.embedQuery(trimmedScope);
+            List<ScoredKey> scoredKeys = vectorStore.knn(query, RECALL_LIMIT, keyFilter);
+            List<MemoryHit> hits = scoredKeys.stream()
+                    .map(scored -> semanticHit(scored, candidatesByKey, eventsById))
+                    .filter(Objects::nonNull)
+                    .toList();
+            return SemanticRecall.available(hits);
+        }
+        catch (RuntimeException ex) {
+            return SemanticRecall.unavailable();
+        }
+    }
+
+    private Map<String, RecallCandidate> semanticCandidates(List<String> eventTypes, Instant since) {
+        Map<String, RecallCandidate> candidates = new LinkedHashMap<>();
+        for (RecallCandidate candidate : repository.recallCandidates(eventTypes, since)) {
+            if (candidate.event() != null && candidate.event().id() != null) {
+                candidates.put(eventVectorKey(candidate.event().id()), candidate);
+            }
+        }
+        return candidates;
+    }
+
+    private static Predicate<String> semanticKeyFilter(
+            Map<String, RecallCandidate> candidatesByKey,
+            String trimmedScope) {
+        String scopeNeedle = trimmedScope == null ? "" : trimmedScope.toLowerCase(Locale.ROOT);
+        boolean anchoredScope = anchoredScope(candidatesByKey, trimmedScope, scopeNeedle);
+        return key -> {
+            RecallCandidate candidate = candidatesByKey.get(key);
+            if (candidate == null) {
+                return false;
+            }
+            return !anchoredScope || literalScopeMatches(candidate, scopeNeedle);
+        };
+    }
+
+    private static boolean anchoredScope(
+            Map<String, RecallCandidate> candidatesByKey,
+            String trimmedScope,
+            String scopeNeedle) {
+        if (trimmedScope == null || trimmedScope.isBlank()) {
+            return false;
+        }
+        if (pathOrIdScope(trimmedScope)) {
+            return true;
+        }
+        return candidatesByKey.values().stream()
+                .anyMatch(candidate -> literalScopeMatches(candidate, scopeNeedle));
+    }
+
+    private static boolean pathOrIdScope(String scope) {
+        if (scope == null || scope.isBlank()) {
+            return false;
+        }
+        String stripped = scope.strip();
+        return stripped.contains("/") || stripped.matches("[0-9a-fA-F-]{32,}");
+    }
+
+    private static boolean literalScopeMatches(RecallCandidate candidate, String scopeNeedle) {
+        AgentEvent event = candidate.event();
+        if (event == null) {
+            return false;
+        }
+        return containsIgnoreCase(event.id(), scopeNeedle)
+                || containsIgnoreCase(candidate.cwd(), scopeNeedle)
+                || containsIgnoreCase(str(event.metadata() == null ? null : event.metadata().get("repo")), scopeNeedle)
+                || containsIgnoreCase(event.text(), scopeNeedle);
+    }
+
+    private static boolean containsIgnoreCase(String value, String lowerNeedle) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(lowerNeedle);
+    }
+
+    private static MemoryHit semanticHit(
+            ScoredKey scored,
+            Map<String, RecallCandidate> candidatesByKey,
+            Map<String, AgentEvent> eventsById) {
+        RecallCandidate candidate = candidatesByKey.get(scored.key());
+        if (candidate == null || candidate.event() == null) {
+            return null;
+        }
+        eventsById.putIfAbsent(candidate.event().id(), candidate.event());
+        return toMemoryHit(candidate.event(), scored.score());
     }
 
 
@@ -90,7 +230,10 @@ public class ContextService implements MemoryRecallOperations {
         return resolved.isEmpty() ? DEFAULT_RECALL_KINDS : resolved;
     }
 
-    private static RecalledItem toRecalledItem(AgentEvent event) {
+    private static RecalledItem toRecalledItem(AgentEvent event, double score) {
+        if (event == null) {
+            return null;
+        }
         Map<String, Object> meta = event.metadata() == null ? Map.of() : event.metadata();
         String kind = str(meta.get("kind"));
         if (kind == null) {
@@ -114,9 +257,37 @@ public class ContextService implements MemoryRecallOperations {
                 asDouble(meta.get("confidence")),
                 asStringList(meta.get("openLoops")),
                 str(meta.get("nextAction")),
-                str(meta.get("toAgent")));
+                str(meta.get("toAgent")),
+                score);
     }
 
+    private static MemoryHit toMemoryHit(AgentEvent event, double score) {
+        Map<String, Object> meta = event.metadata() == null ? Map.of() : event.metadata();
+        String kind = str(meta.get("kind"));
+        if (kind == null) {
+            kind = event.eventType() == null ? KIND_OBSERVATION : event.eventType().toLowerCase(Locale.ROOT);
+        }
+        String headline = switch (kind) {
+            case KIND_DECISION -> firstNonBlank(str(meta.get("decision")), Titles.firstLine(event.text()));
+            case KIND_HANDOFF -> firstNonBlank(str(meta.get("contextSummary")), Titles.firstLine(event.text()));
+            default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
+        };
+        return new MemoryHit(
+                event.id(),
+                score,
+                headline,
+                event.source(),
+                str(meta.get("repo")),
+                event.sessionId(),
+                event.clientSessionId(),
+                event.observedAt() == null ? null : event.observedAt().toString(),
+                event.text(),
+                Titles.firstLine(event.text()));
+    }
+
+    private static String eventVectorKey(String eventId) {
+        return VECTOR_EVENT_PREFIX + eventId;
+    }
 
     private static String firstNonBlank(String first, String second) {
         return notBlank(first) ? first : second;
@@ -156,5 +327,16 @@ public class ContextService implements MemoryRecallOperations {
             return out.isEmpty() ? null : out;
         }
         return null;
+    }
+
+    private record SemanticRecall(boolean available, List<MemoryHit> hits) {
+
+        private static SemanticRecall available(List<MemoryHit> hits) {
+            return new SemanticRecall(true, hits);
+        }
+
+        private static SemanticRecall unavailable() {
+            return new SemanticRecall(false, List.of());
+        }
     }
 }

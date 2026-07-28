@@ -21,11 +21,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:target/session-link-api-contract-test.db",
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-session-link-api-contract-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false"
+        "sba.ask.embedding-enabled=false",
+        "sba.memory.embedding.enabled=false"
 })
 @AutoConfigureMockMvc
 class SessionLinkApiContractTest {
