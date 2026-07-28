@@ -25,5 +25,6 @@ public record RecalledItem(
         Double confidence,
         List<String> openLoops,
         String nextAction,
-        String toAgent) {
+        String toAgent,
+        double score) {
 }

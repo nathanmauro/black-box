@@ -12,5 +12,6 @@ public record RecallResult(
         int withinHours,
         List<String> kinds,
         int count,
-        List<RecalledItem> items) {
+        List<RecalledItem> items,
+        String mode) {
 }

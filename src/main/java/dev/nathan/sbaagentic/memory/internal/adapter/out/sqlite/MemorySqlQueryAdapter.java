@@ -11,6 +11,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.memory.QueryFacets;
 
@@ -144,6 +145,29 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
         sql.append("\n ORDER BY e.observed_at DESC\n LIMIT ?");
         args.add(limit);
         return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
+    }
+
+    @Override
+    public List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since) {
+        if (eventTypes == null || eventTypes.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(", ", Collections.nCopies(eventTypes.size(), "?"));
+        List<Object> args = new ArrayList<>(eventTypes);
+        args.add(since.toString());
+        String sql = """
+                SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
+                       e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json,
+                       e.observed_at, s.cwd AS recall_cwd
+                  FROM agent_events e
+                  JOIN agent_sessions s ON e.session_id = s.id
+                 WHERE e.event_type IN (%s)
+                   AND e.observed_at >= ?
+                 ORDER BY e.observed_at DESC
+                """.formatted(placeholders);
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new RecallCandidate(
+                mapEvent(rs, rowNum),
+                rs.getString("recall_cwd")), args.toArray());
     }
 
     private static void appendKeywordFacets(StringBuilder sql, List<Object> args, QueryFacets facets) {

@@ -43,6 +43,7 @@ POST /api/decisions
 POST /api/events
 POST /api/handoffs
 POST /api/melds
+POST /api/memory/embeddings/backfill
 POST /api/projects/{projectKey}/melds/preview
 POST /api/session-links
 POST /api/sessions/summarize

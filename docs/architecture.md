@@ -44,7 +44,7 @@ flowchart LR
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
-    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>session_links · project_aliases")]
+    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>memory_embeddings<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
@@ -302,8 +302,13 @@ selecting a project never infers work or broadens the authoritative queue query.
 
 - **Recording.** Normalizes hook/API event payloads and persists sessions plus structured events in
   SQLite behind recording-owned store ports.
-- **Memory.** Captures and recalls decisions, Handoffs, and observations by repo, topic, or direct
-  event id; searches SQLite events and optionally combines Elasticsearch hits.
+- **Memory.** Captures and recalls decisions, Handoffs, and observations by repo, topic, semantic
+  paraphrase, or direct event id; fuses lexical SQLite recall with local vector recall when memory
+  embeddings are available; searches SQLite events and optionally combines Elasticsearch hits.
+  Semantic recall returns structured intent events (`Decision`, `Handoff`, `Observation`) only.
+  Non-empty session summaries are stored in the memory embedding index for backfill and future
+  retrieval, but no recall path surfaces them today; the full captured event corpus is not
+  semantically indexed.
 - **Project.** Resolves conservative logical project identity, derives grouped project views, and
   builds bounded meld artifacts from recorded sessions.
 - **Summary.** Owns session finalization, local/external summary providers, and transcript exports.
@@ -318,6 +323,15 @@ selecting a project never infers work or broadens the authoritative queue query.
 
 SQLite is the only canonical store. Elasticsearch is disabled by default and is only a secondary
 index for new events; it is not used by atomic claims or the Board.
+
+| Table | Owner | Purpose |
+| --- | --- | --- |
+| `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |
+| `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, and Observations |
+| `memory_embeddings` | memory | Canonical float32 vectors for structured intent and session summaries; sqlite-vec is only an optional accelerator rebuilt from this table |
+| `specs`, `tasks`, `task_events` | workflow | Frozen work definitions, queue state, lifecycle transitions, and annotations |
+| `session_links` | workflow | Explicit session lineage links used by Board and DAG projections |
+| `project_aliases` | project | Reversible logical-project grouping over recorded working directories |
 
 Session summarization has a separate privacy and process boundary. The `external` backend passes
 the configured `SBA_SUMMARY_EXTERNAL_COMMAND` to `/bin/sh -c`; the default command is the bundled

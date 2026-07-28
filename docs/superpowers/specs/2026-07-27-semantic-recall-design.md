@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS memory_embeddings (
     model        TEXT NOT NULL,
     dimensions   INTEGER NOT NULL,
     vector       BLOB NOT NULL,          -- little-endian float32, dimensions * 4 bytes
-    content_hash TEXT NOT NULL,          -- re-embed only when source text changes
+    content_hash TEXT NOT NULL,          -- re-embed when source text or document prefix changes
     embedded_at  TEXT NOT NULL,
     PRIMARY KEY (target_kind, target_id)
 );
@@ -107,9 +107,9 @@ sqlite-vec v0.1.9, macOS arm64):
   `dlopen` and fails only on a missing file.
 - `vec0(id text primary key, e float[N])` works, so the `agent_events.id` UUID needs no
   integer-rowid join table.
-- `enable_load_extension=true` works as a **plain JDBC connection property**, so it
-  drops into the existing Hikari `data-source-properties` block next to `foreign_keys`,
-  and coexists with `PRAGMA busy_timeout`.
+- `enable_load_extension=true` works as a **plain JDBC connection property**, so the
+  sqlite-vec initializer can add it only when `SBA_SQLITE_VEC_PATH` points to an existing
+  extension. The default brute-force path leaves SQLite extension loading disabled.
 
 ### 3. Embedding source
 
@@ -157,6 +157,25 @@ rank 1. This is a load-bearing part of the design, not an optimisation.
 Recall@5 of 5/6 also confirms semantic search must **not** replace lexical: hybrid
 fusion is doing real work, and the honest claim is "better recall", not "solved".
 
+Corpus shapes confirming the distillation rules (measured, not assumed): `Handoff to
+<slug>:` is the preamble on 625 of 689 handoffs, and `metadata_json` carries structured
+fields on ~95% of structured events (Decision 70/74, Handoff 676/689, Observation
+185/195) — so metadata-driven distillation covers almost everything, with raw `text` as
+the fallback for the rest.
+
+#### 3b. Known limitation: symptom-shaped queries
+
+The one query that still misses at k=5 is *"the API only gave back the first chunk of
+rows"*. Its target **is** in the corpus (a handoff about task-list pagination), so this
+is a genuine retrieval gap, not an unanswerable question. The cause is asymmetry: the
+query describes a **symptom**, while the captured handoff describes a **fix** ("Changed
+the REST/TaskQuery/SQLite paging path…"). Embedding models retrieve poorly across that
+gap.
+
+This is worth stating plainly rather than tuning away on six hand-picked queries. It is
+also a second argument for hybrid fusion — the lexical arm catches the shared surface
+tokens the vector arm misses. Do not claim symptom→fix retrieval works.
+
 `ask`'s existing `QueryEmbedder` **cannot be reused from `memory`**: it is
 `ask`-internal and `ask → memory`, so importing it inverts the graph and trips both
 Spring Modulith `verify()` and the ArchUnit acyclicity ratchet. `memory` therefore gets
@@ -171,8 +190,10 @@ this slice narrow.
 
 1. lexical candidates — the existing `LIKE` path, preserved so exact-token and id
    lookups keep working;
-2. semantic candidates — kNN over embeddings, filtered to the same scope, time window,
-   and kinds;
+2. semantic candidates — kNN over embeddings, filtered to the same time window and kinds. When
+   `scope` names a repo path, bare repo, event id, or literal captured-text anchor, semantic
+   candidates are filtered to that same anchor; otherwise `scope` is treated as the semantic topic
+   query;
 3. fuse with the existing `ReciprocalRankFusion`.
 
 When the embedder or the vector store is unavailable, recall returns pure lexical
@@ -198,6 +219,8 @@ sba:
       model: nomic-embed-text
       dimensions: 768
       timeout: 5s
+      document-prefix: "search_document: "
+      query-prefix: "search_query: "
     vector:
       sqlite-vec-path: ${SBA_SQLITE_VEC_PATH:}   # empty => brute-force fallback
 ```
@@ -214,12 +237,15 @@ Everything lands in `memory`, which already depends on `recording` and already o
 - `memory/internal/adapter/out/http/` — embedding client
 - `memory/internal/adapter/out/sqlite/` — both vector stores (the ArchUnit rule requires
   every `@Repository` to live in `<module>.internal.adapter.out.sqlite..`)
-- indexing listens on `EventRecorded`, after the canonical commit, never blocking it
+- indexing listens on `EventRecorded` after the canonical commit, but writes inline with the
+  caller's post-persistence path rather than on a separate executor. This avoids hidden background
+  SQLite writers surfacing `SQLITE_BUSY` on unrelated later writes; embedding failures are still
+  swallowed and backfill remains the repair path for missed rows.
 
 ## Verification
 
 - float32 BLOB round-trip; cosine correctness against hand-computed vectors
-- `content_hash` skip — unchanged text is not re-embedded
+- `content_hash` skip — unchanged document embedding input is not re-embedded
 - dimension-mismatch rejection
 - **adapter parity**: `SqliteVecVectorStore` and `BruteForceVectorStore` return identical
   top-k over a fixture corpus (the highest-value test in the slice — it is what makes the

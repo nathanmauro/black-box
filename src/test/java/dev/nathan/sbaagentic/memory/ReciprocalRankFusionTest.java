@@ -1,8 +1,6 @@
-package dev.nathan.sbaagentic.ask.internal.domain;
+package dev.nathan.sbaagentic.memory;
 
 import java.util.List;
-
-import dev.nathan.sbaagentic.memory.MemoryHit;
 
 import org.junit.jupiter.api.Test;
 

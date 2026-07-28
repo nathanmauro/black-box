@@ -30,7 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
         "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-context-loop-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
-        "sba.elasticsearch.enabled=false"
+        "sba.elasticsearch.enabled=false",
+        "sba.memory.embedding.enabled=false"
 })
 class ContextLoopTest {
 

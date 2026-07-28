@@ -1,0 +1,26 @@
+[
+  {
+    "query": "why do the tests deadlock when they run together",
+    "expect": "shared.cache|SQLITE_LOCKED|busy_timeout"
+  },
+  {
+    "query": "stop the coding agent from asking permission the first time it opens a folder",
+    "expect": "trust.level|directory-trust|first-run trust"
+  },
+  {
+    "query": "how do we show which agent spawned which other agent",
+    "expect": "subagent|spawned_by|lineage"
+  },
+  {
+    "query": "keep the terminal multiplexer used by the browser tests separate from my own",
+    "expect": "TMUX_TMPDIR|tmux socket"
+  },
+  {
+    "query": "the API only gave back the first chunk of rows",
+    "expect": "paginat|250-row|clamp"
+  },
+  {
+    "query": "splitting the java code into enforced modules",
+    "expect": "modular.monolith|Spring Modulith"
+  }
+]

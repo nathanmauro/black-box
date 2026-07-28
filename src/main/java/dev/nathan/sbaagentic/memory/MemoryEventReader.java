@@ -17,4 +17,9 @@ public interface MemoryEventReader {
     List<String> distinctFieldValues(String field, String prefix, int limit);
 
     List<AgentEvent> recall(List<String> eventTypes, String scopeLike, Instant since, int limit);
+
+    List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since);
+
+    record RecallCandidate(AgentEvent event, String cwd) {
+    }
 }

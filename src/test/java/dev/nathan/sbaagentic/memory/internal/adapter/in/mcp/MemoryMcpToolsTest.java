@@ -57,7 +57,7 @@ class MemoryMcpToolsTest {
     @Test
     void recallContextWithoutWithinHoursOrKindsFallsBackToServiceDefaults() {
         when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull()))
-                .thenReturn(new RecallResult("sba-agentic", 168, List.of(), 0, List.of()));
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of(), 0, List.of(), "lexical"));
 
         String result = callback("recallContext").call("{\"repoOrTopic\":\"sba-agentic\"}");
 

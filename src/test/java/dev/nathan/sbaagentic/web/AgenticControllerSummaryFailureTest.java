@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "sba.local-ai.enabled=false",
         "sba.elasticsearch.enabled=false",
         "sba.ask.embedding-enabled=false",
+        "sba.memory.embedding.enabled=false",
         "sba.summary.backend=external",
         "sba.summary.external-command=exit 42"
 })

@@ -3,6 +3,7 @@ target/
 sba-agentic.db
 sba-agentic.db-*
 .DS_Store
+.mcp.json
 .idea/
 .claude/
 .codex/

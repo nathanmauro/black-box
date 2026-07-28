@@ -28,9 +28,10 @@ whitespace change.
 ## Task 2 — `TextEmbedder` port + HTTP adapter
 
 - Port `memory/internal/application/port/TextEmbedder.java`:
-  `EmbeddingVector embed(String text)`, `boolean available()`, `String model()`.
+  `EmbeddingVector embedDocument(String text)`, `EmbeddingVector embedQuery(String text)`,
+  `boolean available()`, `String model()`.
 - `MemoryEmbeddingProperties` bound to `sba.memory.embedding` (enabled, base-url, path,
-  model, dimensions=768, timeout=5s). Register it in
+  model, dimensions=768, timeout=5s, document-prefix, query-prefix). Register it in
   `platform/internal/config/SbaConfiguration.java` next to the existing property beans.
 - Adapter `memory/internal/adapter/out/http/OllamaTextEmbedderClient.java`. Mirror the
   shape of `ask/internal/adapter/out/http/OllamaEmbeddingClient.java`: POST
@@ -59,8 +60,9 @@ Added after the premise was measured against the real corpus. Without this, reca
   - `Observation` / anything else / missing metadata → fall back to `text`
   - strip the leading structural preamble (`Handoff to <x>:`, `<slug> — Session close-out`),
     collapse whitespace, cap at 900 chars
-  - `content_hash` must hash the **distilled** text, so changing distillation invalidates
-    stale rows naturally
+  - `content_hash` must hash the exact document embedding input: the document prefix plus the
+    distilled text, so changing distillation or prefix configuration invalidates stale rows
+    naturally
 
 **Tests**: each event kind distills to the expected string; missing/malformed
 `metadata_json` falls back to `text` without throwing; preamble stripping is exact;
@@ -95,8 +97,9 @@ filter excludes everything; ties broken deterministically.
 ## Task 5 — sqlite-vec adapter (optional accelerator)
 
 - `MemoryVectorProperties` bound to `sba.memory.vector` (`sqlite-vec-path`, default empty).
-- Add `enable_load_extension: "true"` to `spring.datasource.hikari.data-source-properties`
-  in `application.yml` (verified to work as a plain JDBC connection property).
+- Do not enable SQLite extension loading in the default datasource configuration. Add
+  `enable_load_extension=true` to Hikari only after `SBA_SQLITE_VEC_PATH` resolves to an existing
+  extension file.
 - A Hikari customizer / init path that runs `SELECT load_extension(<path>)` per connection
   when the path is configured and the file exists. `PRAGMA busy_timeout` must survive —
   move it to a data-source property if `connection-init-sql` can only hold one statement.
@@ -116,8 +119,10 @@ identical top-k ordering. That is what makes the fallback trustworthy.
   — the same seam `ElasticIndexClient.indexRecordedEvent` already uses, which runs after
   the canonical SQLite commit.
 - Embed only `Decision | Handoff | Observation`. Skip when `content_hash` is unchanged.
-- Async and never-fail: any embedder error is logged and swallowed. A failed embed must
-  never affect the recorded event — canonical write integrity outranks index freshness.
+- Inline after canonical persistence and never-fail: any embedder error is logged and swallowed. A
+  failed embed must never affect the recorded event — canonical write integrity outranks index
+  freshness. Do not put SQLite embedding writes on a listener-owned background executor; that can
+  collide with unrelated later writes and surface `SQLITE_BUSY` to the caller.
 - Session summaries: embed when a summary is written/updated.
 
 **Tests**: recording a `Decision` produces one embedding row; recording a `PostToolUse`
@@ -140,8 +145,9 @@ second run; resume after simulated interruption embeds only the remainder.
 
 - `ContextService.recall`: run the existing lexical query, run kNN when available, fuse
   with `ReciprocalRankFusion`, keep `RECALL_LIMIT`.
-- Semantic candidates must respect the same `scope` / `withinHours` / `kinds` filters as
-  lexical — push those into the `keyFilter`.
+- Semantic candidates must respect the same `withinHours` / `kinds` filters as lexical. A `scope`
+  that names a repo path, bare repo, event id, or literal captured-text anchor must also constrain
+  semantic candidates through the `keyFilter`; otherwise `scope` is the semantic topic query.
 - `RecallResult` gains `mode` (`hybrid` | `lexical`); `RecalledItem` gains `score`.
   Additive only.
 - Update `RestContractSnapshotTest` and `McpContractSnapshotTest` snapshots deliberately;

@@ -3,7 +3,9 @@ package dev.nathan.sbaagentic.platform.internal.config;
 import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.AskModelProperties;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
+import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.summary.SummaryExportProperties;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
@@ -34,6 +36,14 @@ class SbaConfigurationTest {
             assertThat(context.getBean(AskModelProperties.class).getModel()).isEqualTo("local-model");
             assertThat(context.getBean(MemoryRetrievalProperties.class).getMemoryIndex())
                     .isEqualTo("agent-memory");
+            assertThat(context.getBean(MemoryEmbeddingProperties.class).getModel())
+                    .isEqualTo("nomic-embed-text");
+            assertThat(context.getBean(MemoryEmbeddingProperties.class).getDimensions()).isEqualTo(768);
+            assertThat(context.getBean(MemoryEmbeddingProperties.class).getDocumentPrefix())
+                    .isEqualTo("search_document: ");
+            assertThat(context.getBean(MemoryEmbeddingProperties.class).getQueryPrefix())
+                    .isEqualTo("search_query: ");
+            assertThat(context.getBean(MemoryVectorProperties.class).getSqliteVecPath()).isEmpty();
             assertThat(context.getBean(SummaryExportProperties.class).getTargets())
                     .singleElement()
                     .extracting(SummaryExportProperties.Target::getId)
@@ -56,6 +66,11 @@ class SbaConfigurationTest {
         contextRunner
                 .withPropertyValues(
                         "SBA_LOCAL_AI_MODEL=fixture-model",
+                        "SBA_MEMORY_EMBEDDING_MODEL=fixture-embedding",
+                        "SBA_MEMORY_EMBEDDING_ENABLED=false",
+                        "SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX=doc:",
+                        "SBA_MEMORY_EMBEDDING_QUERY_PREFIX=query:",
+                        "SBA_SQLITE_VEC_PATH=/tmp/fixture-vec0.dylib",
                         "SBA_ASK_MEMORY_INDEX=fixture-memory",
                         "SBA_ELASTICSEARCH_INDEX=fixture-events",
                         "SBA_REDACT_ENABLED=false")
@@ -66,6 +81,15 @@ class SbaConfigurationTest {
                             .isEqualTo("fixture-model");
                     assertThat(context.getBean(MemoryRetrievalProperties.class).getMemoryIndex())
                             .isEqualTo("fixture-memory");
+                    assertThat(context.getBean(MemoryEmbeddingProperties.class).getModel())
+                            .isEqualTo("fixture-embedding");
+                    assertThat(context.getBean(MemoryEmbeddingProperties.class).isEnabled()).isFalse();
+                    assertThat(context.getBean(MemoryEmbeddingProperties.class).getDocumentPrefix())
+                            .isEqualTo("doc:");
+                    assertThat(context.getBean(MemoryEmbeddingProperties.class).getQueryPrefix())
+                            .isEqualTo("query:");
+                    assertThat(context.getBean(MemoryVectorProperties.class).getSqliteVecPath())
+                            .isEqualTo("/tmp/fixture-vec0.dylib");
                     assertThat(context.getBean(AskProperties.class).getMemoryIndex())
                             .isEqualTo("fixture-memory");
                     assertThat(context.getBean(ElasticsearchProperties.class).getIndexName())

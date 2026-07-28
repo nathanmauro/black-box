@@ -51,10 +51,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:target/task-service-test.db",
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-service-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false"
+        "sba.elasticsearch.enabled=false",
+        "sba.memory.embedding.enabled=false"
 })
 class TaskServiceIntegrationTest {
 

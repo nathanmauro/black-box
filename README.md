@@ -19,14 +19,15 @@
 
 Black Box is a writable memory bus and coordination ledger for Codex, Claude Code, and other MCP
 clients. Agents commit the reasoning worth preserving, coordinate through a SQLite-backed task
-queue, and recall exact decisions or completion handoffs in later sessions.
+queue, and recall exact or semantically related structured decisions and completion handoffs in
+later sessions.
 
 The Black Box server is deliberately not an agent runner. It records intent, arbitrates ownership,
 and exposes state; your agents and orchestrators still execute the work.
 
 | Remember | Coordinate | Observe | Stay local-first |
 | --- | --- | --- | --- |
-| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, logical Projects, project-aware Board, structured Recall, search, SSE updates, and stats | SQLite is authoritative; Elasticsearch and model-backed features are optional |
+| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, logical Projects, project-aware Board, semantic structured Recall, search, SSE updates, and stats | SQLite is authoritative; Elasticsearch and model-backed features are optional |
 
 ## The loop
 
@@ -61,7 +62,7 @@ pivot into Activity, the exact-scope Board, or Recall without rewriting recorded
 | Coordination Board | Structured Recall |
 | --- | --- |
 | <img src="docs/assets/board.png" alt="Black Box Coordination Board with Open, In Progress, Blocked, and Done lanes." width="100%"> | <img src="docs/assets/recall.png" alt="Black Box Recall workspace showing a typed Handoff and Decision." width="100%"> |
-| Inspect frozen intent, ownership, blockers, priorities, and linked completion Handoffs. | Query Decisions and Handoffs by repo or topic without reading raw transcripts. |
+| Inspect frozen intent, ownership, blockers, priorities, and linked completion Handoffs. | Query Decisions and Handoffs by repo, topic, event id, or semantic paraphrase without reading raw transcripts. |
 
 ## Start in 60 seconds
 
@@ -124,7 +125,7 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureDecision` | Preserve a choice, rationale, rejected alternatives, confidence, and open loops |
 | `captureHandoff` | Leave context, open loops, and one next action for another agent |
 | `captureObservation` | Record a concise fact or note |
-| `recallContext` | Recall structured Decisions and Handoffs by repo, topic, or event id |
+| `recallContext` | Recall structured Decisions and Handoffs by repo, topic, semantic paraphrase, or event id |
 | `searchSessions` | Search captured events and sessions |
 | `recentSessions` | List recent agent sessions |
 | `localModelStatus` | Inspect the optional local model backend |
@@ -194,7 +195,8 @@ recallContext({
   Blocked, and Done tasks, with frozen spec and linked-Handoff detail. Selecting a project does not
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
   `createSpec.projectKey` when enqueueing work.
-- **Recall** — focused Decision, Handoff, and Observation retrieval by repo or topic.
+- **Recall** — focused Decision, Handoff, and Observation retrieval by repo, topic, event id, or
+  semantic paraphrase.
 
 Open them directly:
 
@@ -219,10 +221,30 @@ Automatic redaction is enabled before persistence for private-key blocks, AWS cr
 or API tokens, and password/token assignments. Set `SBA_REDACT_ENABLED=false` only when you
 deliberately want unredacted local storage.
 
-Core capture, coordination, and recall require no model and no Elasticsearch. Session summaries are
-the exception: the default `external` backend invokes the bundled Codex wrapper and can send
-transcript text through that vendor path. Set `SBA_SUMMARY_BACKEND=local` to use LM Studio or another
-local OpenAI-compatible server instead.
+Core capture, coordination, and lexical recall require no model and no Elasticsearch. Semantic recall
+uses memory embeddings for structured Decisions, Handoffs, and Observations; recall results surface
+those structured intent events only today. Non-empty session summaries are also stored in the memory
+embedding index for backfill and future retrieval, but no recall path returns summaries yet. The full
+captured event corpus is not semantically indexed. If the embedder or vector store is unavailable,
+recall still returns lexical results and reports `mode: "lexical"`.
+
+Recall's `scope` value can be a repo path, bare repo name, event id, or topic, and how it is read
+depends on its shape:
+
+- A **repo path or event id** is a location, not a subject. Recall stays lexical and returns the
+  most recent matching intent, reporting `mode: "lexical"`. Embedding a path would rank in-repo
+  events by their similarity to a path string, which would perturb that recency ordering for no
+  gain.
+- A **topic** engages semantic recall. If the topic also matches prior event ids, working
+  directories, captured text, or repo metadata, candidates are constrained to that anchor;
+  otherwise it is treated as an open topic query within the selected time window and kinds.
+
+One `scope` cannot yet express both a location and a subject — "decisions in this repo about
+retries" needs a separate query parameter, which is not implemented.
+
+Session summaries have a separate privacy boundary: the default `external` backend invokes the
+bundled Codex wrapper and can send transcript text through that vendor path. Set
+`SBA_SUMMARY_BACKEND=local` to use LM Studio or another local OpenAI-compatible server instead.
 
 ## Board-driven runner modes (optional, config-gated)
 
@@ -325,6 +347,12 @@ Defaults live in `src/main/resources/application.yml`.
 | `SBA_SUMMARY_BACKEND` | `external` | Summary backend; set `local` for an OpenAI-compatible local model |
 | `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command |
 | `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | Local OpenAI-compatible server |
+| `SBA_MEMORY_EMBEDDING_ENABLED` | `true` | Enable semantic recall embeddings; disabled recall reports lexical mode |
+| `SBA_MEMORY_EMBEDDING_URL` | `http://localhost:11434` | Ollama-compatible memory embedding endpoint |
+| `SBA_MEMORY_EMBEDDING_MODEL` | `nomic-embed-text` | Memory embedding model for structured intent and stored summary vectors |
+| `SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX` | `search_document: ` | Prefix applied to stored text before embedding; empty disables it |
+| `SBA_MEMORY_EMBEDDING_QUERY_PREFIX` | `search_query: ` | Prefix applied to recall queries before embedding; empty disables it |
+| `SBA_SQLITE_VEC_PATH` | unset | Optional sqlite-vec extension path; empty uses the portable brute-force vector fallback |
 | `SBA_ELASTICSEARCH_ENABLED` | `false` | Enable optional secondary search indexing |
 | `SBA_ELASTICSEARCH_URL` | `http://localhost:9200` | Optional Elasticsearch endpoint |
 | `SBA_EXPORT_OBSIDIAN_DIR` | unset | Enables the built-in Obsidian summary export target |

@@ -28,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-facet-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false"
+        "sba.elasticsearch.enabled=false",
+        "sba.memory.embedding.enabled=false"
 })
 class EventSearchFacetTest {
 

@@ -36,6 +36,7 @@ import static org.hamcrest.Matchers.is;
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",
         "sba.ask.embedding-enabled=false",
+        "sba.memory.embedding.enabled=false",
         "sba.exports.targets[0].id=obsidian",
         "sba.exports.targets[0].label=Obsidian",
         "sba.exports.targets[0].type=markdown-file",

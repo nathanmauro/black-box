@@ -36,10 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "spring.datasource.url=jdbc:sqlite:target/task-stream-test.db",
+        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-stream-test-${random.uuid}.db",
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",
+        "sba.memory.embedding.enabled=false",
         "server.shutdown=immediate"
 })
 class TaskStreamTest {

@@ -12,11 +12,13 @@ public class SbaAgenticApplication {
 
     private static final Set<String> CLI_COMMANDS = Set.of(
             "doctor",
+            "embeddings-backfill",
             "ingest",
             "runner",
             "search",
             "sessions",
-            "summarize");
+            "summarize",
+            "summarize-missing");
 
     public static void main(String[] args) {
         SpringApplication application = new SpringApplication(SbaAgenticApplication.class);

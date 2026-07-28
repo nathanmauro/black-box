@@ -41,6 +41,7 @@ import static org.awaitility.Awaitility.await;
         "sba.local-ai.enabled=false",
         "sba.summary.backend=local",
         "sba.elasticsearch.enabled=false",
+        "sba.memory.embedding.enabled=false",
         "server.shutdown=immediate"
 })
 class EventStreamTest {
