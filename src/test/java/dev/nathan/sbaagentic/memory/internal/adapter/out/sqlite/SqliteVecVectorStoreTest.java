@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -121,6 +122,13 @@ class SqliteVecVectorStoreTest {
         assertThat(fixture.sqliteVecStore().knn(new EmbeddingVector("nomic", new float[] { 1.0f, 0.0f }), 1, key -> true))
                 .extracting(ScoredKey::key)
                 .containsExactly("event:one");
+        Map<String, EmbeddingVector> vectors = fixture.sqliteVecStore().fetchVectors(
+                List.of("event:one", "event:missing"),
+                "nomic",
+                2);
+        assertThat(vectors).containsOnlyKeys("event:one");
+        assertThat(vectors.get("event:one").cosineSimilarity(new EmbeddingVector("nomic", new float[] { 1.0f, 0.0f })))
+                .isEqualTo(1.0);
     }
 
     private static Fixture fixture(Path extensionPath) throws Exception {

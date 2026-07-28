@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore.StoredEmbedding;
@@ -83,6 +84,21 @@ class BruteForceVectorStoreTest {
         fixture.embeddingStore().upsert(stored("event", "one", new float[] { 1.0f, 0.0f }));
 
         assertThat(fixture.vectorStore().knn(query(1.0f, 0.0f), 3, key -> false)).isEmpty();
+    }
+
+    @Test
+    void fetchVectorsReturnsOnlyRequestedCanonicalVectorsForModelAndDimensions() {
+        Fixture fixture = fixture();
+        fixture.embeddingStore().upsert(stored("event", "one", new float[] { 1.0f, 0.0f }));
+        fixture.embeddingStore().upsert(stored("event", "two", new float[] { 0.0f, 1.0f }));
+
+        Map<String, EmbeddingVector> vectors = fixture.vectorStore().fetchVectors(
+                List.of("event:one", "event:missing"),
+                "nomic",
+                2);
+
+        assertThat(vectors).containsOnlyKeys("event:one");
+        assertThat(vectors.get("event:one").cosineSimilarity(query(1.0f, 0.0f))).isEqualTo(1.0);
     }
 
     @Test

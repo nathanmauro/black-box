@@ -88,7 +88,7 @@ class McpContractSnapshotTest {
     }
 
     @Test
-    void recallContextOutputContractAddsModeAndScoreWithoutChangingExistingFields() throws IOException {
+    void recallContextOutputContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
         JsonNode records = objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json")
                 .getInputStream()).path("records");
         assertRecallResultShape(records.path("RecallResult"));
@@ -161,6 +161,6 @@ class McpContractSnapshotTest {
         assertThat(item.path("openLoops").isArray()).isTrue();
         assertThat(item.path("nextAction").isTextual()).isTrue();
         assertThat(item.path("toAgent").isTextual()).isTrue();
-        assertThat(item.path("score").isNumber()).isTrue();
+        assertThat(item.path("score").isNumber() || item.path("score").isNull()).isTrue();
     }
 }

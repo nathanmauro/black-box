@@ -1,8 +1,12 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -128,6 +132,40 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
             LOGGER.info("sqlite-vec query failed; using brute-force memory vectors", ex);
             return fallback.knn(query, k, keyFilter);
         }
+    }
+
+    @Override
+    public Map<String, EmbeddingVector> fetchVectors(Collection<String> keys, String model, int dimensions) {
+        Objects.requireNonNull(keys, "keys");
+        Objects.requireNonNull(model, "model");
+        List<String> distinctKeys = keys.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinctKeys.isEmpty()) {
+            return Map.of();
+        }
+
+        String placeholders = String.join(", ", java.util.Collections.nCopies(distinctKeys.size(), "?"));
+        List<Object> args = new ArrayList<>();
+        args.add(model);
+        args.add(dimensions);
+        args.addAll(distinctKeys);
+        List<Map.Entry<String, EmbeddingVector>> rows = jdbcTemplate.query("""
+                SELECT target_kind, target_id, model, vector
+                  FROM memory_embeddings
+                 WHERE model = ?
+                   AND dimensions = ?
+                   AND (target_kind || ':' || target_id) IN (%s)
+                 ORDER BY target_kind, target_id
+                """.formatted(placeholders),
+                (rs, rowNum) -> Map.entry(
+                        MemoryVectorKeys.key(rs.getString("target_kind"), rs.getString("target_id")),
+                        EmbeddingVector.fromBlob(rs.getString("model"), rs.getBytes("vector"))),
+                args.toArray());
+        Map<String, EmbeddingVector> vectors = new LinkedHashMap<>();
+        rows.forEach(row -> vectors.put(row.getKey(), row.getValue()));
+        return vectors;
     }
 
     private int vectorCount() {

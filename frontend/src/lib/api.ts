@@ -75,6 +75,7 @@ export type RecalledItem = {
   openLoops?: string[] | null;
   nextAction?: string | null;
   toAgent?: string | null;
+  score?: number | null;
 };
 
 export type RecallResult = {
@@ -83,6 +84,7 @@ export type RecallResult = {
   kinds: string[];
   count: number;
   items: RecalledItem[];
+  mode?: "hybrid" | "lexical" | string | null;
 };
 
 export type ProjectScope = {

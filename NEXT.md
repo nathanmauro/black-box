@@ -58,11 +58,12 @@ regardless of session liveness, and shared terminal handling belongs in
 
 ## Open loops (ranked)
 
-1. **Recall score semantics** — IN PROGRESS this session. Replace the RRF fusion score
-   (~0.016, meaningless to callers) in `RecalledItem.score` with true cosine similarity,
-   measure the distribution over the live corpus, then add a relevance floor so recall can
-   honestly return nothing. Real matches measured ~0.62–0.69 vs a ~0.58–0.64 baseline cluster.
-   Contract note: additive snapshot updates only (Rest/McpContractSnapshotTest).
+1. **Recall score semantics** — Phase A landed on the `recall-score-semantics` branch:
+   `RecalledItem.score` is nullable true cosine only, fusion order is unchanged, lexical-mode
+   scores are null, lexical hybrid hits are scored from canonical `memory_embeddings`, and an
+   env-gated cosine distribution harness was added. Verified by two independent lenses; suite
+   green at 401 tests, 0 failures, 2 skipped (both env-gated harnesses). Phase B remains: run
+   the live harness, choose the relevance floor, and gate semantic-only additions.
 2. **#21 redesign** as lane-scoped adoption per constraints above; also cures the retry wedge.
 3. Safety follow-ups from verification: gate `cleanupWorktreeAndBranch`'s exception path on
    reachability; add `--` to the rev-list probe.

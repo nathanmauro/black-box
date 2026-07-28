@@ -43,7 +43,7 @@
     "ProjectTimelineBlock": {"id":"event-1","sourceType":"event","blockType":"assistant","headline":"Refactor","text":"done","eventType":"Handoff","role":"assistant","source":"codex","clientSessionId":"client-1","sessionId":"session-1","sessionTitle":"Refactor","cwd":"/repo","toolName":null,"toolInputJson":null,"toolOutputJson":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z","sourceSessions":[]},
     "ProjectTimelineResponse": {"projectKey":"/repo","canonicalKey":"/repo","label":"repo","limit":50,"offset":0,"count":1,"items":[]},
     "RecallResult": {"scope":"/repo","withinHours":168,"kinds":["handoff"],"count":1,"items":[],"mode":"hybrid"},
-    "RecalledItem": {"eventId":"event-1","kind":"handoff","source":"codex","clientSessionId":"client-1","repo":"/repo","observedAt":"2026-07-20T12:00:00Z","headline":"done","rationale":null,"alternatives":[],"confidence":null,"openLoops":[],"nextAction":"verify","toAgent":"next","score":0.25},
+    "RecalledItem": {"eventId":"event-1","kind":"handoff","source":"codex","clientSessionId":"client-1","repo":"/repo","observedAt":"2026-07-20T12:00:00Z","headline":"done","rationale":null,"alternatives":[],"confidence":null,"openLoops":[],"nextAction":"verify","toAgent":"next","score":null},
     "SearchResponse": {"query":"refactor","local":[],"elastic":[],"elasticHealth":{"enabled":false,"available":false,"indexName":"events","detail":"disabled"}},
     "SessionLink": {"id":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","taskId":"task-1","createdAt":"2026-07-20T12:00:00Z"},
     "SessionLinksResponse": {"parents":[],"children":[]},
