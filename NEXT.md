@@ -1,11 +1,26 @@
-# Handoff — 2026-07-28 (fleet PR disposition landed)
+# Handoff — 2026-07-28 (fleet disposition + recall score semantics landed)
 
 **Shipped**: fleet PRs #23 and #24 merged to main (`b1dbd6d`) after independent adversarial
-verification of the prior review session's disposition. PR #21 stays a draft pending redesign.
-Fleet run 22-194034 acked and closed (round 2 done, round 1 rework).
+verification of the prior review session's disposition; PR #21 stays a draft pending redesign;
+fleet run 22-194034 acked and closed (round 2 done, round 1 rework). Then the **recall score
+semantics slice** merged (`5e3aeab`) and deployed live.
 
 ## What landed
 
+- **Recall score semantics** (`5e3aeab`, Codex-implemented, cross-model verified, deployed).
+  `RecalledItem.score` is now the **true cosine similarity** between the query and the item —
+  or `null` when there is honestly no number (lexical mode, missing vector) — never the RRF
+  artifact (~0.016). Fusion still decides order; cosine is attached post-fusion, with lexical
+  hits scored via a batched fetch from canonical `memory_embeddings`. A **measured relevance
+  floor 0.61** (`sba.memory.recall.relevance-floor`, `0` disables) gates *semantic-only
+  additions* pre-fusion — lexical hits are never dropped — so a junk query in hybrid mode
+  returns an **honest zero** again. Basis, measured live 2026-07-28 on a corpus snapshot:
+  true targets 0.620–0.688 (n=6), junk-query best hits 0.496–0.606 (n=10) — a clean gap
+  [0.606, 0.620]. Re-measure after corpus growth or a model change via
+  `SBA_EVAL_LIVE_MODEL=true` + `SBA_DATASOURCE_URL=<snapshot>` running
+  `RecallCosineDistributionEvaluationTest` (never point a second app at the live DB; use
+  `sqlite3 sba-agentic.db ".backup <path>"`). Suite: **406 tests, 0 failures, 2 skipped**
+  (both env-gated harnesses), floor tests mutation-verified.
 - **PR #23 — Preserve runner worktrees holding never-published commits** (`bb900d9`).
   `CrashRecovery.pruneIfClean` no longer treats porcelain-clean as licence to destroy: the
   destructive path is gated on `git rev-list --count HEAD --not --remotes <default>` == 0,
@@ -58,22 +73,20 @@ regardless of session liveness, and shared terminal handling belongs in
 
 ## Open loops (ranked)
 
-1. **Recall score semantics** — Phase A landed on the `recall-score-semantics` branch:
-   `RecalledItem.score` is nullable true cosine only, fusion order is unchanged, lexical-mode
-   scores are null, lexical hybrid hits are scored from canonical `memory_embeddings`, and an
-   env-gated cosine distribution harness was added. Verified by two independent lenses; suite
-   green at 401 tests, 0 failures, 2 skipped (both env-gated harnesses). Phase B remains: run
-   the live harness, choose the relevance floor, and gate semantic-only additions.
-2. **#21 redesign** as lane-scoped adoption per constraints above; also cures the retry wedge.
-3. Safety follow-ups from verification: gate `cleanupWorktreeAndBranch`'s exception path on
+1. **#21 redesign** as lane-scoped adoption per constraints above; also cures the retry wedge.
+2. Safety follow-ups from verification: gate `cleanupWorktreeAndBranch`'s exception path on
    reachability; add `--` to the rev-list probe.
-4. `ask` module still has the nomic prefix defect (bare prompt, no `search_query:`) and its knn
+3. `ask` module still has the nomic prefix defect (bare prompt, no `search_query:`) and its knn
    targets the foreign Elasticsearch index; pointing it at the SQLite vector store fixes both.
-5. Two embedding HTTP clients exist (`ask`, `memory`); consolidate behind one public port in
+4. Two embedding HTTP clients exist (`ask`, `memory`); consolidate behind one public port in
    `memory` (cycle ratchet blocks the reverse direction).
-6. Separate `query` param on recall so scope and subject can differ; Tier 2 full-corpus
+5. Separate `query` param on recall so scope and subject can differ; Tier 2 full-corpus
    semantic search (sqlite-vec's real payoff); re-embedding is not automatic on model change
    (`content_hash` covers text, not model).
+6. Floor caveat worth remembering: 0.61 sits inside the *cluster* overlap (junk p90 was 0.577
+   but individual noise items can exceed it), so above-floor noise is reduced, not impossible;
+   the floor's job is honest-zero for junk queries, and `score` remains a within-query ranking
+   signal, not proof of relevance.
 
 ## Gotchas (carried forward)
 
