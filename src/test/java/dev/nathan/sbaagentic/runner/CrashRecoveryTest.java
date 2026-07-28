@@ -5,7 +5,10 @@ import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -109,6 +112,125 @@ class CrashRecoveryTest {
         assertThat(worktree).isDirectory();
     }
 
+    @Test
+    void preservesCleanOrphanedWorktreeCarryingCommitsThatWereNeverPublished() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Path worktree = Files.createDirectories(repo.resolve(".worktrees/bb-build-1"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.DONE);
+        ScriptedProcessRunner processRunner = new ScriptedProcessRunner()
+                .on("status", ok(""))
+                .on("rev-parse --abbrev-ref HEAD", ok("auto/story-task-build-1"))
+                .on("rev-parse --abbrev-ref origin/HEAD", ok("origin/main"))
+                .on("rev-list", ok("3"));
+
+        prune(repo, build, processRunner);
+
+        assertThat(worktree).isDirectory();
+        assertThat(processRunner.issued("worktree", "remove")).isFalse();
+        assertThat(processRunner.issued("branch", "-D")).isFalse();
+    }
+
+    @Test
+    void prunesCleanOrphanedWorktreeWhoseCommitsAreAllPublished() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Files.createDirectories(repo.resolve(".worktrees/bb-build-1"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.DONE);
+        ScriptedProcessRunner processRunner = new ScriptedProcessRunner()
+                .on("status", ok(""))
+                .on("rev-parse --abbrev-ref HEAD", ok("auto/story-task-build-1"))
+                .on("rev-parse --abbrev-ref origin/HEAD", ok("origin/main"))
+                .on("rev-list", ok("0"))
+                .on("worktree remove", ok(""))
+                .on("worktree prune", ok(""))
+                .on("branch -D", ok(""));
+
+        prune(repo, build, processRunner);
+
+        assertThat(processRunner.issued("worktree", "remove")).isTrue();
+        assertThat(processRunner.issued("branch", "-D")).isTrue();
+    }
+
+    @Test
+    void preservesOrphanedWorktreeWhenTheDefaultBranchCannotBeResolved() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Path worktree = Files.createDirectories(repo.resolve(".worktrees/bb-build-1"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.DONE);
+        ScriptedProcessRunner processRunner = new ScriptedProcessRunner()
+                .on("status", ok(""))
+                .on("rev-parse --abbrev-ref HEAD", ok("auto/story-task-build-1"))
+                .on("rev-parse --abbrev-ref origin/HEAD", failed())
+                .on("symbolic-ref", failed());
+
+        prune(repo, build, processRunner);
+
+        assertThat(worktree).isDirectory();
+        assertThat(processRunner.issued("rev-list")).isFalse();
+        assertThat(processRunner.issued("worktree", "remove")).isFalse();
+        assertThat(processRunner.issued("branch", "-D")).isFalse();
+    }
+
+    @Test
+    void preservesOrphanedWorktreeWhenTheCommitProbeFails() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Path worktree = Files.createDirectories(repo.resolve(".worktrees/bb-build-1"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.DONE);
+        ScriptedProcessRunner processRunner = new ScriptedProcessRunner()
+                .on("status", ok(""))
+                .on("rev-parse --abbrev-ref HEAD", ok("auto/story-task-build-1"))
+                .on("rev-parse --abbrev-ref origin/HEAD", ok("origin/main"))
+                .on("rev-list", failed());
+
+        prune(repo, build, processRunner);
+
+        assertThat(worktree).isDirectory();
+        assertThat(processRunner.issued("worktree", "remove")).isFalse();
+        assertThat(processRunner.issued("branch", "-D")).isFalse();
+    }
+
+    @Test
+    void fallsBackToTheLocalDefaultBranchWhenThereIsNoOrigin() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Path worktree = Files.createDirectories(repo.resolve(".worktrees/bb-build-1"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.DONE);
+        ScriptedProcessRunner processRunner = new ScriptedProcessRunner()
+                .on("status", ok(""))
+                .on("rev-parse --abbrev-ref HEAD", ok("auto/story-task-build-1"))
+                .on("rev-parse --abbrev-ref origin/HEAD", failed())
+                .on("symbolic-ref", ok("main"))
+                .on("rev-list", ok("2"));
+
+        prune(repo, build, processRunner);
+
+        assertThat(worktree).isDirectory();
+        assertThat(processRunner.commandFor("rev-list")).contains("main");
+        assertThat(processRunner.issued("branch", "-D")).isFalse();
+    }
+
+    private void prune(Path repo, TaskSnapshot build, ProcessRunner processRunner) {
+        CrashRecovery recovery = new CrashRecovery(
+                new RecordingApiClient(build, null),
+                new NoOpTmux(),
+                processRunner,
+                new StoryFrontmatterParser());
+
+        recovery.reconcile(
+                new RunnerConfig(
+                        1,
+                        List.of(),
+                        null,
+                        List.of(new RepoConfig(
+                                repo.toString(), false, false, "git status --short", ""))),
+                "blackbox-runner");
+    }
+
+    private static ProcessRunner.ProcessResult ok(String stdout) {
+        return new ProcessRunner.ProcessResult(0, stdout, "", false);
+    }
+
+    private static ProcessRunner.ProcessResult failed() {
+        return new ProcessRunner.ProcessResult(128, null, "fatal: not a valid ref", false);
+    }
+
     private static TaskSnapshot snapshot(
             Path repo, String taskId, String lane, TaskStatus status) {
         Instant now = Instant.parse("2026-07-16T12:00:00Z");
@@ -193,6 +315,45 @@ class CrashRecoveryTest {
                 String text,
                 Map<String, Object> dataJson) {
             return null;
+        }
+    }
+
+    /**
+     * Answers git probes by matching a fragment of the joined command line, and records every argv
+     * so a test can assert that the destructive commands were never reached. An unscripted command
+     * fails loudly rather than returning a default that would let a test pass for the wrong reason.
+     */
+    private static final class ScriptedProcessRunner implements ProcessRunner {
+
+        private final Map<String, ProcessResult> responses = new LinkedHashMap<>();
+        private final List<String> issued = new ArrayList<>();
+
+        private ScriptedProcessRunner on(String commandFragment, ProcessResult result) {
+            responses.put(commandFragment, result);
+            return this;
+        }
+
+        @Override
+        public ProcessResult run(List<String> command, File workingDir, Duration timeout) {
+            String joined = String.join(" ", command);
+            issued.add(joined);
+            return responses.entrySet().stream()
+                    .filter(entry -> joined.contains(entry.getKey()))
+                    .map(Map.Entry::getValue)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("Unscripted command: " + joined));
+        }
+
+        private boolean issued(String... parts) {
+            String fragment = String.join(" ", parts);
+            return issued.stream().anyMatch(command -> command.contains(fragment));
+        }
+
+        private String commandFor(String fragment) {
+            return issued.stream()
+                    .filter(command -> command.contains(fragment))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No command matched: " + fragment));
         }
     }
 
