@@ -127,7 +127,7 @@ only sees instrumented agents. In practice this matters less than it appears —
 | `/stats`, `/overview` | **Delete** | Orphaned, unreachable, superseded by ActivityPage. |
 | Ask + Recall | **Merge into one Memory surface** | They are the same act — querying memory, one structured, one lexical+synthesis. Ends a hidden `?view=` route. |
 | Default editor | **`cursor`** | Installed at `~/.local/bin/cursor`; `code`, `idea`, `zed` allowlisted and configurable. |
-| Watch modes to serve | **All four**: live, narrative, forensic, cost | Nathan selected all four. |
+| Watch modes to serve | **All four** — live, narrative, forensic in Phase 1; cost re-homed to Phase 2 | Nathan selected all four. Cost's mechanism (transcript reading) is Phase 2's machinery — see §4.8. |
 | Spec depth | **Phase 1 deep, Phases 2–3 sketched** | Nathan's explicit answer. |
 
 ## 4. Phase 1 — architecture
@@ -237,6 +237,14 @@ tool's volume or forensic value justifies one.
 **Cost control:** diffs are computed **only when their block is opened**, and memoized per event id.
 A collapsed or unopened diff costs zero.
 
+**Where the colour comes from — and where it deliberately doesn't.** Phase 1 ships *semantic*
+colour: tone pills, per-agent colours, diff add/remove lines, plan step states, and error tones on
+non-zero exits. **Token-level syntax highlighting is explicitly out of Phase 1.** It is the one
+place "readable, formatted, with colour" collides with the no-new-dependency rule, and the
+collision is resolved in favour of the dependency budget — diff colouring and tones carry most of
+the felt colour. If that proves insufficient in real use, adding one small highlighter becomes a
+named, deliberate follow-on decision, not an ambient assumption of this spec.
+
 ### 4.4 File links — "open in the project it's in"
 
 Nathan's requirement: clicking a path opens it in an editor **in the window rooted at that
@@ -262,9 +270,14 @@ CodeReference { projectKey, relativePath, line?, column?, commit? }
    natively. If no window owns that root, open the root first (`cursor <root>`), then the file.
 5. Never accept an executable, argument string, or shell fragment from event data, model output, or
    the renderer.
+6. Exec with an **argv array, never a shell string**, and store editor commands as **absolute
+   paths** — the launchd-run service does not inherit a user shell `PATH`, so a bare `cursor`
+   (which lives at `~/.local/bin/cursor`) would fail in production while passing in `mvn
+   spring-boot:run` dev runs.
 
-**Config:** `sba.editor.command` (default `cursor`), `sba.editor.allowlist`
-(default `cursor,code,idea,zed`), `sba.editor.enabled` (default true).
+**Config:** `sba.editor.command` (default `/Users/nathan/.local/bin/cursor`),
+`sba.editor.allowlist` (absolute paths for `cursor`, `code`, `idea`, `zed`),
+`sba.editor.enabled` (default true).
 
 **Responses:** `200` opened · `404 file_missing` · `403 outside_project_root` ·
 `409 project_unresolved` · `503 editor_disabled`. Every failure renders as honest UI text, never a
@@ -281,10 +294,15 @@ surface later, unchanged.
 
 ### 4.5 Expand model and the toggle
 
-- `StreamPage.tsx:50` — `expandedId: string | null` → `expandedIds: Set<string>`. Update the
-  toggle at `:339` and the resets at `:82`, `:95`, `:103`.
 - New persisted global mode `streamDensity: "collapsed" | "expanded"` (localStorage), surfaced as a
   toggle beside the existing `meaningful events only` checkbox at `StreamPage.tsx:315-318`.
+- `StreamPage.tsx:50` — `expandedId: string | null` becomes `overrides: Set<string>` interpreted as
+  **exceptions to the mode**, not a list of expanded rows: a row is expanded when
+  `(mode === "expanded") !== overrides.has(id)`. This is the detail that makes live tailing work —
+  in expanded mode, newly arriving SSE rows render expanded with zero bookkeeping, because absence
+  from the set means "follow the mode." (A plain `expandedIds` set would silently collapse every
+  new event in expanded mode.) Toggling a row adds/removes its exception; switching modes clears
+  the set. Update the toggle at `:339` and the resets at `:82`, `:95`, `:103`.
 - `ReaderText` (`EventRow.tsx:74`) takes an `expanded?: boolean` prop threaded from the row,
   defaulting from the global mode; its private signal becomes the per-instance override.
 
@@ -326,27 +344,20 @@ bookkeeping.
 - Existing `DecisionCard` / `HandoffCard` / `ObservationCard` are kept, restyled to the shared
   token system.
 
-### 4.8 Cost — "what is this costing me?"
+### 4.8 Cost — re-homed to Phase 2
 
-- **Codex** already stores `model` and `model_context_window` in `event_msg` metadata.
-- **Claude** usage lives in the transcript — and **every event already stores `transcript_path`**
-  (231,183 rows). A narrow `SessionUsageReader` reads `message.usage` from that known path at
-  `Stop` / `SessionEnd` and rolls it up onto the session.
+Nathan asked for cost visibility (tokens, model, context growth), and the mechanism is known:
+Codex events carry `model` / `model_context_window` in metadata, and Claude usage lives in the
+transcript — reachable because 231,183 events already store `transcript_path`.
 
-**Display:** per-session token badge, per-project rollup, context-window fill bar.
+But reading transcripts at known paths **is Phase 2's machinery.** An earlier draft of this spec
+put a narrow `SessionUsageReader` in Phase 1; review caught that this means building **two
+transcript readers** — the narrow one, then Phase 2's real incremental tailer that obsoletes it
+within weeks. So cost moves to Phase 2 as the **first consumer of the single transcript reader**:
+the same read that lifts full-fidelity assistant text also lifts `message.usage`. Details in §12.
 
-**No dollar figures.** Pricing drifts and a confidently wrong number is worse than an absent one.
-
-**Historical sessions.** Reading usage only at future `Stop`/`SessionEnd` boundaries would leave all
-3,674 existing sessions blank, which makes the feature nearly useless on day one. So the rollup is
-also exposed as an **explicit, opt-in backfill**: `POST /api/sessions/usage/backfill`
-(`apply=false` dry-run by default, `batchSize`, `limit`), following the shape already established by
-`POST /api/memory/embeddings/backfill`. It walks sessions with `usage_updated_at IS NULL`, reads the
-`transcript_path` already stored on their events, and fills what it can. Sessions whose transcript
-has been rotated or deleted stay `NULL` — never zero.
-
-This is the only Phase-1 item that is not pure rendering. It is affordable solely because the
-transcript path is already stored — no discovery, no watching, no new ingestion machinery.
+What this buys Phase 1: **zero schema change and zero new ingest surface.** Phase 1 becomes a pure
+rendering-and-navigation release plus three small endpoints.
 
 ### 4.9 Recall links
 
@@ -382,22 +393,11 @@ returns 404. It is an explicit whitelist, not a catch-all.
 
 ## 5. Data model changes
 
-Additive only. `schema.sql` uses `CREATE TABLE IF NOT EXISTS`; new columns follow the existing
-idempotent-`ALTER` pattern in Java (as `RecordingSqlStore.java:74` does for `title_rank`).
-
-`agent_sessions` gains:
-
-| Column | Type | Purpose |
-|---|---|---|
-| `input_tokens` | INTEGER NULL | usage rollup |
-| `output_tokens` | INTEGER NULL | usage rollup |
-| `cache_read_tokens` | INTEGER NULL | usage rollup |
-| `model` | TEXT NULL | last observed model |
-| `context_window` | INTEGER NULL | for the fill bar |
-| `usage_updated_at` | TEXT NULL | staleness/recompute marker |
-
-No table is dropped. No existing column changes type. No backfill migration is required — usage
-fields are `NULL` until a session's transcript is read, and the UI renders absence honestly.
+**None in Phase 1.** Every slice reads what is already stored. The usage columns an earlier draft
+placed here (`input_tokens`, `output_tokens`, `cache_read_tokens`, `model`, `context_window`,
+`usage_updated_at` on `agent_sessions`) move to Phase 2 with the cost work, and will follow the
+existing idempotent-`ALTER` pattern (`RecordingSqlStore.java:74`) when they land. No table is
+dropped; no existing column changes type.
 
 ## 6. API changes
 
@@ -406,7 +406,6 @@ fields are `NULL` until a session's transcript is read, and the UI renders absen
 | GET | `/api/events/{id}` | Single event by id — unblocks recall links and removes BoardPage's scan |
 | GET | `/api/processes` | Live agent processes (pid, cpu, rss, elapsed, agent) |
 | POST | `/api/open-in-editor` | Resolve a `CodeReference` and open it in an allowlisted editor |
-| POST | `/api/sessions/usage/backfill` | Opt-in usage rollup over historical sessions (`apply` defaults false) |
 
 `GET /api/stream` (SSE) gains a `processes` event type. All existing endpoints are unchanged;
 no response shape is removed. `RecalledItem` gains a field (additive).
@@ -419,8 +418,6 @@ no response shape is removed. `RecalledItem` gains a field (additive).
 - **Editor-open failures** surface as typed, human-readable states in the row (file missing, outside
   project root, project unresolved, editor disabled) — never a silent no-op.
 - **Process poll failures** degrade to "process info unavailable"; the stream keeps working.
-- **Usage reads** are best-effort: an unreadable or rotated transcript leaves the fields `NULL`, and
-  the UI shows nothing rather than a zero. A zero would be a lie.
 
 ## 8. Testing
 
@@ -429,7 +426,7 @@ no response shape is removed. `RecalledItem` gains a field (additive).
 | Presenters | Unit tests per presenter against **golden fixtures extracted from the live corpus** (real Bash/Edit/apply_patch/update_plan payloads). Pure functions, no DOM. |
 | Diff | Unit tests: line diff, patch parsing (`Update`/`Add`/`Delete` File), malformed-patch degradation. |
 | Components | Expand model (set semantics, global mode, per-row override), follow mode, lazy block mounting. |
-| Backend | `GET /api/events/{id}` found + not-found; usage rollup with well-formed, malformed, and missing transcripts; process monitor parse. |
+| Backend | `GET /api/events/{id}` found + not-found; process monitor parse; `CodeReference` resolution against the project catalog. |
 | Security | **Path traversal tests specifically** on `/api/open-in-editor`: `..` escape, symlink escape, absolute path outside root, unknown `projectKey`, non-allowlisted editor, injection attempts in `relativePath`. |
 | E2E (Playwright) | Expand-all toggle; diff renders; file-link click (editor exec mocked); live tail with follow mode; recall card navigates to the right session **and** event. |
 | Perf | Measured, not assumed — see §9. |
@@ -490,6 +487,14 @@ So Phase 2 collapses to **enriching known sessions from known transcript paths**
   matching mtime+size, resume from stored offset, exact offsets that survive partial final lines).
 - A parser-version constant as a deliberate cache-bust for full reparse.
 - Full-fidelity assistant text and thinking blocks that hooks do not carry.
+- **Cost, as the first slice** (re-homed from Phase 1): the same read that lifts assistant text
+  lifts `message.usage`. Usage columns land on `agent_sessions` (`input_tokens`, `output_tokens`,
+  `cache_read_tokens`, `model`, `context_window`, `usage_updated_at`) via the idempotent-`ALTER`
+  pattern, plus an opt-in `POST /api/sessions/usage/backfill` (`apply=false` dry-run default,
+  shaped like the embeddings backfill) so the 3,674 existing sessions are not blank on day one.
+  Rotated or deleted transcripts leave fields `NULL` — never zero; a zero would be a lie. Display:
+  per-session token badge, per-project rollup, context-window fill bar. **No dollar figures** —
+  pricing drifts and a confidently wrong number is worse than an absent one.
 - Backfill of pre-instrumentation history.
 - Then: **switch Observatory off**, reclaiming ~2GB and one always-on indexer.
 
@@ -507,21 +512,20 @@ evidence Nathan uses them.
 
 ## 13. Delivery slices
 
-Phase 1 is too large for one plan. It decomposes into seven vertical slices, each independently
+Phase 1 is too large for one plan. It decomposes into six vertical slices, each independently
 shippable, each leaving the app better than it found it. Ordered by value-per-unit-effort:
 
 | # | Slice | Contains | Why here |
 |---|---|---|---|
-| 1 | **Presenter layer + core presenters + expand toggle** | §4.1 §4.2 (bash, edit, write, read, apply_patch) §4.3 §4.5 | The whole felt improvement. Everything else is additive to it. |
-| 2 | **Recall links** | §4.9 | Smallest slice, fixes a stated complaint, and removes BoardPage's expensive workaround. |
-| 3 | **File links** | §4.4 | Depends on slice 1's `CodeReference` extraction. Carries the security surface, so it gets its own review. |
+| 1 | **Presenter layer + core presenters + expand toggle** | §4.1 §4.2 (bash, edit, write, read, apply_patch) §4.3 §4.5 — plus the free deletions of `/stats` and `/overview`, which are trivial and touch files this slice already owns | The whole felt improvement. Everything else is additive to it. |
+| 2 | **Recall links** | §4.9 | Smallest slice, fixes a stated complaint outright, and removes BoardPage's expensive workaround. |
+| 3 | **File links** | §4.4 | Depends on slice 1's `CodeReference` extraction. Carries the only new security surface, so it gets its own review. |
 | 4 | **Live** | §4.6 | Process monitor, follow mode, session heartbeat. Independent of 1–3. |
 | 5 | **Narrative** | §4.7 + remaining presenters (`update_plan`, grep, webFetch, webSearch, task) | Turn grouping and derived titles change how the whole stream reads. |
-| 6 | **Cost** | §4.8 | The only slice touching the schema and the ingest path; isolated deliberately. |
-| 7 | **Consolidation** | §4.10 | Route promotion, Memory merge, deletions, `/graph` parked. Last, because it touches every page and benefits from the others being settled. |
+| 6 | **Consolidation** | §4.10 minus the slice-1 deletions: route promotion, Memory merge, `/graph` parked | Last, because it touches every page and benefits from the others being settled. |
 
 Slices 2 and 4 have no dependency on slice 1 and can be pulled forward or run in parallel if a
-worker is free. Slice 7 should not start before 1 and 5 land — it would otherwise mean editing the
+worker is free. Slice 6 should not start before 1 and 5 land — it would otherwise mean editing the
 same page files twice.
 
 ## 14. Acceptance criteria (Phase 1)
@@ -537,8 +541,7 @@ same page files twice.
 5. Recall cards **navigate** to the owning session with the correct event selected.
 6. A live process panel shows which agents are running, with CPU and elapsed time, updating without
    a reload.
-7. Sessions display token usage and model where known, and **display nothing** where not.
-8. Nav is five real routes; `/stats` and `/overview` are gone; `/graph` is parked with a comment;
+7. Nav is five real routes; `/stats` and `/overview` are gone; `/graph` is parked with a comment;
    Ask and Recall are one `/memory` surface.
-9. The §9 performance budget is met, with before/after numbers recorded.
-10. Full gate green; live `:8766` service healthy after `scripts/deploy-local.sh`.
+8. The §9 performance budget is met, with before/after numbers recorded.
+9. Full gate green; live `:8766` service healthy after `scripts/deploy-local.sh`.
