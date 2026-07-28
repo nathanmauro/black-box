@@ -46,7 +46,8 @@ public class ContextController {
     public RecallResult recall(
             @RequestParam(required = false) String scope,
             @RequestParam(defaultValue = "168") int withinHours,
-            @RequestParam(required = false) List<String> kinds) {
-        return contextService.recall(scope, withinHours, kinds);
+            @RequestParam(required = false) List<String> kinds,
+            @RequestParam(required = false) Integer limit) {
+        return contextService.recall(scope, withinHours, kinds, limit);
     }
 }

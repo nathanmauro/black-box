@@ -52,6 +52,7 @@ public class ContextService implements MemoryRecallOperations {
     private static final int DEFAULT_WITHIN_HOURS = 168;
     private static final int MAX_WITHIN_HOURS = 24 * 365;
     private static final int RECALL_LIMIT = 50;
+    private static final int DEFAULT_RECALL_ITEMS = 10;
     private static final String VECTOR_EVENT_PREFIX = "event:";
 
     private final MemoryEventReader repository;
@@ -74,7 +75,10 @@ public class ContextService implements MemoryRecallOperations {
      * what it is working on. A blank scope returns the most recent intent across all repos.
      */
     @Override
-    public RecallResult recall(String scope, int withinHours, List<String> kinds) {
+    public RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit) {
+        int resolvedLimit = limit == null || limit <= 0
+                ? DEFAULT_RECALL_ITEMS
+                : Math.min(limit, RECALL_LIMIT);
         List<String> resolvedKinds = resolveKinds(kinds);
         List<String> eventTypes = resolvedKinds.stream().map(EVENT_TYPE_BY_KIND::get).toList();
         int hours = withinHours <= 0 ? DEFAULT_WITHIN_HOURS : Math.min(withinHours, MAX_WITHIN_HOURS);
@@ -97,9 +101,12 @@ public class ContextService implements MemoryRecallOperations {
                 : ReciprocalRankFusion.fuse(lexicalHits, List.of(), RECALL_LIMIT);
         String mode = semantic.available() ? "hybrid" : "lexical";
 
+        // Fusion still ranks the full RECALL_LIMIT candidate pool; only the returned page is
+        // bounded. Narrowing the pool instead would change which items win, not just how many.
         List<RecalledItem> items = rankedHits.stream()
                 .map(hit -> toRecalledItem(eventsById.get(hit.id()), hit.score()))
                 .filter(Objects::nonNull)
+                .limit(resolvedLimit)
                 .toList();
         return new RecallResult(trimmedScope, hours, resolvedKinds, items.size(), items, mode);
     }

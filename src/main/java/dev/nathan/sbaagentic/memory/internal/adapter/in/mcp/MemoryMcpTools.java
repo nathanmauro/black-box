@@ -78,8 +78,11 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     + "(one week).") Integer withinHours,
             @ToolParam(required = false,
                     description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
-                    + "'observation'. Omit to recall decisions and handoffs.") List<String> kinds) {
-        return memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds);
+                    + "'observation'. Omit to recall decisions and handoffs.") List<String> kinds,
+            @ToolParam(required = false,
+                    description = "Maximum number of items to return. Omit for 10, max 50. Recalled "
+                    + "items carry full captured text, so raise this deliberately.") Integer limit) {
+        return memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
     }
 
     @Tool(description = "Commit a decision you made into the recorder so later agents can recall WHY, "
