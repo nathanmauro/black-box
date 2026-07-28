@@ -243,6 +243,16 @@ external REST client of Black Box:
 Fail-closed behavior is the invariant: an unknown repo, a danger flag, a red check, or a missing
 credential degrades the run to local-only or blocked state, never to a risky action.
 
+Crash-recovery worktree pruning is fail-closed the same way. A worker commits before it reports, so
+a worktree holding never-published work is *clean* by `git status --porcelain`; cleanliness alone is
+therefore not licence to run `git worktree remove --force` and `git branch -D`. The runner prunes an
+orphaned worktree only when its branch carries no commit that is missing from both the repo's
+default branch and every remote-tracking branch — that is, only when deleting it destroys nothing
+that exists solely there. A local-only ship, a blocked run, and a crash mid-ship all leave commits
+in exactly that state. An unresolvable default branch or a failed probe preserves. The residual cost
+is disk: a squash-merged branch whose remote ref has been pruned reads as unpublished and is kept
+(the normal auto-merge path removes those at ship time, not here).
+
 The full contract, including worker-session ingest, steering, recovery, and v1 non-goals, is in the
 [`FULL_AUTO board-driven runner` design spec](superpowers/specs/2026-07-15-full-auto-board-runner.md).
 

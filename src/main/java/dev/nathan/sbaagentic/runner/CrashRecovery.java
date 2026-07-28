@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -212,18 +213,30 @@ public class CrashRecovery {
             return;
         }
 
+        List<Path> candidates;
         try (Stream<Path> children = Files.list(worktreesPath)) {
-            children.filter(Files::isDirectory)
+            candidates = children.filter(Files::isDirectory)
                     .filter(path -> path.getFileName().toString().startsWith("bb-"))
                     .filter(path -> !activeWorktreeNames.contains(path.getFileName().toString()))
-                    .forEach(path -> pruneIfClean(repoPath, path));
+                    .toList();
         }
         catch (IOException ex) {
             log.warn("Unable to inspect runner worktrees under {}: {}", worktreesPath, ex.getMessage());
+            return;
+        }
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        // Resolved once per repo, not once per worktree: this runs on the daemon startup path and
+        // every git call here costs a subprocess against a 30s timeout.
+        String defaultBranch = defaultBranch(repoPath);
+        for (Path candidate : candidates) {
+            pruneIfClean(repoPath, candidate, defaultBranch);
         }
     }
 
-    private void pruneIfClean(Path repoPath, Path worktreePath) {
+    private void pruneIfClean(Path repoPath, Path worktreePath, String defaultBranch) {
         ProcessRunner.ProcessResult status = processRunner.run(
                 List.of("git", "-C", worktreePath.toString(), "status", "--porcelain"),
                 worktreePath.toFile(),
@@ -237,6 +250,10 @@ public class CrashRecovery {
         }
 
         String branchName = currentBranch(worktreePath);
+        if (!safeToDestroy(worktreePath, branchName, defaultBranch)) {
+            return;
+        }
+
         ProcessRunner.ProcessResult remove = processRunner.run(
                 List.of(
                         "git",
@@ -280,6 +297,103 @@ public class CrashRecovery {
             return null;
         }
         return branch.stdout().strip();
+    }
+
+    /**
+     * A worker commits its work before reporting done, so a worktree holding commits that were never
+     * published is <em>clean</em> by {@code git status --porcelain}. Pruning it runs
+     * {@code git branch -D}, which for an unpublished branch destroys the only copy of that work —
+     * a run that shipped local-only, or was blocked, or crashed mid-ship all land here. Cleanliness
+     * therefore is not sufficient to destroy: the branch must also carry nothing that exists solely
+     * on it. Every inconclusive answer preserves, matching the runner's fail-closed invariant.
+     */
+    private boolean safeToDestroy(Path worktreePath, String branchName, String defaultBranch) {
+        if (defaultBranch == null) {
+            log.warn(
+                    "Preserving orphaned worktree {}: unable to resolve the repo default branch, so "
+                            + "commits that exist only on its branch cannot be ruled out",
+                    worktreePath);
+            return false;
+        }
+        OptionalInt unpublished = unpublishedCommitCount(worktreePath, defaultBranch);
+        if (unpublished.isEmpty()) {
+            log.warn(
+                    "Preserving orphaned worktree {}: unable to determine whether branch {} carries "
+                            + "unpublished commits",
+                    worktreePath,
+                    branchName);
+            return false;
+        }
+        if (unpublished.getAsInt() > 0) {
+            log.warn(
+                    "Preserving orphaned worktree {}: branch {} carries {} commit(s) that are on "
+                            + "neither {} nor any remote, so deleting it would destroy the only copy",
+                    worktreePath,
+                    branchName,
+                    unpublished.getAsInt(),
+                    defaultBranch);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Counts commits reachable from the worktree's HEAD but from neither the repo's default branch
+     * nor any remote-tracking branch — i.e. commits that exist nowhere else. {@code --not} inverts
+     * the sense of every revision that follows it.
+     */
+    private OptionalInt unpublishedCommitCount(Path worktreePath, String defaultBranch) {
+        ProcessRunner.ProcessResult revList = processRunner.run(
+                List.of(
+                        "git",
+                        "-C",
+                        worktreePath.toString(),
+                        "rev-list",
+                        "--count",
+                        "HEAD",
+                        "--not",
+                        "--remotes",
+                        defaultBranch),
+                worktreePath.toFile(),
+                GIT_TIMEOUT);
+        if (revList.exitCode() != 0 || revList.timedOut() || revList.stdout() == null) {
+            return OptionalInt.empty();
+        }
+        try {
+            return OptionalInt.of(Integer.parseInt(revList.stdout().strip()));
+        }
+        catch (NumberFormatException ex) {
+            return OptionalInt.empty();
+        }
+    }
+
+    /**
+     * Prefers the remote-qualified default (e.g. {@code origin/main}) because that is the published
+     * tip the prune guard compares against; falls back to the local checkout's branch for a repo
+     * with no origin.
+     */
+    private String defaultBranch(Path repoPath) {
+        ProcessRunner.ProcessResult remoteHead = processRunner.run(
+                List.of("git", "-C", repoPath.toString(), "rev-parse", "--abbrev-ref", "origin/HEAD"),
+                repoPath.toFile(),
+                GIT_TIMEOUT);
+        if (remoteHead.exitCode() == 0 && !remoteHead.timedOut() && remoteHead.stdout() != null) {
+            String resolved = remoteHead.stdout().strip();
+            if (!resolved.isBlank() && !"origin/HEAD".equals(resolved)) {
+                return resolved;
+            }
+        }
+        ProcessRunner.ProcessResult symbolic = processRunner.run(
+                List.of("git", "-C", repoPath.toString(), "symbolic-ref", "--short", "HEAD"),
+                repoPath.toFile(),
+                GIT_TIMEOUT);
+        if (symbolic.exitCode() == 0 && !symbolic.timedOut() && symbolic.stdout() != null) {
+            String resolved = symbolic.stdout().strip();
+            if (!resolved.isBlank()) {
+                return resolved;
+            }
+        }
+        return null;
     }
 
     private static <T> List<T> safeList(List<T> values) {
