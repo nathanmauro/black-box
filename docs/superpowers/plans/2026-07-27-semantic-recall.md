@@ -42,6 +42,31 @@ whitespace change.
 **Tests**: MockWebServer/`RestClient` stub covering happy path, both response shapes,
 dimension mismatch, timeout, and `enabled=false`. No live server in tests.
 
+## Task 2b — Task prefixes + content distillation (MEASURED REQUIREMENT)
+
+Added after the premise was measured against the real corpus. Without this, recall@1 is
+**0/6** — the feature does not work. See spec §3a for the numbers.
+
+- **Task prefixes.** `TextEmbedder` gains two call shapes: `embedDocument(String)` prepends
+  `search_document: `, `embedQuery(String)` prepends `search_query: `. nomic-embed-text is
+  trained with these; omitting them is a measured retrieval cliff. Make the prefixes
+  configurable (`sba.memory.embedding.document-prefix` / `.query-prefix`, defaulting to the
+  nomic values, empty string disables) so a future model that does not want them is a config
+  change, not a code change.
+- **Distillation.** New `memory/internal/domain/EmbeddableText.java`:
+  - `Decision` → `metadata_json.decision` + `rationale`
+  - `Handoff` → `metadata_json.contextSummary` + `nextAction`
+  - `Observation` / anything else / missing metadata → fall back to `text`
+  - strip the leading structural preamble (`Handoff to <x>:`, `<slug> — Session close-out`),
+    collapse whitespace, cap at 900 chars
+  - `content_hash` must hash the **distilled** text, so changing distillation invalidates
+    stale rows naturally
+
+**Tests**: each event kind distills to the expected string; missing/malformed
+`metadata_json` falls back to `text` without throwing; preamble stripping is exact;
+the 900-char cap does not split mid-codepoint; prefixes are applied on the wire and are
+configurable off.
+
 ## Task 3 — Canonical embedding store
 
 - `schema.sql`: add `memory_embeddings` + its index exactly as specced. Additive only —
@@ -126,6 +151,23 @@ second run; resume after simulated interruption embeds only the remainder.
 recall with "why do the tests deadlock", assert it returns and that a lexical-only run
 does not. Plus: embedder unavailable → `mode=lexical` with results still returned;
 exact-token lookups still work; `kinds`/`scope`/`withinHours` filters still hold.
+
+## Task 8b — Relevance evaluation harness
+
+The offline stub-embedder test in Task 8 proves the *plumbing*. It cannot prove the
+feature *works* — the naive design passed every conceivable unit test and still scored
+recall@1 = 0/6 against the real model. Ship something that can tell the difference.
+
+- `src/test/java/.../memory/RecallRelevanceEvaluationTest.java`, gated by
+  `@EnabledIfEnvironmentVariable(named = "SBA_EVAL_LIVE_MODEL", matches = "true")` so the
+  default suite stays offline and green.
+- A small fixture set of `(paraphrase query, regex matching the expected target)` pairs
+  checked into `src/test/resources/eval/recall-queries.json`, seeded from the six probes
+  already run.
+- Reports recall@1 and recall@5 and **fails below a floor** (recall@5 ≥ 4/6) so a future
+  model or prompt-format change that silently degrades retrieval is caught.
+
+This is the regression test for embedding quality, which is otherwise invisible.
 
 ## Task 9 — Docs
 

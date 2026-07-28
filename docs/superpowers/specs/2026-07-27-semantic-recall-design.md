@@ -118,6 +118,45 @@ sqlite-vec v0.1.9, macOS arm64):
 LM Studio (`:1234` `/v1/embeddings`, `text-embedding-nomic-embed-text-v1.5`) and
 Ollama (`:11434` `/api/embeddings`, `nomic-embed-text:latest`). No new model to install.
 
+#### 3a. Measured: the naive implementation does not work
+
+Before building anything, the premise was tested directly against the real 956-event
+corpus with the live model — embed every structured event, query with six paraphrases
+that deliberately avoid the target's distinctive vocabulary, and measure recall.
+
+| variant | recall@1 | recall@5 | mean top-1 similarity |
+|---|---|---|---|
+| A — raw `agent_events.text`, no task prefix | 0/6 | 3/6 | 0.602 |
+| B — raw text + nomic task prefixes | 1/6 | 4/6 | 0.684 |
+| C — distilled text + task prefixes | **2/6** | **5/6** | 0.684 |
+
+Variant A is what a naive reading of "embed `agent_events.text`" produces, and it
+retrieves essentially nothing: every query returned generic `Handoff to next-session:`
+documents clustered at 0.58–0.64 similarity. Two independent causes, both confirmed:
+
+1. **nomic-embed-text requires task prefixes.** It is trained with `search_document: `
+   on stored text and `search_query: ` on queries. Omitting them is a measurable
+   retrieval cliff (A→B). Note this means the existing `ask` module's
+   `OllamaEmbeddingClient` — which sends the bare query — has the same latent defect.
+2. **The corpus is boilerplate-dominated.** Captured decisions and handoffs share a
+   large structural preamble (`Handoff to next-session:`, open-loops and verification
+   sections) and run to thousands of characters. Embedding the rendered blob makes every
+   document's vector mostly *"this is an agent handoff"* rather than what it is about.
+
+Therefore embedding input is **distilled, not raw**:
+
+- `Decision` → `metadata_json.decision` + `rationale`
+- `Handoff` → `metadata_json.contextSummary` + `nextAction`
+- fallback to `text` when metadata is absent
+- strip the structural preamble, collapse whitespace, cap at ~900 characters
+  (long tails dilute the vector)
+
+Distillation alone moved "splitting the java code into enforced modules" from a miss to
+rank 1. This is a load-bearing part of the design, not an optimisation.
+
+Recall@5 of 5/6 also confirms semantic search must **not** replace lexical: hybrid
+fusion is doing real work, and the honest claim is "better recall", not "solved".
+
 `ask`'s existing `QueryEmbedder` **cannot be reused from `memory`**: it is
 `ask`-internal and `ask → memory`, so importing it inverts the graph and trips both
 Spring Modulith `verify()` and the ArchUnit acyclicity ratchet. `memory` therefore gets
