@@ -45,10 +45,11 @@ Honest limits below.
 
 ## What is live
 
-- :8766 running the fresh jar (deployed 02:04), `/api/status` OK — 3,549 sessions / 235,896 events.
+- :8766 running the fresh jar (redeployed 02:16), `/api/status` OK — 3,549 sessions / 235,928 events.
 - `memory_embeddings` holds **3,566** vectors (956 structured events + session summaries),
   nomic-embed-text @ 768-d via Ollama. Backfill: 3,566 embedded, **0 failed**, 93 seconds.
-- Suites: **mvn 388 green** (1 skipped = the env-gated live eval), **vitest 244 green**.
+- Suites: **mvn 386 green, 0 failures** (1 skipped = the env-gated live eval), **vitest 244 green**.
+  Counted after clearing stale surefire reports — a dirty report dir had inflated this to 388.
 - sqlite-vec is **default OFF** — brute force serves every query. See below.
 
 ## Honest limits — do not overclaim
