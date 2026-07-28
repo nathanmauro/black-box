@@ -4,6 +4,7 @@ import dev.nathan.sbaagentic.ask.AskModelProperties;
 import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
         ElasticsearchProperties.class,
         IngestionProperties.class,
         MemoryEmbeddingProperties.class,
+        MemoryRecallProperties.class,
         MemoryRetrievalProperties.class,
         MemoryVectorProperties.class,
         SummaryExportProperties.class,

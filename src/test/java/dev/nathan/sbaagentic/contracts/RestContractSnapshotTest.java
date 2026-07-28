@@ -73,7 +73,7 @@ class RestContractSnapshotTest {
     }
 
     @Test
-    void recallResponseContractAddsModeAndScoreWithoutChangingExistingFields() throws IOException {
+    void recallResponseContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
         JsonNode matrix = objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
         JsonNode recallRow = findContractRow(matrix, "GET", "/api/recall");
         assertThat(textValues(recallRow.path("responseFields")))
@@ -155,6 +155,6 @@ class RestContractSnapshotTest {
         assertThat(item.path("openLoops").isArray()).isTrue();
         assertThat(item.path("nextAction").isTextual()).isTrue();
         assertThat(item.path("toAgent").isTextual()).isTrue();
-        assertThat(item.path("score").isNumber()).isTrue();
+        assertThat(item.path("score").isNumber() || item.path("score").isNull()).isTrue();
     }
 }

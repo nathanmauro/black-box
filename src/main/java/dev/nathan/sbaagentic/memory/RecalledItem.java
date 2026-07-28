@@ -26,5 +26,11 @@ public record RecalledItem(
         List<String> openLoops,
         String nextAction,
         String toAgent,
-        double score) {
+        /**
+         * True cosine similarity between the recall query embedding and this item's stored
+         * embedding. {@code null} means recall had no usable query vector (lexical mode, including
+         * blank/path/id scopes, embedder unavailable, or semantic recall failure) or this item has no
+         * stored embedding. This field never carries lexical, rank-fusion, or placeholder scores.
+         */
+        Double score) {
 }

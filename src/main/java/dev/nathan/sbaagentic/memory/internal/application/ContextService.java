@@ -14,6 +14,7 @@ import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.RecalledItem;
@@ -58,16 +59,18 @@ public class ContextService implements MemoryRecallOperations {
     private final MemoryEventReader repository;
     private final TextEmbedder embedder;
     private final MemoryVectorStore vectorStore;
+    private final MemoryRecallProperties recallProperties;
 
     public ContextService(
             MemoryEventReader repository,
             TextEmbedder embedder,
-            MemoryVectorStore vectorStore) {
+            MemoryVectorStore vectorStore,
+            MemoryRecallProperties recallProperties) {
         this.repository = repository;
         this.embedder = embedder;
         this.vectorStore = vectorStore;
+        this.recallProperties = recallProperties;
     }
-
 
     /**
      * Reads prior intent back out. {@code scope} is matched against both the session's working
@@ -103,10 +106,16 @@ public class ContextService implements MemoryRecallOperations {
 
         // Fusion still ranks the full RECALL_LIMIT candidate pool; only the returned page is
         // bounded. Narrowing the pool instead would change which items win, not just how many.
-        List<RecalledItem> items = rankedHits.stream()
-                .map(hit -> toRecalledItem(eventsById.get(hit.id()), hit.score()))
-                .filter(Objects::nonNull)
+        List<MemoryHit> returnedHits = rankedHits.stream()
+                .filter(hit -> hit != null && eventsById.containsKey(hit.id()))
                 .limit(resolvedLimit)
+                .toList();
+        Map<String, Double> cosineByEventId = semantic.available()
+                ? cosineScores(returnedHits, semantic)
+                : Map.of();
+        List<RecalledItem> items = returnedHits.stream()
+                .map(hit -> toRecalledItem(eventsById.get(hit.id()), cosineByEventId.get(hit.id())))
+                .filter(Objects::nonNull)
                 .toList();
         return new RecallResult(trimmedScope, hours, resolvedKinds, items.size(), items, mode);
     }
@@ -136,14 +145,54 @@ public class ContextService implements MemoryRecallOperations {
             EmbeddingVector query = embedder.embedQuery(trimmedScope);
             List<ScoredKey> scoredKeys = vectorStore.knn(query, RECALL_LIMIT, keyFilter);
             List<MemoryHit> hits = scoredKeys.stream()
+                    .filter(scored -> admitsSemanticScore(scored.score()))
                     .map(scored -> semanticHit(scored, candidatesByKey, eventsById))
                     .filter(Objects::nonNull)
                     .toList();
-            return SemanticRecall.available(hits);
+            return SemanticRecall.available(query, hits);
         }
         catch (RuntimeException ex) {
             return SemanticRecall.unavailable();
         }
+    }
+
+    private boolean admitsSemanticScore(double score) {
+        double floor = recallProperties.getRelevanceFloor();
+        return floor <= 0.0 || score >= floor;
+    }
+
+    private Map<String, Double> cosineScores(List<MemoryHit> returnedHits, SemanticRecall semantic) {
+        Map<String, Double> scores = new LinkedHashMap<>();
+        for (MemoryHit hit : semantic.hits()) {
+            if (hit != null && hit.id() != null) {
+                scores.put(hit.id(), hit.score());
+            }
+        }
+
+        List<String> unscoredKeys = returnedHits.stream()
+                .map(MemoryHit::id)
+                .filter(Objects::nonNull)
+                .filter(id -> !scores.containsKey(id))
+                .map(ContextService::eventVectorKey)
+                .toList();
+        if (unscoredKeys.isEmpty()) {
+            return scores;
+        }
+
+        Map<String, EmbeddingVector> vectors = vectorStore.fetchVectors(
+                unscoredKeys,
+                semantic.query().model(),
+                semantic.query().values().length);
+        for (MemoryHit hit : returnedHits) {
+            if (hit == null || hit.id() == null || scores.containsKey(hit.id())) {
+                continue;
+            }
+            EmbeddingVector vector = vectors.get(eventVectorKey(hit.id()));
+            if (vector != null) {
+                scores.put(hit.id(), semantic.query().cosineSimilarity(vector));
+            }
+        }
+        return scores;
     }
 
     private Map<String, RecallCandidate> semanticCandidates(List<String> eventTypes, Instant since) {
@@ -237,7 +286,7 @@ public class ContextService implements MemoryRecallOperations {
         return resolved.isEmpty() ? DEFAULT_RECALL_KINDS : resolved;
     }
 
-    private static RecalledItem toRecalledItem(AgentEvent event, double score) {
+    private static RecalledItem toRecalledItem(AgentEvent event, Double score) {
         if (event == null) {
             return null;
         }
@@ -336,14 +385,14 @@ public class ContextService implements MemoryRecallOperations {
         return null;
     }
 
-    private record SemanticRecall(boolean available, List<MemoryHit> hits) {
+    private record SemanticRecall(boolean available, EmbeddingVector query, List<MemoryHit> hits) {
 
-        private static SemanticRecall available(List<MemoryHit> hits) {
-            return new SemanticRecall(true, hits);
+        private static SemanticRecall available(EmbeddingVector query, List<MemoryHit> hits) {
+            return new SemanticRecall(true, query, hits);
         }
 
         private static SemanticRecall unavailable() {
-            return new SemanticRecall(false, List.of());
+            return new SemanticRecall(false, null, List.of());
         }
     }
 }

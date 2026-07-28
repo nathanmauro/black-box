@@ -320,6 +320,10 @@ selecting a project never infers work or broadens the authoritative queue query.
   Non-empty session summaries are stored in the memory embedding index for backfill and future
   retrieval, but no recall path surfaces them today; the full captured event corpus is not
   semantically indexed.
+  Recall item `score` is true cosine similarity or `null` when no query/vector score exists. A
+  measured 0.61 relevance floor (live corpus, 2026-07-28) gates semantic-only additions;
+  `sba.memory.recall.relevance-floor=0` disables it. Re-measure with the env-gated harness after
+  corpus growth or embedding model changes.
 - **Project.** Resolves conservative logical project identity, derives grouped project views, and
   builds bounded meld artifacts from recorded sessions.
 - **Summary.** Owns session finalization, local/external summary providers, and transcript exports.

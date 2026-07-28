@@ -4,6 +4,7 @@ import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.AskModelProperties;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
@@ -43,6 +44,8 @@ class SbaConfigurationTest {
                     .isEqualTo("search_document: ");
             assertThat(context.getBean(MemoryEmbeddingProperties.class).getQueryPrefix())
                     .isEqualTo("search_query: ");
+            assertThat(context.getBean(MemoryRecallProperties.class).getRelevanceFloor())
+                    .isEqualTo(0.61);
             assertThat(context.getBean(MemoryVectorProperties.class).getSqliteVecPath()).isEmpty();
             assertThat(context.getBean(SummaryExportProperties.class).getTargets())
                     .singleElement()
@@ -70,6 +73,7 @@ class SbaConfigurationTest {
                         "SBA_MEMORY_EMBEDDING_ENABLED=false",
                         "SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX=doc:",
                         "SBA_MEMORY_EMBEDDING_QUERY_PREFIX=query:",
+                        "SBA_MEMORY_RECALL_RELEVANCE_FLOOR=0.42",
                         "SBA_SQLITE_VEC_PATH=/tmp/fixture-vec0.dylib",
                         "SBA_ASK_MEMORY_INDEX=fixture-memory",
                         "SBA_ELASTICSEARCH_INDEX=fixture-events",
@@ -88,6 +92,8 @@ class SbaConfigurationTest {
                             .isEqualTo("doc:");
                     assertThat(context.getBean(MemoryEmbeddingProperties.class).getQueryPrefix())
                             .isEqualTo("query:");
+                    assertThat(context.getBean(MemoryRecallProperties.class).getRelevanceFloor())
+                            .isEqualTo(0.42);
                     assertThat(context.getBean(MemoryVectorProperties.class).getSqliteVecPath())
                             .isEqualTo("/tmp/fixture-vec0.dylib");
                     assertThat(context.getBean(AskProperties.class).getMemoryIndex())
