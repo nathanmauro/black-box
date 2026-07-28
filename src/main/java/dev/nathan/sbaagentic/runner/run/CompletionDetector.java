@@ -52,11 +52,15 @@ public class CompletionDetector {
             }
             if (!tmux.hasSession(tmuxSessionName)) {
                 return new CompletionResult(
-                        Outcome.BLOCKED, "tmux session ended without a completion report");
+                        Outcome.BLOCKED,
+                        "tmux session ended without a completion report",
+                        false);
             }
             if (!sleepUntilNextPoll(interval, deadline)) {
                 return new CompletionResult(
-                        Outcome.BLOCKED, "Interrupted while waiting for worker completion");
+                        Outcome.BLOCKED,
+                        "Interrupted while waiting for worker completion",
+                        false);
             }
         }
 
@@ -93,10 +97,10 @@ public class CompletionDetector {
             }
             String text = detail.get("text") instanceof String value ? value : "Worker reported blocked";
             if ("done".equals(data.get("outcome"))) {
-                return Optional.of(new CompletionResult(Outcome.DONE, text));
+                return Optional.of(new CompletionResult(Outcome.DONE, text, true));
             }
             if ("blocked".equals(data.get("outcome"))) {
-                return Optional.of(new CompletionResult(Outcome.BLOCKED, text));
+                return Optional.of(new CompletionResult(Outcome.BLOCKED, text, true));
             }
         }
         return Optional.empty();
@@ -145,7 +149,8 @@ public class CompletionDetector {
                 : "pane contains no recognized active marker";
         return new CompletionResult(
                 Outcome.TIMED_OUT,
-                activity + "; " + commitEvidence + "; last pane:\n" + paneText);
+                activity + "; " + commitEvidence + "; last pane:\n" + paneText,
+                false);
     }
 
     /**
@@ -211,7 +216,11 @@ public class CompletionDetector {
                 : error.getMessage();
     }
 
-    public record CompletionResult(Outcome outcome, String detail) {
+    public record CompletionResult(Outcome outcome, String detail, boolean reported) {
+
+        public CompletionResult(Outcome outcome, String detail) {
+            this(outcome, detail, false);
+        }
     }
 
     public enum Outcome {

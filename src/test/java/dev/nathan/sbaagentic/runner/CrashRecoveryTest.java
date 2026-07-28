@@ -6,6 +6,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -13,6 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
+import dev.nathan.sbaagentic.runner.run.CompletionDetector;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
@@ -32,6 +35,104 @@ class CrashRecoveryTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void adoptsAliveSessionAndHonorsCompletionPostedBeforeRestart() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Path worktree = Files.createDirectories(
+                repo.resolve(RunnerNaming.worktreeDirName("build-1")));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.IN_PROGRESS);
+        TaskEvent completion = workerDone(
+                "build-1", "done", "Verified before the runner restarted.",
+                build.task().updatedAt().plusSeconds(1));
+        RecordingApiClient apiClient = new RecordingApiClient(
+                build, null, List.of(completion));
+        AliveThenDeadTmux tmux = new AliveThenDeadTmux();
+        ActiveRunRegistry registry = new ActiveRunRegistry();
+        List<Runnable> submitted = new ArrayList<>();
+        CrashRecovery recovery = recovery(apiClient, tmux, registry);
+
+        recovery.reconcile(config(repo), "blackbox-runner", submitted::add);
+
+        assertThat(submitted).hasSize(1);
+        assertThat(registry.tmuxSessionFor("build-1"))
+                .contains(RunnerNaming.tmuxSessionName("build-1"));
+        assertThat(apiClient.completedTaskIds).isEmpty();
+
+        submitted.getFirst().run();
+
+        assertThat(apiClient.completedTaskIds).containsExactly("build-1");
+        assertThat(apiClient.annotations)
+                .extracting(RecordedAnnotation::text)
+                .anyMatch(text -> text.contains("reported done"));
+        assertThat(registry.tmuxSessionFor("build-1")).isEmpty();
+        assertThat(worktree).isDirectory();
+    }
+
+    @Test
+    void resetsAdoptedTaskWhenSessionEndsWithoutCompletionReport() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        Files.createDirectories(repo.resolve(RunnerNaming.worktreeDirName("build-1")));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.IN_PROGRESS);
+        RecordingApiClient apiClient = new RecordingApiClient(build, null);
+        AliveThenDeadTmux tmux = new AliveThenDeadTmux();
+        ActiveRunRegistry registry = new ActiveRunRegistry();
+        List<Runnable> submitted = new ArrayList<>();
+        CrashRecovery recovery = recovery(apiClient, tmux, registry);
+
+        recovery.reconcile(config(repo), "blackbox-runner", submitted::add);
+        submitted.getFirst().run();
+
+        assertThat(apiClient.statusUpdates)
+                .containsExactly(new StatusUpdate("build-1", "open", null));
+        assertThat(apiClient.annotations)
+                .extracting(RecordedAnnotation::text)
+                .anyMatch(text -> text.contains("ended without a completion report")
+                        && text.contains("reset to open"));
+        assertThat(registry.tmuxSessionFor("build-1")).isEmpty();
+    }
+
+    @Test
+    void resetsDeadSessionToOpenWithoutSubmittingWatcher() {
+        Path repo = tempDir.resolve("repo");
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.IN_PROGRESS);
+        RecordingApiClient apiClient = new RecordingApiClient(build, null);
+        ActiveRunRegistry registry = new ActiveRunRegistry();
+        List<Runnable> submitted = new ArrayList<>();
+        CrashRecovery recovery = recovery(apiClient, new NoOpTmux(), registry);
+
+        recovery.reconcile(config(), "blackbox-runner", submitted::add);
+
+        assertThat(submitted).isEmpty();
+        assertThat(apiClient.statusUpdates)
+                .containsExactly(new StatusUpdate("build-1", "open", null));
+        assertThat(apiClient.annotations)
+                .extracting(RecordedAnnotation::text)
+                .anyMatch(text -> text.contains("not found") && text.contains("reset to open"));
+        assertThat(registry.tmuxSessionFor("build-1")).isEmpty();
+    }
+
+    @Test
+    void resetsAliveSessionWhenConfiguredWorktreeIsMissing() throws Exception {
+        Path repo = Files.createDirectories(tempDir.resolve("repo"));
+        TaskSnapshot build = snapshot(repo, "build-1", "auto", TaskStatus.IN_PROGRESS);
+        RecordingApiClient apiClient = new RecordingApiClient(build, null);
+        ActiveRunRegistry registry = new ActiveRunRegistry();
+        List<Runnable> submitted = new ArrayList<>();
+        CrashRecovery recovery = recovery(apiClient, new AlwaysAliveTmux(), registry);
+
+        recovery.reconcile(config(repo), "blackbox-runner", submitted::add);
+
+        assertThat(submitted).isEmpty();
+        assertThat(apiClient.statusUpdates)
+                .containsExactly(new StatusUpdate("build-1", "open", null));
+        assertThat(apiClient.annotations)
+                .extracting(RecordedAnnotation::text)
+                .anyMatch(text -> text.contains("worktree")
+                        && text.contains("not found under any configured repo")
+                        && text.contains("reset to open"));
+        assertThat(registry.tmuxSessionFor("build-1")).isEmpty();
+    }
 
     @Test
     void preservesCleanBuildWorktreeWhileSdlcReviewChainIsDone() throws Exception {
@@ -139,11 +240,57 @@ class CrashRecoveryTest {
         return new TaskSnapshot(task, spec);
     }
 
+    private CrashRecovery recovery(
+            RecordingApiClient apiClient,
+            TmuxController tmux,
+            ActiveRunRegistry registry) {
+        ProcessRunner processRunner = (command, workingDir, timeout) -> {
+            throw new AssertionError("Unexpected process execution: " + command);
+        };
+        return new CrashRecovery(
+                apiClient,
+                tmux,
+                processRunner,
+                new StoryFrontmatterParser(),
+                new CompletionDetector(apiClient, tmux, processRunner),
+                registry);
+    }
+
+    private static RunnerConfig config(Path... repos) {
+        return new RunnerConfig(
+                1,
+                List.of(),
+                null,
+                java.util.Arrays.stream(repos)
+                        .map(repo -> new RepoConfig(
+                                repo.toString(), false, false, "git status --short", ""))
+                        .toList());
+    }
+
+    private static TaskEvent workerDone(
+            String taskId, String outcome, String text, Instant observedAt) {
+        return new TaskEvent(
+                "worker-done-" + taskId,
+                taskId,
+                TaskEventType.NOTE,
+                "blackbox-runner-worker",
+                null,
+                null,
+                Map.of(
+                        "kind", "progress",
+                        "text", text,
+                        "dataJson", Map.of("event", "worker_done", "outcome", outcome)),
+                observedAt);
+    }
+
     private static final class RecordingApiClient extends BlackBoxApiClient {
 
         private final TaskSnapshot build;
         private final TaskSnapshot review;
         private final List<TaskEvent> buildEvents;
+        private final List<StatusUpdate> statusUpdates = new ArrayList<>();
+        private final List<RecordedAnnotation> annotations = new ArrayList<>();
+        private final List<String> completedTaskIds = new ArrayList<>();
 
         private RecordingApiClient(TaskSnapshot build, TaskSnapshot review) {
             this(build, review, List.of());
@@ -182,6 +329,20 @@ class CrashRecoveryTest {
         @Override
         public TaskChange updateTaskStatus(
                 String taskId, String actor, String status, String blockedReason) {
+            statusUpdates.add(new StatusUpdate(taskId, status, blockedReason));
+            return null;
+        }
+
+        @Override
+        public TaskChange completeTask(
+                String taskId,
+                String actor,
+                String source,
+                String clientSessionId,
+                String summary,
+                List<String> openLoops,
+                String nextAction) {
+            completedTaskIds.add(taskId);
             return null;
         }
 
@@ -192,11 +353,12 @@ class CrashRecoveryTest {
                 String kind,
                 String text,
                 Map<String, Object> dataJson) {
+            annotations.add(new RecordedAnnotation(taskId, kind, text));
             return null;
         }
     }
 
-    private static final class NoOpTmux implements TmuxController {
+    private static class NoOpTmux implements TmuxController {
 
         @Override
         public boolean hasSession(String sessionName) {
@@ -219,5 +381,29 @@ class CrashRecoveryTest {
         public String capturePane(String sessionName) {
             return "";
         }
+    }
+
+    private static final class AlwaysAliveTmux extends NoOpTmux {
+
+        @Override
+        public boolean hasSession(String sessionName) {
+            return true;
+        }
+    }
+
+    private static final class AliveThenDeadTmux extends NoOpTmux {
+
+        private int checks;
+
+        @Override
+        public boolean hasSession(String sessionName) {
+            return checks++ == 0;
+        }
+    }
+
+    private record StatusUpdate(String taskId, String status, String blockedReason) {
+    }
+
+    private record RecordedAnnotation(String taskId, String kind, String text) {
     }
 }

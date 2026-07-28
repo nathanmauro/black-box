@@ -109,7 +109,10 @@ public class RunnerDaemon {
         activeConfig = config;
         approvalExecutor = approvals;
         try {
-            crashRecovery.reconcile(config, actorId);
+            crashRecovery.reconcile(
+                    config,
+                    actorId,
+                    watcher -> submitWorker(workerPool, activeWorkerRuns, watcher));
             approvals.execute(() -> reconcileApprovalsBestEffort(config, actorId));
             approvals.scheduleWithFixedDelay(
                     () -> reconcileApprovalsBestEffort(config, actorId),
