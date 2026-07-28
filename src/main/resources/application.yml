@@ -104,6 +104,8 @@ sba:
       query-prefix: "${SBA_MEMORY_EMBEDDING_QUERY_PREFIX:search_query: }"
     vector:
       sqlite-vec-path: ${SBA_SQLITE_VEC_PATH:}
+    recall:
+      relevance-floor: ${SBA_MEMORY_RECALL_RELEVANCE_FLOOR:0.61}
   ask:
     memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
     vector-field: ${SBA_ASK_VECTOR_FIELD:vector}

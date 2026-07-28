@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
@@ -142,7 +143,7 @@ class ContextServiceHybridRecallTest {
         MemoryEventReader reader = new SingleEventReader(event, REPO);
         StubTextEmbedder availableEmbedder = new StubTextEmbedder();
         MemoryVectorStore throwingStore = new ThrowingVectorStore();
-        ContextService service = new ContextService(reader, availableEmbedder, throwingStore);
+        ContextService service = new ContextService(reader, availableEmbedder, throwingStore, recallProperties(0.61));
 
         RecallResult recalled = service.recall("vector outage lexical token", 168, List.of("decision"));
 
@@ -179,9 +180,13 @@ class ContextServiceHybridRecallTest {
                 List.of(
                         new MemoryVectorStore.ScoredKey("event:b-high-cosine", 1.0),
                         new MemoryVectorStore.ScoredKey("event:c-middle-cosine", 0.9),
-                        new MemoryVectorStore.ScoredKey("event:a-low-cosine", 0.6)),
+                        new MemoryVectorStore.ScoredKey("event:a-low-cosine", 0.62)),
                 Map.of());
-        ContextService service = new ContextService(reader, new StubTextEmbedder(), vectorStore);
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
 
         RecallResult recalled = service.recall("phase-a rank probe", 168, List.of("decision"), 3);
 
@@ -201,8 +206,14 @@ class ContextServiceHybridRecallTest {
         MemoryEventReader reader = new StaticEventReader(List.of(lexical), REPO);
         MemoryVectorStore vectorStore = new ScriptedVectorStore(
                 List.of(),
-                Map.of("event:lexical-vector-fetch", new EmbeddingVector("stub-hybrid", new float[] { 1.0f, 1.0f, 0.0f })));
-        ContextService service = new ContextService(reader, new StubTextEmbedder(), vectorStore);
+                Map.of(
+                        "event:lexical-vector-fetch",
+                        new EmbeddingVector("stub-hybrid", new float[] { 1.0f, 1.0f, 0.0f })));
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
 
         RecallResult recalled = service.recall("phase-a vector fetch", 168, List.of("decision"), 1);
 
@@ -225,7 +236,8 @@ class ContextServiceHybridRecallTest {
         ContextService service = new ContextService(
                 reader,
                 new StubTextEmbedder(),
-                new ScriptedVectorStore(List.of(), Map.of()));
+                new ScriptedVectorStore(List.of(), Map.of()),
+                recallProperties(0.61));
 
         RecallResult recalled = service.recall("phase-a missing vector", 168, List.of("decision"), 1);
 
@@ -233,6 +245,155 @@ class ContextServiceHybridRecallTest {
         assertThat(recalled.items()).singleElement().satisfies(item -> {
             assertThat(item.eventId()).isEqualTo("lexical-missing-vector");
             assertThat(item.score()).isNull();
+        });
+    }
+
+    @Test
+    void semanticOnlyHitBelowFloorIsExcludedBeforeFusion() {
+        AgentEvent belowFloor = decisionEvent(
+                "semantic-below-floor",
+                "floor-excluded",
+                REPO,
+                "semantic only below floor candidate",
+                Instant.now());
+        AgentEvent aboveFloor = decisionEvent(
+                "semantic-above-floor",
+                "floor-retained",
+                REPO,
+                "semantic only above floor candidate",
+                Instant.now().minus(1, ChronoUnit.MINUTES));
+        MemoryEventReader reader = new StaticEventReader(List.of(belowFloor, aboveFloor), REPO);
+        MemoryVectorStore vectorStore = new ScriptedVectorStore(
+                List.of(
+                        new MemoryVectorStore.ScoredKey("event:semantic-below-floor", 0.60),
+                        new MemoryVectorStore.ScoredKey("event:semantic-above-floor", 0.70)),
+                Map.of());
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
+
+        RecallResult recalled = service.recall("vector only admission probe", 168, List.of("decision"), 10);
+
+        assertThat(recalled.mode()).isEqualTo("hybrid");
+        assertThat(eventIds(recalled)).containsExactly("semantic-above-floor");
+        assertThat(recalled.items().getFirst().score()).isEqualTo(0.70);
+    }
+
+    @Test
+    void semanticOnlyHitAtFloorIsIncluded() {
+        AgentEvent atFloor = decisionEvent(
+                "semantic-at-floor",
+                "floor-edge",
+                REPO,
+                "semantic only threshold edge candidate",
+                Instant.now());
+        MemoryEventReader reader = new StaticEventReader(List.of(atFloor), REPO);
+        MemoryVectorStore vectorStore = new ScriptedVectorStore(
+                List.of(new MemoryVectorStore.ScoredKey("event:semantic-at-floor", 0.61)),
+                Map.of());
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
+
+        RecallResult recalled = service.recall("vector only threshold probe", 168, List.of("decision"), 10);
+
+        assertThat(recalled.mode()).isEqualTo("hybrid");
+        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo("semantic-at-floor");
+            assertThat(item.score()).isEqualTo(0.61);
+        });
+    }
+
+    @Test
+    void lexicalHitWithBelowFloorCosineIsRetainedWithRealScore() {
+        AgentEvent lexical = decisionEvent(
+                "lexical-below-floor",
+                "floor-lexical",
+                REPO,
+                "literal below floor beacon",
+                Instant.now());
+        MemoryEventReader reader = new StaticEventReader(List.of(lexical), REPO);
+        MemoryVectorStore vectorStore = new ScriptedVectorStore(
+                List.of(new MemoryVectorStore.ScoredKey("event:lexical-below-floor", 0.60)),
+                Map.of(
+                        "event:lexical-below-floor",
+                        new EmbeddingVector("stub-hybrid", new float[] { 0.6f, 0.8f, 0.0f })));
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
+
+        RecallResult recalled = service.recall("literal below floor beacon", 168, List.of("decision"), 10);
+
+        assertThat(recalled.mode()).isEqualTo("hybrid");
+        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo("lexical-below-floor");
+            assertThat(item.score()).isCloseTo(0.6, org.assertj.core.data.Offset.offset(0.0001));
+        });
+    }
+
+    @Test
+    void noLexicalMatchesAndAllSemanticHitsBelowFloorReturnsHonestZero() {
+        AgentEvent first = decisionEvent(
+                "semantic-low-one",
+                "floor-zero-one",
+                REPO,
+                "unrelated low semantic candidate one",
+                Instant.now());
+        AgentEvent second = decisionEvent(
+                "semantic-low-two",
+                "floor-zero-two",
+                REPO,
+                "unrelated low semantic candidate two",
+                Instant.now().minus(1, ChronoUnit.MINUTES));
+        MemoryEventReader reader = new StaticEventReader(List.of(first, second), REPO);
+        MemoryVectorStore vectorStore = new ScriptedVectorStore(
+                List.of(
+                        new MemoryVectorStore.ScoredKey("event:semantic-low-one", 0.60),
+                        new MemoryVectorStore.ScoredKey("event:semantic-low-two", 0.20)),
+                Map.of());
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.61));
+
+        RecallResult recalled = service.recall("no matching lexical words here", 168, List.of("decision"), 10);
+
+        assertThat(recalled.mode()).isEqualTo("hybrid");
+        assertThat(recalled.count()).isZero();
+        assertThat(recalled.items()).isEmpty();
+    }
+
+    @Test
+    void zeroRelevanceFloorDisablesSemanticAdmissionFilter() {
+        AgentEvent belowFloor = decisionEvent(
+                "semantic-floor-disabled",
+                "floor-disabled",
+                REPO,
+                "semantic only disabled floor candidate",
+                Instant.now());
+        MemoryEventReader reader = new StaticEventReader(List.of(belowFloor), REPO);
+        MemoryVectorStore vectorStore = new ScriptedVectorStore(
+                List.of(new MemoryVectorStore.ScoredKey("event:semantic-floor-disabled", 0.20)),
+                Map.of());
+        ContextService service = new ContextService(
+                reader,
+                new StubTextEmbedder(),
+                vectorStore,
+                recallProperties(0.0));
+
+        RecallResult recalled = service.recall("vector only disabled floor probe", 168, List.of("decision"), 10);
+
+        assertThat(recalled.mode()).isEqualTo("hybrid");
+        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo("semantic-floor-disabled");
+            assertThat(item.score()).isEqualTo(0.20);
         });
     }
 
@@ -429,7 +590,8 @@ class ContextServiceHybridRecallTest {
             String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT);
             if (normalized.contains("phase-a rank probe")
                     || normalized.contains("phase-a vector fetch")
-                    || normalized.contains("phase-a missing vector")) {
+                    || normalized.contains("phase-a missing vector")
+                    || normalized.contains("literal below floor beacon")) {
                 return new float[] { 1.0f, 0.0f, 0.0f };
             }
             return documentVectorFor(text);
@@ -438,7 +600,7 @@ class ContextServiceHybridRecallTest {
         private float[] documentVectorFor(String text) {
             String normalized = text == null ? "" : text.toLowerCase(Locale.ROOT);
             if (normalized.contains("phase-a rank probe lexical low cosine")) {
-                return new float[] { 0.6f, 0.8f, 0.0f };
+                return new float[] { 0.62f, 0.7846018f, 0.0f };
             }
             if (normalized.contains("phase-a rank probe lexical high cosine")) {
                 return new float[] { 1.0f, 0.0f, 0.0f };
@@ -476,6 +638,12 @@ class ContextServiceHybridRecallTest {
         void available(boolean nextAvailable) {
             available.set(nextAvailable);
         }
+    }
+
+    private static MemoryRecallProperties recallProperties(double relevanceFloor) {
+        MemoryRecallProperties properties = new MemoryRecallProperties();
+        properties.setRelevanceFloor(relevanceFloor);
+        return properties;
     }
 
     private static AgentEvent decisionEvent(

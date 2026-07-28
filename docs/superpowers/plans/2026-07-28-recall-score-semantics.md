@@ -41,8 +41,8 @@ from fresh measurement, not a guess.
 - **Phase A**: cosine surfacing (`Double` score, batched lexical scoring, null in lexical mode) +
   measurement harness + contract snapshot updates (additive; no field removals) + unit tests
   (fusion order preserved; lexical-mode null; missing-vector null).
-- **Phase B**: floor from measured value (property + default; semantic-only gating; honest-zero
-  test: junk query in hybrid mode → 0 items) + docs.
+- **Phase B (implemented 2026-07-28)**: floor from measured value (property + default;
+  semantic-only gating; honest-zero test: junk query in hybrid mode → 0 items) + docs.
 
 ## Out of scope (deliberate)
 
@@ -55,3 +55,13 @@ returning session summaries; automatic re-embedding on model change.
 - `Rest`/`McpContractSnapshotTest`: update snapshots deliberately, additive only.
 - `mvn package` overwrites the live jar → redeploy via `scripts/deploy-local.sh` at post-flight.
 - Commits by the session owner only (no AI attribution); Codex never touches git.
+
+## Implementation Breadcrumb
+
+2026-07-28 Codex thread `019faa51-44a3-7861-98fa-2dbc6b7047fa` implemented Phase B in the current
+`recall-score-semantics` checkout. Changed recall floor configuration, semantic admission gating,
+focused service/config/module tests, and architecture docs. Verification was static inspection only:
+`mvn` and `git` were intentionally not run, and the local Black Box service on `127.0.0.1:8766` was
+not reachable for a structured observation (its sandbox blocks network; the service was healthy).
+The verifier suite has since run green: 406 tests, 0 failures, 0 errors, 2 skipped (env-gated
+harnesses), with a mutation check proving the floor tests fail when the filter is neutralized.

@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.architecture;
 
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         ElasticsearchProperties.class,
         IngestionProperties.class,
         MemoryEmbeddingProperties.class,
+        MemoryRecallProperties.class,
         MemoryRetrievalProperties.class,
         MemoryVectorProperties.class
 })

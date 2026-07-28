@@ -14,6 +14,7 @@ import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
+import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.RecalledItem;
@@ -58,16 +59,18 @@ public class ContextService implements MemoryRecallOperations {
     private final MemoryEventReader repository;
     private final TextEmbedder embedder;
     private final MemoryVectorStore vectorStore;
+    private final MemoryRecallProperties recallProperties;
 
     public ContextService(
             MemoryEventReader repository,
             TextEmbedder embedder,
-            MemoryVectorStore vectorStore) {
+            MemoryVectorStore vectorStore,
+            MemoryRecallProperties recallProperties) {
         this.repository = repository;
         this.embedder = embedder;
         this.vectorStore = vectorStore;
+        this.recallProperties = recallProperties;
     }
-
 
     /**
      * Reads prior intent back out. {@code scope} is matched against both the session's working
@@ -142,6 +145,7 @@ public class ContextService implements MemoryRecallOperations {
             EmbeddingVector query = embedder.embedQuery(trimmedScope);
             List<ScoredKey> scoredKeys = vectorStore.knn(query, RECALL_LIMIT, keyFilter);
             List<MemoryHit> hits = scoredKeys.stream()
+                    .filter(scored -> admitsSemanticScore(scored.score()))
                     .map(scored -> semanticHit(scored, candidatesByKey, eventsById))
                     .filter(Objects::nonNull)
                     .toList();
@@ -150,6 +154,11 @@ public class ContextService implements MemoryRecallOperations {
         catch (RuntimeException ex) {
             return SemanticRecall.unavailable();
         }
+    }
+
+    private boolean admitsSemanticScore(double score) {
+        double floor = recallProperties.getRelevanceFloor();
+        return floor <= 0.0 || score >= floor;
     }
 
     private Map<String, Double> cosineScores(List<MemoryHit> returnedHits, SemanticRecall semantic) {
