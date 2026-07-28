@@ -86,7 +86,9 @@ regardless of session liveness, and shared terminal handling belongs in
 6. Floor caveat worth remembering: 0.61 sits inside the *cluster* overlap (junk p90 was 0.577
    but individual noise items can exceed it), so above-floor noise is reduced, not impossible;
    the floor's job is honest-zero for junk queries, and `score` remains a within-query ranking
-   signal, not proof of relevance.
+   signal, not proof of relevance. Live post-deploy smoke found a real match at **0.6109** —
+   0.0009 above the floor and below the harness's measured target minimum (0.620) — so treat
+   0.61 as a ceiling, not a starting point, when re-tuning; raising it will drop real matches.
 
 ## Gotchas (carried forward)
 
