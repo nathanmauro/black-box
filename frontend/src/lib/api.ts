@@ -263,25 +263,6 @@ export type ApiStatus = {
   [key: string]: unknown;
 };
 
-export type DashboardBreakdown = {
-  name: string;
-  count: number;
-};
-
-export type DashboardDailyCount = {
-  day: string;
-  count: number;
-};
-
-export type DashboardStats = {
-  totalSessions: number;
-  totalEvents: number;
-  eventsBySource: DashboardBreakdown[];
-  eventsByKind: DashboardBreakdown[];
-  sessionsBySource: DashboardBreakdown[];
-  recentActivity: DashboardDailyCount[];
-};
-
 export type SpecStatus = "active" | "done" | "archived";
 
 export type TaskStatus = "open" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
@@ -573,10 +554,6 @@ export function ask(question: string, limit?: number): Promise<AskResponse> {
 
 export function getStatus(): Promise<ApiStatus> {
   return getJson("/api/status");
-}
-
-export function getDashboardStats(): Promise<DashboardStats> {
-  return getJson("/api/stats");
 }
 
 export function createSpec(request: CreateSpecRequest): Promise<Spec> {
