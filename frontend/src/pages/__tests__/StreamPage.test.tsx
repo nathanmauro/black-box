@@ -61,6 +61,7 @@ vi.mock("../../lib/sse", async (importOriginal) => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
   [params, setParams] = createStore<{ q?: string }>({});
   const [liveEvents, setLiveEvents] = createSignal<unknown[]>([]);
   mocks.liveEvents = liveEvents;
@@ -277,6 +278,59 @@ describe("StreamPage", () => {
     await screen.findByRole("button", { name: /Capped row 0/ });
 
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("expanded density expands every row and per-row toggling still overrides it", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([eventItem("event-1", "Make stream default"), eventItem("event-2", "Second row", "2026-07-01T11:58:00Z")]),
+    );
+    render(() => <StreamPage />);
+    const rowOne = await screen.findByRole("button", { name: /Make stream default/ });
+    const rowTwo = screen.getByRole("button", { name: /Second row/ });
+    expect(rowOne).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
+    expect(rowOne).toHaveAttribute("aria-expanded", "true");
+    expect(rowTwo).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(rowOne); // exception to the mode
+    expect(rowOne).toHaveAttribute("aria-expanded", "false");
+    expect(rowTwo).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapsed" })); // mode switch clears exceptions
+    expect(rowOne).toHaveAttribute("aria-expanded", "false");
+    expect(rowTwo).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("persists density to localStorage and restores it on mount", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
+    expect(localStorage.getItem("bb.streamDensity")).toBe("expanded");
+  });
+
+  it("shows pending rows expanded when they arrive in expanded mode", async () => {
+    localStorage.setItem("bb.streamDensity", "expanded");
+    const old = eventItem("event-old", "Existing row");
+    const fresh = eventItem("event-a", "Live row", "2026-07-01T12:01:00Z");
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValueOnce(feed([old])).mockResolvedValueOnce(feed([fresh, old]));
+
+    try {
+      render(() => <StreamPage />);
+      await screen.findByRole("button", { name: /Existing row/ });
+      const feedEl = document.querySelector(".stream-feed") as HTMLElement;
+      feedEl.scrollTop = 120;
+      feedEl.scrollTo = vi.fn();
+      vi.useFakeTimers();
+      mocks.setLiveEvents([{ id: "sse-a" }]);
+      await vi.advanceTimersByTimeAsync(500);
+      fireEvent.click(screen.getByRole("button", { name: "1 new" }));
+      expect(screen.getByRole("button", { name: /Live row/ })).toHaveAttribute("aria-expanded", "true");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../lib/api";
 import DecisionCard from "./DecisionCard";
-import EventRow from "./EventRow";
+import EventRow, { eventHeadline } from "./EventRow";
 
 describe("DecisionCard", () => {
   it("renders structured decision fields without using raw JSON as the headline", () => {
@@ -33,7 +33,7 @@ describe("DecisionCard", () => {
 });
 
 describe("EventRow", () => {
-  it("renders command payloads as readable fields with decoded multiline output", () => {
+  it("renders bash events as a structured command block with lazy output", () => {
     const event: AgentEvent = {
       id: "evt-command",
       sessionId: "ses-1",
@@ -54,17 +54,16 @@ describe("EventRow", () => {
 
     const { container } = render(() => <EventRow event={event} />);
 
-    expect(screen.getByRole("region", { name: "Input" })).toBeInTheDocument();
-    expect(screen.getByText("Command")).toBeInTheDocument();
-    expect(screen.getByText("Cwd")).toBeInTheDocument();
-    expect(screen.getByText("Timeout")).toBeInTheDocument();
-    expect(screen.getByText("Exit code")).toBeInTheDocument();
-    expect(screen.getByText("Wall time")).toBeInTheDocument();
-    expect(screen.getByText("Output")).toBeInTheDocument();
-    const blocks = Array.from(container.querySelectorAll(".tool-payload-block"));
-    expect(blocks.some((block) => block.textContent === "npm test\nnpm run build")).toBe(true);
-    expect(screen.getAllByText("42 tests passed")).toHaveLength(1);
-    expect(container.textContent).not.toContain("\\nWall time");
+    expect(container.querySelector(".tone-pill")?.textContent).toBe("Bash");
+    expect(container.querySelector(".bash-command")?.textContent).toBe("npm test\nnpm run build");
+    expect(screen.getByText("exit 0")).toBeInTheDocument();
+    expect(screen.getByText("Output (15 chars)")).toBeInTheDocument();
+    expect(screen.queryByText("42 tests passed")).toBeNull(); // lazy until opened
+
+    const details = container.querySelector(".detail-block--output") as HTMLDetailsElement;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    expect(screen.getByText("42 tests passed")).toBeInTheDocument();
   });
 
   it("summarizes patch commands by their target file", () => {
@@ -80,9 +79,31 @@ describe("EventRow", () => {
       observedAt: "2026-06-16T20:00:00Z",
     };
 
+    const { container } = render(() => <EventRow event={event} />);
+
+    expect(container.querySelector(".tone-pill")?.textContent).toBe("Patch");
+    expect(screen.getByRole("button", { name: "~/Developer/proj/sba-agentic/README.md" })).toBeInTheDocument();
+    expect(eventHeadline(event)).toBe("Patch ~/Developer/proj/sba-agentic/README.md");
+  });
+
+  it("keeps unknown tools on the generic ToolPayload path", () => {
+    const event: AgentEvent = {
+      id: "evt-unknown",
+      sessionId: "ses-1",
+      source: "claude",
+      clientSessionId: "client-1",
+      eventType: "PostToolUse",
+      role: "tool",
+      toolName: "SomeNewTool",
+      toolInputJson: JSON.stringify({ query: "hello world" }),
+      observedAt: "2026-06-16T20:00:00Z",
+    };
+
     render(() => <EventRow event={event} />);
 
-    expect(screen.getByText("Patch ~/Developer/proj/sba-agentic/README.md")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Input" })).toBeInTheDocument();
+    expect(screen.getByText("Query")).toBeInTheDocument();
+    expect(screen.getByText("hello world", { selector: ".tool-payload-inline" })).toBeInTheDocument();
   });
 
   it("collapses long primary reader messages until the user expands them", async () => {

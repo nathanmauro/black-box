@@ -1,16 +1,20 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
+import { headlineText, presentationOf } from "../../lib/presenters/registry";
 import KindBadge from "../KindBadge";
 import SourceDot from "../SourceDot";
 import DecisionCard from "./DecisionCard";
 import HandoffCard from "./HandoffCard";
+import InlineSpans from "./InlineSpans";
 import ObservationCard from "./ObservationCard";
+import BlockView from "./blocks/BlockView";
 import { looksLikeJson, parseJsonObject } from "./eventData";
 import ToolPayload, { payloadText } from "./ToolPayload";
 
 type EventRowProps = {
   event: AgentEvent;
+  textExpanded?: boolean;
 };
 
 const PRIMARY_KEYS = [
@@ -37,33 +41,56 @@ const COMPACT_TEXT_LINES = 10;
 export default function EventRow(props: EventRowProps) {
   const event = () => props.event;
   const headline = () => eventHeadline(event());
+  const presentation = () => (event().toolName ? presentationOf(event()) : null);
 
   return (
     <article classList={{ "event-card": true, "event-card--muted": event().eventType === "PostToolUse" }}>
       <div class="event-card-head">
         <SourceDot source={event().source} />
         <KindBadge kind={event().eventType} />
-        <strong>{headline()}</strong>
+        <Show when={presentation()} fallback={<strong>{headline()}</strong>}>
+          {(current) => (
+            <>
+              <span class={`tone-pill tone-pill--${current().kindPill.tone}`}>{current().kindPill.label}</span>
+              <strong>
+                <Show when={current().headline.length} fallback={headline()}>
+                  <InlineSpans spans={current().headline} />
+                </Show>
+              </strong>
+            </>
+          )}
+        </Show>
         <span class="event-card-time">{timeAgo(event().observedAt)}</span>
       </div>
       <div class="event-card-meta">
         {event().role ? <span>{event().role}</span> : null}
-        {event().toolName ? <span>{event().toolName}</span> : null}
+        {event().toolName && !presentation() ? <span>{event().toolName}</span> : null}
         <span>seq {event().turnId || event().id.slice(0, 8)}</span>
       </div>
-      {event().text && !looksLikeJson(event().text) && !duplicatesToolOutput(event()) ? <ReaderText text={event().text ?? ""} /> : null}
-      {event().toolInputJson || event().toolOutputJson ? (
-        <ToolPayload
-          toolName={event().toolName}
-          inputJson={event().toolInputJson}
-          outputJson={event().toolOutputJson}
-        />
-      ) : null}
+      {event().text && !looksLikeJson(event().text) && !duplicatesToolOutput(event()) ? <ReaderText text={event().text ?? ""} expanded={props.textExpanded} /> : null}
+      <Show
+        when={presentation()}
+        fallback={
+          event().toolInputJson || event().toolOutputJson ? (
+            <ToolPayload toolName={event().toolName} inputJson={event().toolInputJson} outputJson={event().toolOutputJson} />
+          ) : null
+        }
+      >
+        {(current) => (
+          <For each={current().blocks}>
+            {(block, index) => <BlockView block={block} eventId={event().id} index={index()} />}
+          </For>
+        )}
+      </Show>
     </article>
   );
 }
 
 export function eventHeadline(event: AgentEvent): string {
+  if (event.toolName) {
+    const text = headlineText(presentationOf(event));
+    if (text) return text;
+  }
   const input = parseJsonObject(event.toolInputJson);
   const key = input ? primaryArgKey(input) : null;
   if (key && input) return commandHeadline(String(input[key]), event.toolName);
@@ -71,8 +98,9 @@ export function eventHeadline(event: AgentEvent): string {
   return event.toolName || event.role || event.eventType || "Event";
 }
 
-export function ReaderText(props: { text: string }) {
-  const [expanded, setExpanded] = createSignal(false);
+export function ReaderText(props: { text: string; expanded?: boolean }) {
+  const [override, setOverride] = createSignal<boolean | null>(null);
+  const expanded = () => override() ?? props.expanded ?? false;
   const compact = () => shouldCompactText(props.text);
   const collapsed = () => compact() && !expanded();
 
@@ -80,7 +108,7 @@ export function ReaderText(props: { text: string }) {
     <>
       <p classList={{ "reader-text": true, "reader-text--collapsed": collapsed() }}>{props.text}</p>
       <Show when={compact()}>
-        <button type="button" class="reader-text-toggle" onClick={() => setExpanded((current) => !current)}>
+        <button type="button" class="reader-text-toggle" onClick={() => setOverride(!expanded())}>
           {collapsed() ? "Show full message" : "Collapse message"}
         </button>
       </Show>
@@ -88,7 +116,7 @@ export function ReaderText(props: { text: string }) {
   );
 }
 
-export function EventRenderer(props: EventRowProps) {
+export function EventRenderer(props: { event: AgentEvent; textExpanded?: boolean }) {
   switch (props.event.eventType) {
     case "Decision":
       return <DecisionCard event={props.event} />;
@@ -97,7 +125,7 @@ export function EventRenderer(props: EventRowProps) {
     case "Observation":
       return <ObservationCard event={props.event} />;
     default:
-      return <EventRow event={props.event} />;
+      return <EventRow event={props.event} textExpanded={props.textExpanded} />;
   }
 }
 

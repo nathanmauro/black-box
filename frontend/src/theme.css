@@ -4615,3 +4615,71 @@ a {
   .steer-box button { width: 100%; }
   .approval-box-actions { grid-template-columns: 1fr; }
 }
+
+/* ── Presenter tone system (spec §4.1) — sole source of tone colour ───────── */
+:root {
+  --tone-run: var(--blue);
+  --tone-read: var(--text-faint);
+  --tone-write: var(--orange);
+  --tone-net: var(--green);
+  --tone-plan: var(--accent);
+  --tone-memory: var(--yellow);
+  --tone-error: var(--red);
+  --tone-neutral: var(--text-dim);
+}
+
+.tone-pill {
+  --pill-color: var(--tone-neutral);
+  border: 1px solid color-mix(in srgb, var(--pill-color) 45%, transparent);
+  border-radius: var(--radius-pill);
+  color: var(--pill-color);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 1px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tone-pill--run { --pill-color: var(--tone-run); }
+.tone-pill--read { --pill-color: var(--tone-read); }
+.tone-pill--write { --pill-color: var(--tone-write); }
+.tone-pill--net { --pill-color: var(--tone-net); }
+.tone-pill--plan { --pill-color: var(--tone-plan); }
+.tone-pill--memory { --pill-color: var(--tone-memory); }
+.tone-pill--error { --pill-color: var(--tone-error); }
+
+.detail-block { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); margin-top: 8px; padding: 4px 10px; }
+.detail-block > summary { color: var(--text-dim); cursor: pointer; font-size: 12px; user-select: none; }
+.detail-block > summary:hover { color: var(--text); }
+.detail-pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; margin: 8px 0 4px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.detail-pre--inline { border: 0; margin: 8px 0 0; }
+
+.bash-block { margin-top: 8px; }
+.bash-command { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 12px; line-height: 1.5; margin: 0; max-height: 220px; overflow: auto; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+.bash-meta { color: var(--text-dim); display: flex; font-size: 11.5px; gap: 12px; margin-top: 4px; }
+.bash-exit--error { color: var(--tone-error); }
+
+.diff { font-family: var(--font-mono); font-size: 12px; line-height: 1.45; margin: 6px 0 2px; overflow-x: auto; }
+.diff-line { display: flex; white-space: pre-wrap; word-break: break-word; }
+.diff-line--add { background: color-mix(in srgb, var(--green) 13%, transparent); }
+.diff-line--del { background: color-mix(in srgb, var(--red) 13%, transparent); }
+.diff-gutter { color: var(--text-faint); flex: none; user-select: none; width: 1.3em; }
+.diff-text { flex: 1; }
+.diff-hunk-sep { border-top: 1px dashed var(--border); margin: 6px 0; }
+.diff-empty { color: var(--text-faint); font-size: 12px; margin: 6px 0; }
+
+.patch-file + .patch-file { border-top: 1px solid var(--border-subtle); margin-top: 10px; padding-top: 8px; }
+.patch-file-head { align-items: baseline; display: flex; font-size: 12px; gap: 8px; }
+.patch-op { text-transform: uppercase; font-size: 10.5px; color: var(--text-dim); }
+.patch-op--add { color: var(--tone-net); }
+.patch-op--delete { color: var(--tone-error); }
+.patch-path { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.patch-move { color: var(--text-dim); }
+
+.inline-span-code { font-family: var(--font-mono); font-size: 0.95em; }
+.inline-file-link { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-family: var(--font-mono); padding: 0; }
+.inline-file-link:hover { text-decoration: underline; }
+.inline-url { color: var(--accent); overflow-wrap: anywhere; }
+
+.density-toggle { border: 1px solid var(--border); border-radius: var(--radius-pill); display: inline-flex; overflow: hidden; }
+.density-toggle button { background: none; border: 0; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 3px 10px; }
+.density-toggle button.active { background: var(--bg-selected); color: var(--text-bright); }

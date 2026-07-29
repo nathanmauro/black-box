@@ -8,6 +8,7 @@ import { EventRenderer, eventHeadline } from "./EventRow";
 type StreamRowProps = {
   item: EventFeedItem;
   expanded: boolean;
+  textExpanded?: boolean;
   sessionHref: string;
   onToggle: () => void;
 };
@@ -44,7 +45,7 @@ export default function StreamRow(props: StreamRowProps) {
               View session <span aria-hidden="true">→</span>
             </A>
           </div>
-          <EventRenderer event={item()} />
+          <EventRenderer event={item()} textExpanded={props.textExpanded} />
         </div>
       ) : null}
     </article>
