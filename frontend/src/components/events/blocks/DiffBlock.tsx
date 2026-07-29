@@ -1,6 +1,7 @@
 import { createMemo, For, Show } from "solid-js";
 import { memoizedDiffLines, type Hunk } from "../../../lib/diff";
 import type { FileRef } from "../../../lib/presenters/types";
+import FileReferenceActions from "../FileReferenceActions";
 import LazyDetails from "./LazyDetails";
 
 type DiffBlockProps = {
@@ -15,6 +16,9 @@ type DiffBlockProps = {
 export default function DiffBlock(props: DiffBlockProps) {
   return (
     <LazyDetails summary={props.label} class="detail-block detail-block--diff">
+      <div class="diff-file-reference">
+        <FileReferenceActions file={props.file} />
+      </div>
       <DiffBody eventId={props.eventId} index={props.index} oldText={props.oldText} newText={props.newText} />
     </LazyDetails>
   );

@@ -1922,6 +1922,7 @@ a {
   max-width: 100%;
 }
 .result-row-time { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
+.result-row-session-link { color: var(--accent); font-family: var(--font-mono); font-size: 11px; width: max-content; }
 
 /* ---- stream ------------------------------------------------------------ */
 .page--stream {
@@ -4683,8 +4684,18 @@ a {
 .patch-move { color: var(--text-dim); }
 
 .inline-span-code { font-family: var(--font-mono); font-size: 0.95em; }
+.file-reference-actions { align-items: baseline; display: inline-flex; flex-wrap: wrap; font-family: var(--font-mono); gap: 5px; max-width: 100%; overflow-wrap: anywhere; }
 .inline-file-link { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-family: var(--font-mono); padding: 0; }
 .inline-file-link:hover { text-decoration: underline; }
+.inline-file-link:disabled { color: var(--text-dim); cursor: wait; }
+.inline-file-path { color: var(--text); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.file-reference-fallbacks { display: inline-flex; gap: 3px; }
+.file-reference-action { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-dim); cursor: pointer; font-family: var(--font-mono); font-size: 10.5px; line-height: 18px; min-height: 24px; padding: 2px 5px; text-transform: uppercase; }
+.file-reference-action:hover:not(:disabled) { color: var(--accent); }
+.file-reference-action:disabled, .file-reference-action[aria-disabled="true"] { color: var(--text-faint); cursor: not-allowed; }
+.file-reference-reason { color: var(--text-dim); font-family: var(--font-sans); font-size: 10px; font-weight: 400; }
+.file-reference-status { color: var(--text-dim); font-family: var(--font-sans); font-size: 10px; font-weight: 400; }
+.diff-file-reference { color: var(--text-dim); font-size: 11px; margin-top: 6px; }
 .inline-url { color: var(--accent); overflow-wrap: anywhere; }
 
 .density-toggle { border: 1px solid var(--border); border-radius: var(--radius-pill); display: inline-flex; overflow: hidden; }

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
+import { CodeNavigationContext } from "../../../lib/codeNavigation";
 import BlockView from "./BlockView";
 
 describe("BlockView diff", () => {
@@ -55,6 +56,32 @@ describe("BlockView patch", () => {
     fireEvent(details, new Event("toggle"));
     expect(container.querySelector(".diff-line--del")?.textContent).toContain("old");
     expect(container.querySelector(".diff-line--add")?.textContent).toContain("new");
+  });
+
+  it("gives every absolute patch path and move target the shared file actions", () => {
+    const command = "*** Begin Patch\n*** Update File: /repo/old.ts\n*** Move to: /repo/new.ts\n@@\n-old\n+new\n*** End Patch";
+    const { container } = render(() => (
+      <CodeNavigationContext.Provider
+        value={{
+          scopes: () => [{ projectKey: "repo-key", root: "/repo" }],
+          catalogStatus: () => "ready",
+          catalogError: () => null,
+          refreshCatalog: () => undefined,
+        }}
+      >
+        <BlockView
+          eventId="evt-move"
+          index={0}
+          block={{ kind: "patch", command, files: [{ op: "update", path: "/repo/old.ts", movedTo: "/repo/new.ts" }] }}
+        />
+      </CodeNavigationContext.Provider>
+    ));
+    const details = container.querySelector("details") as HTMLDetailsElement;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+
+    expect(screen.getByRole("button", { name: "Open /repo/old.ts in editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open /repo/new.ts in editor" })).toBeInTheDocument();
   });
 });
 

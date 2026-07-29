@@ -9,6 +9,7 @@ GET /api/exports/targets
 GET /api/health/elasticsearch
 GET /api/health/local-ai
 GET /api/projects
+GET /api/projects/code-scopes
 GET /api/projects/{projectKey}/melds
 GET /api/projects/{projectKey}/sessions
 GET /api/projects/{projectKey}/timeline
@@ -43,7 +44,9 @@ POST /api/events
 POST /api/handoffs
 POST /api/melds
 POST /api/memory/embeddings/backfill
+POST /api/open-in-editor
 POST /api/projects/{projectKey}/melds/preview
+POST /api/reveal-in-finder
 POST /api/session-links
 POST /api/sessions/summarize
 POST /api/sessions/summarize-missing

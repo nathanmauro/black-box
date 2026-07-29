@@ -1,4 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import path from "node:path";
+import { E2E_PROJECT_CWD } from "../../src/e2e/seedData";
+import { E2E_INJECTION_FILE } from "./project-fixture";
 
 const SHOT_DIR = "test-results/shots";
 
@@ -150,3 +154,138 @@ test("an edit event renders a readable diff behind a lazy details block", async 
   await expect(page.locator(".diff-line--del").first()).toContainText("const total = 1;");
   await expect(page.locator(".diff-line--add").first()).toContainText("const total = 9;");
 });
+
+test("a file link opens through the verified project catalog without shell or desktop leakage", async ({ page, request }) => {
+  const filePath = `${E2E_PROJECT_CWD}/app.ts`;
+  const seeded = await request.post("/api/events", {
+    data: {
+      source: "codex",
+      clientSessionId: "black-box-e2e-file-link",
+      eventType: "PreToolUse",
+      role: "assistant",
+      toolName: "Read",
+      toolInput: { file_path: filePath, offset: 2, limit: 1 },
+      cwd: E2E_PROJECT_CWD,
+      metadata: { title: "File link seed" },
+    },
+  });
+  expect(seeded.ok()).toBeTruthy();
+
+  await page.goto("/?q=tool%3ARead&meaningful=false", { waitUntil: "domcontentloaded" });
+  const row = page.locator(".stream-row").filter({ hasText: "app.ts" }).first();
+  await expect(row).toBeVisible();
+  await row.click();
+  await page.getByRole("button", { name: `Open ${filePath} in editor` }).click();
+  await expect(page.getByText("Opened in editor.").first()).toBeVisible();
+
+  const editorLog = path.join(requiredE2eTempDir(), "editor-argv.bin");
+  await expect.poll(() => editorCalls(editorLog)).toEqual([
+    [realpathSync(E2E_PROJECT_CWD)],
+    ["-g", `${realpathSync(filePath)}:2`],
+  ]);
+
+  const injectionPath = `${E2E_PROJECT_CWD}/${E2E_INJECTION_FILE}`;
+  const injectionSeed = await request.post("/api/events", {
+    data: {
+      source: "codex",
+      clientSessionId: "black-box-e2e-injection-file-link",
+      eventType: "PreToolUse",
+      role: "assistant",
+      toolName: "Read",
+      toolInput: { file_path: injectionPath, offset: 1, limit: 1 },
+      cwd: E2E_PROJECT_CWD,
+      metadata: { title: "Injection-shaped file link seed" },
+    },
+  });
+  expect(injectionSeed.ok()).toBeTruthy();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const injectionRow = page.locator(".stream-row").filter({ hasText: E2E_INJECTION_FILE }).first();
+  await expect(injectionRow).toBeVisible();
+  await injectionRow.click();
+  await page.getByRole("button", { name: `Open ${injectionPath} in editor` }).click();
+  await expect(page.getByText("Opened in editor.").first()).toBeVisible();
+  await expect.poll(() => editorCalls(editorLog)).toEqual([
+    [realpathSync(E2E_PROJECT_CWD)],
+    ["-g", `${realpathSync(filePath)}:2`],
+    [realpathSync(E2E_PROJECT_CWD)],
+    ["-g", `${realpathSync(injectionPath)}:1`],
+  ]);
+  expect(existsSync(path.join(requiredE2eTempDir(), "injection-sentinel"))).toBe(false);
+
+  const scopesResponse = await request.get("/api/projects/code-scopes");
+  expect(scopesResponse.ok()).toBeTruthy();
+  const scopes = await scopesResponse.json() as Array<{ projectKey: string; root: string }>;
+  const scope = scopes.find((candidate) => candidate.root === E2E_PROJECT_CWD);
+  expect(scope).toBeTruthy();
+  const callsBeforeBlockedRequest = editorCalls(editorLog);
+  const blocked = await request.post("/api/open-in-editor", {
+    data: { projectKey: scope!.projectKey, relativePath: "../outside.txt" },
+  });
+  expect(blocked.status()).toBe(403);
+  expect(await blocked.json()).toMatchObject({
+    error: { status: 403, type: "outside_project_root" },
+  });
+  expect(editorCalls(editorLog)).toEqual(callsBeforeBlockedRequest);
+
+  const outsidePath = "/etc/passwd";
+  const outsideSeed = await request.post("/api/events", {
+    data: {
+      source: "codex",
+      clientSessionId: "black-box-e2e-outside-file-link",
+      eventType: "PreToolUse",
+      role: "assistant",
+      toolName: "Read",
+      toolInput: { file_path: outsidePath, offset: 1, limit: 1 },
+      cwd: E2E_PROJECT_CWD,
+      metadata: { title: "Outside file link seed" },
+    },
+  });
+  expect(outsideSeed.ok()).toBeTruthy();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const outsideRow = page.locator(".stream-row").filter({ hasText: outsidePath }).first();
+  await expect(outsideRow).toBeVisible();
+  await outsideRow.click();
+  await expect(page.getByRole("button", { name: `Open ${outsidePath} in editor` })).toHaveCount(0);
+  await expect(page.getByText("This path is outside the eligible project roots.").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: `Reveal in Finder ${outsidePath}` })).toHaveAttribute("aria-disabled", "true");
+  await page.getByRole("button", { name: `Copy path ${outsidePath}` }).click();
+  await expect(page.getByText("Could not copy path.").first()).toBeVisible();
+  expect(editorCalls(editorLog)).toEqual(callsBeforeBlockedRequest);
+
+  const missingSeed = await request.post("/api/events", {
+    data: {
+      source: "codex",
+      clientSessionId: "black-box-e2e-missing-file-link",
+      eventType: "PreToolUse",
+      role: "assistant",
+      toolName: "Read",
+      toolInput: { file_path: `${E2E_PROJECT_CWD}/missing.ts`, offset: 1, limit: 1 },
+      cwd: E2E_PROJECT_CWD,
+      metadata: { title: "Missing file link seed" },
+    },
+  });
+  expect(missingSeed.ok()).toBeTruthy();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const missingRow = page.locator(".stream-row").filter({ hasText: "missing.ts" }).first();
+  await expect(missingRow).toBeVisible();
+  await missingRow.click();
+  await page.getByRole("button", { name: `Open ${E2E_PROJECT_CWD}/missing.ts in editor` }).click();
+  await expect(page.getByText("File no longer exists.").first()).toBeVisible();
+  expect(editorCalls(editorLog)).toEqual(callsBeforeBlockedRequest);
+});
+
+function requiredE2eTempDir(): string {
+  const tempDir = process.env.SBA_E2E_TEMP_DIR;
+  if (!tempDir) throw new Error("SBA_E2E_TEMP_DIR is required for editor verification");
+  return tempDir;
+}
+
+function editorCalls(logPath: string): string[][] {
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath)
+    .toString("utf8")
+    .split("\0\0")
+    .map((record) => record.split("\0").filter(Boolean))
+    .filter((record) => record[0] === "call")
+    .map((record) => record.slice(1));
+}

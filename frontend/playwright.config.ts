@@ -14,6 +14,9 @@ const host = appUrl.hostname === "localhost" ? "127.0.0.1" : appUrl.hostname;
 const tempDir = process.env.SBA_E2E_TEMP_DIR
   || path.join(os.tmpdir(), `black-box-saga-e2e-${randomUUID()}`);
 const dbPath = process.env.SBA_E2E_DB_PATH || path.join(tempDir, "black-box-saga-e2e.db");
+const editorPath = path.join(tempDir, "fake-editor");
+const editorLogPath = path.join(tempDir, "editor-argv.bin");
+const injectionSentinelPath = path.join(tempDir, "injection-sentinel");
 const runToken = process.env.SBA_E2E_RUN_TOKEN || randomUUID();
 assertSafeE2ePaths(tempDir, dbPath);
 // Playwright reloads its config in child processes. Export the first path so every process shares
@@ -100,6 +103,12 @@ export default defineConfig({
       SBA_LOCAL_AI_ENABLED: "false",
       SBA_ASK_EMBEDDING_ENABLED: "false",
       SBA_SUMMARY_BACKEND: "local",
+      SBA_EDITOR_ENABLED: "true",
+      SBA_EDITOR_COMMAND: editorPath,
+      SBA_EDITOR_ALLOWLIST: editorPath,
+      SBA_EDITOR_TIMEOUT: "2s",
+      SBA_E2E_EDITOR_LOG: editorLogPath,
+      SBA_E2E_INJECTION_SENTINEL: injectionSentinelPath,
     },
   },
   use: {

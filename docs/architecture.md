@@ -41,6 +41,7 @@ flowchart LR
         WORKFLOW["workflow<br/>lifecycle and Handoff completion"]
         MEMORY["memory<br/>structured recall and search"]
         RECORDING["recording<br/>canonical event writes"]
+        PROJECT["project<br/>catalog and secure code navigation"]
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
@@ -48,6 +49,7 @@ flowchart LR
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
+    EDITOR["Allowlisted local editor / Finder CLI<br/>fixed argv, never a shell"]
 
     AGENTS --> MCP & REST
     RUNNER --> REST
@@ -55,9 +57,11 @@ flowchart LR
     UI --> REST
     HOOK --> RECORDING
     MCP --> WORKFLOW & MEMORY & RECORDING
-    REST --> WORKFLOW & MEMORY & RECORDING
+    REST --> WORKFLOW & MEMORY & RECORDING & PROJECT
     WORKFLOW -->|"complete: capture normal Handoff"| RECORDING
     MEMORY --> RECORDING
+    PROJECT --> DB
+    PROJECT -. "validated CodeReference" .-> EDITOR
     RECORDING --> DB
     WORKFLOW --> DB
     WORKFLOW -. "after durable mutation" .-> BROADCAST
@@ -110,6 +114,15 @@ Arrows point from a consumer to the public API it imports. No module may import 
 `internal` package. Recording is the canonical session/event boundary; optional projections and
 reactions happen after its SQLite write. The stable package rules and contributor guidance live in
 [`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
+
+The `project` module also owns local file navigation. `GET /api/projects/code-scopes` projects only
+session-backed catalog scopes that exist beneath a filesystem-verified Git root. The UI derives an
+opaque-key plus relative-path `CodeReference`; `POST /api/open-in-editor` and
+`POST /api/reveal-in-finder` re-resolve it against the exact current scope, reject lexical or
+symlink escape, and require a readable regular file. The module's outbound process adapter accepts
+only fixed command shapes and an allowlisted absolute Cursor/VS Code-compatible executable (or
+fixed `/usr/bin/open -R` for Finder), passed to `ProcessBuilder` as discrete argv. This path never
+uses the shell-based summary adapter.
 
 ## The coordination loop
 
@@ -332,8 +345,10 @@ selecting a project never infers work or broadens the authoritative queue query.
 - **SolidJS web UI.** Reads the same REST surfaces for Activity, Board, Recall, search, and supporting
   views, including the read-oriented Projects workspace and its explicit identity-curation controls.
   Recall links carry the owning session and event; Browse uses the exact-event read when a target
-  falls outside its bounded session-event batch. Vite assets are packaged into the Spring Boot jar
-  by the `frontend` Maven profile.
+  falls outside its bounded session-event batch. Presenter file references resolve reactively
+  against the verified code-scope projection; unresolved paths remain copy-only, while open/reveal
+  success and typed failures render locally. Vite assets are packaged into the Spring Boot jar by
+  the `frontend` Maven profile.
 
 ## Local-first and model boundaries
 

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../lib/api";
+import { CodeNavigationContext } from "../../lib/codeNavigation";
 import DecisionCard from "./DecisionCard";
 import EventRow, { eventHeadline } from "./EventRow";
 
@@ -79,10 +80,26 @@ describe("EventRow", () => {
       observedAt: "2026-06-16T20:00:00Z",
     };
 
-    const { container } = render(() => <EventRow event={event} />);
+    const { container } = render(() => (
+      <CodeNavigationContext.Provider
+        value={{
+          scopes: () => [{
+            projectKey: "sba-key",
+            root: "/Users/nathan/Developer/proj/sba-agentic",
+          }],
+          catalogStatus: () => "ready",
+          catalogError: () => null,
+          refreshCatalog: () => undefined,
+        }}
+      >
+        <EventRow event={event} />
+      </CodeNavigationContext.Provider>
+    ));
 
     expect(container.querySelector(".tone-pill")?.textContent).toBe("Patch");
-    expect(screen.getByRole("button", { name: "~/Developer/proj/sba-agentic/README.md" })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open /Users/nathan/Developer/proj/sba-agentic/README.md in editor",
+    })).toBeInTheDocument();
     expect(eventHeadline(event)).toBe("Patch ~/Developer/proj/sba-agentic/README.md");
   });
 

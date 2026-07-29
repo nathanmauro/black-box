@@ -54,6 +54,13 @@ management:
         enabled: true
 
 sba:
+  editor:
+    # File navigation is catalog-bound and revalidated on every request. Only fixed,
+    # explicitly allowlisted VS Code-compatible CLI binaries can be launched.
+    enabled: ${SBA_EDITOR_ENABLED:true}
+    command: ${SBA_EDITOR_COMMAND:/Applications/Cursor.app/Contents/Resources/app/bin/code}
+    allowlist: ${SBA_EDITOR_ALLOWLIST:/Applications/Cursor.app/Contents/Resources/app/bin/code,/opt/homebrew/bin/cursor,/usr/local/bin/cursor,/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code,/opt/homebrew/bin/code}
+    timeout: ${SBA_EDITOR_TIMEOUT:5s}
   local-ai:
     enabled: ${SBA_LOCAL_AI_ENABLED:true}
     base-url: ${SBA_LOCAL_AI_BASE_URL:http://localhost:1234}

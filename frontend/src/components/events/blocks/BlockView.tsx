@@ -3,6 +3,7 @@ import { parseApplyPatch } from "../../../lib/patch";
 import type { DetailBlock } from "../../../lib/presenters/types";
 import type { PatchFileStub } from "../../../lib/patch";
 import ToolPayload from "../ToolPayload";
+import FileReferenceActions from "../FileReferenceActions";
 import BashBlock from "./BashBlock";
 import DiffBlock, { DiffHunks } from "./DiffBlock";
 import LazyDetails from "./LazyDetails";
@@ -65,8 +66,14 @@ function PatchBody(props: { command: string }) {
             <div class="patch-file">
               <div class="patch-file-head">
                 <span class={`patch-op patch-op--${file.op}`}>{file.op}</span>
-                <span class="patch-path" title={file.path}>{file.path}</span>
-                <Show when={file.movedTo}>{(target) => <span class="patch-move">→ {target()}</span>}</Show>
+                <FileReferenceActions file={{ path: file.path }} label={file.path} />
+                <Show when={file.movedTo}>
+                  {(target) => (
+                    <span class="patch-move">
+                      → <FileReferenceActions file={{ path: target() }} label={target()} />
+                    </span>
+                  )}
+                </Show>
               </div>
               <DiffHunks hunks={file.hunks} />
             </div>

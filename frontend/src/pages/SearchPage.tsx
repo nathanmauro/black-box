@@ -350,15 +350,22 @@ function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, ev
   }
 
   return (
-    <A href={`/sessions/${encodeURIComponent(props.event.sessionId)}`} class="result-row" onClick={select}>
+    <article class="result-row">
       <div class="result-row-meta">
         <SourceDot source={props.event.source} label />
         <span class="result-row-time">{timeAgo(props.event.observedAt)}</span>
+        <A
+          href={`/sessions/${encodeURIComponent(props.event.sessionId)}`}
+          class="result-row-session-link"
+          onClick={select}
+        >
+          View session
+        </A>
       </div>
       <div class="result-row-body">
         <EventRenderer event={props.event} />
       </div>
-    </A>
+    </article>
   );
 }
 

@@ -108,6 +108,23 @@ export type ProjectSummary = {
   scopes?: ProjectScope[];
 };
 
+export type CodeProjectScope = {
+  projectKey: string;
+  root: string;
+};
+
+export type CodeReference = {
+  projectKey: string;
+  relativePath: string;
+  line?: number;
+  column?: number;
+  commit?: string;
+};
+
+export type CodeNavigationResult = {
+  status: "opened" | "revealed" | string;
+};
+
 export type ProjectAlias = {
   id: string;
   aliasKey: string;
@@ -504,6 +521,18 @@ export function getRecall(scope: string, withinHours: number, kinds: string[]): 
 
 export function getProjects(): Promise<ProjectSummary[]> {
   return getJson("/api/projects");
+}
+
+export function getCodeProjectScopes(): Promise<CodeProjectScope[]> {
+  return getJson("/api/projects/code-scopes");
+}
+
+export function openInEditor(reference: CodeReference): Promise<CodeNavigationResult> {
+  return postJson("/api/open-in-editor", reference);
+}
+
+export function revealInFinder(reference: CodeReference): Promise<CodeNavigationResult> {
+  return postJson("/api/reveal-in-finder", reference);
 }
 
 export function mergeProjectAlias(aliasKey: string, canonicalKey: string): Promise<ProjectAlias> {
