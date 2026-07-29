@@ -120,6 +120,38 @@ class AgenticControllerTest {
     }
 
     @Test
+    void getsOneEventByItsStableId() throws Exception {
+        String body = mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex",
+                                  "clientSessionId": "direct-event-lookup",
+                                  "eventType": "Observation",
+                                  "role": "assistant",
+                                  "text": "Open this exact event.",
+                                  "observedAt": "2026-04-01T16:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode captured = objectMapper.readTree(body);
+        String eventId = captured.path("eventId").asText();
+        String sessionId = captured.path("sessionId").asText();
+
+        mockMvc.perform(get("/api/events/{eventId}", eventId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(eventId))
+                .andExpect(jsonPath("$.sessionId").value(sessionId))
+                .andExpect(jsonPath("$.text").value("Open this exact event."));
+
+        mockMvc.perform(get("/api/events/{eventId}", "missing-event"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void eventFeedEndpointReturnsEnvelopeFiltersAndClientErrors() throws Exception {
         String key = "feed-http-" + UUID.randomUUID().toString().replace("-", "");
         mockMvc.perform(post("/api/events")

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getRecall } from "../../lib/api";
@@ -9,6 +10,9 @@ let updateParams: SetStoreFunction<{ scope?: string }>;
 const setParams = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
+  A: (props: { href: string; children: JSX.Element; class?: string; "aria-label"?: string }) => (
+    <a href={props.href} class={props.class} aria-label={props["aria-label"]}>{props.children}</a>
+  ),
   useSearchParams: () => [params, setParams],
 }));
 
@@ -24,10 +28,11 @@ vi.mock("../../lib/api", async (importOriginal) => {
       items: [
         {
           eventId: "evt-1",
+          sessionId: "session-1",
           kind: "decision",
           source: "codex",
           clientSessionId: "client-1",
-          repo: "/Users/nathan/Developer/proj/sba-agentic",
+          repo: null,
           observedAt: "2026-06-16T20:00:00Z",
           headline: "Use the Hybrid Storyline timeline",
           rationale: "It keeps meaningful project blocks first while preserving raw trace archaeology.",
@@ -61,6 +66,11 @@ describe("RecallPage", () => {
     expect(screen.getByText("It keeps meaningful project blocks first while preserving raw trace archaeology.")).toBeInTheDocument();
     expect(screen.getByText("Raw chronological feed")).toBeInTheDocument();
     expect(screen.getByText("82%")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Use the Hybrid Storyline timeline in Browse" }))
+      .toHaveAttribute(
+        "href",
+        "/?view=browse&session=session-1&event=evt-1&project=",
+      );
     expect(screen.queryByText(/eventId/)).not.toBeInTheDocument();
     expect(setParams).toHaveBeenCalledWith({ scope: "sba-agentic" });
   });

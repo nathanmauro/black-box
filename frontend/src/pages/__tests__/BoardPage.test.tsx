@@ -3,6 +3,7 @@ import { createSignal, type JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  AgentEvent,
   AgentTask,
   DagResponse,
   ProjectSummary,
@@ -55,25 +56,25 @@ describe("BoardPage", () => {
   it("places every active task in one operational column and exposes complete frozen context", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked" });
     const store = fakeTaskStore(fixtures());
-    const recallHandoff = vi.fn(async (scope: string) => ({
-      scope,
-      withinHours: 8760,
-      kinds: ["handoff"],
-      count: 1,
-      items: [{
-        eventId: "handoff-44",
+    const loadHandoff = vi.fn(async (id: string): Promise<AgentEvent> => ({
+      id,
+      sessionId: "internal-session-44",
+      source: "codex",
+      clientSessionId: "session-44",
+      eventType: "Handoff",
+      role: "assistant",
+      text: "REST and MCP adapters shipped with parity.",
+      metadata: {
         kind: "handoff",
-        source: "codex",
-        clientSessionId: "session-44",
         repo: "/repos/black-box",
-        observedAt: "2026-07-10T00:30:00Z",
-        headline: "REST and MCP adapters shipped with parity.",
+        contextSummary: "REST and MCP adapters shipped with parity.",
         openLoops: ["Run the Board verification"],
         nextAction: "Inspect the coordination surface.",
-      }],
+      },
+      observedAt: "2026-07-10T00:30:00Z",
     }));
 
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} recallHandoff={recallHandoff} loadProjects={emptyCatalog} />);
+    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadHandoff={loadHandoff} loadProjects={emptyCatalog} />);
 
     await screen.findByRole("heading", { name: "Coordination board" });
     const open = screen.getByRole("region", { name: "Open tasks" });
@@ -100,10 +101,32 @@ describe("BoardPage", () => {
     expect(within(detail).getByText("Linked Handoff")).toBeInTheDocument();
     expect(await within(detail).findByText("REST and MCP adapters shipped with parity.")).toBeInTheDocument();
     expect(within(detail).getByText("Inspect the coordination surface.")).toBeInTheDocument();
-    expect(recallHandoff).toHaveBeenCalledWith("handoff-44", 8760, ["handoff"]);
+    expect(loadHandoff).toHaveBeenCalledOnce();
+    expect(loadHandoff).toHaveBeenCalledWith("handoff-44");
 
     fireEvent.click(screen.getByRole("button", { name: "Show 1 cancelled task" }));
     expect(screen.getByRole("region", { name: "Cancelled tasks" })).toHaveTextContent("Retired experiment");
+  });
+
+  it("shows a stable error state when the linked Handoff cannot be loaded", async () => {
+    [params, setParams] = createStore<BoardSearchParams>({ task: "task-done" });
+    const loadHandoff = vi.fn(async (): Promise<AgentEvent> => {
+      throw new Error("Missing Handoff");
+    });
+
+    render(() => (
+      <BoardPage
+        store={fakeTaskStore(fixtures())}
+        updateStatus={vi.fn()}
+        loadHandoff={loadHandoff}
+        loadProjects={emptyCatalog}
+      />
+    ));
+
+    expect(await screen.findByText("Linked Handoff could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("Completion Handoff")).not.toBeInTheDocument();
+    expect(loadHandoff).toHaveBeenCalledOnce();
+    expect(loadHandoff).toHaveBeenCalledWith("handoff-44");
   });
 
   it("offers revision only for blocked gate tasks", async () => {

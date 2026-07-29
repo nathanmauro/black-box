@@ -8,6 +8,7 @@ import {
   createTaskAnnotation,
   deleteProjectAlias,
   enqueueTask,
+  getEvent,
   getSessionChildCounts,
   getSessionDag,
   getSession,
@@ -29,6 +30,7 @@ import {
   type ProjectSavedMeld,
   type ProjectTimelineResponse,
   type RecallResult,
+  type AgentEvent,
   type AgentSession,
   type TaskChange,
   type CompleteTaskRequest,
@@ -53,6 +55,23 @@ afterEach(() => {
 });
 
 describe("Phase 2 API helpers", () => {
+  it("gets an exact event by its stable id", async () => {
+    const payload: AgentEvent = {
+      id: "event/old",
+      sessionId: "session-old",
+      source: "codex",
+      clientSessionId: "client-old",
+      eventType: "Handoff",
+      text: "Exact event",
+      observedAt: "2026-07-29T16:00:00Z",
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(getEvent(payload.id)).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/events/event%2Fold", expect.anything());
+  });
+
   it("gets an exact session by its stable id", async () => {
     const payload: AgentSession = {
       id: "session/old",

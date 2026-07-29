@@ -189,7 +189,7 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 
-test("recall query returns grouped structured results", async ({ page }) => {
+test("recall query links the owning session and exact event", async ({ page, request }) => {
   await page.goto("/recall");
   await expect(page.getByRole("heading", { name: "Ask what agents already decided" })).toBeVisible();
 
@@ -200,4 +200,30 @@ test("recall query returns grouped structured results", async ({ page }) => {
   await expect(decisionCard.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
   await expect(decisionCard.getByText("open loops")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/recall.png`, fullPage: true });
+
+  const recalled = await request.get("/api/recall", {
+    params: {
+      scope: "UI rewrite",
+      withinHours: "168",
+      kinds: "decision,handoff",
+    },
+  });
+  expect(recalled.ok()).toBeTruthy();
+  const result = await recalled.json() as {
+    items: Array<{ eventId: string; sessionId: string; headline?: string | null }>;
+  };
+  const decision = result.items.find((item) => item.headline === "Use SolidJS + Vite for the UI rewrite");
+  expect(decision).toBeDefined();
+
+  await decisionCard
+    .getByRole("link", { name: "Open Use SolidJS + Vite for the UI rewrite in Browse" })
+    .click();
+  await expect(page).toHaveURL((url) => (
+    url.searchParams.get("view") === "browse"
+    && url.searchParams.get("session") === decision!.sessionId
+    && url.searchParams.get("event") === decision!.eventId
+  ));
+  await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+  await expect(page.locator(".event-flow-row--target")).toBeVisible();
 });

@@ -196,7 +196,8 @@ recallContext({
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
   `createSpec.projectKey` when enqueueing work.
 - **Recall** — focused Decision, Handoff, and Observation retrieval by repo, topic, event id, or
-  semantic paraphrase.
+  semantic paraphrase. Each result links back to its owning session with the exact source event
+  selected.
 
 Open them directly:
 

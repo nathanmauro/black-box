@@ -262,6 +262,26 @@ describe("ActivityPage", () => {
     expect(params.event).toBeUndefined();
   });
 
+  it("honors an explicit all-project Browse link without losing its target to remembered scope", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({
+      project: "",
+      session: "session-2",
+      event: "event-old",
+      view: "browse",
+    });
+    localStorage.setItem("blackbox.activity.projectKey", "sba-key");
+
+    render(() => <ActivityPage />);
+
+    expect(await screen.findByRole("button", { name: /All projects/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cockpit cleanup" })).toBeInTheDocument();
+    expect(params.project).toBe("");
+    expect(params.session).toBe("session-2");
+    expect(params.event).toBe("event-old");
+    expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
+    expect(apiMocks.getProjectSessions).not.toHaveBeenCalled();
+  });
+
   it("normalizes alias project IDs in the URL and local storage to the primary identity", async () => {
     [params, setParams] = createStore<ActivitySearchParams>({ project: "sba-worktree-key" });
     localStorage.setItem("blackbox.activity.projectKey", "sba-worktree-key");

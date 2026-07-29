@@ -57,6 +57,8 @@ class ContextLoopTest {
         RecallResult byRepo = contextService.recall("/tmp/acme-roundtrip", 168, List.of("decision"));
         assertThat(byRepo.count()).isEqualTo(1);
         RecalledItem item = byRepo.items().getFirst();
+        AgentSession session = repository.findSession("codex", "codex-1").orElseThrow();
+        assertThat(item.sessionId()).isEqualTo(session.id());
         assertThat(item.kind()).isEqualTo("decision");
         assertThat(item.source()).isEqualTo("codex");
         assertThat(item.headline()).contains("JWT refresh-rotation");

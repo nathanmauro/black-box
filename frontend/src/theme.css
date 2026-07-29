@@ -2010,6 +2010,8 @@ a {
 }
 
 .stream-row-expanded {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 266px;
   margin: 0 0 6px 30px;
   padding: 10px;
   background: var(--bg);
@@ -2304,6 +2306,11 @@ a {
   align-items: center;
   gap: 8px;
 }
+.recall-card-link {
+  border-radius: var(--radius-sm);
+  transition: background 0.14s ease;
+}
+.recall-card-link:hover { background: var(--bg-hover); }
 .recall-card-head strong {
   flex: 1;
   min-width: 0;

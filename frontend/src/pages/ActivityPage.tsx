@@ -21,7 +21,9 @@ export default function ActivityPage() {
   const [rememberedProjectKey, setRememberedProjectKey] = createSignal(readRememberedProjectKey());
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, { initialValue: [] });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
-  const requestedProjectKey = createMemo(() => params.project || rememberedProjectKey());
+  const requestedProjectKey = createMemo(() => (
+    params.project !== undefined ? params.project : rememberedProjectKey()
+  ));
   const selectedProject = createMemo(() => findProjectByIdentifier(availableProjects(), requestedProjectKey()));
   const projectScopePending = createMemo(() => Boolean(requestedProjectKey()) && projects.loading && !selectedProject());
   const projectScopeError = createMemo(() => {

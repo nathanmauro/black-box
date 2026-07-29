@@ -148,9 +148,10 @@ class McpContractSnapshotTest {
 
     private static void assertRecalledItemShape(JsonNode item) {
         assertThat(fieldNames(item)).contains(
-                "eventId", "kind", "source", "clientSessionId", "repo", "observedAt", "headline",
+                "eventId", "sessionId", "kind", "source", "clientSessionId", "repo", "observedAt", "headline",
                 "rationale", "alternatives", "confidence", "openLoops", "nextAction", "toAgent", "score");
         assertThat(item.path("eventId").isTextual()).isTrue();
+        assertThat(item.path("sessionId").isTextual()).isTrue();
         assertThat(item.path("kind").isTextual()).isTrue();
         assertThat(item.path("source").isTextual()).isTrue();
         assertThat(item.path("clientSessionId").isTextual()).isTrue();

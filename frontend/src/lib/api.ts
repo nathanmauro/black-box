@@ -63,6 +63,7 @@ export type SearchResponse = {
 
 export type RecalledItem = {
   eventId: string;
+  sessionId: string;
   kind: string;
   source: string;
   clientSessionId?: string | null;
@@ -467,6 +468,10 @@ export function getSessions(limit = 250, includeChildren = false): Promise<Agent
 
 export function getSession(id: string): Promise<AgentSession> {
   return getJson(`/api/sessions/${encodeURIComponent(id)}`);
+}
+
+export function getEvent(id: string): Promise<AgentEvent> {
+  return getJson(`/api/events/${encodeURIComponent(id)}`);
 }
 
 export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[]> {

@@ -9,13 +9,14 @@ import {
   createSpec,
   createTaskAnnotation,
   enqueueTask,
+  getEvent,
   getProjects,
-  getRecall,
   getSpec,
   getTaskDag,
   getTaskEvents,
   updateTaskStatus,
   type AgentTask,
+  type AgentEvent,
   type AnnotationKind,
   type ProjectSummary,
   type TaskAnnotation,
@@ -68,7 +69,7 @@ export type BoardPageProps = {
   createSpec?: typeof createSpec;
   enqueueTask?: typeof enqueueTask;
   updateStatus?: typeof updateTaskStatus;
-  recallHandoff?: typeof getRecall;
+  loadHandoff?: typeof getEvent;
   getTaskEvents?: typeof getTaskEvents;
   getTaskDag?: typeof getTaskDag;
   createAnnotation?: typeof createTaskAnnotation;
@@ -422,7 +423,7 @@ export default function BoardPage(props: BoardPageProps) {
                 resetError={resetErrors()[snapshot().task.id] ?? null}
                 revising={revisingTaskId() === snapshot().task.id}
                 revisionError={revisionErrors()[snapshot().task.id] ?? null}
-                recallHandoff={props.recallHandoff ?? getRecall}
+                loadHandoff={props.loadHandoff ?? getEvent}
                 getTaskEvents={props.getTaskEvents ?? getTaskEvents}
                 getTaskDag={props.getTaskDag ?? getTaskDag}
                 createAnnotation={props.createAnnotation}
@@ -557,7 +558,7 @@ function TaskDetail(props: {
   resetError: string | null;
   revising: boolean;
   revisionError: string | null;
-  recallHandoff: typeof getRecall;
+  loadHandoff: typeof getEvent;
   getTaskEvents: typeof getTaskEvents;
   getTaskDag: typeof getTaskDag;
   createAnnotation?: typeof createTaskAnnotation;
@@ -612,10 +613,7 @@ function TaskDetail(props: {
   )));
   const [handoff] = createResource(
     () => task().resultHandoffId || undefined,
-    async (handoffId) => {
-      const result = await props.recallHandoff(handoffId, 24 * 365, ["handoff"]);
-      return result.items.find((item) => item.eventId === handoffId) ?? null;
-    },
+    (handoffId) => props.loadHandoff(handoffId),
   );
   createEffect(on(
     () => task().id,
@@ -845,19 +843,16 @@ function TaskDetail(props: {
                 <p class="board-handoff-state">Resolving linked Handoff…</p>
               </Show>
               <Show when={handoff.error}>
-                <p class="board-handoff-state board-handoff-state--error">Linked Handoff could not be recalled.</p>
+                <p class="board-handoff-state board-handoff-state--error">Linked Handoff could not be loaded.</p>
               </Show>
-              <Show when={!handoff.loading && !handoff.error && handoff() === null}>
-                <p class="board-handoff-state">No matching Handoff is available in the recall window.</p>
-              </Show>
-              <Show when={handoff()}>
+              <Show when={!handoff.error && handoff()}>
                 {(item) => (
                   <div class="board-handoff-body">
-                    <strong>{item().headline || "Completion Handoff"}</strong>
+                    <strong>{handoffHeadline(item())}</strong>
                     <span>{item().source}{item().clientSessionId ? ` · ${item().clientSessionId}` : ""}</span>
-                    <Show when={item().nextAction}>{(next) => <p><b>Next</b>{next()}</p>}</Show>
-                    <Show when={item().openLoops?.length}>
-                      <ul><For each={item().openLoops || []}>{(loop) => <li>{loop}</li>}</For></ul>
+                    <Show when={handoffNextAction(item())}>{(next) => <p><b>Next</b>{next()}</p>}</Show>
+                    <Show when={handoffOpenLoops(item()).length}>
+                      <ul><For each={handoffOpenLoops(item())}>{(loop) => <li>{loop}</li>}</For></ul>
                     </Show>
                   </div>
                 )}
@@ -885,6 +880,33 @@ function TaskDetail(props: {
       </div>
     </aside>
   );
+}
+
+function handoffHeadline(event: AgentEvent): string {
+  return metadataString(event, "contextSummary")
+    ?? event.text?.split(/\r?\n/u).find((line) => line.trim())?.trim()
+    ?? "Completion Handoff";
+}
+
+function handoffNextAction(event: AgentEvent): string | undefined {
+  return metadataString(event, "nextAction");
+}
+
+function handoffOpenLoops(event: AgentEvent): string[] {
+  const value = metadata(event).openLoops;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function metadataString(event: AgentEvent, key: string): string | undefined {
+  const value = metadata(event)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function metadata(event: AgentEvent): Record<string, unknown> {
+  return event.metadata && typeof event.metadata === "object" && !Array.isArray(event.metadata)
+    ? event.metadata as Record<string, unknown>
+    : {};
 }
 
 function StatusBadge(props: { status: AgentTask["status"] }) {

@@ -83,6 +83,13 @@ describe("theme session lineage contracts", () => {
 });
 
 describe("theme route overflow contracts", () => {
+  it("contains off-screen expanded stream rows without lowering the 500-row cap", () => {
+    expectRule(".stream-row-expanded", [
+      "content-visibility: auto;",
+      "contain-intrinsic-block-size: auto 266px;",
+    ]);
+  });
+
   it("keeps search results and recall cards from widening the document", () => {
     expectRule(".page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
     expectRule(".activity-workspace > .page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);

@@ -19,8 +19,22 @@ ran on a freshly restarted jar on a quiet machine. Treat "no regression" as the 
 claim, not "85× faster."
 
 **Budget finding (spec §9, raised per plan Task 16 — not silently shipped):** expand-all
-at 500 rows measures ~164 ms against the < 100 ms budget. The measurement includes
-Playwright click dispatch + polling overhead, so the felt interaction is somewhat faster,
-but the number as measured misses. The spec's sanctioned fallback is a lower `MAX_ROWS`
-in expanded mode; alternatives are accepting ~164 ms (still sub-200 ms, subjectively
-instant) or profiling the expanded-row mount. Decision deliberately left to Nathan.
+at 500 rows initially measured ~164 ms against the < 100 ms budget. The measurement includes
+Playwright click dispatch + polling overhead, so the felt interaction was somewhat faster,
+but the number as measured missed.
+
+## Containment follow-up, 2026-07-29
+
+The expanded panel now uses `content-visibility: auto` with a 266 px intrinsic block-size
+estimate. This keeps every expanded row in the DOM and accessible while deferring offscreen
+layout and paint work.
+
+Live verification after deployment, using the same conservative Playwright click-through-last-row
+method at 1280×800 with exactly 500 rows:
+
+- raw expand-all runs: **83 / 85 / 91 ms**
+- median: **85 ms** (budget: < 100 ms — **met**)
+- expanded rows: **500 / 500** on every run
+- final row: scrollable and visibly rendered on every run
+
+The containment fix resolves the finding without lowering `MAX_ROWS`.

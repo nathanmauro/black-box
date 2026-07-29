@@ -7,6 +7,7 @@ import SourceDot from "../components/SourceDot";
 import SteerBox from "../components/SteerBox";
 import { EventRenderer, ReaderText } from "../components/events/EventRow";
 import {
+  getEvent,
   getProjectSessions,
   getSession,
   getSessionChildCounts,
@@ -47,6 +48,11 @@ type PromptTurn = {
 type ProjectSessionResult = {
   projectKey: string;
   sessions: AgentSession[];
+};
+
+type SessionEventRequest = {
+  sessionId: string;
+  targetEventId?: string;
 };
 
 const DUPLICATE_PROMPT_WINDOW_MS = 2 * 60 * 1_000;
@@ -152,9 +158,23 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       return next;
     });
   };
-  const [events, { refetch: refetchEvents }] = createResource(selectedId, async (id) => (id ? getSessionEvents(id, 2_000) : []), {
-    initialValue: [] as AgentEvent[],
-  });
+  const [events, { refetch: refetchEvents }] = createResource(
+    (): SessionEventRequest | undefined => {
+      const sessionId = selectedId();
+      return sessionId ? { sessionId, targetEventId: props.targetEventId } : undefined;
+    },
+    async ({ sessionId, targetEventId }) => {
+      const listed = await getSessionEvents(sessionId, 2_000);
+      if (!targetEventId || listed.some((event) => event.id === targetEventId)) return listed;
+      try {
+        const target = await getEvent(targetEventId);
+        return target.sessionId === sessionId ? [...listed, target] : listed;
+      } catch {
+        return listed;
+      }
+    },
+    { initialValue: [] as AgentEvent[] },
+  );
   const timelineEvents = createMemo(() => [...events()].reverse());
   const visibleEvents = createMemo(() =>
     timelineEvents().filter(
