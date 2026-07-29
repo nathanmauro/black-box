@@ -105,3 +105,48 @@ test("browse mode still reaches the session rail and reader", async ({ page }) =
   await expect(page.getByLabel("Find sessions")).toBeVisible();
   await expect(page.getByText("UI rewrite kickoff").first()).toBeVisible();
 });
+
+test("density toggle expands every row and survives a reload", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".stream-row").first()).toBeVisible();
+
+  await page.getByRole("group", { name: "Stream density" }).getByRole("button", { name: "Expanded" }).click();
+  const rows = page.locator(".stream-row");
+  const rowCount = await rows.count();
+  for (let index = 0; index < rowCount; index += 1) {
+    await expect(rows.nth(index)).toHaveAttribute("aria-expanded", "true");
+  }
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator(".stream-row").first()).toHaveAttribute("aria-expanded", "true");
+});
+
+test("an edit event renders a readable diff behind a lazy details block", async ({ page, request }) => {
+  const seeded = await request.post("/api/events", {
+    data: {
+      source: "claude",
+      clientSessionId: "black-box-e2e-edit-diff",
+      eventType: "PostToolUse",
+      role: "tool",
+      toolName: "Edit",
+      toolInput: {
+        file_path: "/tmp/black-box-e2e/app.ts",
+        old_string: "const total = 1;\nconst kept = 2;",
+        new_string: "const total = 9;\nconst kept = 2;",
+      },
+      cwd: "/tmp/black-box-e2e",
+      metadata: { title: "Edit diff seed" },
+    },
+  });
+  expect(seeded.ok()).toBeTruthy();
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByLabel(/meaningful events only/i).uncheck(); // PostToolUse is filtered by default
+  const row = page.locator(".stream-row").filter({ hasText: "app.ts" }).first();
+  await expect(row).toBeVisible();
+  await row.click();
+
+  await page.locator(".detail-block--diff > summary").first().click();
+  await expect(page.locator(".diff-line--del").first()).toContainText("const total = 1;");
+  await expect(page.locator(".diff-line--add").first()).toContainText("const total = 9;");
+});
