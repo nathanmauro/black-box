@@ -10,6 +10,8 @@ public interface RecordingCatalog {
 
     Optional<AgentSession> findSessionById(String id);
 
+    Optional<AgentEvent> findEventById(String id);
+
     List<AgentSession> recentSessions(int limit);
 
     /** Flat listing that also includes subagent children; {@link #recentSessions(int)} hides them. */

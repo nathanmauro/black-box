@@ -18,6 +18,7 @@ vi.mock("./lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./lib/api")>();
   return {
     ...actual,
+    getCodeProjectScopes: vi.fn(async () => []),
     getSessions: vi.fn(async () => []),
     search: vi.fn(async () => ({
       query: "",

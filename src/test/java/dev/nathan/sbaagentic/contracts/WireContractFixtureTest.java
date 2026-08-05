@@ -45,6 +45,9 @@ import dev.nathan.sbaagentic.workflow.SessionLinkView;
 import dev.nathan.sbaagentic.workflow.SessionRef;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.CodeNavigationResult;
+import dev.nathan.sbaagentic.project.CodeProjectScope;
+import dev.nathan.sbaagentic.project.CodeReference;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
@@ -174,6 +177,9 @@ class WireContractFixtureTest {
                 entry("CaptureDecisionRequest", CaptureDecisionRequest.class),
                 entry("CaptureHandoffRequest", CaptureHandoffRequest.class),
                 entry("ClaimTaskRequest", ClaimTaskRequest.class),
+                entry("CodeNavigationResult", CodeNavigationResult.class),
+                entry("CodeProjectScope", CodeProjectScope.class),
+                entry("CodeReference", CodeReference.class),
                 entry("CreateSessionLinkRequest", CreateSessionLinkRequest.class),
                 entry("DagEdge", DagEdge.class),
                 entry("DagNode", DagNode.class),

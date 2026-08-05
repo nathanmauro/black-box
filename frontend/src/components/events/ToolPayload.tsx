@@ -1,4 +1,7 @@
 import { For, Show } from "solid-js";
+import { parsePayload, parseToolResult } from "../../lib/payload";
+
+export { parsePayload, payloadText } from "../../lib/payload";
 
 type ToolPayloadProps = {
   toolName?: string | null;
@@ -125,58 +128,10 @@ function orderedEntries(value: unknown, priority: string[]): PayloadEntry[] | nu
     });
 }
 
-export function parsePayload(raw: string | null | undefined): unknown | null {
-  if (raw == null || !raw.trim()) return null;
-  let value: unknown = raw;
-  for (let attempt = 0; attempt < 2 && typeof value === "string"; attempt += 1) {
-    const candidate = value.trim();
-    if (!looksSerialized(candidate)) break;
-    try {
-      value = JSON.parse(candidate) as unknown;
-    } catch {
-      break;
-    }
-  }
-  return value;
-}
-
-export function payloadText(raw: string | null | undefined): string | null {
-  const value = parsePayload(raw);
-  if (typeof value === "string") return value;
-  if (!isRecord(value)) return null;
-  for (const key of ["output", "stdout", "result", "content"]) {
-    if (typeof value[key] === "string") return value[key] as string;
-  }
-  return null;
-}
-
-function parseToolResult(raw: string | null | undefined): unknown | null {
-  const value = parsePayload(raw);
-  if (typeof value !== "string") return value;
-  const match = /^Exit code:\s*([^\n]+)\nWall time:\s*([^\n]+)\nOutput:\s*\n?([\s\S]*)$/u.exec(value.trim());
-  if (!match) return value;
-  return {
-    exit_code: numericOrText(match[1].trim()),
-    wall_time: match[2].trim(),
-    output: match[3],
-  };
-}
-
-function looksSerialized(value: string): boolean {
-  return (value.startsWith("{") && value.endsWith("}"))
-    || (value.startsWith("[") && value.endsWith("]"))
-    || (value.startsWith('"') && value.endsWith('"'));
-}
-
 function scalarText(value: unknown): string {
   if (value == null) return "—";
   if (typeof value === "string") return value;
   return String(value);
-}
-
-function numericOrText(value: string): number | string {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : value;
 }
 
 function formatStructured(value: unknown): string {

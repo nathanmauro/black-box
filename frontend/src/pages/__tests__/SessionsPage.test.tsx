@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessions, getTaskDag } from "../../lib/api";
+import { getEvent, getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessions, getTaskDag } from "../../lib/api";
 import type { AgentEvent, AgentSession, DagResponse, SessionLinksResponse } from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
@@ -136,6 +136,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     ...actual,
     getSessions: vi.fn(async () => sessions),
     getSession: vi.fn(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]),
+    getEvent: vi.fn(),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
     getTaskDag: vi.fn(async () => ({ nodes: [], edges: [] })),
@@ -153,6 +154,7 @@ beforeEach(() => {
   vi.mocked(getSessions).mockResolvedValue(sessions);
   vi.mocked(getSession).mockReset();
   vi.mocked(getSession).mockImplementation(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]);
+  vi.mocked(getEvent).mockReset();
   vi.mocked(getProjectSessions).mockReset();
   vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
   vi.mocked(getSessionEvents).mockReset();
@@ -566,6 +568,46 @@ describe("SessionsPage", () => {
     await screen.findAllByText("Use the calmer session layout");
     const row = document.getElementById("event-evt-decision");
     expect(row).toHaveClass("event-flow-row--target");
+    expect(getEvent).not.toHaveBeenCalled();
+  });
+
+  it("hydrates and highlights an exact target outside the capped session event batch", async () => {
+    const olderTarget: AgentEvent = {
+      id: "evt-older-decision",
+      sessionId: "session-1",
+      source: "codex",
+      clientSessionId: "client-1",
+      eventType: "Decision",
+      role: "assistant",
+      text: "Keep the exact older decision reachable",
+      metadata: { decision: "Keep the exact older decision reachable" },
+      observedAt: "2026-05-01T20:00:00Z",
+    };
+    vi.mocked(getSessionEvents).mockResolvedValue(events.filter((event) => event.id !== olderTarget.id));
+    vi.mocked(getEvent).mockResolvedValue(olderTarget);
+
+    render(() => <SessionsPage selectedSessionId="session-1" targetEventId={olderTarget.id} />);
+
+    expect(await screen.findByText("Keep the exact older decision reachable")).toBeInTheDocument();
+    expect(document.getElementById(`event-${olderTarget.id}`)).toHaveClass("event-flow-row--target");
+    expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000);
+    expect(getEvent).toHaveBeenCalledOnce();
+    expect(getEvent).toHaveBeenCalledWith(olderTarget.id);
+  });
+
+  it("does not merge an exact target that belongs to another session", async () => {
+    vi.mocked(getEvent).mockResolvedValue({
+      ...events[1],
+      id: "evt-other-session",
+      sessionId: "session-2",
+      text: "Wrong owning session",
+    });
+
+    render(() => <SessionsPage selectedSessionId="session-1" targetEventId="evt-other-session" />);
+
+    await waitFor(() => expect(getEvent).toHaveBeenCalledWith("evt-other-session"));
+    expect(screen.queryByText("Wrong owning session")).not.toBeInTheDocument();
+    expect(document.getElementById("event-evt-other-session")).not.toBeInTheDocument();
   });
 
   it("keeps the session rail rendered when the batch child-count request is rejected", async () => {

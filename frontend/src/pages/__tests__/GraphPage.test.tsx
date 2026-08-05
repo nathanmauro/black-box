@@ -5,6 +5,7 @@ import { buildConstellation } from "../GraphPage";
 const items: RecalledItem[] = [
   {
     eventId: "decision-1",
+    sessionId: "internal-session-a",
     kind: "decision",
     source: "codex",
     clientSessionId: "session-a",
@@ -16,6 +17,7 @@ const items: RecalledItem[] = [
   },
   {
     eventId: "handoff-1",
+    sessionId: "internal-session-b",
     kind: "handoff",
     source: "claude",
     clientSessionId: "session-b",
@@ -26,6 +28,7 @@ const items: RecalledItem[] = [
   },
   {
     eventId: "decision-2",
+    sessionId: "internal-session-c",
     kind: "decision",
     source: "codex",
     clientSessionId: "session-c",

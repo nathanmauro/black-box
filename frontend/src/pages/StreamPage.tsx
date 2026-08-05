@@ -6,6 +6,7 @@ import { primaryProjectScope } from "../lib/projects";
 import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
+import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
 
 const FEED_LIMIT = 100;
 const MAX_ROWS = 500;
@@ -47,7 +48,28 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [newCount, setNewCount] = createSignal(0);
-  const [expandedId, setExpandedId] = createSignal<string | null>(null);
+  const [density, setDensity] = createSignal<StreamDensity>(loadStreamDensity());
+  // Exceptions to the density mode, not a list of expanded rows: absence means "follow the mode",
+  // so SSE rows arriving in expanded mode render expanded with zero bookkeeping (spec §4.5).
+  const [overrides, setOverrides] = createSignal<Set<string>>(new Set());
+
+  const isExpanded = (id: string) => (density() === "expanded") !== overrides().has(id);
+
+  function toggleRow(id: string) {
+    setOverrides((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function switchDensity(next: StreamDensity) {
+    if (next === density()) return;
+    setDensity(next);
+    saveStreamDensity(next);
+    setOverrides(new Set<string>());
+  }
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
   const submitted = () => params.q ?? "";
@@ -79,7 +101,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
       setNewCount(0);
       setNextBefore(null);
       setLoadingMore(false);
-      setExpandedId(null);
+      setOverrides(new Set<string>());
       return;
     }
     const q = apiQuery();
@@ -92,7 +114,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setNewCount(0);
     setNextBefore(null);
     setError(null);
-    setExpandedId(null);
+    setOverrides(new Set<string>());
     getEventFeed({ limit: FEED_LIMIT, q, meaningful })
       .then((response) => {
         if (token !== loadToken) return;
@@ -100,7 +122,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
         setPendingItems([]);
         setNewCount(0);
         setNextBefore(response.nextBefore ?? null);
-        setExpandedId(null);
+        setOverrides(new Set<string>());
       })
       .catch((cause) => {
         if (token !== loadToken) return;
@@ -316,6 +338,22 @@ export default function StreamPage(props: StreamPageProps = {}) {
             <input type="checkbox" checked={meaningfulOnly()} onChange={(event) => setMeaningfulOnly(event.currentTarget.checked)} />
             meaningful events only
           </label>
+          <div class="density-toggle" role="group" aria-label="Stream density">
+            <button
+              type="button"
+              classList={{ active: density() === "collapsed" }}
+              onClick={() => switchDensity("collapsed")}
+            >
+              Collapsed
+            </button>
+            <button
+              type="button"
+              classList={{ active: density() === "expanded" }}
+              onClick={() => switchDensity("expanded")}
+            >
+              Expanded
+            </button>
+          </div>
         </div>
       </form>
 
@@ -334,9 +372,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
             {(item) => (
               <StreamRow
                 item={item}
-                expanded={expandedId() === item.id}
+                expanded={isExpanded(item.id)}
+                textExpanded={density() === "expanded"}
                 sessionHref={sessionHref(item, props.project)}
-                onToggle={() => setExpandedId((current) => (current === item.id ? null : item.id))}
+                onToggle={() => toggleRow(item.id)}
               />
             )}
           </For>

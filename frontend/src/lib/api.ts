@@ -63,6 +63,7 @@ export type SearchResponse = {
 
 export type RecalledItem = {
   eventId: string;
+  sessionId: string;
   kind: string;
   source: string;
   clientSessionId?: string | null;
@@ -105,6 +106,23 @@ export type ProjectSummary = {
   firstSeenAt?: string | null;
   lastSeenAt?: string | null;
   scopes?: ProjectScope[];
+};
+
+export type CodeProjectScope = {
+  projectKey: string;
+  root: string;
+};
+
+export type CodeReference = {
+  projectKey: string;
+  relativePath: string;
+  line?: number;
+  column?: number;
+  commit?: string;
+};
+
+export type CodeNavigationResult = {
+  status: "opened" | "revealed" | string;
 };
 
 export type ProjectAlias = {
@@ -261,25 +279,6 @@ export type ApiStatus = {
   localAi?: Record<string, unknown>;
   elasticsearch?: ElasticHealth;
   [key: string]: unknown;
-};
-
-export type DashboardBreakdown = {
-  name: string;
-  count: number;
-};
-
-export type DashboardDailyCount = {
-  day: string;
-  count: number;
-};
-
-export type DashboardStats = {
-  totalSessions: number;
-  totalEvents: number;
-  eventsBySource: DashboardBreakdown[];
-  eventsByKind: DashboardBreakdown[];
-  sessionsBySource: DashboardBreakdown[];
-  recentActivity: DashboardDailyCount[];
 };
 
 export type SpecStatus = "active" | "done" | "archived";
@@ -488,6 +487,10 @@ export function getSession(id: string): Promise<AgentSession> {
   return getJson(`/api/sessions/${encodeURIComponent(id)}`);
 }
 
+export function getEvent(id: string): Promise<AgentEvent> {
+  return getJson(`/api/events/${encodeURIComponent(id)}`);
+}
+
 export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[]> {
   return getJson(`/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}`);
 }
@@ -518,6 +521,18 @@ export function getRecall(scope: string, withinHours: number, kinds: string[]): 
 
 export function getProjects(): Promise<ProjectSummary[]> {
   return getJson("/api/projects");
+}
+
+export function getCodeProjectScopes(): Promise<CodeProjectScope[]> {
+  return getJson("/api/projects/code-scopes");
+}
+
+export function openInEditor(reference: CodeReference): Promise<CodeNavigationResult> {
+  return postJson("/api/open-in-editor", reference);
+}
+
+export function revealInFinder(reference: CodeReference): Promise<CodeNavigationResult> {
+  return postJson("/api/reveal-in-finder", reference);
 }
 
 export function mergeProjectAlias(aliasKey: string, canonicalKey: string): Promise<ProjectAlias> {
@@ -573,10 +588,6 @@ export function ask(question: string, limit?: number): Promise<AskResponse> {
 
 export function getStatus(): Promise<ApiStatus> {
   return getJson("/api/status");
-}
-
-export function getDashboardStats(): Promise<DashboardStats> {
-  return getJson("/api/stats");
 }
 
 export function createSpec(request: CreateSpecRequest): Promise<Spec> {

@@ -14,6 +14,7 @@ import java.util.List;
  */
 public record RecalledItem(
         String eventId,
+        String sessionId,
         String kind,
         String source,
         String clientSessionId,

@@ -243,6 +243,20 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
     }
 
+    public Optional<AgentEvent> findEventById(String id) {
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject("""
+                    SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
+                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
+                      FROM agent_events
+                     WHERE id = ?
+                    """, this::mapEvent, id));
+        }
+        catch (EmptyResultDataAccessException ex) {
+            return Optional.empty();
+        }
+    }
+
     public List<AgentSession> recentSessions(int limit) {
         return recentSessions(limit, false);
     }

@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectSummary } from "../../lib/api";
+import type { AgentEvent, ProjectSummary } from "../../lib/api";
+import { CodeNavigationContext } from "../../lib/codeNavigation";
 import SearchPage from "../SearchPage";
 
 let params: { q?: string };
@@ -9,6 +11,7 @@ let setParams: SetStoreFunction<{ q?: string }>;
 
 const mocks = vi.hoisted(() => ({
   askStatus: vi.fn(),
+  openInEditor: vi.fn(),
   search: vi.fn(),
 }));
 
@@ -26,6 +29,11 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
   return {
     ...actual,
+    A: (props: { href: string; class?: string; onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>; children?: JSX.Element }) => (
+      <a href={props.href} class={props.class} onClick={props.onClick}>
+        {props.children}
+      </a>
+    ),
     useSearchParams: () => [params, setParams],
   };
 });
@@ -35,6 +43,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     askStatus: mocks.askStatus,
+    openInEditor: mocks.openInEditor,
     search: mocks.search,
     searchValues: vi.fn(async (_field: string, prefix: string) =>
       ["Decision", "Handoff", "Observation"].filter((value) =>
@@ -58,6 +67,8 @@ beforeEach(() => {
     elastic: [],
     elasticHealth: {},
   }));
+  mocks.openInEditor.mockReset();
+  mocks.openInEditor.mockResolvedValue({ status: "opened" });
 });
 
 describe("SearchPage", () => {
@@ -172,5 +183,56 @@ describe("SearchPage", () => {
     expect(await screen.findByText("Project context is not applied to Ask yet. Ask will search across all recorded memory."))
       .toBeInTheDocument();
     expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
+  });
+
+  it("keeps file actions independent from the explicit result session link", async () => {
+    const path = "/Users/nathan/Developer/proj/opensource/t3code/src/service.ts";
+    const event: AgentEvent = {
+      id: "evt-read",
+      sessionId: "session-read",
+      source: "codex",
+      clientSessionId: "client-read",
+      eventType: "PreToolUse",
+      role: "assistant",
+      toolName: "Read",
+      toolInputJson: JSON.stringify({ file_path: path, offset: 40 }),
+      observedAt: "2026-07-29T18:00:00Z",
+    };
+    [params, setParams] = createStore<{ q?: string }>({ q: "tool:Read" });
+    search.mockResolvedValue({
+      query: "tool:Read",
+      local: [event],
+      elastic: [],
+      elasticHealth: {},
+    });
+    const selectSession = vi.fn();
+
+    render(() => (
+      <CodeNavigationContext.Provider
+        value={{
+          scopes: () => [{
+            projectKey: "t3-key",
+            root: "/Users/nathan/Developer/proj/opensource/t3code",
+          }],
+          catalogStatus: () => "ready",
+          catalogError: () => null,
+          refreshCatalog: () => undefined,
+        }}
+      >
+        <SearchPage onSelectSession={selectSession} />
+      </CodeNavigationContext.Provider>
+    ));
+
+    const fileButton = await screen.findByRole("button", { name: `Open ${path} in editor` });
+    fireEvent.click(fileButton);
+    await waitFor(() => expect(mocks.openInEditor).toHaveBeenCalledWith({
+      projectKey: "t3-key",
+      relativePath: "src/service.ts",
+      line: 40,
+    }));
+    expect(selectSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("link", { name: "View session" }));
+    expect(selectSession).toHaveBeenCalledWith("session-read", "evt-read");
   });
 });

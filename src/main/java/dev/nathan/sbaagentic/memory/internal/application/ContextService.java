@@ -302,6 +302,7 @@ public class ContextService implements MemoryRecallOperations {
         };
         return new RecalledItem(
                 event.id(),
+                event.sessionId(),
                 kind,
                 event.source(),
                 event.clientSessionId(),

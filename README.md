@@ -196,7 +196,8 @@ recallContext({
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
   `createSpec.projectKey` when enqueueing work.
 - **Recall** — focused Decision, Handoff, and Observation retrieval by repo, topic, event id, or
-  semantic paraphrase.
+  semantic paraphrase. Each result links back to its owning session with the exact source event
+  selected.
 
 Open them directly:
 
@@ -338,12 +339,32 @@ docker run --rm -p 127.0.0.1:8766:8766 -v black-box-data:/data black-box
 
 Defaults live in `src/main/resources/application.yml`.
 
+### Secure file navigation
+
+Expanded Stream, Browse, Find, and Projects event cards turn presenter file references into actions
+only when the path matches a filesystem-verified Git scope from the project catalog. The browser
+sends a transport-neutral `CodeReference` — an opaque `projectKey`, a relative path, and optional
+line/column — to `POST /api/open-in-editor` or `POST /api/reveal-in-finder`; it never sends the raw
+absolute target to either action endpoint. Paths outside eligible roots stay visible and copyable
+but are not openable.
+
+The server revalidates catalog membership, exact-scope confinement, symlinks, file existence, and
+line bounds on every request. It then invokes only a configured, allowlisted absolute executable
+with discrete argv; file content and event data are never evaluated by a shell. Cursor is the
+macOS default, and Visual Studio Code can use the same `-g file:line:column` adapter. Finder reveal
+uses the same resolver and a fixed `/usr/bin/open -R` command. Failures return stable typed errors
+and render beside the path instead of silently doing nothing.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SBA_PORT` | `8766` | HTTP port |
 | `SBA_BIND_ADDRESS` | `127.0.0.1` | Bind address; network exposure has no built-in auth |
 | `SBA_DATASOURCE_URL` | `jdbc:sqlite:sba-agentic.db` | SQLite database location |
 | `SBA_REDACT_ENABLED` | `true` | Redact secret-looking text before persistence |
+| `SBA_EDITOR_ENABLED` | `true` | Enable catalog-bound open-in-editor actions |
+| `SBA_EDITOR_COMMAND` | Cursor application CLI on macOS | Absolute Cursor/VS Code-compatible CLI path |
+| `SBA_EDITOR_ALLOWLIST` | Installed Cursor and VS Code CLI paths | Comma-separated absolute executables the server may launch |
+| `SBA_EDITOR_TIMEOUT` | `5s` | Maximum time for the editor or Finder CLI to hand off successfully |
 | `SBA_SUMMARY_BACKEND` | `external` | Summary backend; set `local` for an OpenAI-compatible local model |
 | `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command |
 | `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | Local OpenAI-compatible server |

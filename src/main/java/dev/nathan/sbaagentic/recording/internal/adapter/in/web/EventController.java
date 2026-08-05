@@ -59,6 +59,11 @@ public class EventController {
         return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
     }
 
+    @GetMapping("/events/{id}")
+    public ResponseEntity<AgentEvent> event(@PathVariable String id) {
+        return ResponseEntity.of(repository.findEventById(id));
+    }
+
     @GetMapping("/sessions")
     public List<AgentSession> sessions(
             @RequestParam(defaultValue = "25") int limit,

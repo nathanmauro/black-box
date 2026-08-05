@@ -1,103 +1,95 @@
-# Handoff — 2026-07-28 (fleet disposition + recall score semantics landed)
+# Handoff — 2026-07-29 (slice 3 shipped: secure file links + editor open)
 
-**Shipped**: fleet PRs #23 and #24 merged to main (`b1dbd6d`) after independent adversarial
-verification of the prior review session's disposition; PR #21 stays a draft pending redesign;
-fleet run 22-194034 acked and closed (round 2 done, round 1 rework). Then the **recall score
-semantics slice** merged (`5e3aeab`) and deployed live.
+**Shipped**: Phase 1 **slice 3** of the stream-first consolidation
+(`docs/superpowers/specs/2026-07-28-agent-observatory-consolidation-design.md` §13) on branch
+`stream-observatory-file-links`. The ship commit is one local commit above local `main` at
+`9eab7de`. It is deployed live on `:8766` and remains **local-only / not pushed** (no upstream
+set). `origin/main` remains intentionally 15 commits behind local `main`.
 
 ## What landed
 
-- **Recall score semantics** (`5e3aeab`, Codex-implemented, cross-model verified, deployed).
-  `RecalledItem.score` is now the **true cosine similarity** between the query and the item —
-  or `null` when there is honestly no number (lexical mode, missing vector) — never the RRF
-  artifact (~0.016). Fusion still decides order; cosine is attached post-fusion, with lexical
-  hits scored via a batched fetch from canonical `memory_embeddings`. A **measured relevance
-  floor 0.61** (`sba.memory.recall.relevance-floor`, `0` disables) gates *semantic-only
-  additions* pre-fusion — lexical hits are never dropped — so a junk query in hybrid mode
-  returns an **honest zero** again. Basis, measured live 2026-07-28 on a corpus snapshot:
-  true targets 0.620–0.688 (n=6), junk-query best hits 0.496–0.606 (n=10) — a clean gap
-  [0.606, 0.620]. Re-measure after corpus growth or a model change via
-  `SBA_EVAL_LIVE_MODEL=true` + `SBA_DATASOURCE_URL=<snapshot>` running
-  `RecallCosineDistributionEvaluationTest` (never point a second app at the live DB; use
-  `sqlite3 sba-agentic.db ".backup <path>"`). Suite: **406 tests, 0 failures, 2 skipped**
-  (both env-gated harnesses), floor tests mutation-verified.
-- **PR #23 — Preserve runner worktrees holding never-published commits** (`bb900d9`).
-  `CrashRecovery.pruneIfClean` no longer treats porcelain-clean as licence to destroy: the
-  destructive path is gated on `git rev-list --count HEAD --not --remotes <default>` == 0,
-  and any probe failure preserves (fail-closed). This was a live data-loss bug on main —
-  a worker commits before it reports, so any local-only ship left a clean worktree whose
-  branch held the only copy, and the next daemon restart force-deleted it.
-- **PR #24 — Paginate task listings for runner scans** (`78f581b`). PR #22's pagination commit
-  rebased onto main (merging #22 as it stood would have landed #21's unreviewed code). SQL-level
-  `LIMIT/OFFSET` with a unique `ORDER BY` tiebreaker, client pages at 250, short-page
-  termination, loud failure at the 101-page cap. #22 closed superseded; its
-  `fleet/round-2-paginate-task-listings` branch deleted from origin after the merge.
+- **Catalog-authorized file references**: `GET /api/projects/code-scopes` projects only
+  session-backed, filesystem-verified Git checkout/worktree scopes from the existing project
+  catalog. Broad, stale, non-Git, meld-only, root, home, and no-project scopes cannot authorize a
+  file action.
+- **Fail-closed resolution**: open/reveal requests carry only an opaque catalog `projectKey` plus a
+  relative path and optional position. The backend revalidates the exact scope on every request,
+  rejects traversal/absolute paths and symlink escape, requires a readable regular file, and checks
+  one-based line/column bounds.
+- **Shell-free local actions**: `POST /api/open-in-editor` uses two fixed argv calls for the verified
+  workspace and canonical file/position. `POST /api/reveal-in-finder` uses fixed
+  `/usr/bin/open -R` argv. Executables are absolute, executable, allowlisted Cursor/VS Code-compatible
+  CLIs; timeouts and launch failures fail honestly.
+- **Useful file UI**: resolved presenter and patch paths open in the editor, copy the raw display
+  path, or reveal in Finder. Unresolved paths stay copy-only with a visible reason. Catalog loading,
+  failure, retry, and refresh are distinct states; typed backend/clipboard failures render locally.
+- **Accessible actions**: controls name the action and target, unresolved Finder actions remain
+  focusable with a described reason, and compact fallback targets meet a 24 px minimum.
+- **Packaged injection proof**: Playwright drives a literal
+  `$(touch${IFS}$SBA_E2E_INJECTION_SENTINEL).ts` filename through presenter → resolver → HTTP →
+  fake editor and verifies it remains one argv field with no sentinel side effect.
+- **Contracts and docs**: REST/wire fixtures, endpoint snapshots, README, architecture notes, focused
+  plan, tests, and the committed Vite bundle match the shipped behavior.
 
-## Verification (do not re-litigate)
+## Verification
 
-Four independent agents verified the review before merging (Black Box observation `6b5827a4`):
-gate semantics probed empirically in throwaway repos (unpushed=1 preserve / pushed=0 prune /
-no-remote=1 preserve / probe-failure preserve), #24 byte-compared to `ba8934f` with zero #21
-leakage, both PRs test-merged together conflict-free. Post-merge `mvn test` on main:
-**395 tests, 0 failures, 0 errors, 1 skipped** (the env-gated recall eval), all 81 surefire
-reports fresh. Jar untouched (mtime 02:15) — live :8766 unaffected, no restart needed.
-
-## New findings to carry (from the verification, none blocked the merges)
-
-1. **The worktree-destruction hazard is narrowed, not closed.** `WorktreeManager.cleanupWorktreeAndBranch`
-   on RunExecutor's `RuntimeException` catch path (`RunExecutor.java:378→391`) still force-removes
-   worktree+branch with **no** reachability check. A `BlackBoxApiException` from `annotate`
-   (`:306`) or `completeTask` (`:361`) after a local-only commit — e.g. the known jar-swap 500s —
-   still destroys the sole copy. Pre-existing, contradicts the invariant #23 added to
-   architecture.md.
-2. **#23 trades data loss for a retry wedge.** Crash-after-commit → task reset to open, branch
-   preserved → retry collides at `git worktree add -b` (branch exists) → task blocked until manual
-   git surgery. Preserved-but-blocked beats destroyed; the #21 redesign (adoption) is the cure.
-3. Preserved orphans accumulate unboundedly for repos whose ships are local-only by config —
-   no collector exists.
-4. Minor, fail-safe direction: the rev-list probe lacks a `--` terminator (a file named `main`
-   → permanent over-preservation); `defaultBranch` fallback returns the checkout's *current*
-   branch, not the repo default.
-
-## PR #21 (adopt-alive-runner-sessions) — draft, redesign required
-
-All four review defects **confirmed at file:line**, plus three more found:
-adopted-done work gets pruned on the *next* restart (success path leaves the worktree
-unprotected on that branch's pre-#23 code); adoption keys on tmux liveness, so a reboot loses
-reported-done work; a transient `completeTask` failure resets a confirmed-done run to open →
-worktree collision → blocked. Redesign constraints (from the review, verified): lane-scoped to
-`auto` only, needs a ship-already-ran marker (`since = task.updatedAt()` never advances for
-in_progress tasks — annotations don't bump `updated_at`), should adopt on reported-done
-regardless of session liveness, and shared terminal handling belongs in
-`runner.internal.application` (a new top-level package trips the 8-module assertion).
+- Backend: `mvn -q test` green, including resolver, controller, configuration binding, launcher,
+  REST/wire contracts, Modulith, and architecture checks.
+- Frontend: **316/316** tests across 39 files; TypeScript and Vite production build green.
+- Packaged browser suite: final clean run **24/24** green in 2.1 minutes against an isolated
+  database and fake editor. Protected production PID, DB identity, and synthetic-event count
+  remained unchanged. One earlier run exposed an unrelated stale Board live projection after its
+  timeline had already recorded `in_progress → done`; the scenario passed alone in 19.1 seconds
+  and again in the clean full run.
+- Independent backend review found eight resolver/contract/launcher gaps; all were fixed and
+  covered. Final re-review found no high/medium issue; its one low process-cleanup residual was also
+  closed by stopping and awaiting parent/child processes on timeout or interruption. Independent
+  frontend review found catalog-state, accessibility, adversarial E2E, and failure-state coverage
+  gaps; all were fixed, covered, and clean on final re-review.
+- Live deploy: launchd PID `27496`, status healthy, Elasticsearch and local AI reachable, bundle
+  `index-XHqOdHft.js` + `index-D-8V2GB4.css` serving.
+- Live negative proof: 188 eligible scopes; `/`, `/Users/nathan`, and `__no_project__` absent.
+  Unknown key, traversal, absolute relative path, and missing file returned typed
+  `409 / 403 / 403 / 404`; Cursor PID `12766` and Finder PID `645` did not change.
+- Live use proof: the real T3 Code `Read` event opened from Stream and reported
+  `Opened in editor.` Cursor `--status` reported `Window (service.ts — t3code)` and the owning
+  `t3code` workspace; read-only Cursor editor state recorded that exact file as MRU with the cursor
+  at line 40, column 1. Desktop accessibility and screen-capture APIs timed out or lacked
+  permission, so this is Cursor-native runtime/state proof rather than a screenshot.
+- `git diff --check` is part of the final close gate.
 
 ## Open loops (ranked)
 
-1. **#21 redesign** as lane-scoped adoption per constraints above; also cures the retry wedge.
-2. Safety follow-ups from verification: gate `cleanupWorktreeAndBranch`'s exception path on
-   reachability; add `--` to the rev-list probe.
-3. `ask` module still has the nomic prefix defect (bare prompt, no `search_query:`) and its knn
-   targets the foreign Elasticsearch index; pointing it at the SQLite vector store fixes both.
-4. Two embedding HTTP clients exist (`ask`, `memory`); consolidate behind one public port in
-   `memory` (cycle ratchet blocks the reverse direction).
-5. Separate `query` param on recall so scope and subject can differ; Tier 2 full-corpus
-   semantic search (sqlite-vec's real payoff); re-embedding is not automatic on model change
-   (`content_hash` covers text, not model).
-6. Floor caveat worth remembering: 0.61 sits inside the *cluster* overlap (junk p90 was 0.577
-   but individual noise items can exceed it), so above-floor noise is reduced, not impossible;
-   the floor's job is honest-zero for junk queries, and `score` remains a within-query ranking
-   signal, not proof of relevance. Live post-deploy smoke found a real match at **0.6109** —
-   0.0009 above the floor and below the harness's measured target minimum (0.620) — so treat
-   0.61 as a ceiling, not a starting point, when re-tuning; raising it will drop real matches.
+1. **Slice 4 — live/process monitor** (spec §4.11 and §13): add the next independently shippable
+   slice without broadening file-action authority.
+2. Then slice 5 (narrative + remaining presenters) and slice 6 (route promotion + Memory merge).
+   New top-level routes MUST be added to `SpaForwardingController.java:15`.
+3. **#21 redesign** (adopt-alive-runner-sessions) as lane-scoped adoption; also cures the retry
+   wedge from #23 (crash-after-commit → branch-exists collision → task blocked).
+4. Runner safety follow-ups: gate `cleanupWorktreeAndBranch`'s exception path
+   (`RunExecutor.java:378→391`) on reachability; add `--` to the rev-list probe; no collector exists
+   for preserved orphan worktrees.
+5. `ask` module: nomic prefix defect (bare prompt, no `search_query:`) + its kNN query targets the
+   foreign Elasticsearch index. Pointing it at the SQLite vector store fixes both. The two embedding
+   HTTP clients (`ask`, `memory`) still want consolidation behind one public port in `memory`.
+6. Recall: separate `query` from `scope`; Tier 2 full-corpus semantic search; re-embedding is not
+   automatic on model change. The 0.61 floor is a ceiling, not a starting point.
 
 ## Gotchas (carried forward)
 
-- Any `mvn package` (incl. the Playwright webServer) overwrites the live jar → run
-  `scripts/deploy-local.sh` after, then `launchctl kickstart -k` if 500s persist.
-- Never `git add -A` (except scoped `git add -A src/main/resources/static` after a bundle rebuild).
+- Any `mvn package` (including the Playwright webServer) overwrites the live jar. Run
+  `scripts/deploy-local.sh` afterward, then `launchctl kickstart -k` if 500s persist.
+- Never `git add -A` except scoped
+  `git add -A src/main/resources/static` after a bundle rebuild.
+- File authorization is the current `/api/projects/code-scopes` projection, not `ProjectKey.decode`
+  and not the broad `/api/projects` catalog. Preserve the exact matched worktree/scope key.
+- The default direct Cursor CLI works under launchd's minimal PATH; the
+  `/Users/nathan/.local/bin/cursor` shim does not.
 - Module ratchet: `memory → {project, recording}`; `memory` must never import `ask`.
   Every `@Repository` lives in `<module>.internal.adapter.out.sqlite..`.
-- Test DBs are temp **files**, never `cache=shared` memory.
+- Test DBs are temp **files**, never `cache=shared` memory. Never point a second app at the live DB;
+  snapshot with `sqlite3 sba-agentic.db ".backup <path>"`. The event table is `agent_events`.
+- Playwright against the live app uses `domcontentloaded`, never `networkidle` (SSE).
+- `POST /api/events` ingest takes `toolInput` / `toolOutput` as **objects**. The `*Json` names are
+  read-side only.
 - Surefire counts: clear stale reports before trusting aggregates.
-- codex `-c` overrides cannot address dotted/quoted keys; trust lookup wants the physical path.
-- Playwright against the live app: `domcontentloaded`, never `networkidle` (SSE).

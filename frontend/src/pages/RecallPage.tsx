@@ -1,4 +1,4 @@
-import { useSearchParams } from "@solidjs/router";
+import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js";
 import KindBadge from "../components/KindBadge";
 import SourceDot from "../components/SourceDot";
@@ -171,12 +171,16 @@ function RecallCard(props: { item: RecalledItem }) {
 
   return (
     <article class={`recall-card recall-card--${props.item.kind.toLowerCase()}`}>
-      <div class="recall-card-head">
+      <A
+        class="recall-card-head recall-card-link"
+        href={recalledItemHref(props.item)}
+        aria-label={`Open ${props.item.headline || titleKind(props.item.kind)} in Browse`}
+      >
         <SourceDot source={props.item.source} />
         <KindBadge kind={titleKind(props.item.kind)} />
         <strong>{props.item.headline || titleKind(props.item.kind)}</strong>
         <span>{timeAgo(props.item.observedAt)}</span>
-      </div>
+      </A>
       <div class="recall-card-meta">
         <span>{truncatePath(props.item.repo)}</span>
         {props.item.clientSessionId ? <span>{props.item.clientSessionId}</span> : null}
@@ -224,6 +228,18 @@ function groupByKind(items: RecalledItem[]) {
     groups.set(kind, [...(groups.get(kind) || []), item]);
   }
   return [...groups.entries()].map(([kind, groupItems]) => ({ kind, items: groupItems }));
+}
+
+function recalledItemHref(item: RecalledItem): string {
+  const query = new URLSearchParams({
+    view: "browse",
+    session: item.sessionId,
+    event: item.eventId,
+  });
+  // An explicit empty project overrides remembered Activity scope so the exact
+  // owning session remains reachable even when Recall has no trustworthy repo.
+  query.set("project", "");
+  return `/?${query.toString()}`;
 }
 
 function titleKind(kind: string): string {

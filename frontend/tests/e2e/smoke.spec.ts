@@ -111,15 +111,16 @@ test("command palette jumps to a session", async ({ page }) => {
 });
 
 test("live feed receives a newly ingested event over SSE", async ({ page, request }) => {
-  await page.goto("/overview");
+  await page.goto("/");
   // Wait for the SSE connection to come up.
-  await expect(page.locator(".live-inline--live")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".live-pill--live")).toBeVisible({ timeout: 10_000 });
   const marker = "LIVE-SSE-CHECK-" + Date.now();
   const res = await request.post("/api/events", {
     data: {
       source: "claude",
       clientSessionId: marker,
       eventType: "Observation",
+      role: "assistant",
       text: marker,
       cwd: "/tmp/live",
       metadata: { title: marker },
@@ -129,23 +130,35 @@ test("live feed receives a newly ingested event over SSE", async ({ page, reques
   await expect(page.getByText(marker)).toBeVisible({ timeout: 10_000 });
 });
 
-test("stats shows headline totals and activity breakdowns", async ({ page }) => {
-  await page.goto("/stats");
-  await expect(page.getByRole("heading", { name: "Activity shape across Black Box" })).toBeVisible();
+test("graph shows the seeded recall constellation", async ({ page, request }) => {
+  const marker = "GRAPH-RECALL-CHECK-" + Date.now();
+  const seeded = await request.post("/api/events", {
+    data: {
+      source: "codex",
+      clientSessionId: marker,
+      eventType: "Decision",
+      role: "assistant",
+      text: marker,
+      cwd: "/tmp/black-box-e2e",
+      metadata: {
+        title: marker,
+        kind: "decision",
+        decision: marker,
+        rationale: "Keep the graph smoke test isolated from earlier runner events.",
+      },
+    },
+  });
+  expect(seeded.ok()).toBeTruthy();
+  await page.route("**/api/recall?**", async (route) => {
+    const url = new URL(route.request().url());
+    url.searchParams.set("scope", marker);
+    await route.continue({ url: url.toString() });
+  });
 
-  const totals = page.getByLabel("Headline totals");
-  await expect(totals).toBeVisible();
-  await expect(totals.getByText("Total sessions")).toBeVisible();
-  await expect(totals.getByText("Total events")).toBeVisible();
-  await expect(page.getByText("events by source")).toBeVisible();
-  await page.screenshot({ path: `${SHOT_DIR}/stats.png`, fullPage: true });
-});
-
-test("graph shows the seeded recall constellation", async ({ page }) => {
   await page.goto("/graph");
   await expect(page.getByRole("heading", { name: "Map recalled intent by project" })).toBeVisible();
   await expect(page.locator(".graph-node--leaf").first()).toBeVisible();
-  await expect(page.locator(".graph-label--leaf").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })).toBeVisible();
+  await expect(page.locator(".graph-label--leaf").filter({ hasText: marker })).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/graph.png`, fullPage: true });
 });
 
@@ -176,7 +189,7 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 
-test("recall query returns grouped structured results", async ({ page }) => {
+test("recall query links the owning session and exact event", async ({ page, request }) => {
   await page.goto("/recall");
   await expect(page.getByRole("heading", { name: "Ask what agents already decided" })).toBeVisible();
 
@@ -187,4 +200,30 @@ test("recall query returns grouped structured results", async ({ page }) => {
   await expect(decisionCard.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
   await expect(decisionCard.getByText("open loops")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/recall.png`, fullPage: true });
+
+  const recalled = await request.get("/api/recall", {
+    params: {
+      scope: "UI rewrite",
+      withinHours: "168",
+      kinds: "decision,handoff",
+    },
+  });
+  expect(recalled.ok()).toBeTruthy();
+  const result = await recalled.json() as {
+    items: Array<{ eventId: string; sessionId: string; headline?: string | null }>;
+  };
+  const decision = result.items.find((item) => item.headline === "Use SolidJS + Vite for the UI rewrite");
+  expect(decision).toBeDefined();
+
+  await decisionCard
+    .getByRole("link", { name: "Open Use SolidJS + Vite for the UI rewrite in Browse" })
+    .click();
+  await expect(page).toHaveURL((url) => (
+    url.searchParams.get("view") === "browse"
+    && url.searchParams.get("session") === decision!.sessionId
+    && url.searchParams.get("event") === decision!.eventId
+  ));
+  await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
+  await expect(page.locator(".event-flow-row--target")).toBeVisible();
 });

@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onCleanup, type JSX } from "solid-js";
 import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
+import { CodeNavigationProvider } from "./lib/codeNavigation";
 import { createLiveStore, LiveStoreContext } from "./lib/sse";
 
 type AppProps = {
@@ -38,8 +39,9 @@ export default function App(props: AppProps) {
 
   return (
     <LiveStoreContext.Provider value={live}>
-      <div class="app-shell">
-        <header class="app-utility-bar" aria-label="Black Box utility bar">
+      <CodeNavigationProvider>
+        <div class="app-shell">
+          <header class="app-utility-bar" aria-label="Black Box utility bar">
           <div class="utility-cluster">
             <A href="/" class="brand utility-brand" aria-label="Black Box overview">
               <span class="brand-mark" aria-hidden="true">
@@ -102,10 +104,11 @@ export default function App(props: AppProps) {
               <span>⌘K</span>
             </button>
           </div>
-        </header>
-        <main class="app-main">{props.children}</main>
-        <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
-      </div>
+          </header>
+          <main class="app-main">{props.children}</main>
+          <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+        </div>
+      </CodeNavigationProvider>
     </LiveStoreContext.Provider>
   );
 }
