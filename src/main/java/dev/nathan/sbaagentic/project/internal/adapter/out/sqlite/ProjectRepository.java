@@ -25,15 +25,20 @@ import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.TaskRow;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class ProjectRepository implements ProjectCatalogStore {
+public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
+
+    private static final int MAX_TRAJECTORY_CAPTURES = 120;
 
     private static final String SESSION_CANONICAL_KEY_SQL = """
             CASE
@@ -53,6 +58,16 @@ public class ProjectRepository implements ProjectCatalogStore {
               OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
               OR lower(coalesce(e.event_type, '')) LIKE '%error%'
               OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
+            )
+            """;
+
+    private static final String MILESTONE_PREDICATE = """
+            (
+              lower(coalesce(e.event_type, '')) IN ('decision', 'handoff', 'observation', 'projection')
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"observation"%'
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"projection"%'
             )
             """;
 
@@ -237,13 +252,14 @@ public class ProjectRepository implements ProjectCatalogStore {
                           FROM session_melds m
                          WHERE m.project_key IN (%s)
                        ) blocks
-                 ORDER BY observed_at ASC
+                 ORDER BY %s ASC
                  LIMIT ? OFFSET ?
                 """.formatted(
                         SESSION_CANONICAL_KEY_SQL,
                         placeholders(scopes.size()),
                         STORYLINE_PREDICATE,
-                        placeholders(scopes.size())),
+                        placeholders(scopes.size()),
+                        sortableInstant("observed_at")),
                 this::mapTimelineBlock,
                 args.toArray());
     }
@@ -269,10 +285,102 @@ public class ProjectRepository implements ProjectCatalogStore {
                  WHERE %s IN (%s)
                    AND e.session_id = ?
                    AND %s
-                 ORDER BY e.observed_at ASC
+                 ORDER BY %s ASC
                  LIMIT ?
-                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size()), STORYLINE_PREDICATE),
+                """.formatted(
+                        SESSION_CANONICAL_KEY_SQL,
+                        placeholders(scopes.size()),
+                        STORYLINE_PREDICATE,
+                        sortableInstant("e.observed_at")),
                 this::mapTimelineBlock,
+                args.toArray());
+    }
+
+    public List<CaptureRow> recentCaptures(String canonicalKey, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, MAX_TRAJECTORY_CAPTURES));
+        List<CaptureRow> captures = new ArrayList<>(recentEventCaptures(canonicalKey, safeLimit));
+        savedMeldsForProject(canonicalKey).stream()
+                .map(this::mapMeldCapture)
+                .forEach(captures::add);
+        return captures.stream()
+                .sorted(Comparator.comparing(
+                        CaptureRow::observedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(CaptureRow::id, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(safeLimit)
+                .toList();
+    }
+
+    public List<TaskRow> openTasks(String canonicalKey, int limit) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.add(Math.max(1, Math.min(limit, MAX_TRAJECTORY_CAPTURES)));
+        // tasks.project_key is free-form; task futures match only path-shaped keys in scope.
+        return jdbcTemplate.query("""
+                SELECT id, title, status, priority, updated_at
+                  FROM tasks
+                 WHERE project_key IN (%s)
+                   AND status IN ('open', 'claimed', 'in_progress', 'blocked')
+                 ORDER BY %s DESC,
+                          id ASC
+                 LIMIT ?
+                """.formatted(placeholders(scopes.size()), sortableInstant("updated_at")),
+                this::mapTrajectoryTask,
+                args.toArray());
+    }
+
+    public long totalCaptures(String canonicalKey) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.addAll(scopes);
+        Long count = jdbcTemplate.queryForObject("""
+                SELECT (
+                    SELECT COUNT(*)
+                      FROM agent_events e
+                      JOIN agent_sessions s ON e.session_id = s.id
+                     WHERE %s IN (%s)
+                       AND %s
+                ) + (
+                    SELECT COUNT(*)
+                      FROM session_melds m
+                     WHERE m.project_key IN (%s)
+                )
+                """.formatted(
+                        SESSION_CANONICAL_KEY_SQL,
+                        placeholders(scopes.size()),
+                        MILESTONE_PREDICATE,
+                        placeholders(scopes.size())),
+                Long.class,
+                args.toArray());
+        return count == null ? 0 : count;
+    }
+
+    private List<CaptureRow> recentEventCaptures(String canonicalKey, int limit) {
+        List<String> scopes = aliasService.scopesFor(canonicalKey);
+        List<Object> args = new ArrayList<>(scopes);
+        args.add(limit);
+        return jdbcTemplate.query("""
+                SELECT e.id,
+                       e.event_type,
+                       e.session_id,
+                       s.title AS session_title,
+                       e.client_session_id,
+                       e.source,
+                       e.text,
+                       e.metadata_json,
+                       e.observed_at
+                  FROM agent_events e
+                  JOIN agent_sessions s ON e.session_id = s.id
+                 WHERE %s IN (%s)
+                   AND %s
+                 ORDER BY %s DESC, e.id DESC
+                 LIMIT ?
+                """.formatted(
+                        SESSION_CANONICAL_KEY_SQL,
+                        placeholders(scopes.size()),
+                        MILESTONE_PREDICATE,
+                        sortableInstant("e.observed_at")),
+                this::mapTrajectoryEventCapture,
                 args.toArray());
     }
 
@@ -397,6 +505,23 @@ public class ProjectRepository implements ProjectCatalogStore {
         return String.join(", ", Collections.nCopies(count, "?"));
     }
 
+    /**
+     * {@link Instant#toString()} emits variable-width fractional seconds; pad before SQLite TEXT
+     * comparisons so instant ordering stays chronological without rewriting stored values.
+     */
+    private static String sortableInstant(String column) {
+        return """
+                CASE
+                    WHEN instr(%1$s, '.') = 0
+                        THEN substr(%1$s, 1, length(%1$s) - 1) || '.000000000Z'
+                    ELSE substr(%1$s, 1, length(%1$s) - 1)
+                         || substr('000000000', 1,
+                                   9 - (length(%1$s) - instr(%1$s, '.') - 1))
+                         || 'Z'
+                END
+                """.formatted(column);
+    }
+
     private static Instant parseInstant(String value) {
         return value == null || value.isBlank() ? null : Instant.parse(value);
     }
@@ -475,6 +600,45 @@ public class ProjectRepository implements ProjectCatalogStore {
                 metadata,
                 Instant.parse(rs.getString("observed_at")),
                 sourceSessionsForMeld(id));
+    }
+
+    private CaptureRow mapTrajectoryEventCapture(ResultSet rs, int rowNum) throws SQLException {
+        return new CaptureRow(
+                rs.getString("id"),
+                "raw_event",
+                rs.getString("event_type"),
+                rs.getString("session_id"),
+                rs.getString("session_title"),
+                rs.getString("client_session_id"),
+                rs.getString("source"),
+                null,
+                rs.getString("text"),
+                fromJsonMap(rs.getString("metadata_json")),
+                Instant.parse(rs.getString("observed_at")));
+    }
+
+    private CaptureRow mapMeldCapture(ProjectSavedMeld meld) {
+        return new CaptureRow(
+                meld.id(),
+                "saved_meld",
+                "SavedMeld",
+                null,
+                null,
+                null,
+                "meld",
+                meld.title(),
+                meld.body(),
+                meld.metadata(),
+                meld.createdAt());
+    }
+
+    private TaskRow mapTrajectoryTask(ResultSet rs, int rowNum) throws SQLException {
+        return new TaskRow(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("status"),
+                rs.getInt("priority"),
+                Instant.parse(rs.getString("updated_at")));
     }
 
     private ProjectSavedMeld mapSavedMeld(ResultSet rs, int rowNum) throws SQLException {

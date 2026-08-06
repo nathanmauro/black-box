@@ -8,6 +8,7 @@ import dev.nathan.sbaagentic.project.CodeProjectScope;
 import dev.nathan.sbaagentic.project.CodeReference;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectGraphOperations;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
@@ -16,6 +17,7 @@ import dev.nathan.sbaagentic.project.ProjectSavedMeld;
 import dev.nathan.sbaagentic.project.ProjectOperations;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
+import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationError;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationException;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -39,14 +41,17 @@ public class ProjectController {
 
     private final ProjectOperations projectService;
     private final ProjectMeldOperations projectMeldService;
+    private final ProjectGraphOperations projectGraphService;
     private final CodeNavigationOperations codeNavigationService;
 
     public ProjectController(
             ProjectOperations projectService,
             ProjectMeldOperations projectMeldService,
+            ProjectGraphOperations projectGraphService,
             CodeNavigationOperations codeNavigationService) {
         this.projectService = projectService;
         this.projectMeldService = projectMeldService;
+        this.projectGraphService = projectGraphService;
         this.codeNavigationService = codeNavigationService;
     }
 
@@ -94,6 +99,11 @@ public class ProjectController {
             @RequestParam(defaultValue = "50") int limit,
             @RequestParam(defaultValue = "0") int offset) {
         return projectService.timeline(projectKey, safeLimit(limit), safeOffset(offset));
+    }
+
+    @GetMapping("/projects/{projectKey}/graph")
+    public ProjectTrajectoryResponse projectGraph(@PathVariable String projectKey) {
+        return projectGraphService.graph(projectKey);
     }
 
     @GetMapping("/projects/{projectKey}/melds")

@@ -6,6 +6,7 @@ import dev.nathan.sbaagentic.project.CodeNavigationOperations;
 import dev.nathan.sbaagentic.project.CodeNavigationResult;
 import dev.nathan.sbaagentic.project.CodeProjectScope;
 import dev.nathan.sbaagentic.project.CodeReference;
+import dev.nathan.sbaagentic.project.ProjectGraphOperations;
 import dev.nathan.sbaagentic.project.ProjectMeldOperations;
 import dev.nathan.sbaagentic.project.ProjectOperations;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationError;
@@ -37,6 +38,7 @@ class CodeNavigationControllerTest {
         ProjectController controller = new ProjectController(
                 mock(ProjectOperations.class),
                 mock(ProjectMeldOperations.class),
+                mock(ProjectGraphOperations.class),
                 navigation);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }

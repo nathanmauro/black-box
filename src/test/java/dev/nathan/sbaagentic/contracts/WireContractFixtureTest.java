@@ -57,6 +57,10 @@ import dev.nathan.sbaagentic.project.ProjectScope;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
+import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
+import dev.nathan.sbaagentic.project.TrajectoryCapture;
+import dev.nathan.sbaagentic.project.TrajectoryPath;
+import dev.nathan.sbaagentic.project.TrajectoryTask;
 import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.SearchResponse;
@@ -205,6 +209,7 @@ class WireContractFixtureTest {
                 entry("ProjectSummary", ProjectSummary.class),
                 entry("ProjectTimelineBlock", ProjectTimelineBlock.class),
                 entry("ProjectTimelineResponse", ProjectTimelineResponse.class),
+                entry("ProjectTrajectoryResponse", ProjectTrajectoryResponse.class),
                 entry("RecallResult", RecallResult.class),
                 entry("RecalledItem", RecalledItem.class),
                 entry("SearchResponse", SearchResponse.class),
@@ -215,6 +220,9 @@ class WireContractFixtureTest {
                 entry("StorageStats", StorageStats.class),
                 entry("SummaryBackfillResult", SummaryBackfillResult.class),
                 entry("SummaryExport", SummaryExport.class),
+                entry("TrajectoryCapture", TrajectoryCapture.class),
+                entry("TrajectoryPath", TrajectoryPath.class),
+                entry("TrajectoryTask", TrajectoryTask.class),
                 entry("ExportTarget", ExportTarget.class),
                 entry("Task", Task.class),
                 entry("TaskAnnotation", TaskAnnotation.class),

@@ -10,6 +10,7 @@ GET /api/health/elasticsearch
 GET /api/health/local-ai
 GET /api/projects
 GET /api/projects/code-scopes
+GET /api/projects/{projectKey}/graph
 GET /api/projects/{projectKey}/melds
 GET /api/projects/{projectKey}/sessions
 GET /api/projects/{projectKey}/timeline
