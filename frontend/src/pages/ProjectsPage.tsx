@@ -1,7 +1,8 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
+import TrajectoryView from "../components/TrajectoryView";
 import { EventRenderer } from "../components/events/EventRow";
 import {
   deleteProjectAlias,
@@ -9,6 +10,7 @@ import {
   getProjects,
   getProjectSessions,
   getProjectTimeline,
+  getProjectTrajectory,
   mergeProjectAlias,
   type AgentEvent,
   type ProjectMeld,
@@ -17,6 +19,7 @@ import {
   type ProjectSummary,
   type ProjectTimelineBlock,
   type ProjectTimelineResponse,
+  type ProjectTrajectoryResponse,
 } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
 import {
@@ -28,9 +31,13 @@ import {
   projectShortName,
   rankProjects,
 } from "../lib/projects";
+import { buildTrajectory, type TrajectoryGraphNode } from "../lib/trajectory";
 
 const TIMELINE_LIMIT = 250;
 const SESSION_LIMIT = 20;
+const STORY_VIEW_KEY = "bb.projectStoryView";
+
+type ProjectStoryView = "trajectory" | "timeline";
 
 export default function ProjectsPage() {
   const params = useParams<{ projectKey?: string }>();
@@ -38,6 +45,8 @@ export default function ProjectsPage() {
   const [mergeTargetKey, setMergeTargetKey] = createSignal<string>();
   const [curationError, setCurationError] = createSignal<string | null>(null);
   const [curationBusyKey, setCurationBusyKey] = createSignal<string | null>(null);
+  const [storyView, setStoryViewSignal] = createSignal<ProjectStoryView>(loadProjectStoryView());
+  const [selectedTrajectoryNodeId, setSelectedTrajectoryNodeId] = createSignal<string | null>(null);
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, {
     initialValue: [] as ProjectSummary[],
   });
@@ -61,6 +70,11 @@ export default function ProjectsPage() {
     async (key) => (key ? getLatestProjectTimeline(key) : emptyTimeline()),
     { initialValue: emptyTimeline() },
   );
+  const [trajectory, { refetch: refetchTrajectory }] = createResource(
+    selectedKey,
+    async (key) => (key ? getProjectTrajectory(key) : emptyTrajectory()),
+    { initialValue: emptyTrajectory() },
+  );
   const [melds, { refetch: refetchMelds }] = createResource(
     selectedKey,
     async (key) => (key ? getProjectMelds(key) : []),
@@ -68,7 +82,17 @@ export default function ProjectsPage() {
   );
   const sessionList = createMemo(() => (sessions.error ? [] : sessions()));
   const timelineValue = createMemo(() => (timeline.error ? emptyTimeline() : timeline()));
+  const trajectoryValue = createMemo(() => (trajectory.error ? emptyTrajectory() : trajectory()));
+  const trajectoryGraph = createMemo(() => buildTrajectory(trajectoryValue(), Date.now()));
+  const selectedTrajectoryNode = createMemo(() =>
+    trajectoryGraph().nodes.find((node) => node.id === selectedTrajectoryNodeId()) ?? null,
+  );
   const meldList = createMemo(() => (melds.error ? [] : melds()));
+  const storylineCount = createMemo(() =>
+    storyView() === "trajectory"
+      ? `${trajectoryGraph().nodes.length.toLocaleString()} ${trajectoryGraph().nodes.length === 1 ? "node" : "nodes"}`
+      : `${timelineValue().count.toLocaleString()} ${timelineValue().count === 1 ? "block" : "blocks"}`,
+  );
 
   createEffect(() => {
     const project = routeProject();
@@ -80,7 +104,21 @@ export default function ProjectsPage() {
     selectedKey();
     setMergeTargetKey(undefined);
     setCurationError(null);
+    setSelectedTrajectoryNodeId(null);
   });
+
+  const clearTrajectorySelection = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    if (storyView() !== "trajectory" || !selectedTrajectoryNodeId()) return;
+    setSelectedTrajectoryNodeId(null);
+  };
+  onMount(() => window.addEventListener("keydown", clearTrajectorySelection));
+  onCleanup(() => window.removeEventListener("keydown", clearTrajectorySelection));
+
+  function setStoryView(view: ProjectStoryView) {
+    setStoryViewSignal(view);
+    saveProjectStoryView(view);
+  }
 
   function selectProject(projectKey: string | undefined) {
     if (projectKey) navigate(`/projects/${encodeURIComponent(projectKey)}`);
@@ -128,7 +166,7 @@ export default function ProjectsPage() {
 
   async function refreshWorkspace() {
     await refetchProjects();
-    await Promise.all([refetchSessions(), refetchTimeline(), refetchMelds()]);
+    await Promise.all([refetchSessions(), refetchTimeline(), refetchTrajectory(), refetchMelds()]);
   }
 
   return (
@@ -224,33 +262,84 @@ export default function ProjectsPage() {
                   <ProjectHeader project={project()} />
                   <div class="project-workspace-grid">
                     <section class="project-storyline" aria-labelledby="project-storyline-title">
-                      <div class="pane-head">
-                        <span id="project-storyline-title" class="eyebrow">Hybrid storyline</span>
-                        <span>{timelineValue().count.toLocaleString()} blocks</span>
+                      <div class="pane-head project-storyline-head">
+                        <div class="project-storyline-title">
+                          <span id="project-storyline-title" class="eyebrow">
+                            {storyView() === "trajectory" ? "Trajectory" : "Hybrid storyline"}
+                          </span>
+                          <div class="project-storyline-toggle" role="group" aria-label="Project storyline view">
+                            <button
+                              type="button"
+                              aria-pressed={storyView() === "trajectory"}
+                              onClick={() => setStoryView("trajectory")}
+                            >
+                              Trajectory
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={storyView() === "timeline"}
+                              onClick={() => setStoryView("timeline")}
+                            >
+                              Timeline
+                            </button>
+                          </div>
+                        </div>
+                        <span>{storylineCount()}</span>
                       </div>
-                      <div class="project-timeline">
-                        <Show
-                          when={!timeline.loading}
-                          fallback={<WorkspaceState title="Loading storyline" detail="Combining raw events and saved melds…" />}
-                        >
+                      <Show
+                        when={storyView() === "trajectory"}
+                        fallback={(
+                          <div class="project-timeline">
+                            <Show
+                              when={!timeline.loading}
+                              fallback={<WorkspaceState title="Loading storyline" detail="Combining raw events and saved melds…" />}
+                            >
+                              <Show
+                                when={!timeline.error}
+                                fallback={<WorkspaceState tone="error" title="Storyline unavailable" detail={errorMessage(timeline.error)} />}
+                              >
+                                <Show
+                                  when={timelineValue().items.length}
+                                  fallback={<WorkspaceState title={`No recorded storyline for ${projectShortName(project())}`} detail="This project identity has no timeline blocks yet." />}
+                                >
+                                  <For each={timelineValue().items}>
+                                    {(block) => <TimelineBlock block={block} project={project()} />}
+                                  </For>
+                                </Show>
+                              </Show>
+                            </Show>
+                          </div>
+                        )}
+                      >
+                        <div class="project-trajectory">
                           <Show
-                            when={!timeline.error}
-                            fallback={<WorkspaceState tone="error" title="Storyline unavailable" detail={errorMessage(timeline.error)} />}
+                            when={!trajectory.loading}
+                            fallback={<WorkspaceState title="Loading trajectory" detail="Assembling bursts, head, and futures…" />}
                           >
                             <Show
-                              when={timelineValue().items.length}
-                              fallback={<WorkspaceState title={`No recorded storyline for ${projectShortName(project())}`} detail="This project identity has no timeline blocks yet." />}
+                              when={!trajectory.error}
+                              fallback={<WorkspaceState tone="error" title="Trajectory unavailable" detail={errorMessage(trajectory.error)} />}
                             >
-                              <For each={timelineValue().items}>
-                                {(block) => <TimelineBlock block={block} project={project()} />}
-                              </For>
+                              <Show
+                                when={trajectoryGraph().nodes.length}
+                                fallback={<WorkspaceState title="No trajectory captures yet" detail="Timeline tab still reachable." />}
+                              >
+                                <TrajectoryView
+                                  graph={trajectoryGraph()}
+                                  selectedNodeId={selectedTrajectoryNodeId()}
+                                  onSelect={(node) => setSelectedTrajectoryNodeId(node.id)}
+                                />
+                              </Show>
                             </Show>
                           </Show>
-                        </Show>
-                      </div>
+                        </div>
+                      </Show>
                     </section>
 
                     <aside class="project-context-rail">
+                      <Show when={selectedTrajectoryNode()}>
+                        {(node) => <TrajectoryDetailCard node={node()} project={project()} />}
+                      </Show>
                       <ProjectIdentityPanel
                         project={project()}
                         candidates={projectCandidates()}
@@ -297,6 +386,107 @@ function ProjectHeader(props: { project: ProjectSummary }) {
         <span>seen {timeAgo(props.project.lastSeenAt)}</span>
       </div>
     </header>
+  );
+}
+
+function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: ProjectSummary }) {
+  const sourceCapture = () => props.node.sourceCapture;
+  const sourceSessionId = () => props.node.sessionId || sourceCapture()?.sessionId;
+  return (
+    <section class="project-rail-panel trajectory-detail-card" aria-labelledby="trajectory-detail-title">
+      <div class="pane-head">
+        <span id="trajectory-detail-title" class="eyebrow">Trajectory detail</span>
+        <span>{kindLabel(props.node.kind)}</span>
+      </div>
+      <div class="project-rail-body trajectory-detail-body">
+        <strong>{props.node.label}</strong>
+        <Show when={props.node.eyebrow}>
+          {(eyebrow) => <small>{eyebrow()}</small>}
+        </Show>
+        <p>{props.node.fullText || props.node.label}</p>
+
+        <Show when={sourceCapture()}>
+          {(capture) => (
+            <div class="trajectory-detail-source">
+              <span>{kindLabel(capture().kind)}</span>
+              <code>{capture().id}</code>
+              <Show when={capture().observedAt}>
+                {(observedAt) => <time>{timeAgo(observedAt())}</time>}
+              </Show>
+            </div>
+          )}
+        </Show>
+
+        <Show when={sourceSessionId()}>
+          {(sessionId) => (
+            <A class="trajectory-detail-link" href={sessionHref(props.project, sessionId())}>
+              Session {sourceCapture()?.sessionTitle || sourceCapture()?.clientSessionId || sessionId()}
+            </A>
+          )}
+        </Show>
+
+        <Show when={props.node.task}>
+          {(task) => (
+            <A class="trajectory-detail-link" href={`/board?task=${encodeURIComponent(task().id)}`}>
+              Task {task().status}: {task().title}
+            </A>
+          )}
+        </Show>
+
+        <Show when={typeof props.node.confidence === "number"}>
+          <div class="trajectory-detail-source">
+            <span>Ghost confidence</span>
+            <strong>{Math.round((props.node.confidence ?? 0) * 100)}%</strong>
+          </div>
+        </Show>
+
+        <Show when={props.node.members?.length}>
+          <div class="trajectory-detail-list">
+            <span>Burst members</span>
+            <ul>
+              <For each={props.node.members}>
+                {(capture) => (
+                  <li>
+                    <strong>{kindLabel(capture.kind)}</strong>
+                    <span>{capture.headline || capture.text || capture.id}</span>
+                    <Show when={capture.observedAt}>
+                      {(observedAt) => <time>{timeAgo(observedAt())}</time>}
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
+        </Show>
+
+        <Show when={props.node.alternatives?.length}>
+          <div class="trajectory-detail-list">
+            <span>Alternatives</span>
+            <ul>
+              <For each={props.node.alternatives}>
+                {(alternative) => <li>{alternative}</li>}
+              </For>
+            </ul>
+          </div>
+        </Show>
+
+        <Show when={props.node.items?.length}>
+          <div class="trajectory-detail-list">
+            <span>Remaining ranked futures</span>
+            <ul>
+              <For each={props.node.items}>
+                {(item) => (
+                  <li>
+                    <strong>{futureSourceLabel(item.source)}</strong>
+                    <span>{item.text}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
+        </Show>
+      </div>
+    </section>
   );
 }
 
@@ -575,6 +765,26 @@ function emptyTimeline(): ProjectTimelineResponse {
   return { projectKey: "", canonicalKey: "", label: "", limit: TIMELINE_LIMIT, offset: 0, count: 0, items: [] };
 }
 
+function emptyTrajectory(): ProjectTrajectoryResponse {
+  return { projectKey: "", canonicalKey: "", label: "", generatedAt: "", totalCaptures: 0, captures: [], tasks: [] };
+}
+
+function loadProjectStoryView(): ProjectStoryView {
+  try {
+    return localStorage.getItem(STORY_VIEW_KEY) === "timeline" ? "timeline" : "trajectory";
+  } catch {
+    return "trajectory";
+  }
+}
+
+function saveProjectStoryView(view: ProjectStoryView): void {
+  try {
+    localStorage.setItem(STORY_VIEW_KEY, view);
+  } catch {
+    // Storage failures degrade to the in-memory tab state for this session.
+  }
+}
+
 function timestampValue(value: string | null | undefined): number {
   return value ? Date.parse(value) || 0 : 0;
 }
@@ -590,6 +800,17 @@ function metadataRecord(metadata: unknown): Record<string, unknown> {
 function metadataValue(metadata: Record<string, unknown>, key: string, fallback: string): string {
   const value = metadata[key];
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function kindLabel(value: string): string {
+  return value.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function futureSourceLabel(value: string): string {
+  if (value === "nextAction") return "Next action";
+  if (value === "openLoop") return "Open loop";
+  if (value === "task") return "Task";
+  return "Projection";
 }
 
 function timelineBlockToEvent(block: ProjectTimelineBlock): AgentEvent {

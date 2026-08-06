@@ -164,6 +164,51 @@ export type ProjectTimelineResponse = {
   items: ProjectTimelineBlock[];
 };
 
+export type TrajectoryCaptureKind = "decision" | "handoff" | "observation" | "meld" | "projection";
+
+export type TrajectoryPath = {
+  title?: string | null;
+  description?: string | null;
+  confidence?: number | null;
+};
+
+export type TrajectoryCapture = {
+  id: string;
+  kind: TrajectoryCaptureKind;
+  sessionId?: string | null;
+  sessionTitle?: string | null;
+  clientSessionId?: string | null;
+  source?: string | null;
+  headline?: string | null;
+  text?: string | null;
+  rationale?: string | null;
+  alternatives?: string[] | null;
+  openLoops?: string[] | null;
+  nextAction?: string | null;
+  toAgent?: string | null;
+  confidence?: number | null;
+  paths?: TrajectoryPath[] | null;
+  observedAt?: string | null;
+};
+
+export type TrajectoryTask = {
+  id: string;
+  title: string;
+  status: TaskStatus | string;
+  priority: number;
+  updatedAt?: string | null;
+};
+
+export type ProjectTrajectoryResponse = {
+  projectKey: string;
+  canonicalKey: string;
+  label: string;
+  generatedAt: string;
+  totalCaptures: number;
+  captures: TrajectoryCapture[];
+  tasks: TrajectoryTask[];
+};
+
 export type ProjectMeldSessionRef = {
   id: string;
   source: string;
@@ -555,6 +600,10 @@ export function getProjectSessions(key: string, limit = 250): Promise<AgentSessi
 export function getProjectTimeline(key: string, limit = 250, offset = 0): Promise<ProjectTimelineResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return getJson(`/api/projects/${encodeURIComponent(key)}/timeline?${params.toString()}`);
+}
+
+export function getProjectTrajectory(key: string): Promise<ProjectTrajectoryResponse> {
+  return getJson(`/api/projects/${encodeURIComponent(key)}/graph`);
 }
 
 export function getProjectMelds(key: string): Promise<ProjectMeld[]> {

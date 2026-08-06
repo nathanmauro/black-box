@@ -7,9 +7,11 @@ import {
   getProjects,
   getProjectSessions,
   getProjectTimeline,
+  getProjectTrajectory,
   mergeProjectAlias,
   type ProjectSummary,
   type ProjectTimelineResponse,
+  type ProjectTrajectoryResponse,
 } from "../../lib/api";
 import ProjectsPage from "../ProjectsPage";
 
@@ -33,6 +35,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getProjects: vi.fn(),
     getProjectSessions: vi.fn(),
     getProjectTimeline: vi.fn(),
+    getProjectTrajectory: vi.fn(),
     mergeProjectAlias: vi.fn(),
   };
 });
@@ -100,6 +103,7 @@ const protectedProjects: ProjectSummary[] = [
 
 beforeEach(() => {
   routeParams = {};
+  localStorage.clear();
   navigate.mockReset();
   vi.mocked(getProjects).mockReset().mockResolvedValue([groupedProject, otherProject, ...protectedProjects]);
   vi.mocked(getProjectSessions).mockReset().mockResolvedValue([
@@ -121,6 +125,7 @@ beforeEach(() => {
       { id: "newest", text: "Newest project observation", observedAt: "2026-07-15T12:00:00Z" },
     ]);
   });
+  vi.mocked(getProjectTrajectory).mockReset().mockResolvedValue(trajectoryResponse());
   vi.mocked(getProjectMelds).mockReset().mockResolvedValue([
     {
       id: "meld-1",
@@ -157,12 +162,99 @@ beforeEach(() => {
 });
 
 describe("ProjectsPage", () => {
+  it("uses the trajectory graph as the default center-pane view", async () => {
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const toggle = screen.getByRole("group", { name: "Project storyline view" });
+    expect(within(toggle).getByRole("button", { name: "Trajectory" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(toggle).getByRole("button", { name: "Timeline" })).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByText("Current handoff")).toBeInTheDocument();
+    expect(document.querySelector(".project-trajectory .traj-stage")).toBeInTheDocument();
+    expect(screen.getByText("2 nodes")).toBeInTheDocument();
+    expect(getProjectTrajectory).toHaveBeenCalledWith("sba-key");
+  });
+
+  it("selects trajectory nodes into the detail card and clears only on unhandled Escape", async () => {
+    vi.mocked(getProjectTrajectory).mockReset().mockResolvedValue(trajectoryResponseWithTask());
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const rail = document.querySelector(".project-context-rail") as HTMLElement;
+    const headNode = await waitFor(() => {
+      const node = document.querySelector('[data-node-kind="head"]');
+      expect(node).toBeInTheDocument();
+      return node as Element;
+    });
+
+    fireEvent.click(headNode);
+    const captureDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+    expect(rail.firstElementChild).toBe(captureDetail);
+    expect(captureDetail).toHaveTextContent("Current project state");
+    expect(within(captureDetail).getByRole("link", { name: "Session Finish project integration" })).toHaveAttribute(
+      "href",
+      "/?view=browse&project=sba-key&session=session-1",
+    );
+
+    const preventedEscape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    preventedEscape.preventDefault();
+    window.dispatchEvent(preventedEscape);
+    expect(within(rail).getByRole("region", { name: "Trajectory detail" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(within(rail).queryByRole("region", { name: "Trajectory detail" })).not.toBeInTheDocument();
+
+    const taskNode = await waitFor(() => {
+      const node = document.querySelector('[data-node-kind="future-task"]');
+      expect(node).toBeInTheDocument();
+      return node as Element;
+    });
+    fireEvent.click(taskNode);
+    const taskDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+    expect(rail.firstElementChild).toBe(taskDetail);
+    expect(taskDetail).toHaveTextContent("Prepare task packet");
+    expect(within(taskDetail).getByRole("link", { name: "Task open: Prepare task packet" })).toHaveAttribute(
+      "href",
+      "/board?task=task-1",
+    );
+  });
+
+  it("switches the center pane to the timeline view", async () => {
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    const toggle = screen.getByRole("group", { name: "Project storyline view" });
+    expect(within(toggle).getByRole("button", { name: "Trajectory" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(toggle).getByRole("button", { name: "Timeline" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Hybrid storyline")).toBeInTheDocument();
+    expect(await screen.findByText("Newest project observation", { selector: ".event-card--observation strong" })).toBeInTheDocument();
+  });
+
+  it("persists the storyline view choice to localStorage", async () => {
+    const first = render(() => <ProjectsPage />);
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    expect(localStorage.getItem("bb.projectStoryView")).toBe("timeline");
+    first.unmount();
+
+    render(() => <ProjectsPage />);
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Timeline" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Trajectory" }));
+    expect(localStorage.getItem("bb.projectStoryView")).toBe("trajectory");
+  });
+
   it("renders grouped project evidence and fetches the true latest timeline window", async () => {
     render(() => <ProjectsPage />);
 
     expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
     expect(screen.getByText("Project catalog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     expect(screen.getByText("Hybrid storyline")).toBeInTheDocument();
     expect(screen.getByText("Recent sessions")).toBeInTheDocument();
     expect(screen.getByText("Saved melds")).toBeInTheDocument();
@@ -242,9 +334,12 @@ describe("ProjectsPage", () => {
     vi.mocked(getProjects).mockReset().mockResolvedValue([groupedProject]);
     vi.mocked(getProjectSessions).mockReset().mockRejectedValue(new Error("sessions offline"));
     vi.mocked(getProjectTimeline).mockReset().mockRejectedValue(new Error("timeline offline"));
+    vi.mocked(getProjectTrajectory).mockReset().mockResolvedValue(trajectoryResponse());
     vi.mocked(getProjectMelds).mockReset().mockRejectedValue(new Error("melds offline"));
     render(() => <ProjectsPage />);
 
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     expect(await screen.findByText("Storyline unavailable")).toBeInTheDocument();
     expect(screen.getByText("sessions offline")).toBeInTheDocument();
     expect(screen.getByText("melds offline")).toBeInTheDocument();
@@ -258,6 +353,8 @@ describe("ProjectsPage", () => {
 
     render(() => <ProjectsPage />);
 
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     expect(await screen.findByText("Newest after retry", { selector: ".event-card--observation strong" })).toBeInTheDocument();
     expect(getProjectTimeline).toHaveBeenNthCalledWith(2, "sba-key", 250, 150);
     expect(getProjectTimeline).toHaveBeenNthCalledWith(3, "sba-key", 250, 151);
@@ -292,5 +389,44 @@ function timelineResponse(
       eventType: "Observation",
       headline: item.text,
     })),
+  };
+}
+
+function trajectoryResponse(): ProjectTrajectoryResponse {
+  return {
+    projectKey: "sba-key",
+    canonicalKey: groupedProject.canonicalKey,
+    label: groupedProject.label,
+    generatedAt: "2026-07-15T16:00:00Z",
+    totalCaptures: 1,
+    captures: [
+      {
+        id: "trajectory-handoff",
+        kind: "handoff",
+        sessionId: "session-1",
+        sessionTitle: "Finish project integration",
+        clientSessionId: "client-1",
+        headline: "Current handoff",
+        text: "Current project state",
+        nextAction: "Write trajectory tests",
+        observedAt: "2026-07-15T16:00:00Z",
+      },
+    ],
+    tasks: [],
+  };
+}
+
+function trajectoryResponseWithTask(): ProjectTrajectoryResponse {
+  return {
+    ...trajectoryResponse(),
+    tasks: [
+      {
+        id: "task-1",
+        title: "Prepare task packet",
+        status: "open",
+        priority: 50,
+        updatedAt: "2026-07-15T15:30:00Z",
+      },
+    ],
   };
 }
