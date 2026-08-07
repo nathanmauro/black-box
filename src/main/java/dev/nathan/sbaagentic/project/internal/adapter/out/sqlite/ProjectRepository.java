@@ -48,6 +48,19 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
             END
             """;
 
+    /**
+     * Filters agent_events to the project's sessions by probing idx_agent_events_session_observed
+     * with the session ids instead of evaluating the canonical-key CASE per event row; the live DB
+     * holds ~275k events and the per-row shape costs seconds. %s is the scope placeholder list.
+     */
+    private static final String SESSION_SCOPED_EVENT_FILTER = """
+            e.session_id IN (
+              SELECT s.id
+                FROM agent_sessions s
+               WHERE %s IN (%%s)
+            )
+            """.formatted(SESSION_CANONICAL_KEY_SQL);
+
     private static final String STORYLINE_PREDICATE = """
             (
               lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
@@ -337,8 +350,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 SELECT (
                     SELECT COUNT(*)
                       FROM agent_events e
-                      JOIN agent_sessions s ON e.session_id = s.id
-                     WHERE %s IN (%s)
+                     WHERE %s
                        AND %s
                 ) + (
                     SELECT COUNT(*)
@@ -346,8 +358,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                      WHERE m.project_key IN (%s)
                 )
                 """.formatted(
-                        SESSION_CANONICAL_KEY_SQL,
-                        placeholders(scopes.size()),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopes.size())),
                         MILESTONE_PREDICATE,
                         placeholders(scopes.size())),
                 Long.class,
@@ -371,13 +382,12 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                        e.observed_at
                   FROM agent_events e
                   JOIN agent_sessions s ON e.session_id = s.id
-                 WHERE %s IN (%s)
+                 WHERE %s
                    AND %s
                  ORDER BY %s DESC, e.id DESC
                  LIMIT ?
                 """.formatted(
-                        SESSION_CANONICAL_KEY_SQL,
-                        placeholders(scopes.size()),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopes.size())),
                         MILESTONE_PREDICATE,
                         sortableInstant("e.observed_at")),
                 this::mapTrajectoryEventCapture,
