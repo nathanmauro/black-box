@@ -7,6 +7,7 @@ import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -114,6 +115,34 @@ class MemoryMcpToolsTest {
         ArgumentCaptor<CaptureDecisionRequest> captor = ArgumentCaptor.forClass(CaptureDecisionRequest.class);
         verify(captureOperations).captureDecision(captor.capture());
         assertThat(captor.getValue().confidence()).isEqualTo(0.85);
+    }
+
+    @Test
+    void captureProjectionDelegatesStructuredPaths() {
+        when(captureOperations.captureProjection(any(CaptureProjectionRequest.class)))
+                .thenReturn(new IngestResponse("e3", "s1", "codex", "c1", "Projection", false));
+
+        String result = callback("captureProjection").call("""
+                {"source":"codex","clientSessionId":"c1","repo":"/tmp/repo",
+                 "basis":"head handoff left graph capture open",
+                 "paths":[
+                   {"title":"Ship projection capture","description":"Add MCP and REST capture surfaces.","confidence":0.72},
+                   {"title":"Tune graph ranking","description":"Use captured paths as ghost futures.","confidence":0.54}
+                 ]}
+                """);
+
+        assertThat(result).contains("e3");
+        ArgumentCaptor<CaptureProjectionRequest> captor = ArgumentCaptor.forClass(CaptureProjectionRequest.class);
+        verify(captureOperations).captureProjection(captor.capture());
+        CaptureProjectionRequest request = captor.getValue();
+        assertThat(request.source()).isEqualTo("codex");
+        assertThat(request.clientSessionId()).isEqualTo("c1");
+        assertThat(request.repo()).isEqualTo("/tmp/repo");
+        assertThat(request.basis()).isEqualTo("head handoff left graph capture open");
+        assertThat(request.paths()).hasSize(2);
+        assertThat(request.paths().getFirst().title()).isEqualTo("Ship projection capture");
+        assertThat(request.paths().getFirst().description()).isEqualTo("Add MCP and REST capture surfaces.");
+        assertThat(request.paths().getFirst().confidence()).isEqualTo(0.72);
     }
 
     private ToolCallback callback(String name) {

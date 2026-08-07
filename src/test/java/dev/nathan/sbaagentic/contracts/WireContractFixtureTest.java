@@ -22,6 +22,7 @@ import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
@@ -35,6 +36,7 @@ import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.workflow.LinkErrorCode;
@@ -180,6 +182,7 @@ class WireContractFixtureTest {
                 entry("AskStatus", AskStatus.class),
                 entry("CaptureDecisionRequest", CaptureDecisionRequest.class),
                 entry("CaptureHandoffRequest", CaptureHandoffRequest.class),
+                entry("CaptureProjectionRequest", CaptureProjectionRequest.class),
                 entry("ClaimTaskRequest", ClaimTaskRequest.class),
                 entry("CodeNavigationResult", CodeNavigationResult.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
@@ -210,6 +213,7 @@ class WireContractFixtureTest {
                 entry("ProjectTimelineBlock", ProjectTimelineBlock.class),
                 entry("ProjectTimelineResponse", ProjectTimelineResponse.class),
                 entry("ProjectTrajectoryResponse", ProjectTrajectoryResponse.class),
+                entry("ProjectionPath", ProjectionPath.class),
                 entry("RecallResult", RecallResult.class),
                 entry("RecalledItem", RecalledItem.class),
                 entry("SearchResponse", SearchResponse.class),

@@ -28,9 +28,10 @@ import dev.nathan.sbaagentic.recording.Titles;
 import org.springframework.stereotype.Service;
 
 /**
- * The write+query loop that is Black Box's reason to exist. Agents write structured <em>intent</em>
- * — decisions and handoffs — into the recorder, and any later agent (or a future self) reads that
- * intent back, scoped by repo or topic and bounded in time, at runtime and entirely on localhost.
+     * The write+query loop that is Black Box's reason to exist. Agents write structured <em>intent</em>
+     * — decisions, handoffs, observations, and projections — into the recorder, and any later agent
+     * (or a future self) reads that intent back, scoped by repo or topic and bounded in time, at runtime
+     * and entirely on localhost.
  *
  * <p>Decisions and handoffs are persisted as first-class {@link AgentEvent}s so they live on the
  * same timeline as prompts and tool calls; their structure rides in the event metadata, and
@@ -43,11 +44,13 @@ public class ContextService implements MemoryRecallOperations {
     public static final String KIND_DECISION = "decision";
     public static final String KIND_HANDOFF = "handoff";
     public static final String KIND_OBSERVATION = "observation";
+    public static final String KIND_PROJECTION = "projection";
 
     private static final Map<String, String> EVENT_TYPE_BY_KIND = Map.of(
             KIND_DECISION, "Decision",
             KIND_HANDOFF, "Handoff",
-            KIND_OBSERVATION, "Observation");
+            KIND_OBSERVATION, "Observation",
+            KIND_PROJECTION, "Projection");
 
     private static final List<String> DEFAULT_RECALL_KINDS = List.of(KIND_DECISION, KIND_HANDOFF);
     private static final int DEFAULT_WITHIN_HOURS = 168;
@@ -298,8 +301,15 @@ public class ContextService implements MemoryRecallOperations {
         String headline = switch (kind) {
             case KIND_DECISION -> firstNonBlank(str(meta.get("decision")), Titles.firstLine(event.text()));
             case KIND_HANDOFF -> firstNonBlank(str(meta.get("contextSummary")), Titles.firstLine(event.text()));
+            case KIND_PROJECTION -> firstNonBlank(
+                    firstPathTitle(meta.get("paths")),
+                    firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
             default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
         };
+        String rationale = KIND_PROJECTION.equals(kind) ? str(meta.get("basis")) : str(meta.get("rationale"));
+        Double confidence = KIND_PROJECTION.equals(kind)
+                ? firstPathConfidence(meta.get("paths"))
+                : asDouble(meta.get("confidence"));
         return new RecalledItem(
                 event.id(),
                 event.sessionId(),
@@ -309,9 +319,9 @@ public class ContextService implements MemoryRecallOperations {
                 str(meta.get("repo")),
                 event.observedAt(),
                 headline,
-                str(meta.get("rationale")),
+                rationale,
                 asStringList(meta.get("alternatives")),
-                asDouble(meta.get("confidence")),
+                confidence,
                 asStringList(meta.get("openLoops")),
                 str(meta.get("nextAction")),
                 str(meta.get("toAgent")),
@@ -327,6 +337,9 @@ public class ContextService implements MemoryRecallOperations {
         String headline = switch (kind) {
             case KIND_DECISION -> firstNonBlank(str(meta.get("decision")), Titles.firstLine(event.text()));
             case KIND_HANDOFF -> firstNonBlank(str(meta.get("contextSummary")), Titles.firstLine(event.text()));
+            case KIND_PROJECTION -> firstNonBlank(
+                    firstPathTitle(meta.get("paths")),
+                    firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
             default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
         };
         return new MemoryHit(
@@ -348,6 +361,31 @@ public class ContextService implements MemoryRecallOperations {
 
     private static String firstNonBlank(String first, String second) {
         return notBlank(first) ? first : second;
+    }
+
+    private static String firstPathTitle(Object value) {
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    String title = str(map.get("title"));
+                    if (notBlank(title)) {
+                        return title;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Double firstPathConfidence(Object value) {
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map && notBlank(str(map.get("title")))) {
+                    return asDouble(map.get("confidence"));
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean notBlank(String value) {

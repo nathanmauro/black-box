@@ -158,6 +158,37 @@ class ProjectGraphServiceTest {
     }
 
     @Test
+    void graphSendsAllProjectionCapturesNewestFirstForClientLatestSetSelection() {
+        StubGraphStore store = new StubGraphStore();
+        store.captures = List.of(
+                event("older-projection", "Projection", Map.of(
+                        "kind", "projection",
+                        "paths", List.of(Map.of(
+                                "title", "Older projection",
+                                "description", "The client should supersede this set.",
+                                "confidence", 0.31))),
+                        Instant.parse("2026-08-05T12:00:00Z")),
+                event("newer-projection", "Projection", Map.of(
+                        "kind", "projection",
+                        "paths", List.of(Map.of(
+                                "title", "Newer projection",
+                                "description", "The client treats this as the latest set.",
+                                "confidence", 0.82))),
+                        Instant.parse("2026-08-05T12:01:00Z")));
+
+        ProjectTrajectoryResponse response = service(store).graph(ProjectKey.of(CANONICAL).encoded());
+
+        assertThat(response.captures()).extracting(TrajectoryCapture::id)
+                .containsExactly("newer-projection", "older-projection");
+        assertThat(response.captures()).extracting(TrajectoryCapture::kind)
+                .containsExactly("projection", "projection");
+        assertThat(response.captures().getFirst().paths().getFirst().title())
+                .isEqualTo("Newer projection");
+        assertThat(response.captures().getLast().paths().getFirst().title())
+                .isEqualTo("Older projection");
+    }
+
+    @Test
     void graphReturnsAnEmptyFeedForProjectsWithoutFacts() {
         StubGraphStore store = new StubGraphStore();
 

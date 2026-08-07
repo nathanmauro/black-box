@@ -7,5 +7,7 @@ public interface RecordingCaptureOperations {
 
     IngestResponse captureHandoff(CaptureHandoffRequest request);
 
+    IngestResponse captureProjection(CaptureProjectionRequest request);
+
     IngestResponse captureObservation(String source, String clientSessionId, String repo, String text);
 }

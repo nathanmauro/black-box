@@ -4,6 +4,7 @@ import java.util.List;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.recording.IngestResponse;
@@ -40,6 +41,11 @@ public class ContextController {
     @PostMapping("/handoffs")
     public IngestResponse captureHandoff(@Valid @RequestBody CaptureHandoffRequest request) {
         return captureOperations.captureHandoff(request);
+    }
+
+    @PostMapping("/projections")
+    public IngestResponse captureProjection(@Valid @RequestBody CaptureProjectionRequest request) {
+        return captureOperations.captureProjection(request);
     }
 
     @GetMapping("/recall")

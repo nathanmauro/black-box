@@ -8,9 +8,11 @@ import java.util.Map;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     private static final String KIND_DECISION = "decision";
     private static final String KIND_HANDOFF = "handoff";
     private static final String KIND_OBSERVATION = "observation";
+    private static final String KIND_PROJECTION = "projection";
+    private static final int MAX_PROJECTION_PATHS = 5;
 
     private final EventRecorder recorder;
 
@@ -53,6 +57,21 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         putIfPresent(metadata, "repo", request.repo());
         return write(request.source(), request.clientSessionId(), request.repo(), "Handoff",
                 renderHandoff(request), metadata);
+    }
+
+    @Override
+    public IngestResponse captureProjection(CaptureProjectionRequest request) {
+        List<ProjectionPath> paths = trimPaths(request.paths());
+        if (paths.isEmpty()) {
+            throw new IllegalArgumentException("Projection paths must include at least one path with a title.");
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("kind", KIND_PROJECTION);
+        metadata.put("paths", pathMetadata(paths));
+        putIfPresent(metadata, "basis", request.basis());
+        putIfPresent(metadata, "repo", request.repo());
+        return write(request.source(), request.clientSessionId(), request.repo(), "Projection",
+                renderProjection(request, paths), metadata);
     }
 
     @Override
@@ -98,6 +117,31 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         return body.toString();
     }
 
+    private static String renderProjection(CaptureProjectionRequest request, List<ProjectionPath> paths) {
+        StringBuilder body = new StringBuilder("Projected futures:");
+        for (int i = 0; i < paths.size(); i++) {
+            appendPath(body, i + 1, paths.get(i));
+        }
+        appendBlock(body, "Basis", request.basis());
+        return body.toString();
+    }
+
+    private static void appendPath(StringBuilder body, int index, ProjectionPath path) {
+        body.append("\n").append(index).append(". ");
+        if (notBlank(path.title())) {
+            body.append(path.title());
+        }
+        if (notBlank(path.description())) {
+            if (notBlank(path.title())) {
+                body.append(" — ");
+            }
+            body.append(path.description());
+        }
+        if (path.confidence() != null) {
+            body.append(" (confidence: ").append(path.confidence()).append(")");
+        }
+    }
+
     private static void appendBlock(StringBuilder body, String label, String value) {
         if (notBlank(value)) {
             body.append("\n\n").append(label).append(": ").append(value.strip());
@@ -124,10 +168,47 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         return out.isEmpty() ? null : out;
     }
 
+    private static List<ProjectionPath> trimPaths(List<ProjectionPath> paths) {
+        if (paths == null) {
+            return List.of();
+        }
+        List<ProjectionPath> out = new ArrayList<>();
+        for (ProjectionPath path : paths) {
+            if (path == null) {
+                continue;
+            }
+            String title = stripOrNull(path.title());
+            String description = stripOrNull(path.description());
+            if (title != null) {
+                out.add(new ProjectionPath(title, description, path.confidence()));
+            }
+            if (out.size() == MAX_PROJECTION_PATHS) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> pathMetadata(List<ProjectionPath> paths) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ProjectionPath path : paths) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            putIfPresent(item, "title", path.title());
+            putIfPresent(item, "description", path.description());
+            putIfPresent(item, "confidence", path.confidence());
+            out.add(item);
+        }
+        return out;
+    }
+
     private static void putIfPresent(Map<String, Object> metadata, String key, Object value) {
         if (value != null) {
             metadata.put(key, value);
         }
+    }
+
+    private static String stripOrNull(String value) {
+        return notBlank(value) ? value.strip() : null;
     }
 
     private static boolean notBlank(String value) {

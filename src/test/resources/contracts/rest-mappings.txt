@@ -46,6 +46,7 @@ POST /api/handoffs
 POST /api/melds
 POST /api/memory/embeddings/backfill
 POST /api/open-in-editor
+POST /api/projections
 POST /api/projects/{projectKey}/melds/preview
 POST /api/reveal-in-finder
 POST /api/session-links

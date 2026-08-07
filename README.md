@@ -125,7 +125,8 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureDecision` | Preserve a choice, rationale, rejected alternatives, confidence, and open loops |
 | `captureHandoff` | Leave context, open loops, and one next action for another agent |
 | `captureObservation` | Record a concise fact or note |
-| `recallContext` | Recall structured Decisions and Handoffs by repo, topic, semantic paraphrase, or event id |
+| `captureProjection` | Capture one to five plausible future paths for the project graph |
+| `recallContext` | Recall structured Decisions, Handoffs, Observations, and Projections by repo, topic, semantic paraphrase, or event id |
 | `searchSessions` | Search captured events and sessions |
 | `recentSessions` | List recent agent sessions |
 | `localModelStatus` | Inspect the optional local model backend |

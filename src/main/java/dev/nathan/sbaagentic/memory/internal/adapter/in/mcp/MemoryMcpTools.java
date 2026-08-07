@@ -10,7 +10,9 @@ import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 
@@ -64,10 +66,10 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
         return memorySearch.search(query, clampLimit(limit));
     }
 
-    @Tool(description = "Recall structured prior intent — decisions and handoffs that earlier agents "
+    @Tool(description = "Recall structured prior intent — decisions, handoffs, observations, and projections "
+            + "that earlier agents "
             + "(or an earlier you) committed — before starting work, so you do not re-decide what was "
-            + "already settled. Returns the decision, its rationale, alternatives weighed, open loops, "
-            + "and confidence, not raw text hits.")
+            + "already settled. Returns structured fields and the full captured text, not raw search hits.")
     public RecallResult recallContext(
             @ToolParam(description = "Repo path, repo name, event id, or topic. Matching ids, "
                     + "working directories, repo metadata, or captured text anchor both lexical "
@@ -78,7 +80,7 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     + "(one week).") Integer withinHours,
             @ToolParam(required = false,
                     description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
-                    + "'observation'. Omit to recall decisions and handoffs.") List<String> kinds,
+                    + "'observation', or 'projection'. Omit to recall decisions and handoffs.") List<String> kinds,
             @ToolParam(required = false,
                     description = "Maximum number of items to return. Omit for 10, max 50. Recalled "
                     + "items carry full captured text, so raise this deliberately.") Integer limit) {
@@ -116,6 +118,21 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             @ToolParam(description = "The single most useful next action.") String nextAction) {
         return captureOperations.captureHandoff(new CaptureHandoffRequest(
                 source, clientSessionId, repo, toAgent, contextSummary, openLoops, nextAction));
+    }
+
+    @Tool(description = "Before closing a session, project one to five plausible futures for this repo — "
+            + "where the work could go next. Each path: short title, one-line description, "
+            + "confidence 0..1. Each new capture replaces the last set on the project's trajectory graph.")
+    public IngestResponse captureProjection(
+            @ToolParam(description = "Source client: claude, codex, or manual.") String source,
+            @ToolParam(description = "Client session id or stable grouping key for your run.") String clientSessionId,
+            @ToolParam(description = "Repo path this projection is about (your working directory).") String repo,
+            @ToolParam(required = false,
+                    description = "Why these futures are plausible, or what current work they are based on.") String basis,
+            @ToolParam(description = "One to five projected futures. Each item requires a title; "
+                    + "description and confidence 0..1 are optional.") List<ProjectionPath> paths) {
+        return captureOperations.captureProjection(new CaptureProjectionRequest(
+                source, clientSessionId, repo, basis, paths));
     }
 
     @Tool(description = "Capture a free-form observation or note into the local recorder.")
