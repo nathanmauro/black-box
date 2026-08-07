@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { E2E_SEED_EVENTS, assertSafeSeedBaseUrl, seedBlackBoxE2e } from "./seedData";
+import { E2E_SEED_EVENTS, E2E_SEED_PROJECTION, assertSafeSeedBaseUrl, seedBlackBoxE2e } from "./seedData";
 
 describe("e2e seed data", () => {
   it("contains the exact deterministic records asserted by smoke.spec.ts", () => {
@@ -34,7 +34,21 @@ describe("e2e seed data", () => {
     expect(worktreeHandoff).toMatchObject({
       eventType: "Handoff",
       cwd: "/tmp/black-box-e2e/.worktrees/release",
-      metadata: { repo: "/tmp/black-box-e2e/.worktrees/release" },
+      metadata: {
+        nextAction: "Review the catalog-backed workspace",
+        repo: "/tmp/black-box-e2e/.worktrees/release",
+      },
+    });
+
+    expect(E2E_SEED_PROJECTION).toMatchObject({
+      source: "codex",
+      clientSessionId: "black-box-e2e-codex-projection",
+      repo: "/tmp/black-box-e2e",
+      paths: [
+        { title: "Polish trajectory graph", confidence: 0.74 },
+        { title: "Expand projection recall", confidence: 0.58 },
+        { title: "Retire parked graph page", confidence: 0.31 },
+      ],
     });
   });
 
@@ -62,13 +76,21 @@ describe("e2e seed data", () => {
 
     await seedBlackBoxE2e("http://127.0.0.1:8799", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 3);
+    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 4);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8799/api/events",
       expect.objectContaining({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(E2E_SEED_EVENTS[0]),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8799/api/projections",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(E2E_SEED_PROJECTION),
       }),
     );
     expect(fetchMock).toHaveBeenCalledWith(

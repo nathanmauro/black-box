@@ -232,6 +232,47 @@ describe("ProjectsPage", () => {
     expect(await screen.findByText("Newest project observation", { selector: ".event-card--observation strong" })).toBeInTheDocument();
   });
 
+  it("renders projection timeline blocks with a projection badge and paths", async () => {
+    vi.mocked(getProjectTimeline).mockReset().mockResolvedValue(timelineResponse(1, [
+      {
+        id: "projection",
+        text: "Projected futures:\n1. Polish graph e2e",
+        observedAt: "2026-07-15T12:00:00Z",
+        blockType: "projection",
+        eventType: "Projection",
+        headline: "Polish graph e2e",
+        metadata: {
+          kind: "projection",
+          basis: "Trajectory coverage needs deterministic ghost futures.",
+          paths: [
+            {
+              title: "Polish graph e2e",
+              description: "Assert seeded ghosts in the project graph.",
+              confidence: 0.68,
+            },
+            {
+              title: "Document projection review",
+              confidence: 0.42,
+            },
+          ],
+        },
+      },
+    ]));
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+
+    expect(await screen.findByText("Projection", { selector: ".timeline-block-label span" })).toBeInTheDocument();
+    expect(screen.getByText("Projection", { selector: ".kind-badge" })).toBeInTheDocument();
+    expect(screen.getByText("Trajectory coverage needs deterministic ghost futures.")).toBeInTheDocument();
+    expect(screen.getAllByText("Polish graph e2e")).not.toHaveLength(0);
+    expect(screen.getByText(/Assert seeded ghosts in the project graph/)).toBeInTheDocument();
+    expect(screen.getByText(/68%/)).toBeInTheDocument();
+    expect(screen.getByText("Document projection review")).toBeInTheDocument();
+    expect(screen.getByText(/42%/)).toBeInTheDocument();
+  });
+
   it("persists the storyline view choice to localStorage", async () => {
     const first = render(() => <ProjectsPage />);
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
@@ -372,7 +413,15 @@ describe("ProjectsPage", () => {
 
 function timelineResponse(
   count: number,
-  items: Array<{ id: string; text: string; observedAt: string }>,
+  items: Array<{
+    id: string;
+    text: string;
+    observedAt: string;
+    blockType?: string;
+    eventType?: string;
+    headline?: string;
+    metadata?: unknown;
+  }>,
 ): ProjectTimelineResponse {
   return {
     projectKey: "sba-key",
@@ -385,9 +434,9 @@ function timelineResponse(
       ...item,
       source: "codex",
       sourceType: "event",
-      blockType: "Observation",
-      eventType: "Observation",
-      headline: item.text,
+      blockType: item.blockType ?? "Observation",
+      eventType: item.eventType ?? "Observation",
+      headline: item.headline ?? item.text,
     })),
   };
 }

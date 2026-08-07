@@ -12,9 +12,22 @@ export type SeedEventPayload = {
     rationale?: string;
     alternatives?: string[];
     openLoops?: string[];
+    nextAction?: string;
     confidence?: number;
     repo?: string;
   };
+};
+
+export type SeedProjectionPayload = {
+  source: string;
+  clientSessionId: string;
+  repo: string;
+  basis: string;
+  paths: Array<{
+    title: string;
+    description?: string;
+    confidence?: number;
+  }>;
 };
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -87,10 +100,35 @@ export const E2E_SEED_EVENTS: SeedEventPayload[] = [
     metadata: {
       title: "Release worktree handoff",
       kind: "handoff",
+      nextAction: "Review the catalog-backed workspace",
       repo: `${E2E_PROJECT_CWD}/.worktrees/release`,
     },
   },
 ];
+
+export const E2E_SEED_PROJECTION: SeedProjectionPayload = {
+  source: "codex",
+  clientSessionId: "black-box-e2e-codex-projection",
+  repo: E2E_PROJECT_CWD,
+  basis: "The graph smoke test needs one deterministic ghost set for the seeded project.",
+  paths: [
+    {
+      title: "Polish trajectory graph",
+      description: "Refine default graph affordances after e2e coverage lands.",
+      confidence: 0.74,
+    },
+    {
+      title: "Expand projection recall",
+      description: "Use captured projection paths in follow-on agent handoffs.",
+      confidence: 0.58,
+    },
+    {
+      title: "Retire parked graph page",
+      description: "Decide separately whether the legacy /graph surface still earns a slot.",
+      confidence: 0.31,
+    },
+  ],
+};
 
 export function assertSafeSeedBaseUrl(baseURL: string): void {
   const url = new URL(baseURL);
@@ -117,6 +155,12 @@ export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fe
       throw new Error(`Failed to seed ${event.metadata.title}: HTTP ${response.status} ${response.statusText}`);
     }
   }
+  const projectionResponse = await fetchImpl(new URL("/api/projections", baseURL).toString(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(E2E_SEED_PROJECTION),
+  });
+  await requireOk(projectionResponse, "seed the trajectory projection");
 
   const projectsResponse = await fetchImpl(new URL("/api/projects", baseURL).toString(), {
     headers: { accept: "application/json" },

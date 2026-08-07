@@ -1,5 +1,6 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
 import TrajectoryView from "../components/TrajectoryView";
@@ -653,20 +654,62 @@ function SavedMeldsPanel(props: { project: ProjectSummary; melds: ProjectMeld[];
 }
 
 function TimelineBlock(props: { block: ProjectTimelineBlock; project: ProjectSummary }) {
+  const blockLabel = createMemo(() => timelineBlockLabel(props.block));
   return (
     <div class="project-timeline-row">
       <div class="timeline-block-label">
-        <span>{props.block.blockType || props.block.sourceType || "event"}</span>
+        <span>{blockLabel()}</span>
         <span>{props.block.sessionTitle || props.block.clientSessionId || props.block.headline}</span>
         <time>{timeAgo(props.block.observedAt)}</time>
       </div>
-      <Show
-        when={props.block.sourceType === "saved_meld"}
-        fallback={<EventRenderer event={timelineBlockToEvent(props.block)} />}
-      >
-        <SavedMeldTimelineCard block={props.block} project={props.project} />
-      </Show>
+      <TimelineBlockCard block={props.block} project={props.project} />
     </div>
+  );
+}
+
+function TimelineBlockCard(props: { block: ProjectTimelineBlock; project: ProjectSummary }) {
+  if (props.block.sourceType === "saved_meld") {
+    return <SavedMeldTimelineCard block={props.block} project={props.project} />;
+  }
+  if (normalizeEventType(props.block.eventType || props.block.blockType || props.block.sourceType) === "Projection") {
+    return <ProjectionTimelineCard block={props.block} />;
+  }
+  return <EventRenderer event={timelineBlockToEvent(props.block)} />;
+}
+
+function ProjectionTimelineCard(props: { block: ProjectTimelineBlock }) {
+  const metadata = createMemo(() => metadataRecord(props.block.metadata));
+  const paths = createMemo(() => projectionPaths(metadata().paths));
+  const basis = createMemo(() => metadataValue(metadata(), "basis", ""));
+  const headline = createMemo(() => props.block.headline || paths()[0]?.title || "Projected futures");
+  return (
+    <article class="event-card">
+      <div class="event-card-head">
+        <SourceDot source={props.block.source} />
+        <KindBadge kind="Projection" />
+        <strong>{truncatePath(headline())}</strong>
+        <span class="event-card-time">{timeAgo(props.block.observedAt)}</span>
+      </div>
+      <Show when={basis()}>
+        {(text) => <p class="event-rationale">{truncatePath(text())}</p>}
+      </Show>
+      <Show when={paths().length} fallback={props.block.text ? <p class="reader-text">{props.block.text}</p> : null}>
+        <div class="metadata-list">
+          <span>paths</span>
+          <ul>
+            <For each={paths()}>
+              {(path) => (
+                <li>
+                  <strong>{truncatePath(path.title)}</strong>
+                  {path.description ? ` - ${truncatePath(path.description)}` : ""}
+                  {path.confidence === undefined ? "" : ` (${Math.round(path.confidence * 100)}%)`}
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </Show>
+    </article>
   );
 }
 
@@ -813,6 +856,10 @@ function futureSourceLabel(value: string): string {
   return "Projection";
 }
 
+function timelineBlockLabel(block: ProjectTimelineBlock): string {
+  return normalizeEventType(block.eventType || block.blockType || block.sourceType);
+}
+
 function timelineBlockToEvent(block: ProjectTimelineBlock): AgentEvent {
   return {
     id: block.id,
@@ -850,7 +897,25 @@ function normalizeEventType(value: string | null | undefined): string {
   if (normalized === "decision") return "Decision";
   if (normalized === "handoff") return "Handoff";
   if (normalized === "observation") return "Observation";
+  if (normalized === "projection") return "Projection";
   return value || "Timeline";
+}
+
+function projectionPaths(value: unknown): Array<{ title: string; description?: string; confidence?: number }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((path) => {
+    if (!path || typeof path !== "object" || Array.isArray(path)) return [];
+    const record = path as Record<string, unknown>;
+    const title = typeof record.title === "string" ? record.title.trim() : "";
+    if (!title) return [];
+    const description = typeof record.description === "string" && record.description.trim()
+      ? record.description.trim()
+      : undefined;
+    const confidence = typeof record.confidence === "number" && Number.isFinite(record.confidence)
+      ? Math.max(0, Math.min(1, record.confidence))
+      : undefined;
+    return [{ title, description, confidence }];
+  });
 }
 
 function projectScopeOrigin(scope: ProjectScope): string {

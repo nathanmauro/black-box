@@ -175,6 +175,17 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
   await expect(fixtureProject).toBeVisible();
   await fixtureProject.click();
   await expect(page.getByRole("heading", { name: "black-box-e2e", exact: true })).toBeVisible();
+  const storylineToggle = page.getByRole("group", { name: "Project storyline view" });
+  await expect(storylineToggle.getByRole("button", { name: "Trajectory" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.project-trajectory [data-node-kind="head"]')).toBeVisible();
+  await expect(page.locator([
+    '.project-trajectory [data-node-kind="future-next"]',
+    '.project-trajectory [data-node-kind="future-loop"]',
+    '.project-trajectory [data-node-kind="future-task"]',
+  ].join(", ")).first()).toBeVisible();
+  await expect(page.locator('.project-trajectory [data-node-kind="future-ghost"]').first()).toBeVisible();
+  await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
+  await storylineToggle.getByRole("button", { name: "Timeline" }).click();
   await expect(page.getByText("Hybrid storyline", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent sessions", { exact: true })).toBeVisible();
   await expect(page.getByText("UI rewrite kickoff", { exact: true }).first()).toBeVisible();
@@ -186,7 +197,6 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
   await expect(page.getByText("Projects are parked")).toHaveCount(0);
   await expect(page.getByText("Project storylines and melds are disabled")).toHaveCount(0);
   expect(browserErrors).toEqual([]);
-  await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
 });
 
 test("recall query links the owning session and exact event", async ({ page, request }) => {
