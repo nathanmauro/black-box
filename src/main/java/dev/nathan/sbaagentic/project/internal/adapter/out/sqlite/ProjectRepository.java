@@ -182,12 +182,18 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.addAll(scopes);
-        Long count = jdbcTemplate.queryForObject("""
+        Long count = jdbcTemplate.queryForObject(countTimelineBlocksSql(scopes.size()),
+                Long.class,
+                args.toArray());
+        return count == null ? 0 : count;
+    }
+
+    static String countTimelineBlocksSql(int scopeCount) {
+        return """
                 SELECT (
                     SELECT COUNT(*)
                       FROM agent_events e
-                      JOIN agent_sessions s ON e.session_id = s.id
-                     WHERE %s IN (%s)
+                     WHERE %s
                        AND %s
                 ) + (
                     SELECT COUNT(*)
@@ -195,13 +201,9 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                      WHERE m.project_key IN (%s)
                 )
                 """.formatted(
-                        SESSION_CANONICAL_KEY_SQL,
-                        placeholders(scopes.size()),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
                         STORYLINE_PREDICATE,
-                        placeholders(scopes.size())),
-                Long.class,
-                args.toArray());
-        return count == null ? 0 : count;
+                        placeholders(scopeCount));
     }
 
     public List<ProjectTimelineBlock> timelineBlocks(String canonicalKey, int limit, int offset) {
@@ -210,7 +212,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         args.addAll(scopes);
         args.add(limit);
         args.add(offset);
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(timelineBlocksSql(scopes.size()),
+                this::mapTimelineBlock,
+                args.toArray());
+    }
+
+    static String timelineBlocksSql(int scopeCount) {
+        return """
                 SELECT *
                   FROM (
                         SELECT e.id,
@@ -237,7 +245,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                                NULL AS meld_saved_from_preview
                           FROM agent_events e
                           JOIN agent_sessions s ON e.session_id = s.id
-                         WHERE %s IN (%s)
+                         WHERE %s
                            AND %s
                         UNION ALL
                         SELECT m.id,
@@ -268,13 +276,10 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  ORDER BY %s ASC
                  LIMIT ? OFFSET ?
                 """.formatted(
-                        SESSION_CANONICAL_KEY_SQL,
-                        placeholders(scopes.size()),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
                         STORYLINE_PREDICATE,
-                        placeholders(scopes.size()),
-                        sortableInstant("observed_at")),
-                this::mapTimelineBlock,
-                args.toArray());
+                        placeholders(scopeCount),
+                        sortableInstant("observed_at"));
     }
 
     public List<ProjectTimelineBlock> timelineBlocksForSession(String canonicalKey, String sessionId, int limit) {
@@ -282,7 +287,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<Object> args = new ArrayList<>(scopes);
         args.add(sessionId);
         args.add(limit);
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(timelineBlocksForSessionSql(scopes.size()),
+                this::mapTimelineBlock,
+                args.toArray());
+    }
+
+    static String timelineBlocksForSessionSql(int scopeCount) {
+        return """
                 SELECT e.id, 'raw_event' AS source_type,
                        e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
                        e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json,
@@ -295,18 +306,15 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                        NULL AS meld_saved_from_preview
                   FROM agent_events e
                   JOIN agent_sessions s ON e.session_id = s.id
-                 WHERE %s IN (%s)
+                 WHERE %s
                    AND e.session_id = ?
                    AND %s
                  ORDER BY %s ASC
                  LIMIT ?
                 """.formatted(
-                        SESSION_CANONICAL_KEY_SQL,
-                        placeholders(scopes.size()),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
                         STORYLINE_PREDICATE,
-                        sortableInstant("e.observed_at")),
-                this::mapTimelineBlock,
-                args.toArray());
+                        sortableInstant("e.observed_at"));
     }
 
     public List<CaptureRow> recentCaptures(String canonicalKey, int limit) {
