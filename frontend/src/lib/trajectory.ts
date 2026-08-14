@@ -144,6 +144,7 @@ type PositionedNode = TrajectoryGraphNode & { x: number; y: number };
 export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number): TrajectoryGraph {
   const captures = sortedCaptures(feed.captures ?? []);
   if (!captures.length) return { nodes: [], edges: [], stale: false };
+  const hiddenCount = hiddenCaptureCount(feed.totalCaptures, captures.length);
 
   const bursts = buildBursts(captures);
   const newestBurst = bursts[bursts.length - 1];
@@ -156,19 +157,31 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
   const historicalBursts = bursts.slice(0, -1);
   const collapsedBursts = historicalBursts.slice(0, Math.max(0, historicalBursts.length - SPINE_MAX));
   const visibleBursts = historicalBursts.slice(Math.max(0, historicalBursts.length - SPINE_MAX));
+  if (hiddenCount > 0 && visibleBursts.length) {
+    collapsedBursts.push(visibleBursts.shift()!);
+  }
   let spineIndex = 0;
 
-  if (collapsedBursts.length) {
+  if (collapsedBursts.length || hiddenCount > 0) {
     const collapsedCaptures = collapsedBursts.flatMap((burst) => burst.captures);
+    const memberCount = collapsedCaptures.length + hiddenCount;
+    const capped = hiddenCount > 0;
+    const firstVisibleStartMs = visibleBursts[0]?.startMs ?? newestBurst.startMs;
     nodes.push({
       id: "deep-past",
       kind: "deep-past",
-      label: `+${collapsedBursts.length} earlier · ${collapsedCaptures.length} ${plural("capture", collapsedCaptures.length)}`,
-      eyebrow: dateRangeLabel(collapsedBursts[0].startMs, collapsedBursts[collapsedBursts.length - 1].endMs),
-      fullText: `${collapsedCaptures.length} older trajectory ${plural("capture", collapsedCaptures.length)} collapsed into the deep past.`,
+      label: capped
+        ? `+${memberCount} earlier ${plural("capture", memberCount)}`
+        : `+${collapsedBursts.length} earlier · ${collapsedCaptures.length} ${plural("capture", collapsedCaptures.length)}`,
+      eyebrow: capped
+        ? `before ${dateRangeLabel(firstVisibleStartMs, firstVisibleStartMs)}`
+        : dateRangeLabel(collapsedBursts[0].startMs, collapsedBursts[collapsedBursts.length - 1].endMs),
+      fullText: capped
+        ? `${memberCount} older trajectory ${plural("capture", memberCount)} collapsed into the deep past. ${hiddenCount} older ${plural("capture", hiddenCount)} ${hiddenCount === 1 ? "lies" : "lie"} beyond the feed cap.`
+        : `${collapsedCaptures.length} older trajectory ${plural("capture", collapsedCaptures.length)} collapsed into the deep past.`,
       spineIndex,
       labelSide: spineIndex % 2 === 0 ? "above" : "below",
-      memberCount: collapsedCaptures.length,
+      memberCount,
       hasDecision: collapsedCaptures.some((capture) => capture.kind === "decision"),
       members: collapsedCaptures,
     });
@@ -348,6 +361,11 @@ function sortedCaptures(captures: TrajectoryCapture[]): TrajectoryCapture[] {
     if (delta !== 0) return delta;
     return left.id.localeCompare(right.id);
   });
+}
+
+function hiddenCaptureCount(totalCaptures: number, visibleCaptureCount: number): number {
+  if (!Number.isSafeInteger(totalCaptures) || totalCaptures < 0) return 0;
+  return Math.max(0, totalCaptures - visibleCaptureCount);
 }
 
 function buildBursts(captures: TrajectoryCapture[]): Burst[] {

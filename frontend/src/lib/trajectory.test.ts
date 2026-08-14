@@ -49,6 +49,111 @@ describe("buildTrajectory", () => {
     expect(graph.headId).toBe("head:b6");
   });
 
+  it("emits an honest hidden-only deep past when the capped feed contains only the head burst", () => {
+    const headMs = Date.parse("2026-06-10T12:00:00Z");
+    const feed = response([
+      capture("head", "handoff", iso(headMs), { headline: "Visible head" }),
+    ]);
+    feed.totalCaptures = 6;
+
+    const graph = buildTrajectory(feed, headMs);
+    const deepPast = graph.nodes.find((node) => node.kind === "deep-past");
+
+    expect(deepPast).toMatchObject({
+      label: "+5 earlier captures",
+      eyebrow: "before Jun 10",
+      fullText: "5 older trajectory captures collapsed into the deep past. 5 older captures lie beyond the feed cap.",
+      memberCount: 5,
+      members: [],
+      hasDecision: false,
+      spineIndex: 0,
+    });
+    expect(graph.nodes.find((node) => node.kind === "head")?.spineIndex).toBe(1);
+    expect(graph.edges.find((edge) => edge.type === "trail")).toMatchObject({
+      from: "deep-past",
+      to: "head:head",
+    });
+  });
+
+  it("folds the oldest visible historical burst into a capped deep past with its rejected stub", () => {
+    const startMs = Date.parse("2026-06-01T12:00:00Z");
+    const feed = response([
+      capture("old-decision", "decision", iso(startMs), {
+        alternatives: ["Keep the cap boundary"],
+      }),
+      capture("head", "handoff", iso(startMs + 4 * DAY_MS), { headline: "Visible head" }),
+    ]);
+    feed.totalCaptures = 12;
+
+    const graph = buildTrajectory(feed, startMs + 4 * DAY_MS);
+    const deepPast = graph.nodes.find((node) => node.kind === "deep-past");
+
+    expect(deepPast).toMatchObject({
+      label: "+11 earlier captures",
+      eyebrow: "before Jun 5",
+      fullText: "11 older trajectory captures collapsed into the deep past. 10 older captures lie beyond the feed cap.",
+      memberCount: 11,
+      members: [expect.objectContaining({ id: "old-decision" })],
+      hasDecision: true,
+    });
+    expect(graph.nodes.filter((node) => node.kind === "burst")).toHaveLength(0);
+    expect(graph.nodes.find((node) => node.kind === "stub")).toMatchObject({
+      sourceBurstId: "deep-past",
+      alternatives: ["Keep the cap boundary"],
+    });
+    expect(graph.edges.find((edge) => edge.type === "rejected")).toMatchObject({
+      from: "deep-past",
+      to: "stub:deep-past",
+    });
+  });
+
+  it("combines feed-cap history with SPINE_MAX overflow and folds one additional visible burst", () => {
+    const startMs = Date.parse("2026-01-01T12:00:00Z");
+    const captures = Array.from({ length: SPINE_MAX + 3 }, (_, index) =>
+      capture(
+        `burst-${index}`,
+        index === SPINE_MAX + 2 ? "handoff" : "observation",
+        iso(startMs + index * 3 * DAY_MS),
+      ),
+    );
+    const feed = response(captures);
+    feed.totalCaptures = captures.length + 20;
+
+    const graph = buildTrajectory(feed, startMs + (SPINE_MAX + 2) * 3 * DAY_MS);
+    const deepPast = graph.nodes.find((node) => node.kind === "deep-past");
+
+    expect(deepPast).toMatchObject({
+      label: "+23 earlier captures",
+      eyebrow: "before Jan 10",
+      fullText: "23 older trajectory captures collapsed into the deep past. 20 older captures lie beyond the feed cap.",
+      memberCount: 23,
+    });
+    expect(deepPast?.members?.map((capture) => capture.id)).toEqual(["burst-0", "burst-1", "burst-2"]);
+    expect(graph.nodes.filter((node) => node.kind === "burst")).toHaveLength(SPINE_MAX - 1);
+  });
+
+  it("preserves uncapped output at the totalCaptures boundary and for missing or invalid totals", () => {
+    const startMs = Date.parse("2026-07-01T12:00:00Z");
+    const feed = response([
+      capture("old", "observation", iso(startMs)),
+      capture("head", "handoff", iso(startMs + 4 * DAY_MS)),
+    ]);
+    const boundary = buildTrajectory(feed, startMs + 4 * DAY_MS);
+
+    expect(boundary.nodes.some((node) => node.kind === "deep-past")).toBe(false);
+    expect(boundary.nodes.find((node) => node.kind === "burst")).toMatchObject({
+      label: "Jul 1",
+      eyebrow: "1 capture",
+      memberCount: 1,
+    });
+
+    const invalidTotals = [undefined, Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5];
+    for (const totalCaptures of invalidTotals) {
+      const invalidFeed = { ...feed, totalCaptures } as unknown as ProjectTrajectoryResponse;
+      expect(buildTrajectory(invalidFeed, startMs + 4 * DAY_MS)).toEqual(boundary);
+    }
+  });
+
   it("selects the latest handoff in the newest burst, falls back to latest capture, and marks stale after 14 days", () => {
     const headMs = Date.parse("2026-03-10T12:00:00Z");
     const graph = buildTrajectory(
