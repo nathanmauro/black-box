@@ -61,16 +61,28 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
             )
             """.formatted(SESSION_CANONICAL_KEY_SQL);
 
-    private static final String STORYLINE_PREDICATE = """
+    /**
+     * SQLite lazily evaluates CASE branches, so typed and cheap column matches avoid the lowered
+     * event-type and metadata probes. The bare LIKE guard is ASCII-case-insensitive under the
+     * default pragma and every full kind-marker match implies it; keep that guarded metadata branch
+     * last so a guard match without a full marker can fall through only after every other match.
+     */
+    static final String STORYLINE_PREDICATE = """
             (
-              lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
-              OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
-              OR e.tool_name IS NOT NULL
-              OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
-              OR lower(coalesce(e.event_type, '')) LIKE '%error%'
-              OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
+              CASE
+                WHEN lower(coalesce(e.event_type, '')) IN ('decision', 'handoff') THEN 1
+                WHEN lower(coalesce(e.role, '')) = 'assistant'
+                     AND trim(coalesce(e.text, '')) <> '' THEN 1
+                WHEN e.tool_name IS NOT NULL THEN 1
+                WHEN lower(coalesce(e.event_type, '')) LIKE '%tool%'
+                  OR lower(coalesce(e.event_type, '')) LIKE '%error%'
+                  OR lower(coalesce(e.event_type, '')) LIKE '%fail%' THEN 1
+                WHEN e.metadata_json LIKE '%"kind":"%' THEN (
+                  lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+                  OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
+                )
+                ELSE 0
+              END
             )
             """;
 
