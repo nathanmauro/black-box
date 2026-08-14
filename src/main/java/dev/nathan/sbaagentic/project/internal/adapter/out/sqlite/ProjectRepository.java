@@ -74,13 +74,24 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
             )
             """;
 
-    private static final String MILESTONE_PREDICATE = """
+    /**
+     * SQLite lazily evaluates CASE branches. The bare LIKE guard is ASCII-case-insensitive under
+     * the default pragma and every full kind-marker match implies it; instr() is case-sensitive and
+     * would incorrectly reject mixed-case metadata keys.
+     */
+    static final String MILESTONE_PREDICATE = """
             (
-              lower(coalesce(e.event_type, '')) IN ('decision', 'handoff', 'observation', 'projection')
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"observation"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"projection"%'
+              CASE
+                WHEN lower(coalesce(e.event_type, '')) IN ('decision', 'handoff', 'observation', 'projection')
+                  THEN 1
+                WHEN e.metadata_json LIKE '%"kind":"%' THEN (
+                  lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+                  OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
+                  OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"observation"%'
+                  OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"projection"%'
+                )
+                ELSE 0
+              END
             )
             """;
 
@@ -354,7 +365,14 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.addAll(scopes);
-        Long count = jdbcTemplate.queryForObject("""
+        Long count = jdbcTemplate.queryForObject(totalCapturesSql(scopes.size()),
+                Long.class,
+                args.toArray());
+        return count == null ? 0 : count;
+    }
+
+    static String totalCapturesSql(int scopeCount) {
+        return """
                 SELECT (
                     SELECT COUNT(*)
                       FROM agent_events e
@@ -366,19 +384,22 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                      WHERE m.project_key IN (%s)
                 )
                 """.formatted(
-                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopes.size())),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
                         MILESTONE_PREDICATE,
-                        placeholders(scopes.size())),
-                Long.class,
-                args.toArray());
-        return count == null ? 0 : count;
+                        placeholders(scopeCount));
     }
 
     private List<CaptureRow> recentEventCaptures(String canonicalKey, int limit) {
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.add(limit);
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(recentEventCapturesSql(scopes.size()),
+                this::mapTrajectoryEventCapture,
+                args.toArray());
+    }
+
+    static String recentEventCapturesSql(int scopeCount) {
+        return """
                 SELECT e.id,
                        e.event_type,
                        e.session_id,
@@ -395,11 +416,9 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  ORDER BY %s DESC, e.id DESC
                  LIMIT ?
                 """.formatted(
-                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopes.size())),
+                        SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
                         MILESTONE_PREDICATE,
-                        sortableInstant("e.observed_at")),
-                this::mapTrajectoryEventCapture,
-                args.toArray());
+                        sortableInstant("e.observed_at"));
     }
 
     public void insertSavedMeld(
