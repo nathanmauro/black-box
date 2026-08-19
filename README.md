@@ -52,11 +52,20 @@ wake-up hints; `claimNextTask` and `listTasks` remain authoritative.
 
 ## See it
 
+### Watch a project's trajectory
+
+<img src="docs/assets/trajectory.png" alt="Black Box trajectory graph: a spine of burst epochs behind a glowing head node, ranked future paths fanning ahead, ghost projections on a dashed shell, and rejected alternatives as dead stubs." width="100%">
+
+Every project opens on its trajectory. Burst epochs form the spine behind the head — the latest
+Handoff — and the ranked futures fan out ahead of it: next actions, open tasks, open loops, and the
+ghost projections agents left before closing their sessions. Rejected alternatives hang below as
+dead stubs. The hybrid storyline stays one tab away.
+
 ### Follow a whole project storyline
 
-<img src="docs/assets/projects.png" alt="Black Box Projects workspace showing one logical project, its verified worktree scope, recent sessions, saved synthesis, and newest storyline evidence." width="100%">
+<img src="docs/assets/projects.png" alt="Black Box Projects workspace with the trajectory graph in the center pane and a selected ghost projection's detail, including its confidence, in the right rail." width="100%">
 
-Group verified worktrees under one logical identity, inspect the newest high-signal evidence, and
+Group verified worktrees under one logical identity, select any node to inspect its evidence, and
 pivot into Activity, the exact-scope Board, or Recall without rewriting recorded history.
 
 | Coordination Board | Structured Recall |
@@ -190,8 +199,10 @@ recallContext({
 
 - **Activity** — the filterable global event stream, session browser, and optional Ask surface.
 - **Projects** — a searchable logical-project workspace that groups verified worktree scopes without
-  rewriting recorded paths. Inspect constituent scopes, recent sessions, Hybrid Storyline evidence,
-  and saved synthesis, or explicitly merge and undo ambiguous catalog scopes.
+  rewriting recorded paths. The center pane defaults to the trajectory graph (epochs, ranked
+  futures, ghost projections, rejected stubs); the Hybrid Storyline stays on the Timeline tab.
+  Inspect constituent scopes, recent sessions, and saved synthesis, or explicitly merge and undo
+  ambiguous catalog scopes.
 - **Board** — searchable catalog-project and lane filters over explicitly queued Open, In Progress,
   Blocked, and Done tasks, with frozen spec and linked-Handoff detail. Selecting a project does not
   infer tasks from Activity, sessions, or external systems; use its canonical scope or path as
