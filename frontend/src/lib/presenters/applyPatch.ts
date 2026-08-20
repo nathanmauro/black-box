@@ -2,6 +2,7 @@ import type { AgentEvent } from "../api";
 import { truncatePath } from "../format";
 import { patchFileStubs } from "../patch";
 import { parseJsonObject } from "../payload";
+import { outputLooksFailed } from "./failure";
 import { genericPresenter } from "./generic";
 import type { InlineSpan, Presentation } from "./types";
 
@@ -22,7 +23,7 @@ export function applyPatchPresenter(event: AgentEvent): Presentation {
     : [{ kind: "text", text: "Patch" }];
 
   return {
-    kindPill: { label: "Patch", tone: "write" },
+    kindPill: { label: "Patch", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "write" },
     headline,
     blocks: [{ kind: "patch", command: commandValue, files }],
     sizes: { inputChars: event.toolInputJson?.length ?? 0, outputChars: event.toolOutputJson?.length ?? 0 },

@@ -76,7 +76,9 @@ describe("StreamPage", () => {
 
     const row = await screen.findByRole("button", { name: /Make stream default/ });
     expect(row).toHaveAttribute("aria-expanded", "false");
-    expect(within(row).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
+    // Collapsed rows carry no per-row cwd (spec §4.3 P2) — shared context returns on run headers.
+    expect(within(row).queryByText("~/Developer/proj/sba-agentic")).not.toBeInTheDocument();
+    expect(within(row).getByText("Decision")).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true });
 
     fireEvent.click(row);

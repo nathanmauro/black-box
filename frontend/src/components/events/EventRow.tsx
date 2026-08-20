@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
-import { headlineText, presentationOf } from "../../lib/presenters/registry";
+import { presentationOf } from "../../lib/presenters/registry";
 import KindBadge from "../KindBadge";
 import SourceDot from "../SourceDot";
 import DecisionCard from "./DecisionCard";
@@ -86,16 +86,37 @@ export default function EventRow(props: EventRowProps) {
   );
 }
 
-export function eventHeadline(event: AgentEvent): string {
+export type HeadlineSpan = { kind: "label" | "arg"; text: string };
+
+/**
+ * The collapsed-row headline split into label vs machine-literal spans
+ * (spec §4.3: bold = intent, mono = machine artifact). Extraction logic is
+ * unchanged from eventHeadline — presenter spans first, then the primary-arg
+ * fallback; `code`/`fileLink`/`url` presenter spans are the machine literals.
+ */
+export function eventHeadlineSpans(event: AgentEvent): HeadlineSpan[] {
   if (event.toolName) {
-    const text = headlineText(presentationOf(event));
-    if (text) return text;
+    const spans = presentationOf(event)
+      .headline.map((span): HeadlineSpan =>
+        span.kind === "text"
+          ? { kind: "label", text: span.text }
+          : { kind: "arg", text: span.kind === "code" ? span.text : span.label },
+      )
+      .filter((span) => span.text);
+    if (spans.some((span) => span.text.trim())) return spans;
   }
   const input = parseJsonObject(event.toolInputJson);
   const key = input ? primaryArgKey(input) : null;
-  if (key && input) return commandHeadline(String(input[key]), event.toolName);
-  if (event.text && !looksLikeJson(event.text)) return event.text || "";
-  return event.toolName || event.role || event.eventType || "Event";
+  if (key && input) return [{ kind: "arg", text: commandHeadline(String(input[key]), event.toolName) }];
+  if (event.text && !looksLikeJson(event.text)) return [{ kind: "label", text: event.text || "" }];
+  return [{ kind: "label", text: event.toolName || event.role || event.eventType || "Event" }];
+}
+
+export function eventHeadline(event: AgentEvent): string {
+  return eventHeadlineSpans(event)
+    .map((span) => span.text)
+    .join("")
+    .trim();
 }
 
 export function ReaderText(props: { text: string; expanded?: boolean }) {

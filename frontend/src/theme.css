@@ -1977,9 +1977,13 @@ a {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
+/* Row anatomy (spec §4.3). One shared grid for every collapsed row: a fixed
+   92px first column (sized to the longest KindBadge) so headlines x-align
+   across landmark and chatter rows. Ink rule: bold = intent, mono = machine
+   artifact, dim = context, faint = rhythm. */
 .stream-row {
   display: grid;
-  grid-template-columns: auto auto minmax(130px, 0.72fr) minmax(0, 1.55fr) auto;
+  grid-template-columns: 92px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -2001,8 +2005,35 @@ a {
   background: var(--bg-hover);
 }
 
-.stream-row-project,
-.stream-row strong,
+/* Chatter kind-mark: tool semantics as ink, never a pill; failures are the
+   only chatter that earns color (P1 / D3). */
+.kind-mark {
+  justify-self: end;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.kind-mark--error {
+  color: var(--red);
+}
+
+.stream-row > .kind-badge {
+  justify-self: end;
+}
+
+/* Landmark rows: the colored badge plus a left rail in the kind's color — the
+   left margin reads as a strafe-scannable landmark column. */
+.stream-row--landmark {
+  box-shadow: inset 2px 0 0 var(--kind-color, var(--text-dim));
+}
+
+.stream-row--landmark-decision { --kind-color: var(--accent); }
+.stream-row--landmark-handoff { --kind-color: var(--blue); }
+.stream-row--landmark-observation { --kind-color: var(--yellow); }
+.stream-row--landmark-userpromptsubmit { --kind-color: var(--green); }
+
+.stream-row-headline,
 .stream-row time {
   min-width: 0;
   overflow: hidden;
@@ -2010,16 +2041,35 @@ a {
   white-space: nowrap;
 }
 
-.stream-row-project,
-.stream-row time {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 11px;
+/* Chatter headline: plain ink; the machine-literal argument sits in a mono
+   .headline-arg span (mono = machine artifact). */
+.stream-row-headline {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
 }
 
-.stream-row strong {
+.headline-arg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.stream-row--landmark .stream-row-headline {
   color: var(--text-bright);
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+/* Quiet per-row time (§4.2): faint rhythm, brightening only under the cursor. */
+.stream-row time {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  transition: color 0.15s ease;
+}
+
+.stream-row:hover time {
+  color: var(--text-dim);
 }
 
 .stream-row-expanded {
@@ -4925,10 +4975,15 @@ a {
   .approval-box-actions { grid-template-columns: 1fr; }
 }
 
-/* ── Presenter tone system (spec §4.1) — sole source of tone colour ───────── */
+/* ── Presenter tone system (spec §4.1) — sole source of tone colour ─────────
+   Vocabulary: run · read · edit · write · net · plan · memory · error ·
+   neutral (2026-08-20 §4.3 adds `edit` as a first-class tone; the collapsed
+   rows render this vocabulary as ink-only kind-marks, where only `error`
+   keeps its color). */
 :root {
   --tone-run: var(--blue);
   --tone-read: var(--text-faint);
+  --tone-edit: var(--orange);
   --tone-write: var(--orange);
   --tone-net: var(--green);
   --tone-plan: var(--accent);
@@ -4950,6 +5005,7 @@ a {
 }
 .tone-pill--run { --pill-color: var(--tone-run); }
 .tone-pill--read { --pill-color: var(--tone-read); }
+.tone-pill--edit { --pill-color: var(--tone-edit); }
 .tone-pill--write { --pill-color: var(--tone-write); }
 .tone-pill--net { --pill-color: var(--tone-net); }
 .tone-pill--plan { --pill-color: var(--tone-plan); }

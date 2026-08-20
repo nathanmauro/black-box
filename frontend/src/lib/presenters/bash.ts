@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../api";
 import { parseJsonObject, parseToolResult } from "../payload";
+import { outputLooksFailed } from "./failure";
 import { genericPresenter } from "./generic";
 import type { Presentation } from "./types";
 
@@ -13,7 +14,7 @@ export function bashPresenter(event: AgentEvent): Presentation {
   const lines = command.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const first = lines.find((line) => !line.startsWith("#")) ?? lines[0] ?? command.trim();
   const suffix = lines.length > 1 ? ` +${lines.length - 1} lines` : "";
-  const failed = result.exitCode !== null && result.exitCode !== 0;
+  const failed = (result.exitCode !== null && result.exitCode !== 0) || outputLooksFailed(event.toolOutputJson);
 
   return {
     kindPill: { label: "Bash", tone: failed ? "error" : "run" },

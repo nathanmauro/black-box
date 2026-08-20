@@ -1,7 +1,7 @@
 import type { PatchFileStub } from "../patch";
 import type { AgentEvent } from "../api";
 
-export type Tone = "neutral" | "run" | "read" | "write" | "net" | "plan" | "memory" | "error";
+export type Tone = "neutral" | "run" | "read" | "edit" | "write" | "net" | "plan" | "memory" | "error";
 
 export type FileRef = { path: string; line?: number | null };
 
