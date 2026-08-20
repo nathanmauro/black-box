@@ -31,6 +31,16 @@ export function timeAgo(iso: string | null | undefined, now = Date.now()): strin
   return `${Math.floor(months / 12)}y`;
 }
 
+// Compact duration for run/fold timespans ("42s", "12m", "2h 5m").
+export function durationLabel(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 export function truncatePath(cwd: string | null | undefined): string {
   if (!cwd) return "unknown project";
   return cwd.replace(/^\/Users\/[^/]+(?=\/|$)/, "~");

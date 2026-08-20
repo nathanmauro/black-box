@@ -513,7 +513,7 @@ describe("StreamPage", () => {
     }
   });
 
-  it("hides load more when the local row cap is reached", async () => {
+  it("replaces load more with the honest endcap when the local row cap is reached", async () => {
     const cappedRows = Array.from({ length: 500 }, (_, index) =>
       eventItem(`event-cap-${index}`, `Capped row ${index}`, `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00Z`),
     );
@@ -523,6 +523,13 @@ describe("StreamPage", () => {
     await screen.findByRole("button", { name: /Capped row 0/ });
 
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    expect(screen.getByText("500 of many shown — refine the filter to go deeper.")).toBeInTheDocument();
+  });
+
+  it("shows no endcap below the cap", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(document.querySelector(".stream-endcap")).not.toBeInTheDocument();
   });
 
   it("expanded density expands every row and per-row toggling still overrides it", async () => {
@@ -679,6 +686,98 @@ describe("StreamPage", () => {
     expect(within(card).getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
     expect(within(card).queryByText("Activity stream work")).not.toBeInTheDocument();
   });
+
+  it("folds a same-tool chatter streak into one honest row that keeps a swallowed failure loud", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([
+        chatterItem("event-1", "npm test", "2026-07-01T12:03:00Z"),
+        chatterItem("event-2", "npm run build", "2026-07-01T12:02:00Z"),
+        chatterItem("event-3", "false", "2026-07-01T12:01:00Z", { toolOutputJson: '{"exit_code":1,"output":"boom"}' }),
+        chatterItem("event-4", "pwd", "2026-07-01T12:00:00Z"),
+      ]),
+    );
+    render(() => <StreamPage />);
+    await waitFor(() => expect(document.querySelector(".stream-fold")).toBeInTheDocument());
+
+    const fold = document.querySelector(".stream-fold") as HTMLElement;
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(fold.textContent).toContain("Bash ×4");
+    expect(fold.textContent).toContain("npm test, npm run build, +2 more");
+    expect(fold.textContent).toContain("over 3m");
+    // The fold swallowed a failure: the mark stays red (P4/D3).
+    expect(fold.querySelector(".kind-mark--error")).toBeInTheDocument();
+    // The run header still counts raw events.
+    expect(screen.getByText("4 events")).toBeInTheDocument();
+  });
+
+  it("unfolds in place and moves focus to the first revealed row", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([
+        chatterItem("event-1", "npm test", "2026-07-01T12:03:00Z"),
+        chatterItem("event-2", "npm run build", "2026-07-01T12:02:00Z"),
+        chatterItem("event-3", "ls", "2026-07-01T12:01:00Z"),
+        chatterItem("event-4", "pwd", "2026-07-01T12:00:00Z"),
+      ]),
+    );
+    render(() => <StreamPage />);
+    await waitFor(() => expect(document.querySelector(".stream-fold")).toBeInTheDocument());
+
+    fireEvent.click(document.querySelector(".stream-fold") as HTMLElement);
+
+    expect(document.querySelector(".stream-fold")).not.toBeInTheDocument();
+    const revealed = document.querySelector('button[data-event-id="event-1"]') as HTMLButtonElement;
+    expect(revealed).toBeInTheDocument();
+    expect(document.activeElement).toBe(revealed);
+  });
+
+  it("keeps an unfolded streak open when an SSE prepend extends its newest edge", async () => {
+    const base = [
+      chatterItem("event-1", "npm test", "2026-07-01T12:03:00Z"),
+      chatterItem("event-2", "npm run build", "2026-07-01T12:02:00Z"),
+      chatterItem("event-3", "ls", "2026-07-01T12:01:00Z"),
+      chatterItem("event-4", "pwd", "2026-07-01T12:00:00Z"),
+    ];
+    const fresh = chatterItem("event-0", "git status", "2026-07-01T12:04:00Z");
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValueOnce(feed(base)).mockResolvedValueOnce(feed([fresh, ...base]));
+
+    try {
+      render(() => <StreamPage />);
+      await waitFor(() => expect(document.querySelector(".stream-fold")).toBeInTheDocument());
+      fireEvent.click(document.querySelector(".stream-fold") as HTMLElement);
+
+      vi.useFakeTimers();
+      mocks.setLiveEvents([{ id: "sse-a" }]);
+      await vi.advanceTimersByTimeAsync(600);
+
+      // The oldest-member key is unchanged, so the extended streak stays unfolded (spec §4.4).
+      expect(document.querySelector('button[data-event-id="event-0"]')).toBeInTheDocument();
+      expect(document.querySelector(".stream-fold")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes folds entirely in global expanded mode — Expanded means expanded", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([
+        chatterItem("event-1", "npm test", "2026-07-01T12:03:00Z"),
+        chatterItem("event-2", "npm run build", "2026-07-01T12:02:00Z"),
+        chatterItem("event-3", "ls", "2026-07-01T12:01:00Z"),
+        chatterItem("event-4", "pwd", "2026-07-01T12:00:00Z"),
+      ]),
+    );
+    render(() => <StreamPage />);
+    await waitFor(() => expect(document.querySelector(".stream-fold")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
+
+    expect(document.querySelector(".stream-fold")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".stream-row-wrap--expanded")).toHaveLength(4);
+  });
 });
 
 function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFeedResponse {
@@ -723,4 +822,19 @@ function eventItem(id: string, text: string, observedAt?: string, overrides: Par
 // by local date).
 function localIso(day: number, hour: number): string {
   return new Date(2026, 6, day, hour, 0, 0).toISOString();
+}
+
+// Same-session tool chatter for fold cases.
+function chatterItem(id: string, command: string, observedAt: string, extra: Partial<EventFeedItem> = {}): EventFeedItem {
+  return eventItem(id, "", observedAt, {
+    sessionId: "session-1",
+    source: "codex",
+    clientSessionId: "client-1",
+    cwd: "/Users/nathan/Developer/proj/sba-agentic",
+    sessionTitle: "Activity stream work",
+    eventType: "PostToolUse",
+    toolName: "Bash",
+    toolInputJson: JSON.stringify({ command }),
+    ...extra,
+  });
 }

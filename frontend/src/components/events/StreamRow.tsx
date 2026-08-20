@@ -3,6 +3,7 @@ import { For, Show } from "solid-js";
 import type { EventFeedItem } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import { kindMarkOf } from "../../lib/presenters/marks";
+import { LANDMARK_KINDS } from "../../lib/streamGroups";
 import KindBadge from "../KindBadge";
 import { EventRenderer, eventHeadline, eventHeadlineSpans } from "./EventRow";
 
@@ -16,8 +17,6 @@ type StreamRowProps = {
   // only per-row cwd; shared context lives on the run header (P2).
   cwdException?: boolean;
 };
-
-const LANDMARK_KINDS = new Set(["Decision", "Handoff", "Observation", "UserPromptSubmit"]);
 
 // The shared 92px first column fits the longest landmark badge ("Observation");
 // UserPromptSubmit shortens to "Prompt" so the prompt badge fits the same column.
@@ -40,6 +39,7 @@ export default function StreamRow(props: StreamRowProps) {
         }}
         aria-expanded={props.expanded}
         aria-label={headline()}
+        data-event-id={item().id}
         onClick={props.onToggle}
       >
         <Show

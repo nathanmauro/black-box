@@ -2072,6 +2072,43 @@ a {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
+/* Collapsed rows skip offscreen rendering work (spec §4.5); expanded cards carry their own
+   containment below. The estimate matches the collapsed row height so scrollbar math stays
+   steady. Containment is per row-wrap, so sticky run headers (outside the wrap) and the
+   feed's scrollTop-based pill logic are unaffected. */
+.stream-row-wrap:not(.stream-row-wrap--expanded) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 34px;
+}
+
+/* Chatter fold (spec §4.4): one honest row for a same-tool streak, sharing the row grid so
+   the mark column and headline x-align with real rows. */
+.stream-fold-label {
+  color: var(--text-dim);
+}
+
+.stream-fold-label .headline-arg {
+  color: var(--text-dim);
+}
+
+.stream-fold-span {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Cap honesty (spec §4.5): the endcap replaces Load more at MAX_ROWS. */
+.stream-endcap {
+  margin: 2px 0 0;
+  align-self: center;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* Row anatomy (spec §4.3). One shared grid for every collapsed row: a fixed
    92px first column (sized to the longest KindBadge) so headlines x-align
    across landmark and chatter rows. Ink rule: bold = intent, mono = machine

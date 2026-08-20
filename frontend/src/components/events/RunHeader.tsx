@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router";
 import { type JSX } from "solid-js";
-import { timeAgo, truncatePath } from "../../lib/format";
+import { durationLabel, timeAgo, truncatePath } from "../../lib/format";
 import type { RunSegment } from "../../lib/streamGroups";
 import SourceDot from "../SourceDot";
 
@@ -52,13 +52,4 @@ function runSpan(run: RunSegment): string {
   const spanMs = Date.parse(run.newestAt) - Date.parse(run.oldestAt);
   if (!Number.isFinite(spanMs) || spanMs < 1000) return recency;
   return `${recency} · over ${durationLabel(spanMs)}`;
-}
-
-function durationLabel(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
 }

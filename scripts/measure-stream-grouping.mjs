@@ -78,8 +78,9 @@ for (let i = 1; i < runs.length; i++) {
   if (runs[i].dateKey !== runs[i - 1].dateKey) daybreaks += 1;
 }
 
-// --- fold projection (spec §4.4, ships in slice 5; measured here because the §15 budget is
-// defined for stitching + folds together) --------------------------------------------------
+// --- folds (mirror of streamGroups.buildRows: ≥4 consecutive non-landmark rows with the same
+// non-null toolName fold to one row; collapsed mode, no overrides/unfolds — the §15 budget's
+// definition) -------------------------------------------------------------------------------
 function isChatter(row) {
   return !LANDMARK_KINDS.has(String(row.eventType ?? "").toLowerCase());
 }
@@ -126,12 +127,12 @@ console.log(`daybreak rows: ${daybreaks}`);
 console.log(`header rows: ${headerRows}`);
 console.log(`event rows: ${eventRows}`);
 console.log("");
-console.log(`total mounted rows, slice 4 (no folds): ${slice4Total}`);
+console.log(`total mounted rows without folds (expanded-mode shape): ${slice4Total}`);
 console.log(
-  `total mounted rows, with §4.4 folds (slice 5 projection): ${slice5Total}` +
+  `total mounted rows, collapsed mode with §4.4 folds: ${slice5Total}` +
     ` (${foldRows} folds absorbing ${eventRows - foldedEventRows} chatter rows)`,
 );
 console.log("");
 const verdict = (total) => (total < 500 ? (total <= 400 ? "PASS (≤400 target)" : "PASS (<500)") : "FAIL (≥500)");
-console.log(`verdict slice 4 alone: ${verdict(slice4Total)}`);
-console.log(`verdict with folds:    ${verdict(slice5Total)}`);
+console.log(`verdict without folds:      ${verdict(slice4Total)}`);
+console.log(`verdict collapsed (gate):   ${verdict(slice5Total)}`);

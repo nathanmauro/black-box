@@ -2,6 +2,7 @@ import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
+import StreamFold from "../components/events/StreamFold";
 import StreamRow from "../components/events/StreamRow";
 import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { primaryProjectScope, projectShortName } from "../lib/projects";
@@ -20,7 +21,7 @@ import {
 } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
-import { segmentStream } from "../lib/streamGroups";
+import { reconcileSegments, segmentStream, type FoldRow, type Segment } from "../lib/streamGroups";
 
 const FEED_LIMIT = 100;
 const MAX_ROWS = 500;
@@ -66,6 +67,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   // Exceptions to the density mode, not a list of expanded rows: absence means "follow the mode",
   // so SSE rows arriving in expanded mode render expanded with zero bookkeeping (spec §4.5).
   const [overrides, setOverrides] = createSignal<Set<string>>(new Set());
+  // Fold keys the user opened in place (spec §4.4) — cleared on reload, same lifecycle as the
+  // density overrides. Keys anchor on the fold's oldest member id, so SSE prepends extending a
+  // streak leave an open fold open; pagination changing the key refolds it (accepted residual).
+  const [unfolds, setUnfolds] = createSignal<Set<string>>(new Set());
 
   const isExpanded = (id: string) => (density() === "expanded") !== overrides().has(id);
 
@@ -76,6 +81,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
       else next.add(id);
       return next;
     });
+    // Toggling a chatter row can restructure fold streaks around it, rebuilding its run's DOM
+    // and dropping focus; put focus back on the row the user just activated.
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) {
+      feedRef?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(id)}"]`)?.focus();
+    }
   }
 
   function switchDensity(next: StreamDensity) {
@@ -83,6 +94,21 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setDensity(next);
     saveStreamDensity(next);
     setOverrides(new Set<string>());
+    setUnfolds(new Set<string>());
+  }
+
+  // Unfold in place and move focus to the first revealed row (spec §4.4/§4.6). Solid renders
+  // synchronously on the signal write, so the revealed row exists by the querySelector.
+  function unfold(fold: FoldRow) {
+    const firstId = fold.items[0]?.id;
+    setUnfolds((current) => {
+      const next = new Set(current);
+      next.add(fold.key);
+      return next;
+    });
+    if (firstId) {
+      feedRef?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(firstId)}"]`)?.focus();
+    }
   }
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
 
@@ -127,7 +153,22 @@ export default function StreamPage(props: StreamPageProps = {}) {
       state.freeTerms.length > 0
     );
   });
-  const segments = createMemo(() => segmentStream(items(), { hasVisibleFilter: hasVisibleFilter() }));
+  // Folds apply only in collapsed mode ("Expanded" means expanded, spec §4.4); a per-row
+  // override in collapsed mode means the row is expanded, which breaks fold streaks around it.
+  // Reconciliation keeps object identity for untouched runs so a recompute (toggle, unfold,
+  // density switch) only rebuilds the DOM of runs that structurally changed.
+  let lastSegments: Segment[] = [];
+  const segments = createMemo(() => {
+    const next = segmentStream(items(), {
+      hasVisibleFilter: hasVisibleFilter(),
+      folds:
+        density() === "collapsed"
+          ? { isRowExpanded: (id) => overrides().has(id), unfolded: unfolds() }
+          : undefined,
+    });
+    lastSegments = reconcileSegments(lastSegments, next);
+    return lastSegments;
+  });
 
   createEffect(() => setDraft(visibleSubmitted()));
 
@@ -149,6 +190,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
       setNextBefore(null);
       setLoadingMore(false);
       setOverrides(new Set<string>());
+      setUnfolds(new Set<string>());
       return;
     }
     const q = apiQuery();
@@ -161,6 +203,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setNextBefore(null);
     setError(null);
     setOverrides(new Set<string>());
+    setUnfolds(new Set<string>());
     // meaningful=true always rides the wire; opting out is expressed as is:all in q, which the
     // backend gives precedence (D16) — deep links and reloads reproduce the state from q alone.
     getEventFeed({ limit: FEED_LIMIT, q, meaningful: true })
@@ -171,6 +214,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
         setNewCount(0);
         setNextBefore(response.nextBefore ?? null);
         setOverrides(new Set<string>());
+        setUnfolds(new Set<string>());
       })
       .catch((cause) => {
         if (token !== loadToken) return;
@@ -566,7 +610,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
                                 onToggle={() => toggleRow(row.item.id)}
                                 cwdException={cwdDiffers(row.item.cwd, run().cwd)}
                               />
-                            ) : null /* fold rows land in slice 5 */
+                            ) : (
+                              <StreamFold fold={row} onUnfold={() => unfold(row)} />
+                            )
                           }
                         </For>
                       </div>
@@ -586,6 +632,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
         <button type="button" class="stream-load-more" disabled={loadingMore()} onClick={loadMore}>
           {loadingMore() ? "Loading..." : "Load more"}
         </button>
+      </Show>
+      {/* Cap honesty (spec §4.5): at MAX_ROWS the silently-vanishing Load more becomes an
+          honest terminal row instead. */}
+      <Show when={items().length >= MAX_ROWS}>
+        <p class="stream-endcap">{MAX_ROWS} of many shown — refine the filter to go deeper.</p>
       </Show>
     </section>
   );
