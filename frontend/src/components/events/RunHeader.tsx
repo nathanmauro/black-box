@@ -14,12 +14,15 @@ type RunHeaderProps = {
 // The run header is the only place SourceDot and cwd render (P2); rows beneath drop both.
 // Runs of ≥3 raw events get the sticky variant so the current session stays identified while
 // scrolling; short runs get the compact inline variant with the same context-zone actions (§7).
+// An <article> labeled by session (§4.6): the feed pattern owns articles, and the header is the
+// run's own entry in that list — never a <section>/region interposed between feed and rows.
 export default function RunHeader(props: RunHeaderProps) {
   const run = () => props.run;
   const title = () => run().sessionTitle || run().clientSessionId;
 
   return (
-    <header
+    <article
+      aria-label={`Session ${title()}`}
       classList={{
         "stream-run-head": true,
         "stream-run-head--sticky": props.sticky,
@@ -41,7 +44,7 @@ export default function RunHeader(props: RunHeaderProps) {
       <A href={props.sessionHref} class="stream-session-link">
         View session <span aria-hidden="true">→</span>
       </A>
-    </header>
+    </article>
   );
 }
 

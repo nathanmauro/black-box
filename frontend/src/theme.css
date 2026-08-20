@@ -621,11 +621,13 @@ a {
   gap: 14px;
 }
 
+/* Compact single-row header: title · project picker · mode tabs. The old two-column block
+   (eyebrow, 26px title, blurb, 54px hint tabs) cost ~200px before the first event row (§1). */
 .activity-header {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.82fr) minmax(360px, 1.18fr);
-  align-items: end;
-  gap: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
 }
 
 .activity-title {
@@ -633,33 +635,25 @@ a {
 }
 
 .activity-title h1 {
-  margin: 3px 0 4px;
-  color: var(--text-bright);
-  font-size: 26px;
-  line-height: 1.1;
-}
-
-.activity-title p:not(.eyebrow) {
   margin: 0;
-  max-width: 620px;
-  color: var(--text-dim);
+  color: var(--text-bright);
+  font-size: 17px;
+  line-height: 1.2;
 }
 
 .activity-mode-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  gap: 6px;
   min-width: 0;
+  margin-left: auto;
 }
 
 .activity-mode-tab {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
+  align-items: center;
   min-width: 0;
-  min-height: 54px;
-  padding: 9px 11px;
+  min-height: 30px;
+  padding: 4px 11px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-surface) 86%, transparent);
@@ -686,14 +680,10 @@ a {
   font-weight: 600;
 }
 
+/* Tab hints are chrome the compact header no longer spends a line on; the aria-labels keep
+   the tabs' accessible names unchanged. */
 .activity-mode-tab small {
-  width: 100%;
-  overflow: hidden;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: none;
 }
 
 .activity-workspace {
@@ -1881,8 +1871,8 @@ a {
 }
 .search-input { flex: 1; height: 46px; padding: 0 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 15px; font-family: var(--font-mono); color: var(--text-bright); }
 .suggest-popover { position: absolute; top: 50px; left: 0; right: 90px; z-index: 30; margin: 0; padding: 4px; list-style: none; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 14px 30px rgba(0,0,0,0.45); }
-.suggest-popover button { width: 100%; text-align: left; padding: 7px 10px; border-radius: 4px; background: transparent; color: var(--text); font-family: var(--font-mono); font-size: 13px; }
-.suggest-popover button:hover { background: var(--bg-hover); }
+.suggest-option { padding: 7px 10px; border-radius: 4px; color: var(--text); font-family: var(--font-mono); font-size: 13px; cursor: pointer; }
+.suggest-option:hover, .suggest-option--active { background: var(--bg-hover); }
 .facet-rail { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .facet-group { display: inline-flex; align-items: center; gap: 6px; }
 .facet-label { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; }
@@ -1890,7 +1880,9 @@ a {
 .facet-chip { height: 24px; padding: 0 9px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 999px; color: var(--text-dim); font-size: 11px; }
 .facet-chip:hover { color: var(--text-bright); background: var(--bg-hover); }
 .facet-chip--active { color: var(--text-bright); background: color-mix(in srgb, var(--accent) 18%, var(--bg-surface)); border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
-.facet-chip--exclude { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, var(--bg-surface)); border-color: color-mix(in srgb, var(--yellow) 42%, var(--border)); }
+/* Struck NOT-chips (spec §4.6): negation reads as strike-through, not just color. */
+.facet-chip--exclude { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, var(--bg-surface)); border-color: color-mix(in srgb, var(--yellow) 42%, var(--border)); text-decoration: line-through; }
+.facet-chip-clock { font-size: 10px; }
 .facet-hint { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
 .facet-chip--pinned { border-style: dashed; }
 .facet-chip-pin { font-size: 10px; }
@@ -1953,6 +1945,72 @@ a {
   min-width: 0;
 }
 
+/* Two quiet standing lines (spec §4.6): the input line and the result header. The chip rail
+   below mounts only when a filter earns it. */
+.stream-input-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stream-input-line .search-input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.stream-options {
+  position: relative;
+  flex: none;
+}
+
+.stream-options-trigger {
+  height: 34px;
+  padding: 0 12px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.stream-options-trigger:hover,
+.stream-options-trigger[aria-expanded="true"] {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+/* z-index 3-tier note at .stream-run still holds: this panel shares the popover tier (30). */
+.stream-options-panel {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+/* Screen-reader-only content (persistent aria-live region, spec §4.6). */
+.visually-hidden {
+  position: absolute;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  white-space: nowrap;
+}
+
 .stream-summary-row {
   display: flex;
   align-items: center;
@@ -1966,7 +2024,9 @@ a {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  max-height: calc(100vh - 260px);
+  /* Was 260px against the old two-block chrome; the compact header + two-line chrome free
+     roughly 110px for rows. Verified visually on the live pass. */
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
   padding-right: 4px;
   scrollbar-gutter: stable;

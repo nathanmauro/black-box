@@ -108,11 +108,11 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
 
   return (
     <section class="activity-page">
+      {/* One compact row (spec §1 complaint: the old eyebrow + blurb block cost ~200px of
+          vertical space before the first event row). */}
       <header class="activity-header">
         <div class="activity-title">
-          <p class="eyebrow">workspace</p>
           <h1>Activity</h1>
-          <p>Filter recorded activity, browse session transcripts, and ask memory from one surface.</p>
         </div>
 
         <ProjectPicker

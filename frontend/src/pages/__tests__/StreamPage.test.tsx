@@ -45,6 +45,10 @@ vi.mock("../../lib/api", async (importOriginal) => {
     searchValues: vi.fn(async (_field: string, prefix: string) =>
       ["Decision", "Handoff", "Observation"].filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase())),
     ),
+    getSessions: vi.fn(async () => [
+      { id: "session-1", source: "codex", clientSessionId: "client-abc", title: "Stream work", startedAt: "", lastSeenAt: "", eventCount: 3 },
+      { id: "session-2", source: "claude", clientSessionId: "client-xyz", title: "Browse fix", startedAt: "", lastSeenAt: "", eventCount: 2 },
+    ]),
   };
 });
 
@@ -154,10 +158,9 @@ describe("StreamPage", () => {
     render(() => <StreamPage project={selectedProject} />);
 
     await waitFor(() => expect(params.q).toBe("kind:Decision"));
-    const projectGroup = Array.from(document.querySelectorAll(".facet-group")).find((element) =>
-      within(element as HTMLElement).queryByText("Project"),
-    ) as HTMLElement;
-    expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
+    // The stripped project facet leaves no chip anywhere — and no standing Project group exists.
+    expect(screen.queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Project")).not.toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
       q: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
@@ -165,12 +168,21 @@ describe("StreamPage", () => {
     });
   });
 
-  it("uses facet chips to narrow the URL query", async () => {
+  it("narrows the URL query by picking a quick value from the popover", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
-    fireEvent.click(screen.getByRole("button", { name: "codex" }));
+    // No standing QUICK_VALUES rail (spec §4.6): no codex chip, no chip rail at all.
+    expect(screen.queryByRole("button", { name: "codex" })).not.toBeInTheDocument();
+    expect(document.querySelector(".facet-rail")).not.toBeInTheDocument();
 
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "source:" } });
+    const option = await screen.findByRole("option", { name: "codex" });
+    fireEvent.click(option);
+    expect(input).toHaveValue("source:codex ");
+
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
     await waitFor(() => expect(params.q).toBe("source:codex"));
     await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "source:codex", meaningful: true }));
   });
@@ -252,6 +264,7 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
+    openOptions();
     const checkbox = screen.getByLabelText("meaningful events only");
     expect(checkbox).toBeChecked();
     fireEvent.click(checkbox);
@@ -265,6 +278,7 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
+    openOptions();
     const checkbox = screen.getByLabelText("meaningful events only");
     expect(checkbox).not.toBeChecked();
 
@@ -346,6 +360,7 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
+    openOptions();
     fireEvent.click(screen.getByLabelText("meaningful events only"));
     await waitFor(() => expect(params.q).toBe("session:abc until:2026-08-18 is:all free text"));
 
@@ -542,6 +557,7 @@ describe("StreamPage", () => {
     const rowTwo = screen.getByRole("button", { name: /Second row/ });
     expect(rowOne).toHaveAttribute("aria-expanded", "false");
 
+    openOptions();
     fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
     expect(rowOne).toHaveAttribute("aria-expanded", "true");
     expect(rowTwo).toHaveAttribute("aria-expanded", "true");
@@ -558,6 +574,7 @@ describe("StreamPage", () => {
   it("persists density to localStorage and restores it on mount", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
+    openOptions();
     fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
     expect(localStorage.getItem("bb.streamDensity")).toBe("expanded");
   });
@@ -589,10 +606,14 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
-    const section = document.querySelector(".stream-run") as HTMLElement;
-    expect(section.tagName).toBe("SECTION");
-    expect(section).toHaveAttribute("aria-label", "Session Activity stream work");
-    const head = section.querySelector(".stream-run-head") as HTMLElement;
+    // The run wrapper is a generic div (§4.6: no region landmark between feed and articles);
+    // the header itself is an article labeled by session.
+    const wrapper = document.querySelector(".stream-run") as HTMLElement;
+    expect(wrapper.tagName).toBe("DIV");
+    expect(wrapper).not.toHaveAttribute("aria-label");
+    const head = wrapper.querySelector(".stream-run-head") as HTMLElement;
+    expect(head.tagName).toBe("ARTICLE");
+    expect(head).toHaveAttribute("aria-label", "Session Activity stream work");
     expect(head.querySelector(".source-dot")).toBeInTheDocument();
     expect(within(head).getByText("Activity stream work")).toBeInTheDocument();
     expect(within(head).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
@@ -773,10 +794,137 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await waitFor(() => expect(document.querySelector(".stream-fold")).toBeInTheDocument());
 
+    openOptions();
     fireEvent.click(screen.getByRole("button", { name: "Expanded" }));
 
     expect(document.querySelector(".stream-fold")).not.toBeInTheDocument();
     expect(document.querySelectorAll(".stream-row-wrap--expanded")).toHaveLength(4);
+  });
+
+  it("suggests static quick values for an empty kind: prefix and supports keyboard selection", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "kind:" } });
+    // PostToolUse is in the static QUICK_VALUES but not the live searchValues mock — its
+    // presence proves the empty-prefix path serves the static list (spec §4.6).
+    await screen.findByRole("option", { name: "PostToolUse" });
+    expect(input).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input).toHaveAttribute("aria-activedescendant", "stream-suggest-option-0");
+    expect(screen.getByRole("option", { name: "Decision" })).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input).toHaveAttribute("aria-activedescendant", "stream-suggest-option-0");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("kind:Decision ");
+  });
+
+  it("suggests recent sessions for the session: token", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "session:xyz" } });
+    const option = await screen.findByRole("option", { name: "client-xyz" });
+    expect(screen.queryByRole("option", { name: "client-abc" })).not.toBeInTheDocument();
+
+    fireEvent.click(option);
+    expect(input).toHaveValue("session:client-xyz ");
+  });
+
+  it("closes the popover on Escape without accepting", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "kind:" } });
+    await screen.findByRole("option", { name: "Decision" });
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("option", { name: "Decision" })).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(input).toHaveValue("kind:");
+  });
+
+  it("holds density and meaningful controls behind a collapsed Options disclosure", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const trigger = screen.getByRole("button", { name: "Options" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("meaningful events only")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Stream density" })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByLabelText("meaningful events only")).toBeChecked();
+    expect(screen.getByRole("group", { name: "Stream density" })).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(screen.queryByLabelText("meaningful events only")).not.toBeInTheDocument();
+  });
+
+  it("announces pending merges through the persistent live region", async () => {
+    const old = eventItem("event-old", "Existing row");
+    const fresh = eventItem("event-a", "Pending row A", "2026-07-01T12:01:00Z");
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValueOnce(feed([old])).mockResolvedValueOnce(feed([fresh, old]));
+
+    try {
+      render(() => <StreamPage />);
+      await screen.findByRole("button", { name: /Existing row/ });
+      const region = document.querySelector('[aria-live="polite"].visually-hidden') as HTMLElement;
+      // The region exists before anything is pending — it must never mount conditionally.
+      expect(region).toBeInTheDocument();
+      expect(region.textContent).toBe("");
+
+      const feedEl = document.querySelector(".stream-feed") as HTMLElement;
+      feedEl.scrollTop = 120;
+      vi.useFakeTimers();
+      mocks.setLiveEvents([{ id: "sse-a" }]);
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(region.textContent).toBe("1 new event");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks the feed role and busies it during load-more", async () => {
+    const nextPage = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-1", "Make stream default")], "2026-07-01T12:00:00Z|event-1"))
+      .mockReturnValueOnce(nextPage.promise);
+
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const feedEl = screen.getByRole("feed");
+    expect(feedEl).toHaveAttribute("aria-busy", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(feedEl).toHaveAttribute("aria-busy", "true");
+
+    nextPage.resolve(feed([eventItem("event-2", "Second page row")]));
+    await screen.findByRole("button", { name: /Second page row/ });
+    expect(feedEl).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("keeps rows and run headers as articles inside the feed", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const feedEl = screen.getByRole("feed");
+    const articles = feedEl.querySelectorAll("article");
+    // One header article + one row article; nothing between them exposes a landmark role.
+    expect(articles).toHaveLength(2);
+    expect(articles[0].classList.contains("stream-run-head")).toBe(true);
+    expect(articles[1].classList.contains("stream-row-wrap")).toBe(true);
+    expect(feedEl.querySelector("section")).not.toBeInTheDocument();
   });
 });
 
@@ -787,6 +935,11 @@ function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFe
     items,
     nextBefore,
   };
+}
+
+
+function openOptions() {
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
 }
 
 function deferred<T>() {

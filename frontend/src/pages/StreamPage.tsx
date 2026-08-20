@@ -4,7 +4,7 @@ import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
 import StreamFold from "../components/events/StreamFold";
 import StreamRow from "../components/events/StreamRow";
-import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
+import { getEventFeed, getSessions, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { primaryProjectScope, projectShortName } from "../lib/projects";
 import {
   describeTimeSpec,
@@ -33,12 +33,16 @@ const VALUE_FIELD: Record<FacetField["key"], string> = {
   project: "cwd",
 };
 
+// No longer a standing rail (spec §4.6): these surface in the suggest-popover when a facet
+// token is typed with an empty prefix. tool:/project:/session: suggest live values instead.
 const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   source: ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"],
   kind: ["Decision", "Handoff", "Observation", "UserPromptSubmit", "PostToolUse"],
   tool: [],
   project: [],
 };
+
+type EditingToken = { key: FacetField["key"] | "session"; prefix: string };
 
 type StreamPageProps = {
   project?: ProjectSummary | null;
@@ -111,6 +115,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
     }
   }
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
+  // "Options" disclosure (spec §4.6): density + meaningful live behind one quiet control.
+  const [optionsOpen, setOptionsOpen] = createSignal(false);
 
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
@@ -153,6 +159,22 @@ export default function StreamPage(props: StreamPageProps = {}) {
       state.freeTerms.length > 0
     );
   });
+  // The chip rail renders only when something earns it (spec §4.6: chrome is earned like
+  // color) — active tokens, the pinned project, or the is:all widening.
+  const hasActiveChips = createMemo(() => {
+    const state = parsed();
+    return (
+      Boolean(props.project) ||
+      Object.values(state.facets).some((values) => values.length > 0) ||
+      Object.values(state.excludeFacets).some((values) => values.length > 0) ||
+      state.session !== null ||
+      state.since !== null ||
+      state.until !== null ||
+      state.isAll
+    );
+  });
+  const facetHasChips = (key: FacetField["key"]) =>
+    Boolean(parsed().facets[key]?.length || parsed().excludeFacets[key]?.length);
   // Folds apply only in collapsed mode ("Expanded" means expanded, spec §4.4); a per-row
   // override in collapsed mode means the row is expanded, which breaks fold streaks around it.
   // Reconciliation keeps object identity for untouched runs so a recompute (toggle, unfold,
@@ -225,23 +247,36 @@ export default function StreamPage(props: StreamPageProps = {}) {
       });
   });
 
-  const editing = createMemo(() => {
+  const editing = createMemo<EditingToken | null>(() => {
     const tokens = draft().split(/\s+/);
     const last = tokens[tokens.length - 1] ?? "";
     const sep = last.indexOf(":");
     if (sep <= 0) return null;
     const raw = last.slice(0, sep).toLowerCase();
+    if (raw === "session") return { key: "session", prefix: last.slice(sep + 1) };
     const field = FACET_FIELDS.find((f) => f.key === raw || (raw === "agent" && f.key === "source"));
     if (!field) return null;
     return { key: field.key, prefix: last.slice(sep + 1) };
   });
-  const [suggestions] = createSignalResource(editing, async (edit) =>
-    edit ? searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []) : [],
-  );
+  const [suggestions] = createSignalResource(editing, async (edit) => {
+    if (!edit) return [];
+    if (edit.key === "session") return sessionSuggestions(edit.prefix);
+    // Empty prefix on an enumerable facet surfaces the static quick values (spec §4.6);
+    // a typed prefix — and tool:/project: always — goes to the live value index.
+    if (!edit.prefix && QUICK_VALUES[edit.key].length) return QUICK_VALUES[edit.key];
+    return searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []);
+  });
   const showSuggestions = () => suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
+  // Keyboard highlight for the popover: -1 means "typing, nothing highlighted".
+  const [activeSuggestion, setActiveSuggestion] = createSignal(-1);
 
   createEffect(() => {
     if (editing() === null) setSuggestionsOpen(false);
+  });
+  createEffect(() => {
+    suggestions();
+    editing();
+    setActiveSuggestion(-1);
   });
 
   createEffect((previousLiveCount = 0) => {
@@ -266,10 +301,6 @@ export default function StreamPage(props: StreamPageProps = {}) {
     run(draft());
   }
 
-  function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
-    run(setFacet(visibleSubmitted(), key, value, mode));
-  }
-
   function removeFacetChip(key: FacetKey, value: string, mode: FacetMode = "include") {
     run(removeFacetValue(visibleSubmitted(), key, value, mode));
   }
@@ -282,6 +313,29 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   function dismissSuggestions() {
     setSuggestionsOpen(false);
+    setActiveSuggestion(-1);
+  }
+
+  function handleInputKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      dismissSuggestions();
+      return;
+    }
+    const list = suggestions() ?? [];
+    if (editing() === null || !list.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSuggestionsOpen(true);
+      setActiveSuggestion((index) => (index + 1) % list.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSuggestionsOpen(true);
+      setActiveSuggestion((index) => (index <= 0 ? list.length - 1 : index - 1));
+    } else if (event.key === "Enter" && showSuggestions() && activeSuggestion() >= 0) {
+      // Enter with a highlight accepts the suggestion; without one it submits the form.
+      event.preventDefault();
+      pickSuggestion(list[activeSuggestion()]);
+    }
   }
 
   function pickSuggestion(value: string) {
@@ -366,37 +420,91 @@ export default function StreamPage(props: StreamPageProps = {}) {
   return (
     <section class="page page--stream">
       <form class="stream-filter-bar" onSubmit={submit} autocomplete="off">
-        <div ref={inputWrapRef} class="search-input-wrap">
-          <input
-            ref={inputRef}
-            class="search-input"
-            value={draft()}
-            onInput={(event) => {
-              setDraft(event.currentTarget.value);
-              setSuggestionsOpen(true);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") dismissSuggestions();
-            }}
-            placeholder="source:codex kind:Decision recall bug"
-            aria-label="Stream query"
-          />
-          <button type="submit">Filter</button>
-          <Show when={showSuggestions()}>
-            <ul class="suggest-popover" role="listbox">
-              <For each={suggestions()}>
-                {(value) => (
-                  <li>
-                    <button type="button" onClick={() => pickSuggestion(value)}>
+        <div class="stream-input-line">
+          <div ref={inputWrapRef} class="search-input-wrap">
+            <input
+              ref={inputRef}
+              class="search-input"
+              value={draft()}
+              onInput={(event) => {
+                setDraft(event.currentTarget.value);
+                setSuggestionsOpen(true);
+              }}
+              onKeyDown={handleInputKeyDown}
+              placeholder="source:codex kind:Decision recall bug"
+              aria-label="Stream query"
+              role="combobox"
+              aria-expanded={showSuggestions()}
+              aria-controls="stream-suggest-list"
+              aria-autocomplete="list"
+              aria-activedescendant={
+                showSuggestions() && activeSuggestion() >= 0 ? `stream-suggest-option-${activeSuggestion()}` : undefined
+              }
+            />
+            <button type="submit">Filter</button>
+            <Show when={showSuggestions()}>
+              <ul class="suggest-popover" role="listbox" id="stream-suggest-list" aria-label="Query suggestions">
+                <For each={suggestions()}>
+                  {(value, index) => (
+                    <li
+                      role="option"
+                      id={`stream-suggest-option-${index()}`}
+                      aria-selected={index() === activeSuggestion()}
+                      classList={{ "suggest-option": true, "suggest-option--active": index() === activeSuggestion() }}
+                      onClick={() => pickSuggestion(value)}
+                    >
                       {value}
-                    </button>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </div>
+          <div class="stream-options">
+            <button
+              type="button"
+              class="stream-options-trigger"
+              aria-expanded={optionsOpen()}
+              aria-controls="stream-options-panel"
+              onClick={() => setOptionsOpen((open) => !open)}
+            >
+              Options
+            </button>
+            <Show when={optionsOpen()}>
+              <div id="stream-options-panel" class="stream-options-panel">
+                <label class="meaningful-toggle">
+                  <input
+                    type="checkbox"
+                    checked={!parsed().isAll}
+                    onChange={(event) => {
+                      const meaningful = event.currentTarget.checked;
+                      patchQuery((state) => (state.isAll = !meaningful));
+                    }}
+                  />
+                  meaningful events only
+                </label>
+                <div class="density-toggle" role="group" aria-label="Stream density">
+                  <button
+                    type="button"
+                    classList={{ active: density() === "collapsed" }}
+                    onClick={() => switchDensity("collapsed")}
+                  >
+                    Collapsed
+                  </button>
+                  <button
+                    type="button"
+                    classList={{ active: density() === "expanded" }}
+                    onClick={() => switchDensity("expanded")}
+                  >
+                    Expanded
+                  </button>
+                </div>
+              </div>
+            </Show>
+          </div>
         </div>
-        <div class="facet-rail">
+        <Show when={hasActiveChips()}>
+          <div class="facet-rail">
           <Show when={props.project}>
             {(project) => (
               <button
@@ -415,42 +523,30 @@ export default function StreamPage(props: StreamPageProps = {}) {
           </Show>
           <For each={FACET_FIELDS}>
             {(field) => (
-              <div class="facet-group">
-                <span class="facet-label">{field.label}</span>
-                <For each={parsed().facets[field.key] ?? []}>
-                  {(value) => (
-                    <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
-                      {value} x
-                    </button>
-                  )}
-                </For>
-                <For each={parsed().excludeFacets[field.key] ?? []}>
-                  {(value) => (
-                    <button
-                      type="button"
-                      class="facet-chip facet-chip--active facet-chip--exclude"
-                      aria-label={`${field.key} != ${value}`}
-                      onClick={() => removeFacetChip(field.key, value, "exclude")}
-                    >
-                      {field.key} != {value} x
-                    </button>
-                  )}
-                </For>
-                <Show when={!parsed().facets[field.key]?.length && !parsed().excludeFacets[field.key]?.length}>
-                  <div class="facet-quick">
-                    <For each={QUICK_VALUES[field.key]}>
-                      {(value) => (
-                        <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>
-                          {value}
-                        </button>
-                      )}
-                    </For>
-                    <Show when={QUICK_VALUES[field.key].length === 0}>
-                      <span class="facet-hint">type {field.key}:...</span>
-                    </Show>
-                  </div>
-                </Show>
-              </div>
+              <Show when={facetHasChips(field.key)}>
+                <div class="facet-group">
+                  <span class="facet-label">{field.label}</span>
+                  <For each={parsed().facets[field.key] ?? []}>
+                    {(value) => (
+                      <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
+                        {value} x
+                      </button>
+                    )}
+                  </For>
+                  <For each={parsed().excludeFacets[field.key] ?? []}>
+                    {(value) => (
+                      <button
+                        type="button"
+                        class="facet-chip facet-chip--active facet-chip--exclude"
+                        aria-label={`${field.key} != ${value}`}
+                        onClick={() => removeFacetChip(field.key, value, "exclude")}
+                      >
+                        {field.key} != {value} x
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
             )}
           </For>
           <For each={parsed().facets.project_exact ?? []}>
@@ -492,10 +588,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
             {(spec) => (
               <button
                 type="button"
-                class="facet-chip facet-chip--active"
+                class="facet-chip facet-chip--active facet-chip--time"
                 onClick={() => patchQuery((state) => (state.since = null))}
               >
-                {describeTimeSpec(spec(), "since")} x
+                <span class="facet-chip-clock" aria-hidden="true">
+                  🕒
+                </span>{" "}
+                {describeTimeSpec(spec(), "since")} ✕
               </button>
             )}
           </Show>
@@ -503,10 +602,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
             {(spec) => (
               <button
                 type="button"
-                class="facet-chip facet-chip--active"
+                class="facet-chip facet-chip--active facet-chip--time"
                 onClick={() => patchQuery((state) => (state.until = null))}
               >
-                {describeTimeSpec(spec(), "until")} x
+                <span class="facet-chip-clock" aria-hidden="true">
+                  🕒
+                </span>{" "}
+                {describeTimeSpec(spec(), "until")} ✕
               </button>
             )}
           </Show>
@@ -520,34 +622,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
               all events x
             </button>
           </Show>
-          <label class="meaningful-toggle">
-            <input
-              type="checkbox"
-              checked={!parsed().isAll}
-              onChange={(event) => {
-                const meaningful = event.currentTarget.checked;
-                patchQuery((state) => (state.isAll = !meaningful));
-              }}
-            />
-            meaningful events only
-          </label>
-          <div class="density-toggle" role="group" aria-label="Stream density">
-            <button
-              type="button"
-              classList={{ active: density() === "collapsed" }}
-              onClick={() => switchDensity("collapsed")}
-            >
-              Collapsed
-            </button>
-            <button
-              type="button"
-              classList={{ active: density() === "expanded" }}
-              onClick={() => switchDensity("expanded")}
-            >
-              Expanded
-            </button>
           </div>
-        </div>
+        </Show>
       </form>
 
       <Show when={error()}>
@@ -565,7 +641,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
         </div>
       </Show>
 
-      <div ref={feedRef} class="stream-feed">
+      {/* Persistent live region (spec §4.6): the N-new pill mounts conditionally and cannot be
+          the live region — this one always exists, announcing count changes politely. */}
+      <div class="visually-hidden" aria-live="polite">
+        {newCount() > 0 ? `${newCount()} new ${newCount() === 1 ? "event" : "events"}` : ""}
+      </div>
+
+      <div ref={feedRef} class="stream-feed" role="feed" aria-busy={loadingMore()} aria-label="Activity stream">
         <Show when={newCount() && !livePaused()}>
           <button type="button" class="stream-new-pill" onClick={showNewItems}>
             {newCount()} new
@@ -584,8 +666,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   )}
                 </Match>
                 <Match when={segment.type === "run" ? segment : null}>
+                  {/* The run wrapper is a generic <div>, not a <section>: a labeled section is
+                      a region landmark that would interpose between the feed and its owned
+                      articles (§4.6). The run header is its own article, labeled by session. */}
                   {(run) => (
-                    <section class="stream-run" aria-label={`Session ${run().sessionTitle || run().clientSessionId}`}>
+                    <div class="stream-run">
                       <RunHeader
                         run={run()}
                         sticky={run().eventCount >= 3}
@@ -616,7 +701,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
                           }
                         </For>
                       </div>
-                    </section>
+                    </div>
                   )}
                 </Match>
               </Switch>
@@ -679,6 +764,27 @@ function sessionStreamLink(visibleQuery: string, sessionId: string, projectKey: 
   state.session = sessionId;
   const search = new URLSearchParams({ q: serializeQuery(state), project: projectKey });
   return `${window.location.origin}/stream?${search.toString()}`;
+}
+
+// session: suggestions from the recent-sessions listing — the cheapest live-value source
+// already in api.ts; counted top-N value suggestions arrive with slice 8 (§6.4).
+async function sessionSuggestions(prefix: string): Promise<string[]> {
+  try {
+    const sessions = await getSessions(50);
+    const needle = prefix.toLowerCase();
+    const values: string[] = [];
+    for (const session of sessions) {
+      const value = session.clientSessionId || session.id;
+      if (!value || values.includes(value)) continue;
+      const haystacks = [value, session.id, session.title ?? ""];
+      if (needle && !haystacks.some((candidate) => candidate.toLowerCase().includes(needle))) continue;
+      values.push(value);
+      if (values.length >= 8) break;
+    }
+    return values;
+  } catch {
+    return [];
+  }
 }
 
 function shortSessionRef(value: string): string {
