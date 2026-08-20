@@ -76,14 +76,20 @@ describe("StreamPage", () => {
 
     const row = await screen.findByRole("button", { name: /Make stream default/ });
     expect(row).toHaveAttribute("aria-expanded", "false");
-    // Collapsed rows carry no per-row cwd (spec §4.3 P2) — shared context returns on run headers.
+    // Collapsed rows carry no per-row cwd (spec §4.3 P2) — shared context lives on run headers.
     expect(within(row).queryByText("~/Developer/proj/sba-agentic")).not.toBeInTheDocument();
     expect(within(row).getByText("Decision")).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true });
+    // Session-level link on the run header (spec §4.1) — no event position.
+    expect(screen.getByRole("link", { name: "View session" })).toHaveAttribute(
+      "href",
+      "/?view=browse&session=session-1",
+    );
 
     fireEvent.click(row);
     expect(row).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: "View session" })).toHaveAttribute(
+    // Per-event position link on the expanded card (spec §4.3/§9).
+    expect(screen.getByRole("link", { name: "Open at this event" })).toHaveAttribute(
       "href",
       "/?view=browse&session=session-1&event=event-1",
     );
@@ -99,7 +105,7 @@ describe("StreamPage", () => {
       meaningful: true,
     });
     fireEvent.click(row);
-    expect(screen.getByRole("link", { name: "View session" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open at this event" })).toHaveAttribute(
       "href",
       "/?view=browse&session=session-1&event=event-1&project=sba-key",
     );
@@ -362,11 +368,10 @@ describe("StreamPage", () => {
     expect(params.q).toBeUndefined();
   });
 
-  it("filters to a session from the expanded row head", async () => {
+  it("filters to a session from the run header", async () => {
     [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
     render(() => <StreamPage />);
-    const row = await screen.findByRole("button", { name: /Make stream default/ });
-    fireEvent.click(row);
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Filter to this session" }));
     await waitFor(() => expect(params.q).toBe("kind:Decision session:session-1"));
@@ -377,8 +382,7 @@ describe("StreamPage", () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
     render(() => <StreamPage project={selectedProject} />);
-    const row = await screen.findByRole("button", { name: /Make stream default/ });
-    fireEvent.click(row);
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
@@ -394,8 +398,7 @@ describe("StreamPage", () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     render(() => <StreamPage />);
-    const row = await screen.findByRole("button", { name: /Make stream default/ });
-    fireEvent.click(row);
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
 
@@ -409,8 +412,7 @@ describe("StreamPage", () => {
   it("reports a typed failure when the clipboard is unavailable", async () => {
     Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
     render(() => <StreamPage />);
-    const row = await screen.findByRole("button", { name: /Make stream default/ });
-    fireEvent.click(row);
+    await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
     expect(await screen.findByText("Could not copy link.")).toBeInTheDocument();
@@ -575,6 +577,108 @@ describe("StreamPage", () => {
       vi.useRealTimers();
     }
   });
+
+  it("renders run headers with session context and a compact variant for short runs", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const section = document.querySelector(".stream-run") as HTMLElement;
+    expect(section.tagName).toBe("SECTION");
+    expect(section).toHaveAttribute("aria-label", "Session Activity stream work");
+    const head = section.querySelector(".stream-run-head") as HTMLElement;
+    expect(head.querySelector(".source-dot")).toBeInTheDocument();
+    expect(within(head).getByText("Activity stream work")).toBeInTheDocument();
+    expect(within(head).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
+    expect(within(head).getByText("1 event")).toBeInTheDocument();
+    // A 1-event run gets the compact inline variant, never sticky (spec §4.1).
+    expect(head.classList.contains("stream-run-head--compact")).toBe(true);
+    expect(head.classList.contains("stream-run-head--sticky")).toBe(false);
+  });
+
+  it("renders the sticky header variant for runs of three or more events", async () => {
+    const sameSession = { sessionId: "session-1", source: "codex", clientSessionId: "client-1" };
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([
+        eventItem("event-1", "Row one", "2026-07-01T12:00:00Z"),
+        eventItem("event-2", "Row two", "2026-07-01T11:58:00Z", sameSession),
+        eventItem("event-3", "Row three", "2026-07-01T11:56:00Z", sameSession),
+      ]),
+    );
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Row one/ });
+
+    const heads = document.querySelectorAll(".stream-run-head");
+    expect(heads).toHaveLength(1);
+    expect((heads[0] as HTMLElement).classList.contains("stream-run-head--sticky")).toBe(true);
+    expect(within(heads[0] as HTMLElement).getByText("3 events")).toBeInTheDocument();
+  });
+
+  it("shows a row's own cwd inline only when it differs from its run's", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([
+        eventItem("event-1", "Same cwd row", "2026-07-01T12:00:00Z"),
+        eventItem("event-2", "Worktree row", "2026-07-01T11:58:00Z", {
+          sessionId: "session-1",
+          source: "codex",
+          clientSessionId: "client-1",
+          cwd: "/Users/nathan/Developer/proj/sba-agentic-worktree",
+        }),
+      ]),
+    );
+    render(() => <StreamPage />);
+    const sameRow = await screen.findByRole("button", { name: /Same cwd row/ });
+    const exceptionRow = screen.getByRole("button", { name: /Worktree row/ });
+
+    expect(sameRow.querySelector(".stream-row-cwd")).not.toBeInTheDocument();
+    expect(exceptionRow.querySelector(".stream-row-cwd")).toHaveTextContent("~/Developer/proj/sba-agentic-worktree");
+  });
+
+  it("renders a dateline with the quiet gap phrasing between date-crossing runs", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([eventItem("event-1", "Newer day row", localIso(4, 12)), eventItem("event-2", "Older day row", localIso(1, 12))]),
+    );
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Newer day row/ });
+
+    const daybreak = document.querySelector(".stream-daybreak") as HTMLElement;
+    expect(daybreak).toHaveTextContent("Wed Jul 1");
+    // No visible filter → the world was quiet (spec §4.2, P4).
+    expect(daybreak).toHaveTextContent("quiet 3d");
+  });
+
+  it("flips the gap phrasing to no-matches when a visible filter is active", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([eventItem("event-1", "Newer day row", localIso(4, 12)), eventItem("event-2", "Older day row", localIso(1, 12))]),
+    );
+    [params, setParams] = createStore<{ q?: string }>({ q: "source:codex" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Newer day row/ });
+
+    const daybreak = document.querySelector(".stream-daybreak") as HTMLElement;
+    expect(daybreak).toHaveTextContent("no matches for 3d");
+    expect(daybreak).not.toHaveTextContent("quiet");
+  });
+
+  it("keeps context-zone actions on run headers, not expanded cards", async () => {
+    render(() => <StreamPage />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+
+    const head = document.querySelector(".stream-run-head") as HTMLElement;
+    expect(within(head).getByRole("button", { name: "Filter to this session" })).toBeInTheDocument();
+    expect(within(head).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+
+    fireEvent.click(row);
+    const card = document.querySelector(".stream-row-expanded") as HTMLElement;
+    expect(within(card).queryByRole("button", { name: "Filter to this session" })).not.toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
+    // The card keeps only the per-event position link; the session title moved to the header.
+    expect(within(card).getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
+    expect(within(card).queryByText("Activity stream work")).not.toBeInTheDocument();
+  });
 });
 
 function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFeedResponse {
@@ -594,7 +698,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function eventItem(id: string, text: string, observedAt?: string): EventFeedItem {
+function eventItem(id: string, text: string, observedAt?: string, overrides: Partial<EventFeedItem> = {}): EventFeedItem {
   return {
     id,
     sessionId: id === "event-1" ? "session-1" : "session-2",
@@ -611,5 +715,12 @@ function eventItem(id: string, text: string, observedAt?: string): EventFeedItem
     observedAt: observedAt ?? (id === "event-1" ? "2026-07-01T12:00:00Z" : "2026-07-01T11:59:00Z"),
     cwd: id === "event-1" ? "/Users/nathan/Developer/proj/sba-agentic" : "/Users/nathan/Developer/proj/cockpit",
     sessionTitle: id === "event-1" ? "Activity stream work" : "Browse regression",
+    ...overrides,
   };
+}
+
+// Local-time ISO instants keep dateline assertions timezone-independent (segmentation groups
+// by local date).
+function localIso(day: number, hour: number): string {
+  return new Date(2026, 6, day, hour, 0, 0).toISOString();
 }

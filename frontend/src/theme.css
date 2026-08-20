@@ -1972,6 +1972,101 @@ a {
   scrollbar-gutter: stable;
 }
 
+/* Run sections (spec §4.1). Deliberate z-index scale for the feed's overlapping chrome
+   (spec §13), stated once and only here:
+     sticky run header (1)  <  N-new pill (2)  <  suggest popover (30, .suggest-popover).
+   The sticky header must paint on an opaque --bg so rows scroll beneath it, and the pill must
+   float above every header so "N new" is never buried by a session block. */
+.stream-run {
+  min-width: 0;
+}
+
+.stream-run-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 8px 6px;
+}
+
+.stream-run-head--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.stream-run-head--compact {
+  padding: 6px 8px 3px;
+}
+
+.stream-run-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-bright);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream-run-cwd {
+  flex: none;
+  overflow: hidden;
+  max-width: 34%;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stream-run-count,
+.stream-run-span {
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.stream-run-head .row-session-actions {
+  margin-left: auto;
+}
+
+/* Run body: the 1px thread line binding rows to their session (spec §4.1). */
+.stream-run-body {
+  min-width: 0;
+  margin-left: 5px;
+  border-left: 1px solid var(--border);
+}
+
+/* Datelines (spec §4.2): faint mono uppercase over a 1px rule. The gap annotation is
+   filter-honest (P4) — phrasing is decided in lib/streamGroups.ts, not here. */
+.stream-daybreak {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 2px;
+  padding: 0 8px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stream-daybreak::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
+.stream-daybreak-gap {
+  flex: none;
+  text-transform: none;
+}
+
 .stream-row-wrap {
   min-width: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
@@ -2060,6 +2155,14 @@ a {
   font-weight: 600;
 }
 
+/* Exception cwd (spec §4.1): only a row whose cwd differs from its run's shows it, inline dim. */
+.stream-row-cwd {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+}
+
 /* Quiet per-row time (§4.2): faint rhythm, brightening only under the cursor. */
 .stream-row time {
   color: var(--text-faint);
@@ -2087,35 +2190,16 @@ a {
 .stream-row-expanded--handoff { box-shadow: inset 2px 0 0 var(--blue); }
 .stream-row-expanded--observation { box-shadow: inset 2px 0 0 var(--yellow); }
 
+/* Since slice 4 the head carries only the per-event position link — session title and actions
+   moved to RunHeader (spec §4.3). */
 .stream-row-expanded-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin: -2px 0 9px;
   padding: 0 1px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-}
-.stream-row-expanded-head > span {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-.stream-row-expanded-head small {
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-}
-.stream-row-expanded-head strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .row-session-actions { display: inline-flex; flex: none; align-items: center; gap: 8px; }
 .row-session-action {
@@ -2170,7 +2254,13 @@ a {
   opacity: 0.62;
 }
 
+/* z-index 2 on the scale stated at .stream-run: the pill floats above sticky run headers (1)
+   and below the suggest popover (30). Sticky so it stays visible while scrolled into a run. */
 .stream-new-pill {
+  position: sticky;
+  top: 4px;
+  z-index: 2;
+  align-self: center;
   flex: none;
   height: 28px;
   padding: 0 12px;

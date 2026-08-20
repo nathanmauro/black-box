@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { For, Show, type JSX } from "solid-js";
+import { For, Show } from "solid-js";
 import type { EventFeedItem } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import { kindMarkOf } from "../../lib/presenters/marks";
@@ -12,7 +12,9 @@ type StreamRowProps = {
   textExpanded?: boolean;
   sessionHref: string;
   onToggle: () => void;
-  actions?: JSX.Element;
+  // A row whose cwd differs from its run's shows its own cwd inline, dim (spec §4.1) — the
+  // only per-row cwd; shared context lives on the run header (P2).
+  cwdException?: boolean;
 };
 
 const LANDMARK_KINDS = new Set(["Decision", "Handoff", "Observation", "UserPromptSubmit"]);
@@ -37,7 +39,7 @@ export default function StreamRow(props: StreamRowProps) {
           [`stream-row--landmark-${kindClass(item().eventType)}`]: landmark(),
         }}
         aria-expanded={props.expanded}
-        aria-label={`${headline()} in ${truncatePath(item().cwd)}`}
+        aria-label={headline()}
         onClick={props.onToggle}
       >
         <Show
@@ -54,6 +56,9 @@ export default function StreamRow(props: StreamRowProps) {
           <For each={eventHeadlineSpans(item())}>
             {(span) => (span.kind === "arg" ? <span class="headline-arg">{span.text}</span> : span.text)}
           </For>
+          <Show when={props.cwdException}>
+            <span class="stream-row-cwd"> · {truncatePath(item().cwd)}</span>
+          </Show>
         </span>
         <time dateTime={item().observedAt} title={item().observedAt}>
           {timeAgo(item().observedAt)}
@@ -61,14 +66,11 @@ export default function StreamRow(props: StreamRowProps) {
       </button>
       {props.expanded ? (
         <div class={`stream-row-expanded stream-row-expanded--${kindClass(item().eventType)}`}>
+          {/* Session title and context-zone actions live on RunHeader (spec §4.3); the card
+              keeps only the precise per-event position link — the §9 vocabulary. */}
           <div class="stream-row-expanded-head">
-            <span>
-              <small>session</small>
-              <strong>{item().sessionTitle || item().clientSessionId}</strong>
-            </span>
-            {props.actions}
             <A href={props.sessionHref} class="stream-session-link">
-              View session <span aria-hidden="true">→</span>
+              Open at this event <span aria-hidden="true">→</span>
             </A>
           </div>
           <EventRenderer event={item()} textExpanded={props.textExpanded} />

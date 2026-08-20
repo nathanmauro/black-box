@@ -3,6 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { EventFeedItem } from "../../lib/api";
 import StreamRow from "./StreamRow";
 
+vi.mock("@solidjs/router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@solidjs/router")>();
+  return {
+    ...actual,
+    A: (props: { href: string; class?: string; children?: Element }) => (
+      <a href={props.href} class={props.class}>
+        {props.children}
+      </a>
+    ),
+  };
+});
+
 function feedItem(overrides: Partial<EventFeedItem>): EventFeedItem {
   return {
     id: "event-1",
@@ -77,10 +89,38 @@ describe("StreamRow", () => {
   it("keeps the whole row a button with aria-expanded and a quiet time element", () => {
     renderRow(feedItem({ toolName: "Bash", toolInputJson: '{"command":"ls"}' }));
 
-    const row = screen.getByRole("button", { name: /ls in/ });
+    // The aria-label is the headline alone — the enclosing run section names the session/cwd.
+    const row = screen.getByRole("button", { name: /ls/ });
     expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(row.getAttribute("aria-label")).not.toMatch(/ in /);
     const time = document.querySelector(".stream-row time") as HTMLElement;
     expect(time).toHaveAttribute("datetime", "2026-08-20T12:00:00Z");
     expect(time).toHaveAttribute("title", "2026-08-20T12:00:00Z");
+  });
+
+  it("shows the row's own cwd inline only when flagged as a run exception", () => {
+    const { unmount } = renderRow(feedItem({ toolName: "Bash", toolInputJson: '{"command":"ls"}' }));
+    expect(document.querySelector(".stream-row-cwd")).not.toBeInTheDocument();
+    unmount();
+
+    render(() => (
+      <StreamRow
+        item={feedItem({ toolName: "Bash", toolInputJson: '{"command":"ls"}' })}
+        expanded={false}
+        sessionHref="/session"
+        onToggle={vi.fn()}
+        cwdException
+      />
+    ));
+    expect(document.querySelector(".stream-row-cwd")).toHaveTextContent("~/Developer/proj/sba-agentic");
+  });
+
+  it("keeps only the per-event position link on the expanded head", () => {
+    renderRow(feedItem({ eventType: "Decision", text: "Chose SQLite" }), true);
+
+    const head = document.querySelector(".stream-row-expanded-head") as HTMLElement;
+    expect(screen.getByRole("link", { name: "Open at this event" })).toHaveAttribute("href", "/session");
+    // Session title and context-zone actions moved to RunHeader (spec §4.3).
+    expect(head.textContent).not.toContain("Ink slice work");
   });
 });

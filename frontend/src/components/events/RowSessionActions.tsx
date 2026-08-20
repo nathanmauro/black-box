@@ -8,8 +8,7 @@ type RowSessionActionsProps = {
 
 // Per-run affordances (spec §7): "Filter to this session" patches the visible q with a session:
 // token; "Copy link" copies an absolute /stream deep link built from the visible q (never the
-// hidden project_group injection). Interim placement on the expanded row head — slice 4 relocates
-// these onto run headers, so the component stays small and self-contained.
+// hidden project_group injection). Mounted on both RunHeader variants (spec §4.1).
 export default function RowSessionActions(props: RowSessionActionsProps) {
   const [message, setMessage] = createSignal("");
 

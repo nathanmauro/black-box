@@ -1,6 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import RowSessionActions from "../components/events/RowSessionActions";
+import RunHeader from "../components/events/RunHeader";
 import StreamRow from "../components/events/StreamRow";
 import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { primaryProjectScope, projectShortName } from "../lib/projects";
@@ -19,6 +20,7 @@ import {
 } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
+import { segmentStream } from "../lib/streamGroups";
 
 const FEED_LIMIT = 100;
 const MAX_ROWS = 500;
@@ -111,6 +113,21 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (until) phrases.push(quietPhrase(describeTimeSpec(until, "until")));
     return phrases;
   });
+  // "Visible filter" for the filter-honest gap labels (spec §4.2): anything that narrows the
+  // feed and renders as a chip. The hidden project scope and the meaningful default don't count
+  // (they are the two named standing defaults, P3); is:all widens, so it doesn't either.
+  const hasVisibleFilter = createMemo(() => {
+    const state = parsed();
+    return (
+      Object.values(state.facets).some((values) => values.length > 0) ||
+      Object.values(state.excludeFacets).some((values) => values.length > 0) ||
+      state.session !== null ||
+      state.since !== null ||
+      state.until !== null ||
+      state.freeTerms.length > 0
+    );
+  });
+  const segments = createMemo(() => segmentStream(items(), { hasVisibleFilter: hasVisibleFilter() }));
 
   createEffect(() => setDraft(visibleSubmitted()));
 
@@ -511,22 +528,52 @@ export default function StreamPage(props: StreamPageProps = {}) {
           </button>
         </Show>
         <Show when={!loading()} fallback={<p class="empty-state">Loading activity...</p>}>
-          <For each={items()}>
-            {(item) => (
-              <StreamRow
-                item={item}
-                expanded={isExpanded(item.id)}
-                textExpanded={density() === "expanded"}
-                sessionHref={sessionHref(item, props.project)}
-                onToggle={() => toggleRow(item.id)}
-                actions={
-                  <RowSessionActions
-                    sessionId={item.sessionId}
-                    streamLink={sessionStreamLink(visibleSubmitted(), item.sessionId, props.project?.projectKey ?? "")}
-                    onFilterToSession={(sessionId) => patchQuery((state) => (state.session = sessionId))}
-                  />
-                }
-              />
+          <For each={segments()}>
+            {(segment) => (
+              <Switch>
+                <Match when={segment.type === "day" ? segment : null}>
+                  {(day) => (
+                    <div class="stream-daybreak">
+                      <span>{day().label}</span>
+                      <Show when={day().gapLabel}>{(gap) => <span class="stream-daybreak-gap">· {gap()}</span>}</Show>
+                    </div>
+                  )}
+                </Match>
+                <Match when={segment.type === "run" ? segment : null}>
+                  {(run) => (
+                    <section class="stream-run" aria-label={`Session ${run().sessionTitle || run().clientSessionId}`}>
+                      <RunHeader
+                        run={run()}
+                        sticky={run().eventCount >= 3}
+                        sessionHref={runSessionHref(run().sessionId, props.project)}
+                        actions={
+                          <RowSessionActions
+                            sessionId={run().sessionId}
+                            streamLink={sessionStreamLink(visibleSubmitted(), run().sessionId, props.project?.projectKey ?? "")}
+                            onFilterToSession={(sessionId) => patchQuery((state) => (state.session = sessionId))}
+                          />
+                        }
+                      />
+                      <div class="stream-run-body">
+                        <For each={run().rows}>
+                          {(row) =>
+                            row.type === "event" ? (
+                              <StreamRow
+                                item={row.item}
+                                expanded={isExpanded(row.item.id)}
+                                textExpanded={density() === "expanded"}
+                                sessionHref={sessionHref(row.item, props.project)}
+                                onToggle={() => toggleRow(row.item.id)}
+                                cwdException={cwdDiffers(row.item.cwd, run().cwd)}
+                              />
+                            ) : null /* fold rows land in slice 5 */
+                          }
+                        </For>
+                      </div>
+                    </section>
+                  )}
+                </Match>
+              </Switch>
             )}
           </For>
           <Show when={!items().length}>
@@ -587,6 +634,7 @@ function shortSessionRef(value: string): string {
   return value.length > 14 ? `${value.slice(0, 12)}…` : value;
 }
 
+// Per-event position link ("Open at this event →", spec §4.3/§9): view=browse&session=&event=.
 function sessionHref(item: EventFeedItem, project: ProjectSummary | null | undefined): string {
   const query = new URLSearchParams({
     view: "browse",
@@ -595,6 +643,17 @@ function sessionHref(item: EventFeedItem, project: ProjectSummary | null | undef
   });
   if (project) query.set("project", project.projectKey);
   return `/?${query.toString()}`;
+}
+
+// Session-level link for the run header ("View session →", spec §4.1): no event position.
+function runSessionHref(sessionId: string, project: ProjectSummary | null | undefined): string {
+  const query = new URLSearchParams({ view: "browse", session: sessionId });
+  if (project) query.set("project", project.projectKey);
+  return `/?${query.toString()}`;
+}
+
+function cwdDiffers(rowCwd: string | null | undefined, runCwd: string | null | undefined): boolean {
+  return (rowCwd ?? null) !== (runCwd ?? null);
 }
 
 function createSignalResource<TSource, TResult>(
