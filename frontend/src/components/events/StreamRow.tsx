@@ -1,4 +1,5 @@
 import { A } from "@solidjs/router";
+import type { JSX } from "solid-js";
 import type { EventFeedItem } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -11,6 +12,7 @@ type StreamRowProps = {
   textExpanded?: boolean;
   sessionHref: string;
   onToggle: () => void;
+  actions?: JSX.Element;
 };
 
 export default function StreamRow(props: StreamRowProps) {
@@ -41,6 +43,7 @@ export default function StreamRow(props: StreamRowProps) {
               <small>session</small>
               <strong>{item().sessionTitle || item().clientSessionId}</strong>
             </span>
+            {props.actions}
             <A href={props.sessionHref} class="stream-session-link">
               View session <span aria-hidden="true">→</span>
             </A>

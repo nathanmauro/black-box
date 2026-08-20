@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeTimeSpec, parseQuery, removeFacetValue, serializeQuery, setFacet } from "./query";
+import { describeTimeSpec, parseQuery, removeFacetValue, resolvesToPastInstant, serializeQuery, setFacet } from "./query";
 
 describe("parseQuery", () => {
   it("parses canonical facets and free text", () => {
@@ -154,5 +154,31 @@ describe("describeTimeSpec", () => {
   it("phrases plain dates without a timezone shift", () => {
     expect(describeTimeSpec({ kind: "absolute", value: "2026-08-18" }, "until")).toMatch(/^Until Aug 18/);
     expect(describeTimeSpec({ kind: "absolute", value: "1999-01-02" }, "since")).toBe("Since Jan 2, 1999");
+  });
+});
+
+describe("resolvesToPastInstant", () => {
+  const now = new Date(2026, 7, 20, 12, 0, 0); // local 2026-08-20T12:00
+
+  it("treats positive duration untils as past (until:2h means until two hours ago)", () => {
+    expect(resolvesToPastInstant({ kind: "duration", value: "2h" }, now)).toBe(true);
+    expect(resolvesToPastInstant({ kind: "duration", value: "1w" }, now)).toBe(true);
+    expect(resolvesToPastInstant({ kind: "duration", value: "0m" }, now)).toBe(false);
+  });
+
+  it("resolves keywords to period end: yesterday is past, today is still live", () => {
+    expect(resolvesToPastInstant({ kind: "keyword", value: "yesterday" }, now)).toBe(true);
+    expect(resolvesToPastInstant({ kind: "keyword", value: "today" }, now)).toBe(false);
+  });
+
+  it("resolves plain dates to end of the local day", () => {
+    expect(resolvesToPastInstant({ kind: "absolute", value: "2026-08-19" }, now)).toBe(true);
+    expect(resolvesToPastInstant({ kind: "absolute", value: "2026-08-20" }, now)).toBe(false);
+    expect(resolvesToPastInstant({ kind: "absolute", value: "2026-08-21" }, now)).toBe(false);
+  });
+
+  it("compares datetimes directly", () => {
+    expect(resolvesToPastInstant({ kind: "absolute", value: "2026-08-20T11:00" }, now)).toBe(true);
+    expect(resolvesToPastInstant({ kind: "absolute", value: "2026-08-20T13:00" }, now)).toBe(false);
   });
 });

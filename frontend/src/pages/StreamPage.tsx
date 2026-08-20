@@ -1,13 +1,15 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import RowSessionActions from "../components/events/RowSessionActions";
 import StreamRow from "../components/events/StreamRow";
 import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
-import { primaryProjectScope } from "../lib/projects";
+import { primaryProjectScope, projectShortName } from "../lib/projects";
 import {
   describeTimeSpec,
   FACET_FIELDS,
   parseQuery,
   removeFacetValue,
+  resolvesToPastInstant,
   serializeQuery,
   setFacet,
   type FacetField,
@@ -16,7 +18,6 @@ import {
   type QueryState,
 } from "../lib/query";
 import { useLiveStore } from "../lib/sse";
-import { sourceFilter } from "../lib/stores";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
 
 const FEED_LIMIT = 100;
@@ -39,6 +40,7 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
 type StreamPageProps = {
   project?: ProjectSummary | null;
   projectScopePending?: boolean;
+  onClearProject?: () => void;
 };
 
 export default function StreamPage(props: StreamPageProps = {}) {
@@ -51,7 +53,6 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const live = useLiveStore();
   const [params, setParams] = useSearchParams<{ q?: string; project?: string }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
-  const [meaningfulOnly, setMeaningfulOnly] = createSignal(true);
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
   const [pendingItems, setPendingItems] = createSignal<EventFeedItem[]>([]);
   const [nextBefore, setNextBefore] = createSignal<string | null>(null);
@@ -89,9 +90,27 @@ export default function StreamPage(props: StreamPageProps = {}) {
     props.project ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey) : submitted(),
   );
   const parsed = createMemo(() => parseQuery(visibleSubmitted()));
-  const filteredItems = createMemo(() => sourceFilter.matches(items()));
   const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
   const canLoadMore = createMemo(() => Boolean(nextBefore()) && items().length < MAX_ROWS);
+  // "Live paused" when until: bounds the query in the past (client-side approximation, see
+  // resolvesToPastInstant): new events cannot match, so the N-new pill and the live head-refetch
+  // merge are suppressed while it is active — live behavior must never contradict the query.
+  const livePaused = createMemo(() => {
+    const until = parsed().until;
+    return until !== null && resolvesToPastInstant(until);
+  });
+  // The result-header scope phrase (spec §4.6): the standing "meaningful" word whenever the
+  // default filter is active (its visible representation under P3), plus the parsed time tokens.
+  // Counts are slice 8 — until then the line is scope phrase only.
+  const scopePhrases = createMemo(() => {
+    const phrases: string[] = [];
+    if (!parsed().isAll) phrases.push("meaningful");
+    const since = parsed().since;
+    const until = parsed().until;
+    if (since) phrases.push(quietPhrase(describeTimeSpec(since, "since")));
+    if (until) phrases.push(quietPhrase(describeTimeSpec(until, "until")));
+    return phrases;
+  });
 
   createEffect(() => setDraft(visibleSubmitted()));
 
@@ -116,7 +135,6 @@ export default function StreamPage(props: StreamPageProps = {}) {
       return;
     }
     const q = apiQuery();
-    const meaningful = meaningfulOnly();
     const token = ++loadToken;
     setLoading(true);
     setLoadingMore(false);
@@ -126,7 +144,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setNextBefore(null);
     setError(null);
     setOverrides(new Set<string>());
-    getEventFeed({ limit: FEED_LIMIT, q, meaningful })
+    // meaningful=true always rides the wire; opting out is expressed as is:all in q, which the
+    // backend gives precedence (D16) — deep links and reloads reproduce the state from q alone.
+    getEventFeed({ limit: FEED_LIMIT, q, meaningful: true })
       .then((response) => {
         if (token !== loadToken) return;
         setItems(response.items.slice(0, MAX_ROWS));
@@ -165,6 +185,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   createEffect((previousLiveCount = 0) => {
     const liveCount = live.events().length;
+    if (livePaused()) return liveCount;
     if (!liveCount) return liveCount;
     if (!newestObservedAt()) return previousLiveCount;
     if (liveCount === previousLiveCount) return liveCount;
@@ -223,7 +244,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setLoadingMore(true);
     setError(null);
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), before });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: true, before });
       if (!isCurrentStreamRequest(token)) return;
       setItems((current) => dedupe([...current, ...response.items]).slice(0, MAX_ROWS));
       setNextBefore(items().length >= MAX_ROWS ? null : response.nextBefore ?? null);
@@ -236,10 +257,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   async function refetchHead(since: string | undefined) {
-    if (props.projectScopePending || !since) return;
+    if (props.projectScopePending || !since || livePaused()) return;
     const token = loadToken;
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: meaningfulOnly(), since });
+      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: true, since });
       if (!isCurrentStreamRequest(token)) return;
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
@@ -315,6 +336,22 @@ export default function StreamPage(props: StreamPageProps = {}) {
           </Show>
         </div>
         <div class="facet-rail">
+          <Show when={props.project}>
+            {(project) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active facet-chip--pinned"
+                title={`Pinned project scope: ${primaryProjectScope(project()).canonicalKey}`}
+                aria-label={`Pinned project ${projectShortName(project())} — clear project scope`}
+                onClick={() => props.onClearProject?.()}
+              >
+                <span class="facet-chip-pin" aria-hidden="true">
+                  📌
+                </span>{" "}
+                Project: {projectShortName(project())} ✕
+              </button>
+            )}
+          </Show>
           <For each={FACET_FIELDS}>
             {(field) => (
               <div class="facet-group">
@@ -423,7 +460,14 @@ export default function StreamPage(props: StreamPageProps = {}) {
             </button>
           </Show>
           <label class="meaningful-toggle">
-            <input type="checkbox" checked={meaningfulOnly()} onChange={(event) => setMeaningfulOnly(event.currentTarget.checked)} />
+            <input
+              type="checkbox"
+              checked={!parsed().isAll}
+              onChange={(event) => {
+                const meaningful = event.currentTarget.checked;
+                patchQuery((state) => (state.isAll = !meaningful));
+              }}
+            />
             meaningful events only
           </label>
           <div class="density-toggle" role="group" aria-label="Stream density">
@@ -449,14 +493,25 @@ export default function StreamPage(props: StreamPageProps = {}) {
         {(message) => <p class="empty-state">{message()}</p>}
       </Show>
 
+      <Show when={scopePhrases().length > 0 || livePaused()}>
+        <div class="stream-result-header">
+          <Show when={scopePhrases().length}>
+            <span class="stream-result-scope">{scopePhrases().join(" · ")}</span>
+          </Show>
+          <Show when={livePaused()}>
+            <span class="stream-live-paused">live paused — historical scope</span>
+          </Show>
+        </div>
+      </Show>
+
       <div ref={feedRef} class="stream-feed">
-        <Show when={newCount()}>
+        <Show when={newCount() && !livePaused()}>
           <button type="button" class="stream-new-pill" onClick={showNewItems}>
             {newCount()} new
           </button>
         </Show>
         <Show when={!loading()} fallback={<p class="empty-state">Loading activity...</p>}>
-          <For each={filteredItems()}>
+          <For each={items()}>
             {(item) => (
               <StreamRow
                 item={item}
@@ -464,10 +519,17 @@ export default function StreamPage(props: StreamPageProps = {}) {
                 textExpanded={density() === "expanded"}
                 sessionHref={sessionHref(item, props.project)}
                 onToggle={() => toggleRow(item.id)}
+                actions={
+                  <RowSessionActions
+                    sessionId={item.sessionId}
+                    streamLink={sessionStreamLink(visibleSubmitted(), item.sessionId, props.project?.projectKey ?? "")}
+                    onFilterToSession={(sessionId) => patchQuery((state) => (state.session = sessionId))}
+                  />
+                }
               />
             )}
           </For>
-          <Show when={!filteredItems().length}>
+          <Show when={!items().length}>
             <p class="empty-state">No stream events match the current filters.</p>
           </Show>
         </Show>
@@ -501,6 +563,24 @@ function appendProjectGroupScope(query: string, canonicalKey: string): string {
 // canonicalKey containing one would fan out into bogus project groups.
 function quoteHiddenFacet(value: string): string {
   return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
+// Lowercases only the leading word of a describeTimeSpec phrase ("Past 2 hours" → "past 2 hours")
+// so month names keep their capitals in the quiet result-header line.
+function quietPhrase(phrase: string): string {
+  return phrase.charAt(0).toLowerCase() + phrase.slice(1);
+}
+
+// The copy-link URL carries the VISIBLE q plus the session token — never the hidden project_group
+// injection, which stays an apiQuery concern (spec §7). `project=` is always set explicitly:
+// the pinned key when a project is selected, the empty-string explicit-global sentinel when not —
+// otherwise the opener's remembered-project effect would rescope the link and the session AND
+// project_group conjunction could empty the feed. Deep links reproduce what the sender saw.
+function sessionStreamLink(visibleQuery: string, sessionId: string, projectKey: string): string {
+  const state = parseQuery(visibleQuery);
+  state.session = sessionId;
+  const search = new URLSearchParams({ q: serializeQuery(state), project: projectKey });
+  return `${window.location.origin}/stream?${search.toString()}`;
 }
 
 function shortSessionRef(value: string): string {

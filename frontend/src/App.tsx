@@ -116,7 +116,7 @@ export default function App(props: AppProps) {
 function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string, view: string | undefined): string {
   const active =
     item.id === "stream"
-      ? pathname === "/" && !view
+      ? pathname === "/stream" || (pathname === "/" && (!view || view === "stream"))
       : item.id === "browse"
         ? pathname === "/" && view === "browse"
         : item.id === "projects"

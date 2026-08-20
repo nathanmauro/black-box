@@ -236,6 +236,32 @@ export function describeTimeSpec(spec: TimeSpec, side: "since" | "until"): strin
   return `${sideWord} ${MONTH_NAMES[instant.getMonth()]} ${instant.getDate()}${suffix}, ${time}`;
 }
 
+/**
+ * Client-side approximation of whether an `until:` spec bounds the query strictly in the past.
+ * Relative time still resolves server-side at execution (see TimeSpec); this mirrors the same
+ * period-end rules locally only to decide UI liveness (the "live paused — historical scope" badge
+ * and suppressing live merges), where a boundary miss is harmless — the next explicit reload
+ * re-evaluates against the real predicate.
+ * - keyword/date forms resolve to the END of the named local period, so `until:yesterday` is past
+ *   and `until:today` is still live (it ends at midnight tonight).
+ * - durations mean "until N units ago" (server: now − N), so any positive duration is past.
+ */
+export function resolvesToPastInstant(spec: TimeSpec, now: Date = new Date()): boolean {
+  if (spec.kind === "duration") {
+    const match = DURATION_PATTERN.exec(spec.value);
+    return match !== null && Number(match[1]) > 0;
+  }
+  if (spec.kind === "keyword") {
+    return spec.value === "yesterday";
+  }
+  if (DATE_PATTERN.test(spec.value)) {
+    const [year, month, day] = spec.value.split("-").map(Number);
+    return now.getTime() >= new Date(year, month - 1, day + 1).getTime();
+  }
+  const instant = Date.parse(spec.value);
+  return !Number.isNaN(instant) && instant <= now.getTime();
+}
+
 function parseTimeSpec(value: string): TimeSpec | null {
   const lower = value.toLowerCase();
   if (DURATION_PATTERN.test(lower)) return { kind: "duration", value: lower };

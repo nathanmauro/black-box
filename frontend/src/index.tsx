@@ -11,6 +11,10 @@ import "./theme.css";
 
 const root = document.getElementById("root");
 const BoardRoute = () => <BoardPage />;
+const HomeRoute = () => <ActivityPage />;
+// /stream is the promoted deep-link route (spec §6.6): the same workspace shell, locked to stream
+// mode. `/` keeps rendering the stream directly and `?view=stream` links keep working.
+const StreamRoute = () => <ActivityPage lockedMode="stream" />;
 
 if (!root) {
   throw new Error("Missing #root mount point");
@@ -19,7 +23,8 @@ if (!root) {
 render(
   () => (
     <Router root={App}>
-      <Route path="/" component={ActivityPage} />
+      <Route path="/" component={HomeRoute} />
+      <Route path="/stream" component={StreamRoute} />
       <Route path="/board" component={BoardRoute} />
       <Route path="/sessions" component={SessionsPage} />
       <Route path="/sessions/:sessionId" component={SessionsPage} />

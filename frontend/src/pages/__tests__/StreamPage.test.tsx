@@ -240,13 +240,178 @@ describe("StreamPage", () => {
     await waitFor(() => expect(params.q).toBe("kind:Decision"));
   });
 
-  it("refetches when meaningful-only filtering changes", async () => {
+  it("expresses meaningful opt-out as is:all in q while the wire keeps meaningful=true", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const checkbox = screen.getByLabelText("meaningful events only");
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+
+    await waitFor(() => expect(params.q).toBe("is:all"));
+    await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "is:all", meaningful: true }));
+  });
+
+  it("derives the meaningful checkbox from a deep-linked is:all query", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "is:all" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const checkbox = screen.getByLabelText("meaningful events only");
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(params.q).toBeUndefined());
+    expect(screen.getByLabelText("meaningful events only")).toBeChecked();
+  });
+
+  it("names the active meaningful default in the result header and drops it under is:all", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful");
+
+    setParams({ q: "is:all" });
+    await waitFor(() => expect(document.querySelector(".stream-result-header")).not.toBeInTheDocument());
+  });
+
+  it("renders the time phrase in the result header", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "last:2h" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful · past 2 hours");
+    expect(screen.queryByText("live paused — historical scope")).not.toBeInTheDocument();
+  });
+
+  it("pauses live behavior while until: bounds the query in the past", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "until:2026-08-18" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(screen.getByText("live paused — historical scope")).toBeInTheDocument();
+
+    try {
+      vi.useFakeTimers();
+      mocks.setLiveEvents([{ id: "sse-a" }]);
+      await vi.advanceTimersByTimeAsync(600);
+      // New events cannot match a past-bounded query: no head refetch, no N-new pill.
+      expect(getEventFeed).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("button", { name: /new/ })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resumes live behavior when the past until: token is removed", async () => {
+    const old = eventItem("event-1", "Make stream default");
+    const fresh = eventItem("event-a", "Live row", "2026-07-01T12:01:00Z");
+    getEventFeed.mockReset();
+    getEventFeed
+      .mockResolvedValueOnce(feed([old]))
+      .mockResolvedValueOnce(feed([old]))
+      .mockResolvedValueOnce(feed([fresh, old]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "until:2026-08-18" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(screen.getByText("live paused — historical scope")).toBeInTheDocument();
+
+    setParams({ q: undefined });
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(screen.queryByText("live paused — historical scope")).not.toBeInTheDocument();
+
+    const feedEl = document.querySelector(".stream-feed") as HTMLElement;
+    feedEl.scrollTop = 120;
+    try {
+      vi.useFakeTimers();
+      mocks.setLiveEvents([{ id: "sse-a" }]);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true, since: old.observedAt });
+      expect(screen.getByRole("button", { name: "1 new" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("round-trips is:all through a composite query without disturbing other tokens", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "session:abc until:2026-08-18 free text" });
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByLabelText("meaningful events only"));
+    await waitFor(() => expect(params.q).toBe("session:abc until:2026-08-18 is:all free text"));
 
-    await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: false }));
+    fireEvent.click(screen.getByLabelText("meaningful events only"));
+    await waitFor(() => expect(params.q).toBe("session:abc until:2026-08-18 free text"));
+  });
+
+  it("renders a pinned project chip from picker state that clears the selection", async () => {
+    const onClearProject = vi.fn();
+    render(() => <StreamPage project={selectedProject} onClearProject={onClearProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const chip = screen.getByRole("button", { name: "Pinned project sba-agentic — clear project scope" });
+    const rail = document.querySelector(".facet-rail") as HTMLElement;
+    expect(rail.firstElementChild).toBe(chip);
+
+    fireEvent.click(chip);
+    expect(onClearProject).toHaveBeenCalledTimes(1);
+    // The chip renders from ProjectPicker state, never from q — the hidden injection stays hidden.
+    expect(params.q).toBeUndefined();
+  });
+
+  it("filters to a session from the expanded row head", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+    render(() => <StreamPage />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter to this session" }));
+    await waitFor(() => expect(params.q).toBe("kind:Decision session:session-1"));
+  });
+
+  it("copies an absolute /stream link from the visible q plus the session token", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    await screen.findByText("Link copied.");
+    // The visible q only — the hidden project_group scope never leaks into the shared link — but
+    // project= carries the pinned key so the link reproduces what the sender saw instead of being
+    // rescoped by the opener's remembered project.
+    const search = new URLSearchParams({ q: "kind:Decision session:session-1", project: "sba-key" }).toString();
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/stream?${search}`);
+  });
+
+  it("copies an explicit-global link when no project is pinned so deep links reproduce what the sender saw", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    render(() => <StreamPage />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    await screen.findByText("Link copied.");
+    // project= (empty) is the explicit-global sentinel: without it the opener's remembered-project
+    // effect would inject its own scope and session AND project_group could empty the feed.
+    const search = new URLSearchParams({ q: "session:session-1", project: "" }).toString();
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/stream?${search}`);
+  });
+
+  it("reports a typed failure when the clipboard is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    render(() => <StreamPage />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+    expect(await screen.findByText("Could not copy link.")).toBeInTheDocument();
   });
 
   it("loads the next page and appends rows with the nextBefore cursor", async () => {
