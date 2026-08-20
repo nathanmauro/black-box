@@ -103,6 +103,18 @@ describe("StreamPage", () => {
     );
   });
 
+  it("quotes a hidden project scope containing a comma so it stays one value", async () => {
+    const commaProject: ProjectSummary = { ...selectedProject, canonicalKey: "/tmp/a,b" };
+    render(() => <StreamPage project={commaProject} />);
+
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(getEventFeed).toHaveBeenCalledWith({
+      limit: 100,
+      q: 'project_group:"/tmp/a,b"',
+      meaningful: true,
+    });
+  });
+
   it("does not fetch globally while project scope is pending", async () => {
     render(() => <StreamPage projectScopePending />);
 
@@ -162,6 +174,70 @@ describe("StreamPage", () => {
 
     expect(screen.getByRole("button", { name: "kind != PostToolUse" })).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "-kind:PostToolUse", meaningful: true });
+  });
+
+  it("renders one chip per value for multi-value facets and removes values individually", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "source:codex,claude" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const codexChip = screen.getByRole("button", { name: "codex x" });
+    expect(screen.getByRole("button", { name: "claude x" })).toBeInTheDocument();
+
+    fireEvent.click(codexChip);
+    await waitFor(() => expect(params.q).toBe("source:claude"));
+  });
+
+  it("renders a removable session chip", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "session:abc-123 kind:Decision" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const chip = screen.getByRole("button", { name: /session: abc-123/ });
+    expect(chip).toHaveAttribute("title", "session:abc-123");
+
+    fireEvent.click(chip);
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+  });
+
+  it("renders time tokens as human phrases and removes them individually", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "last:2h until:2026-08-18" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(screen.getByRole("button", { name: /Past 2 hours/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Until Aug 18/ }));
+    // last:2h round-trips as the equivalent since-duration token.
+    await waitFor(() => expect(params.q).toBe("since:2h"));
+
+    fireEvent.click(screen.getByRole("button", { name: /Past 2 hours/ }));
+    await waitFor(() => expect(params.q).toBeUndefined());
+  });
+
+  it("renders a since keyword chip as a Since phrase", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "since:yesterday" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(screen.getByRole("button", { name: /Since yesterday/ })).toBeInTheDocument();
+  });
+
+  it("renders a removable is:all chip", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "is:all kind:Decision" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "remove is:all" }));
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+  });
+
+  it("renders removable project_exact chips", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project_exact:/tmp/app kind:Decision" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: /project_exact: \/tmp\/app/ }));
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
   });
 
   it("refetches when meaningful-only filtering changes", async () => {

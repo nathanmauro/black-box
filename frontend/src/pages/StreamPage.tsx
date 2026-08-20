@@ -3,7 +3,18 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import StreamRow from "../components/events/StreamRow";
 import { getEventFeed, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
 import { primaryProjectScope } from "../lib/projects";
-import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
+import {
+  describeTimeSpec,
+  FACET_FIELDS,
+  parseQuery,
+  removeFacetValue,
+  serializeQuery,
+  setFacet,
+  type FacetField,
+  type FacetKey,
+  type FacetMode,
+  type QueryState,
+} from "../lib/query";
 import { useLiveStore } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
@@ -177,6 +188,16 @@ export default function StreamPage(props: StreamPageProps = {}) {
     run(setFacet(visibleSubmitted(), key, value, mode));
   }
 
+  function removeFacetChip(key: FacetKey, value: string, mode: FacetMode = "include") {
+    run(removeFacetValue(visibleSubmitted(), key, value, mode));
+  }
+
+  function patchQuery(patch: (state: QueryState) => void) {
+    const state = parseQuery(visibleSubmitted());
+    patch(state);
+    run(serializeQuery(state));
+  }
+
   function dismissSuggestions() {
     setSuggestionsOpen(false);
   }
@@ -298,26 +319,26 @@ export default function StreamPage(props: StreamPageProps = {}) {
             {(field) => (
               <div class="facet-group">
                 <span class="facet-label">{field.label}</span>
-                <Show when={parsed().facets[field.key]}>
+                <For each={parsed().facets[field.key] ?? []}>
                   {(value) => (
-                    <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
-                      {value()} x
+                    <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
+                      {value} x
                     </button>
                   )}
-                </Show>
-                <Show when={parsed().excludeFacets[field.key]}>
+                </For>
+                <For each={parsed().excludeFacets[field.key] ?? []}>
                   {(value) => (
                     <button
                       type="button"
                       class="facet-chip facet-chip--active facet-chip--exclude"
-                      aria-label={`${field.key} != ${value()}`}
-                      onClick={() => applyFacet(field.key, null, "exclude")}
+                      aria-label={`${field.key} != ${value}`}
+                      onClick={() => removeFacetChip(field.key, value, "exclude")}
                     >
-                      {field.key} != {value()} x
+                      {field.key} != {value} x
                     </button>
                   )}
-                </Show>
-                <Show when={!parsed().facets[field.key] && !parsed().excludeFacets[field.key]}>
+                </For>
+                <Show when={!parsed().facets[field.key]?.length && !parsed().excludeFacets[field.key]?.length}>
                   <div class="facet-quick">
                     <For each={QUICK_VALUES[field.key]}>
                       {(value) => (
@@ -334,6 +355,73 @@ export default function StreamPage(props: StreamPageProps = {}) {
               </div>
             )}
           </For>
+          <For each={parsed().facets.project_exact ?? []}>
+            {(value) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active"
+                onClick={() => removeFacetChip("project_exact", value)}
+              >
+                project_exact: {value} x
+              </button>
+            )}
+          </For>
+          <For each={parsed().excludeFacets.project_exact ?? []}>
+            {(value) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active facet-chip--exclude"
+                aria-label={`project_exact != ${value}`}
+                onClick={() => removeFacetChip("project_exact", value, "exclude")}
+              >
+                project_exact != {value} x
+              </button>
+            )}
+          </For>
+          <Show when={parsed().session}>
+            {(sessionRef) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active"
+                title={`session:${sessionRef()}`}
+                onClick={() => patchQuery((state) => (state.session = null))}
+              >
+                session: {shortSessionRef(sessionRef())} x
+              </button>
+            )}
+          </Show>
+          <Show when={parsed().since}>
+            {(spec) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active"
+                onClick={() => patchQuery((state) => (state.since = null))}
+              >
+                {describeTimeSpec(spec(), "since")} x
+              </button>
+            )}
+          </Show>
+          <Show when={parsed().until}>
+            {(spec) => (
+              <button
+                type="button"
+                class="facet-chip facet-chip--active"
+                onClick={() => patchQuery((state) => (state.until = null))}
+              >
+                {describeTimeSpec(spec(), "until")} x
+              </button>
+            )}
+          </Show>
+          <Show when={parsed().isAll}>
+            <button
+              type="button"
+              class="facet-chip facet-chip--active"
+              aria-label="remove is:all"
+              onClick={() => patchQuery((state) => (state.isAll = false))}
+            >
+              all events x
+            </button>
+          </Show>
           <label class="meaningful-toggle">
             <input type="checkbox" checked={meaningfulOnly()} onChange={(event) => setMeaningfulOnly(event.currentTarget.checked)} />
             meaningful events only
@@ -409,8 +497,14 @@ function appendProjectGroupScope(query: string, canonicalKey: string): string {
   return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
 }
 
+// Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
+// canonicalKey containing one would fan out into bogus project groups.
 function quoteHiddenFacet(value: string): string {
-  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+  return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
+function shortSessionRef(value: string): string {
+  return value.length > 14 ? `${value.slice(0, 12)}…` : value;
 }
 
 function sessionHref(item: EventFeedItem, project: ProjectSummary | null | undefined): string {

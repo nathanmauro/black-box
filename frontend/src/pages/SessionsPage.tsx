@@ -506,17 +506,20 @@ function filterSessions<T extends { source: string; title?: string | null; clien
   query: string,
 ): T[] {
   const parsed = parseQuery(query);
-  const sourceFacet = parsed.facets.source?.toLowerCase();
-  const projectFacet = parsed.facets.project?.toLowerCase();
-  const excludedSourceFacet = parsed.excludeFacets.source?.toLowerCase();
-  const excludedProjectFacet = parsed.excludeFacets.project?.toLowerCase();
-  const textTerms = parsed.text.map((term) => term.toLowerCase());
+  const lower = (values: string[] | undefined) => (values ?? []).map((value) => value.toLowerCase());
+  const sourceFacets = lower(parsed.facets.source);
+  const projectFacets = lower(parsed.facets.project);
+  const excludedSourceFacets = lower(parsed.excludeFacets.source);
+  const excludedProjectFacets = lower(parsed.excludeFacets.project);
+  const textTerms = parsed.freeTerms.map((term) => term.toLowerCase());
 
   return sessions.filter((session) => {
-    if (sourceFacet && !normalizeSessionText(session.source).includes(sourceFacet)) return false;
-    if (excludedSourceFacet && normalizeSessionText(session.source).includes(excludedSourceFacet)) return false;
-    if (projectFacet && !normalizeSessionText(session.cwd).includes(projectFacet)) return false;
-    if (excludedProjectFacet && normalizeSessionText(session.cwd).includes(excludedProjectFacet)) return false;
+    const source = normalizeSessionText(session.source);
+    const cwd = normalizeSessionText(session.cwd);
+    if (sourceFacets.length && !sourceFacets.some((facet) => source.includes(facet))) return false;
+    if (excludedSourceFacets.some((facet) => source.includes(facet))) return false;
+    if (projectFacets.length && !projectFacets.some((facet) => cwd.includes(facet))) return false;
+    if (excludedProjectFacets.some((facet) => cwd.includes(facet))) return false;
 
     if (!textTerms.length) return true;
     const haystack = [
