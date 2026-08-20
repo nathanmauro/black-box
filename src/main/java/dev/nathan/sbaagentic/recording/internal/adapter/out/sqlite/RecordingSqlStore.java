@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -24,7 +25,8 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
-import dev.nathan.sbaagentic.recording.EventFeedQuery;
+import dev.nathan.sbaagentic.query.EventQuery;
+import dev.nathan.sbaagentic.query.EventQuery.Field;
 
 import jakarta.annotation.PostConstruct;
 
@@ -62,12 +64,15 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
     public RecordingSqlStore(
             JdbcTemplate jdbcTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     /**
@@ -302,7 +307,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String since,
             List<String> projectScopes,
             int limit) {
-        EventFeedQuery facets = EventFeedQuery.parse(query);
+        EventQuery facets = EventQuery.parse(query);
         FeedCursor beforeCursor = parseBefore(before);
         Instant sinceInstant = parseSince(since);
 
@@ -314,46 +319,38 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n")
                 .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
                 .append(" WHERE 1=1\n");
-        if (facets.source() != null) {
-            sql.append("   AND lower(e.source) = lower(?)\n");
-            args.add(facets.source());
+        appendInList(sql, args, "lower(e.source)", facets.values(Field.SOURCE), false);
+        appendInList(sql, args, "lower(e.event_type)", facets.values(Field.KIND), false);
+        appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.values(Field.TOOL), false);
+        appendCwdLikes(sql, args, facets.values(Field.PROJECT), false);
+        List<String> exactCwds = facets.values(Field.PROJECT_EXACT);
+        if (!exactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" IN (")
+                    .append(String.join(", ", Collections.nCopies(exactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(exactCwds);
         }
-        if (facets.eventType() != null) {
-            sql.append("   AND lower(e.event_type) = lower(?)\n");
-            args.add(facets.eventType());
+        appendProjectGroup(sql, args, facets.projectGroups(), projectScopes);
+        appendInList(sql, args, "lower(e.source)", facets.excluded(Field.SOURCE), true);
+        appendInList(sql, args, "lower(e.event_type)", facets.excluded(Field.KIND), true);
+        appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.excluded(Field.TOOL), true);
+        appendCwdLikes(sql, args, facets.excluded(Field.PROJECT), true);
+        List<String> excludedExactCwds = facets.excluded(Field.PROJECT_EXACT);
+        if (!excludedExactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" NOT IN (")
+                    .append(String.join(", ", Collections.nCopies(excludedExactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(excludedExactCwds);
         }
-        if (facets.toolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
-            args.add(facets.toolName());
-        }
-        if (facets.cwd() != null) {
-            sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
-            args.add("%" + facets.cwd() + "%");
-        }
-        if (facets.exactCwd() != null) {
-            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
-            args.add(facets.exactCwd());
-        }
-        appendProjectGroup(sql, args, facets.groupCwd(), projectScopes);
-        if (facets.excludedSource() != null) {
-            sql.append("   AND lower(e.source) <> lower(?)\n");
-            args.add(facets.excludedSource());
-        }
-        if (facets.excludedEventType() != null) {
-            sql.append("   AND lower(e.event_type) <> lower(?)\n");
-            args.add(facets.excludedEventType());
-        }
-        if (facets.excludedToolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) <> lower(?)\n");
-            args.add(facets.excludedToolName());
-        }
-        if (facets.excludedCwd() != null) {
-            sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
-            args.add("%" + facets.excludedCwd() + "%");
-        }
-        String freePhrase = facets.freeTextPhrase();
-        if (!freePhrase.isBlank()) {
-            String like = "%" + freePhrase.toLowerCase() + "%";
+        facets.sessionRef().ifPresent(ref -> {
+            // Resolve through agent_sessions (small, uniquely keyed) so the event scan rides
+            // idx_agent_events_session_observed; a naive OR on agent_events table-scans.
+            sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+            args.add(ref);
+            args.add(ref);
+        });
+        for (String term : facets.freeTerms()) {
+            String like = "%" + term.toLowerCase() + "%";
             sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
                     .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
                     .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
@@ -361,9 +358,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             args.add(like);
             args.add(like);
         }
-        if (meaningfulOnly) {
+        if (meaningfulOnly && !facets.includeAll()) {
             sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
         }
+        facets.sinceSpec().ifPresent(spec -> {
+            sql.append("   AND e.observed_at >= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
+        facets.untilSpec().ifPresent(spec -> {
+            sql.append(spec.exclusiveEnd() ? "   AND e.observed_at < ?\n" : "   AND e.observed_at <= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
         if (sinceInstant != null) {
             sql.append("   AND e.observed_at >= ?\n");
             args.add(sinceInstant.toString());
@@ -450,9 +455,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private void appendProjectGroup(
             StringBuilder sql,
             List<Object> args,
-            String projectScope,
+            List<String> projectGroups,
             List<String> projectScopes) {
-        if (projectScope == null) {
+        if (projectGroups.isEmpty()) {
             return;
         }
         List<String> scopes = projectScopes == null ? List.of() : projectScopes;
@@ -466,6 +471,38 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append(String.join(", ", Collections.nCopies(scopes.size(), "?")))
                 .append(")\n");
         args.addAll(scopes);
+    }
+
+    private static void appendInList(
+            StringBuilder sql, List<Object> args, String columnExpr, List<String> values, boolean negated) {
+        if (values.isEmpty()) {
+            return;
+        }
+        sql.append("   AND ").append(columnExpr).append(negated ? " NOT IN (" : " IN (")
+                .append(String.join(", ", Collections.nCopies(values.size(), "lower(?)")))
+                .append(")\n");
+        args.addAll(values);
+    }
+
+    private static void appendCwdLikes(
+            StringBuilder sql, List<Object> args, List<String> values, boolean negated) {
+        if (values.isEmpty()) {
+            return;
+        }
+        if (negated) {
+            for (String value : values) {
+                sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
+                args.add("%" + value + "%");
+            }
+            return;
+        }
+        sql.append("   AND (")
+                .append(String.join(" OR ",
+                        Collections.nCopies(values.size(), "lower(coalesce(s.cwd, '')) LIKE lower(?)")))
+                .append(")\n");
+        for (String value : values) {
+            args.add("%" + value + "%");
+        }
     }
 
     private AgentSession mapSession(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

@@ -53,7 +53,8 @@ class EventRepositoryMigrationTest {
 
         RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
-                new ObjectMapper());
+                new ObjectMapper(),
+                java.time.Clock.systemDefaultZone());
         repository.ensureSchema();
 
         // The legacy session keeps its title but is protected (LEGACY) so only an AI retitle replaces it.
@@ -96,7 +97,8 @@ class EventRepositoryMigrationTest {
 
         RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
-                new ObjectMapper());
+                new ObjectMapper(),
+                java.time.Clock.systemDefaultZone());
         repository.ensureSchema();
 
         // Existing sessions backfill as parents: spawned_by is NULL and maps through the record.

@@ -37,7 +37,8 @@ class SqliteCompatibilityTest {
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         RecordingSqlStore events = new RecordingSqlStore(
                 jdbc,
-                objectMapper);
+                objectMapper,
+                java.time.Clock.systemDefaultZone());
         events.ensureSchema();
         TaskRepository tasks = new TaskRepository(jdbc, objectMapper);
 

@@ -55,6 +55,7 @@ or a dependency boundary justify another package.
 | Module | Responsibility |
 | --- | --- |
 | `recording` | Canonical session/event capture, redaction, raw feed, and SQLite write boundary |
+| `query` | The one grammar-v2 query-string parser (pure, dependency-free); SQL/ES compilation stays in the consuming modules |
 | `project` | Logical project identity, aliases, catalog, timelines, and melds |
 | `memory` | Recall, context assembly, search/facets, and optional Elasticsearch projection |
 | `summary` | Session finalization, summary backends, transcript export |

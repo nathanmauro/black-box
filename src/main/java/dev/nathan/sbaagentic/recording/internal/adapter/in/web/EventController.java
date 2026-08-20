@@ -9,8 +9,8 @@ import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.EventFeedQuery;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
+import dev.nathan.sbaagentic.query.EventQuery;
 
 import jakarta.validation.Valid;
 
@@ -52,10 +52,10 @@ public class EventController {
             @RequestParam(required = false) String before,
             @RequestParam(required = false) String since,
             @RequestParam(defaultValue = "false") boolean meaningful) {
-        EventFeedQuery facets = EventFeedQuery.parse(q);
-        List<String> scopes = facets.groupCwd() == null
-                ? List.of()
-                : projectScopes.scopesFor(facets.groupCwd());
+        List<String> scopes = EventQuery.parse(q).projectGroups().stream()
+                .flatMap(group -> projectScopes.scopesFor(group).stream())
+                .distinct()
+                .toList();
         return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
     }
 

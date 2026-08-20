@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
-import dev.nathan.sbaagentic.memory.QueryFacets;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 
@@ -79,10 +79,11 @@ public class SearchService implements MemorySearchOperations {
 
     public SearchResponse search(String query, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
-        QueryFacets facets = QueryFacets.parse(query);
-        List<String> scopes = facets.groupCwd() == null
-                ? List.of()
-                : projectScopes.scopesFor(facets.groupCwd());
+        EventQuery facets = EventQuery.parse(query);
+        List<String> scopes = facets.projectGroups().stream()
+                .flatMap(group -> projectScopes.scopesFor(group).stream())
+                .distinct()
+                .toList();
         return new SearchResponse(
                 query,
                 repository.searchEvents(query, scopes, safeLimit),
@@ -95,13 +96,27 @@ public class SearchService implements MemorySearchOperations {
         return elasticIndexClient.health();
     }
 
-    private static boolean elasticSearchAllowed(QueryFacets facets) {
-        return facets.exactCwd() == null
-                && facets.groupCwd() == null
-                && facets.excludedSource() == null
-                && facets.excludedEventType() == null
-                && facets.excludedToolName() == null
-                && facets.excludedCwd() == null;
+    /**
+     * Elasticsearch receives the raw query string, so it is only consulted for shapes its mapping
+     * understands: exact/grouped project scoping, negative facets, and the grammar-v2 operators
+     * ({@code session:}, time bounds, {@code is:all}) stay SQLite-only — the ES arm would
+     * fuzzy-match those tokens as text and return out-of-scope rows.
+     */
+    private static boolean elasticSearchAllowed(EventQuery facets) {
+        if (!facets.values(EventQuery.Field.PROJECT_EXACT).isEmpty()
+                || !facets.projectGroups().isEmpty()
+                || facets.sessionRef().isPresent()
+                || facets.sinceSpec().isPresent()
+                || facets.untilSpec().isPresent()
+                || facets.includeAll()) {
+            return false;
+        }
+        for (EventQuery.Field field : EventQuery.Field.values()) {
+            if (!facets.excluded(field).isEmpty()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

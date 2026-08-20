@@ -1,0 +1,323 @@
+[
+  {
+    "name": "empty query parses to nothing",
+    "input": "",
+    "expected": {}
+  },
+  {
+    "name": "blank query parses to nothing",
+    "input": "   ",
+    "expected": {}
+  },
+  {
+    "name": "plain free text is per-term",
+    "input": "recall bug",
+    "expected": { "freeTerms": ["recall", "bug"] }
+  },
+  {
+    "name": "quoted phrase stays one free term",
+    "input": "tool:Edit \"ask history\"",
+    "expected": { "facets": { "tool": ["Edit"] }, "freeTerms": ["ask history"] }
+  },
+  {
+    "name": "source facet",
+    "input": "source:codex",
+    "expected": { "facets": { "source": ["codex"] } }
+  },
+  {
+    "name": "agent alias maps to source",
+    "input": "agent:claude",
+    "expected": { "facets": { "source": ["claude"] } }
+  },
+  {
+    "name": "kind facet",
+    "input": "kind:Decision",
+    "expected": { "facets": { "kind": ["Decision"] } }
+  },
+  {
+    "name": "event_type alias maps to kind",
+    "input": "event_type:Handoff",
+    "expected": { "facets": { "kind": ["Handoff"] } }
+  },
+  {
+    "name": "tool_name alias maps to tool",
+    "input": "tool_name:Bash",
+    "expected": { "facets": { "tool": ["Bash"] } }
+  },
+  {
+    "name": "cwd alias maps to project",
+    "input": "cwd:/tmp/proj",
+    "expected": { "facets": { "project": ["/tmp/proj"] } }
+  },
+  {
+    "name": "project_exact and cwd_exact aliases",
+    "input": "project_exact:/tmp/app cwd_exact:/tmp/other",
+    "expected": { "facets": { "project_exact": ["/tmp/app", "/tmp/other"] } }
+  },
+  {
+    "name": "field names are case-insensitive, values keep their case",
+    "input": "SOURCE:codex Kind:decision",
+    "expected": { "facets": { "source": ["codex"], "kind": ["decision"] } }
+  },
+  {
+    "name": "quoted facet value keeps spaces",
+    "input": "project:\"sba agentic\" recall",
+    "expected": { "facets": { "project": ["sba agentic"] }, "freeTerms": ["recall"] }
+  },
+  {
+    "name": "NOT negates the next facet",
+    "input": "source:codex NOT kind:PostToolUse recall",
+    "expected": {
+      "facets": { "source": ["codex"] },
+      "excluded": { "kind": ["PostToolUse"] },
+      "freeTerms": ["recall"]
+    }
+  },
+  {
+    "name": "leading minus negates a facet",
+    "input": "-tool:Read -project:\"/tmp/sba agentic\"",
+    "expected": { "excluded": { "tool": ["Read"], "project": ["/tmp/sba agentic"] } }
+  },
+  {
+    "name": "dangling NOT falls back to free text",
+    "input": "NOT recall bug",
+    "expected": { "freeTerms": ["NOT", "recall", "bug"] }
+  },
+  {
+    "name": "double NOT keeps one literal and still negates",
+    "input": "NOT NOT kind:PostToolUse",
+    "expected": { "excluded": { "kind": ["PostToolUse"] }, "freeTerms": ["NOT"] }
+  },
+  {
+    "name": "comma-OR builds an IN-list within one facet",
+    "input": "source:codex,claude",
+    "expected": { "facets": { "source": ["codex", "claude"] } }
+  },
+  {
+    "name": "quoting suppresses comma splitting",
+    "input": "source:\"a,b\"",
+    "expected": { "facets": { "source": ["a,b"] } }
+  },
+  {
+    "name": "quoted and bare comma values mix in one token",
+    "input": "tool:\"Read,Write\",Edit",
+    "expected": { "facets": { "tool": ["Read,Write", "Edit"] } }
+  },
+  {
+    "name": "empty comma pieces are dropped",
+    "input": "source:codex,,claude,",
+    "expected": { "facets": { "source": ["codex", "claude"] } }
+  },
+  {
+    "name": "repeated facet tokens union",
+    "input": "source:claude source:codex",
+    "expected": { "facets": { "source": ["claude", "codex"] } }
+  },
+  {
+    "name": "legacy shape: repeated tokens no longer last-one-wins",
+    "input": "kind:Decision kind:Handoff",
+    "expected": { "facets": { "kind": ["Decision", "Handoff"] } }
+  },
+  {
+    "name": "legacy shape: unquoted comma is no longer one literal value",
+    "input": "project:alpha,beta",
+    "expected": { "facets": { "project": ["alpha", "beta"] } }
+  },
+  {
+    "name": "legacy shape: session prefix is an operator, not free text",
+    "input": "session:472c691b-1111-2222-3333-444455556666",
+    "expected": { "session": "472c691b-1111-2222-3333-444455556666" }
+  },
+  {
+    "name": "quoted session value unwraps",
+    "input": "session:\"abc-123\"",
+    "expected": { "session": "abc-123" }
+  },
+  {
+    "name": "repeated session tokens last-one-wins",
+    "input": "session:first session:second",
+    "expected": { "session": "second" }
+  },
+  {
+    "name": "since absolute datetime",
+    "input": "since:2026-08-18T14:00:00Z",
+    "expected": { "since": { "kind": "absolute", "value": "2026-08-18T14:00:00Z" } }
+  },
+  {
+    "name": "since absolute date resolves to start of day",
+    "input": "since:2026-08-18",
+    "expected": { "since": { "kind": "absolute", "value": "2026-08-18" } }
+  },
+  {
+    "name": "until absolute date resolves to end of day",
+    "input": "until:2026-08-18",
+    "expected": { "until": { "kind": "absolute", "value": "2026-08-18" } }
+  },
+  {
+    "name": "since keyword today resolves to start of today",
+    "input": "since:today",
+    "expected": { "since": { "kind": "keyword", "value": "today" } }
+  },
+  {
+    "name": "until keyword yesterday includes all of yesterday",
+    "input": "until:yesterday",
+    "expected": { "until": { "kind": "keyword", "value": "yesterday" } }
+  },
+  {
+    "name": "since and until keywords bound one named day",
+    "input": "since:yesterday until:yesterday",
+    "expected": {
+      "since": { "kind": "keyword", "value": "yesterday" },
+      "until": { "kind": "keyword", "value": "yesterday" }
+    }
+  },
+  {
+    "name": "since duration",
+    "input": "since:2h",
+    "expected": { "since": { "kind": "duration", "value": "2h" } }
+  },
+  {
+    "name": "until duration is symmetric",
+    "input": "until:30m",
+    "expected": { "until": { "kind": "duration", "value": "30m" } }
+  },
+  {
+    "name": "week and day durations parse",
+    "input": "since:1w until:3d",
+    "expected": {
+      "since": { "kind": "duration", "value": "1w" },
+      "until": { "kind": "duration", "value": "3d" }
+    }
+  },
+  {
+    "name": "last is sugar for a since duration",
+    "input": "last:7d",
+    "expected": { "since": { "kind": "duration", "value": "7d" } }
+  },
+  {
+    "name": "last rejects non-durations as free text",
+    "input": "last:today",
+    "expected": { "freeTerms": ["last:today"] }
+  },
+  {
+    "name": "unparseable since value stays free text",
+    "input": "since:banana",
+    "expected": { "freeTerms": ["since:banana"] }
+  },
+  {
+    "name": "negated time token is not an operator",
+    "input": "-since:today",
+    "expected": { "freeTerms": ["-since:today"] }
+  },
+  {
+    "name": "fully quoted operator token stays free text",
+    "input": "\"since:today\"",
+    "expected": { "freeTerms": ["since:today"] }
+  },
+  {
+    "name": "is:all disables the meaningful default",
+    "input": "is:all",
+    "expected": { "isAll": true }
+  },
+  {
+    "name": "is:all is case-insensitive",
+    "input": "IS:ALL",
+    "expected": { "isAll": true }
+  },
+  {
+    "name": "other is: values stay free text",
+    "input": "is:starred",
+    "expected": { "freeTerms": ["is:starred"] }
+  },
+  {
+    "name": "unknown prefixed tokens stay free text",
+    "input": "https://example.com foo:bar",
+    "expected": { "freeTerms": ["https://example.com", "foo:bar"] }
+  },
+  {
+    "name": "empty facet value stays free text",
+    "input": "source:",
+    "expected": { "freeTerms": ["source:"] }
+  },
+  {
+    "name": "hyphenated free words are not negations",
+    "input": "foo-bar -standalone",
+    "expected": { "freeTerms": ["foo-bar", "-standalone"] }
+  },
+  {
+    "name": "project_group collects hidden scopes",
+    "input": "project_group:\"/tmp/project with spaces\" kind:Decision",
+    "expected": {
+      "facets": { "kind": ["Decision"] },
+      "projectGroups": ["/tmp/project with spaces"]
+    }
+  },
+  {
+    "name": "quoted project_group value keeps its comma",
+    "input": "project_group:\"/tmp/a,b\"",
+    "expected": { "projectGroups": ["/tmp/a,b"] }
+  },
+  {
+    "name": "negated project_exact collects into exclusions",
+    "input": "-project_exact:/tmp/app kind:Decision",
+    "expected": {
+      "facets": { "kind": ["Decision"] },
+      "excluded": { "project_exact": ["/tmp/app"] }
+    }
+  },
+  {
+    "name": "minus-negated project_group stays free text",
+    "input": "-project_group:/tmp/p",
+    "expected": { "freeTerms": ["-project_group:/tmp/p"] }
+  },
+  {
+    "name": "NOT-negated project_group stays free text",
+    "input": "NOT project_group:/tmp/p",
+    "expected": { "freeTerms": ["NOT", "project_group:/tmp/p"] }
+  },
+  {
+    "name": "free text with tool output reach",
+    "input": "\"AssertionError\" is:all",
+    "expected": { "isAll": true, "freeTerms": ["AssertionError"] }
+  },
+  {
+    "name": "spec example: decisions this week",
+    "input": "kind:Decision last:7d",
+    "expected": {
+      "facets": { "kind": ["Decision"] },
+      "since": { "kind": "duration", "value": "7d" }
+    }
+  },
+  {
+    "name": "spec example: codex in this repo yesterday",
+    "input": "source:codex since:yesterday until:yesterday",
+    "expected": {
+      "facets": { "source": ["codex"] },
+      "since": { "kind": "keyword", "value": "yesterday" },
+      "until": { "kind": "keyword", "value": "yesterday" }
+    }
+  },
+  {
+    "name": "spec example: everything two agents wrote to disk today",
+    "input": "source:claude,codex tool:Write,Edit since:today is:all",
+    "expected": {
+      "facets": { "source": ["claude", "codex"], "tool": ["Write", "Edit"] },
+      "since": { "kind": "keyword", "value": "today" },
+      "isAll": true
+    }
+  },
+  {
+    "name": "mixed complex query with every token type",
+    "input": "source:codex,claude -kind:PostToolUse session:abc since:2026-08-01 until:today is:all project_group:/tmp/p \"exact phrase\" loose",
+    "expected": {
+      "facets": { "source": ["codex", "claude"] },
+      "excluded": { "kind": ["PostToolUse"] },
+      "session": "abc",
+      "since": { "kind": "absolute", "value": "2026-08-01" },
+      "until": { "kind": "keyword", "value": "today" },
+      "isAll": true,
+      "projectGroups": ["/tmp/p"],
+      "freeTerms": ["exact phrase", "loose"]
+    }
+  }
+]

@@ -2,7 +2,10 @@ package dev.nathan.sbaagentic.recording;
 
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +18,9 @@ import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +40,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "sba.memory.embedding.enabled=false"
 })
 class EventFeedTest {
+
+    /** Fixed server clock so keyword time tokens (today/yesterday) resolve deterministically —
+     * seeding and resolution share one "now", eliminating the midnight-crossing race. */
+    private static final Clock FIXED_CLOCK = Clock.fixed(
+            Instant.parse("2026-08-20T15:30:00Z"), ZoneId.of("America/New_York"));
+
+    @TestConfiguration
+    static class FixedClockConfig {
+
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return FIXED_CLOCK;
+        }
+    }
 
     @Autowired
     EventRecorder ingestService;
@@ -249,6 +270,206 @@ class EventFeedTest {
         EventFeedResponse response = repository.feed(key, false, null, anchor.observedAt().toString(), 10);
 
         assertThat(response.items()).extracting(EventFeedItem::id).containsExactly(newer.id(), anchor.id());
+    }
+
+    @Test
+    void sessionFacetResolvesServerIdAndClientSessionId() {
+        String key = uniqueKey("session");
+        SeededEvent mine = seed(key, "codex", key + "-mine", "Decision", "assistant",
+                "Session facet target " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent other = seed(key, "codex", key + "-other", "Decision", "assistant",
+                "Session facet other " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+
+        String serverSessionId = repository.feed(key, false, null, null, 10).items().stream()
+                .filter(item -> (key + "-mine").equals(item.clientSessionId()))
+                .findFirst().orElseThrow()
+                .sessionId();
+
+        assertThat(repository.feed("session:" + serverSessionId, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(mine.id())
+                .doesNotContain(other.id());
+        assertThat(repository.feed("session:" + key + "-mine", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(mine.id());
+        assertThat(repository.feed("session:" + key + "-nowhere", false, null, null, 10).items())
+                .isEmpty();
+    }
+
+    @Test
+    void grammarSinceAndUntilBoundObservedAtInclusively() {
+        String key = uniqueKey("bounds");
+        seed(key, "codex", key + "-early", "Decision", "assistant",
+                "Before the window " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent inside = seed(key, "codex", key + "-inside", "Decision", "assistant",
+                "Inside the window " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        seed(key, "codex", key + "-late", "Decision", "assistant",
+                "After the window " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:02:00Z"));
+
+        EventFeedResponse response = repository.feed(
+                key + " since:2026-07-01T12:01:00Z until:2026-07-01T12:01:00Z", false, null, null, 10);
+
+        assertThat(response.items()).extracting(EventFeedItem::id).containsExactly(inside.id());
+    }
+
+    @Test
+    void untilDateIncludesTheWholeNamedDayDownToItsLastWholeSecond() {
+        String key = uniqueKey("untilday");
+        ZoneId zone = FIXED_CLOCK.getZone();
+        // Whole-second timestamp: Instant.toString() emits no fraction ("…59Z"), which an
+        // inclusive "…59.999Z" bound would lexicographically exclude — the strict next-day-start
+        // bound must keep it.
+        SeededEvent lastSecond = seed(key, "codex", key + "-day1", "Decision", "assistant",
+                "Last second of the named day " + key, "/tmp/" + key, null,
+                LocalDate.of(2026, 7, 1).atTime(23, 59, 59).atZone(zone).toInstant());
+        SeededEvent nextDayStart = seed(key, "codex", key + "-day2", "Decision", "assistant",
+                "Exactly midnight after " + key, "/tmp/" + key, null,
+                LocalDate.of(2026, 7, 2).atStartOfDay(zone).toInstant());
+
+        assertThat(repository.feed(key + " until:2026-07-01", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(lastSecond.id());
+        assertThat(repository.feed(key + " since:2026-07-02", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(nextDayStart.id());
+    }
+
+    @Test
+    void untilYesterdayIncludesAllOfYesterday() {
+        String key = uniqueKey("yday");
+        ZoneId zone = FIXED_CLOCK.getZone();
+        LocalDate today = LocalDate.now(FIXED_CLOCK);
+        SeededEvent yesterdayEvent = seed(key, "codex", key + "-yesterday", "Decision", "assistant",
+                "Yesterday noon " + key, "/tmp/" + key, null,
+                today.minusDays(1).atTime(12, 0).atZone(zone).toInstant());
+        SeededEvent todayEvent = seed(key, "codex", key + "-today", "Decision", "assistant",
+                "Today " + key, "/tmp/" + key, null,
+                today.atTime(12, 0).atZone(zone).toInstant());
+
+        assertThat(repository.feed(key + " until:yesterday", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(yesterdayEvent.id())
+                .doesNotContain(todayEvent.id());
+    }
+
+    @Test
+    void negatedExactProjectFacetExcludesThatProjectOnly() {
+        String key = uniqueKey("notexact");
+        String source = "codex-" + key;
+        SeededEvent app = seed(key, source, key + "-app", "Decision", "assistant",
+                "Negated exact app " + key, "/tmp/" + key + "/app", null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent other = seed(key, source, key + "-other", "Decision", "assistant",
+                "Negated exact other " + key, "/tmp/" + key + "/other", null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+
+        assertThat(repository.feed(
+                        "source:" + source + " -project_exact:/tmp/" + key + "/app", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(other.id())
+                .doesNotContain(app.id());
+    }
+
+    @Test
+    void isAllOverridesMeaningfulTrueOnTheWire() {
+        String key = uniqueKey("isall");
+        SeededEvent decision = seed(key, "codex", key + "-decision", "Decision", "agent",
+                "Decision passes meaningful " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent noise = seed(key, "codex", key + "-noise", "UserPromptSubmit", "user",
+                "Prompt drops under meaningful " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+
+        assertThat(repository.feed(key, true, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(decision.id());
+        assertThat(repository.feed(key + " is:all", true, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(noise.id(), decision.id());
+    }
+
+    @Test
+    void commaOrAndRepeatedTokensCompileToInLists() {
+        String key = uniqueKey("commaor");
+        SeededEvent codex = seed(key, "codex-" + key, key + "-codex", "Decision", "assistant",
+                "Comma OR codex " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent claude = seed(key, "claude-" + key, key + "-claude", "Decision", "assistant",
+                "Comma OR claude " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        SeededEvent gemini = seed(key, "gemini-" + key, key + "-gemini", "Decision", "assistant",
+                "Comma OR gemini " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:02:00Z"));
+
+        assertThat(repository.feed("source:codex-" + key + ",claude-" + key + " " + key,
+                        false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(claude.id(), codex.id());
+        assertThat(repository.feed("source:codex-" + key + " source:claude-" + key + " " + key,
+                        false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(claude.id(), codex.id());
+        assertThat(repository.feed("-source:codex-" + key + ",claude-" + key + " " + key,
+                        false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(gemini.id());
+    }
+
+    @Test
+    void freeTextMatchesPerTermAcrossSearchedColumns() {
+        String key = uniqueKey("perterm");
+        String alpha = "alphaterm" + key;
+        String bravo = "bravoterm" + key;
+        SeededEvent both = seed(key, "codex", key + "-both", "Decision", "assistant",
+                "Has " + alpha + " and " + bravo + " together", "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        seed(key, "codex", key + "-alpha-only", "Decision", "assistant",
+                "Has only " + alpha + " here", "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        SeededEvent crossColumn = seed(key, "codex", key + "-cross", "PostToolUse", "assistant",
+                "Tool row with " + alpha + " in text", "/tmp/" + key, "Read",
+                Instant.parse("2026-07-01T12:02:00Z"));
+
+        assertThat(repository.feed(alpha + " " + bravo, false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(both.id());
+        assertThat(repository.feed(alpha + " read", false, null, null, 10).items())
+                .extracting(EventFeedItem::id)
+                .containsExactly(crossColumn.id());
+    }
+
+    @Test
+    void grammarTimeBoundsComposeWithCursorAndMeaningful() {
+        String key = uniqueKey("compose");
+        seed(key, "codex", key + "-before", "Decision", "agent",
+                "Before window " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T11:59:00Z"));
+        SeededEvent first = seed(key, "codex", key + "-first", "Decision", "agent",
+                "Window first " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        SeededEvent second = seed(key, "codex", key + "-second", "Decision", "agent",
+                "Window second " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        seed(key, "codex", key + "-noise", "UserPromptSubmit", "user",
+                "Window noise " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:30Z"));
+        seed(key, "codex", key + "-after", "Decision", "agent",
+                "After window " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:03:00Z"));
+        String window = key + " since:2026-07-01T12:00:00Z until:2026-07-01T12:02:00Z";
+
+        EventFeedResponse pageOne = repository.feed(window, true, null, null, 1);
+        EventFeedResponse pageTwo = repository.feed(window, true, pageOne.nextBefore(), null, 2);
+
+        assertThat(pageOne.items()).extracting(EventFeedItem::id).containsExactly(second.id());
+        assertThat(pageOne.nextBefore()).isNotNull();
+        assertThat(pageTwo.items()).extracting(EventFeedItem::id).containsExactly(first.id());
+        assertThat(pageTwo.nextBefore()).isNull();
     }
 
     @Test

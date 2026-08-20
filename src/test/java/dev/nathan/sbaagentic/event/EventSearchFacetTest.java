@@ -111,6 +111,75 @@ class EventSearchFacetTest {
                 .stream().map(AgentEvent::id).toList();
 
         assertThat(ids).containsExactly(appId).doesNotContain(appOtherId);
+
+        List<String> negated = repository.searchEvents(
+                        "source:" + source + " -project_exact:/tmp/" + key + "/app", 50)
+                .stream().map(AgentEvent::id).toList();
+        assertThat(negated).containsExactly(appOtherId).doesNotContain(appId);
+    }
+
+    @Test
+    void sessionFacetScopesSearchToOneSession() {
+        String key = "session-" + UUID.randomUUID().toString().replace("-", "");
+        String source = "codex-" + key;
+        String mineId = seed(source, key + "-mine", "Decision", "Session search mine " + key, "/tmp/" + key);
+        String otherId = seed(source, key + "-other", "Decision", "Session search other " + key, "/tmp/" + key);
+
+        List<String> ids = repository.searchEvents("session:" + key + "-mine", 50)
+                .stream().map(AgentEvent::id).toList();
+
+        assertThat(ids).containsExactly(mineId).doesNotContain(otherId);
+    }
+
+    @Test
+    void commaOrUnionsSourcesWithinOneFacet() {
+        String key = "comma-" + UUID.randomUUID().toString().replace("-", "");
+        String codexId = seed("codex-" + key, key + "-codex", "Decision", "Comma codex " + key, "/tmp/" + key);
+        String claudeId = seed("claude-" + key, key + "-claude", "Decision", "Comma claude " + key, "/tmp/" + key);
+        String geminiId = seed("gemini-" + key, key + "-gemini", "Decision", "Comma gemini " + key, "/tmp/" + key);
+
+        List<String> ids = repository.searchEvents("source:codex-" + key + ",claude-" + key, 50)
+                .stream().map(AgentEvent::id).toList();
+
+        assertThat(ids).containsExactlyInAnyOrder(codexId, claudeId).doesNotContain(geminiId);
+    }
+
+    @Test
+    void freeTextTermsAndIndependentlyInSearch() {
+        String key = UUID.randomUUID().toString().replace("-", "");
+        String alpha = "alphaterm" + key;
+        String bravo = "bravoterm" + key;
+        String source = "codex-" + key;
+        String bothId = seed(source, key + "-both", "Decision",
+                "Has " + alpha + " and " + bravo + " together", "/tmp/" + key);
+        String alphaOnlyId = seed(source, key + "-alpha", "Decision",
+                "Has only " + alpha + " here", "/tmp/" + key);
+
+        List<String> ids = repository.searchEvents("source:" + source + " " + alpha + " " + bravo, 50)
+                .stream().map(AgentEvent::id).toList();
+
+        assertThat(ids).containsExactly(bothId).doesNotContain(alphaOnlyId);
+    }
+
+    @Test
+    void sinceTokenBoundsSearchResults() {
+        String key = "since-" + UUID.randomUUID().toString().replace("-", "");
+        String source = "codex-" + key;
+        String olderId = ingestService.ingest(new EventIngestRequest(
+                source, key + "-older", "turn-1", "Decision", "assistant",
+                "Older event " + key, "/tmp/" + key, null, null, null,
+                Map.of("title", "Older"),
+                Instant.parse("2026-06-16T12:00:00Z"))).eventId();
+        String newerId = ingestService.ingest(new EventIngestRequest(
+                source, key + "-newer", "turn-1", "Decision", "assistant",
+                "Newer event " + key, "/tmp/" + key, null, null, null,
+                Map.of("title", "Newer"),
+                Instant.parse("2026-06-18T12:00:00Z"))).eventId();
+
+        List<String> ids = repository.searchEvents("source:" + source + " since:2026-06-17T00:00:00Z", 50)
+                .stream().map(AgentEvent::id).toList();
+
+        assertThat(ids).containsExactly(newerId).doesNotContain(olderId);
     }
 
     @Test
