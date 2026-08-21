@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { A, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
@@ -32,7 +32,7 @@ import {
   projectShortName,
   rankProjects,
 } from "../lib/projects";
-import { buildTrajectory, type TrajectoryGraphNode } from "../lib/trajectory";
+import { buildTrajectory, findTrajectoryNodeForCapture, type TrajectoryGraphNode } from "../lib/trajectory";
 
 const TIMELINE_LIMIT = 250;
 const SESSION_LIMIT = 20;
@@ -43,11 +43,11 @@ type ProjectStoryView = "trajectory" | "timeline";
 export default function ProjectsPage() {
   const params = useParams<{ projectKey?: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams<{ focus?: string }>();
   const [mergeTargetKey, setMergeTargetKey] = createSignal<string>();
   const [curationError, setCurationError] = createSignal<string | null>(null);
   const [curationBusyKey, setCurationBusyKey] = createSignal<string | null>(null);
   const [storyView, setStoryViewSignal] = createSignal<ProjectStoryView>(loadProjectStoryView());
-  const [selectedTrajectoryNodeId, setSelectedTrajectoryNodeId] = createSignal<string | null>(null);
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, {
     initialValue: [] as ProjectSummary[],
   });
@@ -85,6 +85,17 @@ export default function ProjectsPage() {
   const timelineValue = createMemo(() => (timeline.error ? emptyTimeline() : timeline()));
   const trajectoryValue = createMemo(() => (trajectory.error ? emptyTrajectory() : trajectory()));
   const trajectoryGraph = createMemo(() => buildTrajectory(trajectoryValue(), Date.now()));
+  // Trajectory selection is URL state (spec §9, D14: `?focus=` = selection): `focus=<nodeId>`
+  // selects a node directly; `focus=capture:<eventId>` resolves to the node containing that
+  // capture. Selection survives reload and the back button walks selection history.
+  const selectedTrajectoryNodeId = createMemo<string | null>(() => {
+    const focus = searchParams.focus;
+    if (!focus) return null;
+    if (focus.startsWith("capture:")) {
+      return findTrajectoryNodeForCapture(trajectoryGraph(), focus.slice("capture:".length))?.id ?? null;
+    }
+    return focus;
+  });
   const selectedTrajectoryNode = createMemo(() =>
     trajectoryGraph().nodes.find((node) => node.id === selectedTrajectoryNodeId()) ?? null,
   );
@@ -101,17 +112,22 @@ export default function ProjectsPage() {
     navigate(projectHref(project), { replace: true });
   });
 
-  createEffect(() => {
-    selectedKey();
+  createEffect((previousKey: string | null | undefined) => {
+    const key = selectedKey();
     setMergeTargetKey(undefined);
     setCurationError(null);
-    setSelectedTrajectoryNodeId(null);
-  });
+    // Clear the focus selection only on a real project switch — never on the initial catalog
+    // resolve (null → key), which would wipe a deep-linked ?focus= before it ever rendered.
+    if (previousKey != null && key != null && previousKey !== key && searchParams.focus) {
+      setSearchParams({ focus: undefined }, { replace: true });
+    }
+    return key;
+  }, undefined as string | null | undefined);
 
   const clearTrajectorySelection = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
-    if (storyView() !== "trajectory" || !selectedTrajectoryNodeId()) return;
-    setSelectedTrajectoryNodeId(null);
+    if (storyView() !== "trajectory" || !searchParams.focus) return;
+    setSearchParams({ focus: undefined });
   };
   onMount(() => window.addEventListener("keydown", clearTrajectorySelection));
   onCleanup(() => window.removeEventListener("keydown", clearTrajectorySelection));
@@ -328,7 +344,7 @@ export default function ProjectsPage() {
                                 <TrajectoryView
                                   graph={trajectoryGraph()}
                                   selectedNodeId={selectedTrajectoryNodeId()}
-                                  onSelect={(node) => setSelectedTrajectoryNodeId(node.id)}
+                                  onSelect={(node) => setSearchParams({ focus: node.id })}
                                 />
                               </Show>
                             </Show>
@@ -415,6 +431,14 @@ function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: Proje
                 {(observedAt) => <time>{timeAgo(observedAt())}</time>}
               </Show>
             </div>
+          )}
+        </Show>
+
+        <Show when={viewInStreamHref(props.node, props.project)}>
+          {(href) => (
+            <A class="trajectory-detail-link" href={href()}>
+              View in Stream <span aria-hidden="true">→</span>
+            </A>
           )}
         </Show>
 
@@ -761,6 +785,22 @@ function Metric(props: { label: string; value: number }) {
 
 function projectHref(project: ProjectSummary): string {
   return `/projects/${encodeURIComponent(project.projectKey)}`;
+}
+
+const STREAM_LINK_KINDS = new Set<string>(["deep-past", "burst", "head"]);
+
+/**
+ * "View in Stream" (spec §9, D14): the node's burst time range as absolute-ISO since:/until:
+ * tokens in the VISIBLE q, with the project scope carried by the `?project=` convention so the
+ * hidden project_group injection applies at the API boundary — never in the visible q. Null for
+ * non-burst nodes or when the range is unknown (e.g. a capped deep-past with no members).
+ */
+function viewInStreamHref(node: TrajectoryGraphNode, project: ProjectSummary): string | null {
+  if (!STREAM_LINK_KINDS.has(node.kind)) return null;
+  if (!node.startMs || !node.endMs) return null;
+  const q = `since:${new Date(node.startMs).toISOString()} until:${new Date(node.endMs).toISOString()}`;
+  const query = new URLSearchParams({ q, project: project.projectKey });
+  return `/stream?${query.toString()}`;
 }
 
 function activityHref(project: ProjectSummary, view: "browse"): string {

@@ -1055,6 +1055,151 @@ describe("StreamPage", () => {
     const option = await screen.findByRole("option", { name: "Decision" });
     expect(option.querySelector(".suggest-option-count")).not.toBeInTheDocument();
   });
+
+  it("applies each Views preset exactly as its locked q string", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const trigger = screen.getByRole("button", { name: "Views" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    const presets: Array<[RegExp, string]> = [
+      [/Decisions this week/, "kind:Decision last:7d"],
+      [/Handoffs/, "kind:Handoff last:7d"],
+      [/Codex right now/, "source:codex last:2h"],
+      [/Prompts today/, "kind:UserPromptSubmit last:24h"],
+    ];
+    for (const [name, q] of presets) {
+      fireEvent.click(screen.getByRole("button", { name: "Views" }));
+      fireEvent.click(screen.getByRole("button", { name }));
+      await waitFor(() => expect(params.q).toBe(q));
+      // Picking a view closes the panel.
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps the pinned project scope untouched when a view is picked", async () => {
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    fireEvent.click(screen.getByRole("button", { name: /Codex right now/ }));
+
+    // With a pinned project the slice-6 project-strip effect round-trips q through the parser,
+    // normalizing last:2h to its equivalent since-duration token (same semantics, D7).
+    await waitFor(() => expect(params.q).toBe("source:codex since:2h"));
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "source:codex since:2h project_group:/Users/nathan/Developer/proj/sba-agentic",
+        meaningful: true,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Pinned project sba-agentic — clear project scope" })).toBeInTheDocument();
+  });
+
+  it("saves the current view, persists it across mounts, applies it, and removes it", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision last:7d" });
+    const first = render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    fireEvent.input(screen.getByLabelText("Saved view name"), { target: { value: "My weekly decisions" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(JSON.parse(localStorage.getItem("blackbox.savedViews")!)).toMatchObject([
+      { name: "My weekly decisions", q: "kind:Decision last:7d" },
+    ]);
+    expect(screen.getByRole("button", { name: "My weekly decisions" })).toBeInTheDocument();
+    first.unmount();
+
+    [params, setParams] = createStore<{ q?: string }>({});
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    fireEvent.click(screen.getByRole("button", { name: "My weekly decisions" }));
+    await waitFor(() => expect(params.q).toBe("kind:Decision last:7d"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove saved view My weekly decisions" }));
+    expect(screen.queryByRole("button", { name: "My weekly decisions" })).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("blackbox.savedViews")!)).toEqual([]);
+  });
+
+  it("disables saving a view while the visible q is empty", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    expect(screen.getByLabelText("Saved view name")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("fails soft to presets only when saved-view storage is corrupt", async () => {
+    localStorage.setItem("blackbox.savedViews", "{not json");
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    expect(screen.getByRole("button", { name: /Decisions this week/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Remove saved view/ })).not.toBeInTheDocument();
+  });
+
+  it("offers the quiet Ask-memory affordance only when q carries free text", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    expect(screen.queryByRole("link", { name: /Ask memory about/ })).not.toBeInTheDocument();
+
+    setParams({ q: 'kind:Decision "recall bug"' });
+    const link = await screen.findByRole("link", { name: /Ask memory about «recall bug»/ });
+    expect(link).toHaveAttribute("href", `/?${new URLSearchParams({ view: "ask", q: "recall bug" }).toString()}`);
+  });
+
+  it("carries the pinned project on the Ask-memory link", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "recall" });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const link = await screen.findByRole("link", { name: /Ask memory about «recall»/ });
+    expect(link).toHaveAttribute(
+      "href",
+      `/?${new URLSearchParams({ view: "ask", q: "recall", project: "sba-key" }).toString()}`,
+    );
+  });
+
+  it("links expanded landmark cards to the trajectory when the cwd resolves in the catalog", async () => {
+    render(() => <StreamPage projects={[selectedProject]} />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    const link = screen.getByRole("link", { name: "Trajectory" });
+    expect(link).toHaveAttribute("href", `/projects/sba-key?${new URLSearchParams({ focus: "capture:event-1" }).toString()}`);
+    // The per-event position link stays alongside it (D14 keeps position precision).
+    expect(screen.getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
+  });
+
+  it("omits the Trajectory link when the cwd resolves to no catalog project — never guesses", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(
+      feed([eventItem("event-1", "Make stream default", undefined, { cwd: "/somewhere/unknown" })]),
+    );
+    render(() => <StreamPage projects={[selectedProject]} />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    expect(screen.queryByRole("link", { name: "Trajectory" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
+  });
+
+  it("omits the Trajectory link while no catalog is available", async () => {
+    render(() => <StreamPage />);
+    const row = await screen.findByRole("button", { name: /Make stream default/ });
+    fireEvent.click(row);
+
+    expect(screen.queryByRole("link", { name: "Trajectory" })).not.toBeInTheDocument();
+  });
 });
 
 function countsPayload(total: number): EventFacetCounts {

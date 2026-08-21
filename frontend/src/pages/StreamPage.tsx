@@ -1,4 +1,4 @@
-import { useSearchParams } from "@solidjs/router";
+import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
 import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
@@ -16,7 +16,8 @@ import {
   type ProjectSummary,
 } from "../lib/api";
 import { truncatePath } from "../lib/format";
-import { primaryProjectScope, projectShortName } from "../lib/projects";
+import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../lib/projects";
+import { listSavedViews, removeSavedView, saveSavedView } from "../lib/savedViews";
 import {
   describeTimeSpec,
   FACET_FIELDS,
@@ -55,6 +56,20 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
 
 const FACETS_DEBOUNCE_MS = 300;
 
+// Built-in view presets (spec §8, D13): each is just a q string in the locked grammar, doubling
+// as documentation of it. An "Errors today" preset is NOT shippable — zero error-shaped
+// event_types exist and failure-ness is payload-derived client-side (§4.3); a server-side error
+// facet is a recorded follow-up, out of scope (§12).
+const VIEW_PRESETS: Array<{ name: string; q: string }> = [
+  { name: "Decisions this week", q: "kind:Decision last:7d" },
+  { name: "Handoffs", q: "kind:Handoff last:7d" },
+  { name: "Codex right now", q: "source:codex last:2h" },
+  { name: "Prompts today", q: "kind:UserPromptSubmit last:24h" },
+];
+
+// The expanded landmark cards that earn a "Trajectory →" link (spec §9, D14).
+const TRAJECTORY_LINK_KINDS = new Set(["Decision", "Handoff", "Observation"]);
+
 type EditingToken = { key: FacetField["key"] | "session"; prefix: string };
 
 // Popover option: counts ride along when the suggestion came from the facets endpoint (§6.4).
@@ -62,6 +77,10 @@ type Suggestion = { value: string; count?: number };
 
 type StreamPageProps = {
   project?: ProjectSummary | null;
+  // The full project catalog already loaded by the host page (ProjectPicker's source) — used to
+  // resolve a row's cwd to a projectKey for the "Trajectory →" link. Optional: without it the
+  // link is simply omitted.
+  projects?: ProjectSummary[];
   projectScopePending?: boolean;
   onClearProject?: () => void;
 };
@@ -133,6 +152,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
   // "Options" disclosure (spec §4.6): density + meaningful live behind one quiet control.
   const [optionsOpen, setOptionsOpen] = createSignal(false);
+  // "Views" disclosure (spec §8, D13): presets + localStorage-saved views, same quiet pattern.
+  const [viewsOpen, setViewsOpen] = createSignal(false);
+  const [savedViews, setSavedViews] = createSignal(listSavedViews());
+  const [saveViewName, setSaveViewName] = createSignal("");
   // On-demand counted browser (spec §6.5, D10): opened from the match count, never standing.
   const [browserOpen, setBrowserOpen] = createSignal(false);
   // null = unavailable (loading, aborted, error, or the server's backfill omission). The header
@@ -374,6 +397,25 @@ export default function StreamPage(props: StreamPageProps = {}) {
     run(serializeQuery(state));
   }
 
+  // Picking a view replaces the visible q wholesale (a view IS a q string, D13); the pinned
+  // project is picker state, not q, so it stays untouched.
+  function applyView(q: string) {
+    run(q);
+    setViewsOpen(false);
+  }
+
+  function saveCurrentView() {
+    const name = saveViewName().trim();
+    const q = visibleSubmitted().trim();
+    if (!name || !q) return;
+    setSavedViews(saveSavedView(name, q));
+    setSaveViewName("");
+  }
+
+  function removeView(name: string) {
+    setSavedViews(removeSavedView(name));
+  }
+
   // Counted-browser click = replace that facet's value (spec §6.5). The no-project sentinel is
   // only expressible as an exact token — a substring project: filter for it would match nothing.
   function pickCountedValue(key: FacetField["key"], value: string) {
@@ -536,6 +578,74 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   )}
                 </For>
               </ul>
+            </Show>
+          </div>
+          <div class="stream-options stream-views">
+            <button
+              type="button"
+              class="stream-options-trigger"
+              aria-expanded={viewsOpen()}
+              aria-controls="stream-views-panel"
+              onClick={() => setViewsOpen((open) => !open)}
+            >
+              Views
+            </button>
+            <Show when={viewsOpen()}>
+              <div id="stream-views-panel" class="stream-options-panel stream-views-panel">
+                <For each={VIEW_PRESETS}>
+                  {(preset) => (
+                    <button type="button" class="stream-view-option" onClick={() => applyView(preset.q)}>
+                      <span class="stream-view-name">{preset.name}</span>
+                      <code class="stream-view-q">{preset.q}</code>
+                    </button>
+                  )}
+                </For>
+                <Show when={savedViews().length}>
+                  <hr class="stream-views-separator" />
+                  <For each={savedViews()}>
+                    {(view) => (
+                      <div class="stream-view-saved">
+                        <button type="button" class="stream-view-option" title={view.q} onClick={() => applyView(view.q)}>
+                          <span class="stream-view-name">{view.name}</span>
+                        </button>
+                        <button
+                          type="button"
+                          class="stream-view-remove"
+                          aria-label={`Remove saved view ${view.name}`}
+                          onClick={() => removeView(view.name)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+                <hr class="stream-views-separator" />
+                {/* Inline save (spec §8): enabled only while the visible q is non-empty. */}
+                <div class="stream-view-save">
+                  <input
+                    class="stream-view-save-input"
+                    value={saveViewName()}
+                    placeholder="Save current view…"
+                    aria-label="Saved view name"
+                    disabled={!visibleSubmitted().trim()}
+                    onInput={(event) => setSaveViewName(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        saveCurrentView();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!visibleSubmitted().trim() || !saveViewName().trim()}
+                    onClick={saveCurrentView}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
             </Show>
           </div>
           <div class="stream-options">
@@ -732,6 +842,18 @@ export default function StreamPage(props: StreamPageProps = {}) {
         </div>
       </Show>
 
+      {/* Semantic recall is linked, never blended (spec §4.6/§6.3, D9): free text earns one
+          quiet affordance jumping to the Ask surface prefilled — no semantic rows in the feed. */}
+      <Show when={parsed().freeTerms[0]}>
+        {(phrase) => (
+          <div class="stream-ask-memory">
+            <A href={askMemoryHref(phrase(), props.project)}>
+              Ask memory about «{phrase()}» <span aria-hidden="true">→</span>
+            </A>
+          </div>
+        )}
+      </Show>
+
       {/* On-demand counted browser (spec §6.5, D10): opens from the match count, no standing
           rail. It renders only while counts exist for the current q — a query change closes it
           with the counts rather than showing numbers for a different query. */}
@@ -817,6 +939,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
                                 expanded={isExpanded(row.item.id)}
                                 textExpanded={density() === "expanded"}
                                 sessionHref={sessionHref(row.item, props.project)}
+                                trajectoryHref={trajectoryHrefFor(row.item, props.projects)}
                                 onToggle={() => toggleRow(row.item.id)}
                                 cwdException={cwdDiffers(row.item.cwd, run().cwd)}
                               />
@@ -938,6 +1061,28 @@ function sessionHref(item: EventFeedItem, project: ProjectSummary | null | undef
   });
   if (project) query.set("project", project.projectKey);
   return `/?${query.toString()}`;
+}
+
+// "Ask memory about «text» →" (spec §4.6/§6.3): navigates to the Ask surface prefilled. The
+// prefill parameter is ?q= — the one ActivityPage/SearchPage already carry and the ask panel
+// seeds its question from — with view=ask mounting the panel. The pinned project rides along so
+// the host page keeps its scope chrome.
+function askMemoryHref(phrase: string, project: ProjectSummary | null | undefined): string {
+  const query = new URLSearchParams({ view: "ask", q: phrase });
+  if (project) query.set("project", project.projectKey);
+  return `/?${query.toString()}`;
+}
+
+// "Trajectory →" for expanded landmark cards (spec §9, D14): projectKey resolves from the row's
+// cwd via the already-loaded catalog (exact/canonical scope match only). Unresolvable cwds get
+// no link — never guess.
+function trajectoryHrefFor(item: EventFeedItem, projects: ProjectSummary[] | undefined): string | undefined {
+  if (!TRAJECTORY_LINK_KINDS.has(item.eventType ?? "")) return undefined;
+  if (!item.cwd || !projects?.length) return undefined;
+  const project = findProjectByIdentifier(projects, item.cwd);
+  if (!project) return undefined;
+  const query = new URLSearchParams({ focus: `capture:${item.id}` });
+  return `/projects/${encodeURIComponent(project.projectKey)}?${query.toString()}`;
 }
 
 // Session-level link for the run header ("View session →", spec §4.1): no event position.

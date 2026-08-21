@@ -375,7 +375,10 @@ function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, ev
 }
 
 function AskPanel(props: { project?: ProjectSummary | null } = {}) {
-  const [question, setQuestion] = createSignal("");
+  const [params] = useSearchParams<{ q?: string }>();
+  // ?q= prefills the question (the Stream's "Ask memory about «text» →" affordance, spec §6.3);
+  // asking still requires an explicit submit.
+  const [question, setQuestion] = createSignal(params.q ?? "");
   const [asked, setAsked] = createSignal("");
   const [answer] = createResource(asked, async (q) => (q.trim() ? ask(q) : null));
   return (

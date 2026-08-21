@@ -180,6 +180,7 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
             <Match when={mode() === "stream"}>
               <StreamPage
                 project={selectedProject()}
+                projects={availableProjects()}
                 projectScopePending={projectScopePending()}
                 onClearProject={() => selectProject(undefined)}
               />

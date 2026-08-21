@@ -12,6 +12,9 @@ type StreamRowProps = {
   expanded: boolean;
   textExpanded?: boolean;
   sessionHref: string;
+  // "Trajectory →" target for expanded landmark cards (spec §9, D14); omitted when the row's
+  // cwd does not resolve to a catalog project — the link is never guessed.
+  trajectoryHref?: string;
   onToggle: () => void;
   // A row whose cwd differs from its run's shows its own cwd inline, dim (spec §4.1) — the
   // only per-row cwd; shared context lives on the run header (P2).
@@ -72,6 +75,13 @@ export default function StreamRow(props: StreamRowProps) {
             <A href={props.sessionHref} class="stream-session-link">
               Open at this event <span aria-hidden="true">→</span>
             </A>
+            <Show when={props.trajectoryHref}>
+              {(href) => (
+                <A href={href()} class="stream-session-link stream-trajectory-link">
+                  Trajectory <span aria-hidden="true">→</span>
+                </A>
+              )}
+            </Show>
           </div>
           <EventRenderer event={item()} textExpanded={props.textExpanded} />
         </div>
