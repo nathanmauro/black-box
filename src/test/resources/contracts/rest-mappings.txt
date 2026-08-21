@@ -38,6 +38,7 @@ GET /recall
 GET /search
 GET /sessions
 GET /sessions/**
+GET /stream
 PATCH /api/tasks/{taskId}
 POST /api/ask
 POST /api/decisions

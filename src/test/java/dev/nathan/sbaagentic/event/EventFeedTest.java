@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording;
 
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.time.Clock;
@@ -67,6 +68,9 @@ class EventFeedTest {
 
     @Autowired
     ProjectAliasService projectAliasService;
+
+    @Autowired
+    EventFtsIndex ftsIndex;
 
     @Test
     void feedReturnsNewestFirstWithSessionAliases() {
@@ -470,6 +474,81 @@ class EventFeedTest {
         assertThat(pageOne.nextBefore()).isNotNull();
         assertThat(pageTwo.items()).extracting(EventFeedItem::id).containsExactly(first.id());
         assertThat(pageTwo.nextBefore()).isNull();
+    }
+
+    @Test
+    void ftsAndLikePathsReturnIdenticalRowsForTwoTermQuery() {
+        String key = uniqueKey("parity");
+        String alpha = "alphaterm" + key;
+        String bravo = "bravoterm" + key;
+        SeededEvent both = seed(key, "codex", key + "-both", "Decision", "assistant",
+                "Parity " + alpha + " with " + bravo + " present", "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        seed(key, "codex", key + "-alpha", "Decision", "assistant",
+                "Parity " + alpha + " alone", "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        String q = alpha + " " + bravo;
+
+        assertThat(ftsIndex.ready()).isTrue();
+        List<String> ftsRows = repository.feed(q, false, null, null, 10).items()
+                .stream().map(EventFeedItem::id).toList();
+        try {
+            ftsIndex.markUnavailable();
+            List<String> likeRows = repository.feed(q, false, null, null, 10).items()
+                    .stream().map(EventFeedItem::id).toList();
+            assertThat(ftsRows).isEqualTo(likeRows).containsExactly(both.id());
+        }
+        finally {
+            ftsIndex.ensureFtsSchema();
+        }
+    }
+
+    @Test
+    void quotedPhraseMatchesOnlyConsecutiveWordsOnBothPaths() {
+        String key = uniqueKey("phrase");
+        SeededEvent adjacent = seed(key, "codex", key + "-adjacent", "Decision", "assistant",
+                "run the exact phrase here " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+        seed(key, "codex", key + "-split", "Decision", "assistant",
+                "exact match of another phrase " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:01:00Z"));
+        String q = "\"exact phrase\" " + key;
+
+        assertThat(ftsIndex.ready()).isTrue();
+        List<String> ftsRows = repository.feed(q, false, null, null, 10).items()
+                .stream().map(EventFeedItem::id).toList();
+        try {
+            ftsIndex.markUnavailable();
+            List<String> likeRows = repository.feed(q, false, null, null, 10).items()
+                    .stream().map(EventFeedItem::id).toList();
+            assertThat(ftsRows).isEqualTo(likeRows).containsExactly(adjacent.id());
+        }
+        finally {
+            ftsIndex.ensureFtsSchema();
+        }
+    }
+
+    @Test
+    void ftsQueryErrorFallsBackToLikeInsteadOfFailingTheFeed() {
+        String key = uniqueKey("ftsfail");
+        SeededEvent event = seed(key, "codex", key + "-row", "Decision", "assistant",
+                "Fallback target " + key, "/tmp/" + key, null,
+                Instant.parse("2026-07-01T12:00:00Z"));
+
+        assertThat(ftsIndex.ready()).isTrue();
+        try {
+            // Break MATCH while ready() still claims true: the feed must catch, mark FTS
+            // unavailable, and re-serve the same query over LIKE.
+            jdbcTemplate.execute("DROP TABLE event_fts");
+            assertThat(repository.feed(key, false, null, null, 10).items())
+                    .extracting(EventFeedItem::id)
+                    .containsExactly(event.id());
+            assertThat(ftsIndex.ready()).isFalse();
+        }
+        finally {
+            ftsIndex.ensureFtsSchema();
+            ftsIndex.rebuild();
+        }
     }
 
     @Test

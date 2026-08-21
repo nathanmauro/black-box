@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording;
 
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.nio.file.Path;
@@ -38,7 +39,8 @@ class SqliteCompatibilityTest {
         RecordingSqlStore events = new RecordingSqlStore(
                 jdbc,
                 objectMapper,
-                java.time.Clock.systemDefaultZone());
+                java.time.Clock.systemDefaultZone(),
+                new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
         events.ensureSchema();
         TaskRepository tasks = new TaskRepository(jdbc, objectMapper);
 

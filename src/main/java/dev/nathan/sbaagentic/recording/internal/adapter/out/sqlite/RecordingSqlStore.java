@@ -65,14 +65,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final EventFtsIndex ftsIndex;
 
     public RecordingSqlStore(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            Clock clock) {
+            Clock clock,
+            EventFtsIndex ftsIndex) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.ftsIndex = ftsIndex;
     }
 
     /**
@@ -349,14 +352,24 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             args.add(ref);
             args.add(ref);
         });
-        for (String term : facets.freeTerms()) {
-            String like = "%" + term.toLowerCase() + "%";
-            sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
-                    .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
-                    .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
-            args.add(like);
-            args.add(like);
-            args.add(like);
+        // Free text prefers the FTS5 index (which also reaches the clipped tool JSON in its
+        // `extra` column) and falls back to the per-term LIKE path with identical AND semantics
+        // whenever FTS is absent or the backfill has not finished.
+        boolean usedFts = !facets.freeTerms().isEmpty() && ftsIndex.ready();
+        if (usedFts) {
+            sql.append("   AND e.rowid IN (SELECT rowid FROM event_fts WHERE event_fts MATCH ?)\n");
+            args.add(EventFtsIndex.matchExpression(facets.freeTerms()));
+        }
+        else {
+            for (String term : facets.freeTerms()) {
+                String like = "%" + term.toLowerCase() + "%";
+                sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
+                        .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
+                        .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+                args.add(like);
+                args.add(like);
+                args.add(like);
+            }
         }
         if (meaningfulOnly && !facets.includeAll()) {
             sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
@@ -383,7 +396,18 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append(" LIMIT ?");
         args.add(limit + 1);
 
-        List<EventFeedItem> fetched = jdbcTemplate.query(sql.toString(), this::mapFeedItem, args.toArray());
+        List<EventFeedItem> fetched;
+        try {
+            fetched = jdbcTemplate.query(sql.toString(), this::mapFeedItem, args.toArray());
+        }
+        catch (org.springframework.dao.DataAccessException ex) {
+            if (!usedFts) {
+                throw ex;
+            }
+            // Fail soft: a broken FTS table must never take the feed down — drop to LIKE and retry.
+            ftsIndex.markUnavailable();
+            return feed(query, meaningfulOnly, before, since, projectScopes, limit);
+        }
         boolean hasMore = fetched.size() > limit;
         List<EventFeedItem> kept = hasMore ? fetched.subList(0, limit) : fetched;
         String nextBefore = hasMore && !kept.isEmpty() ? cursorFor(kept.get(kept.size() - 1)) : null;
