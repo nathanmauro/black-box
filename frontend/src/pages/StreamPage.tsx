@@ -4,7 +4,18 @@ import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
 import StreamFold from "../components/events/StreamFold";
 import StreamRow from "../components/events/StreamRow";
-import { getEventFeed, getSessions, searchValues, type EventFeedItem, type ProjectSummary } from "../lib/api";
+import {
+  getEventFacets,
+  getEventFeed,
+  getSessions,
+  searchValues,
+  type EventFacetCounts,
+  type EventFacetFields,
+  type EventFeedItem,
+  type FacetValueCount,
+  type ProjectSummary,
+} from "../lib/api";
+import { truncatePath } from "../lib/format";
 import { primaryProjectScope, projectShortName } from "../lib/projects";
 import {
   describeTimeSpec,
@@ -42,7 +53,12 @@ const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   project: [],
 };
 
+const FACETS_DEBOUNCE_MS = 300;
+
 type EditingToken = { key: FacetField["key"] | "session"; prefix: string };
+
+// Popover option: counts ride along when the suggestion came from the facets endpoint (§6.4).
+type Suggestion = { value: string; count?: number };
 
 type StreamPageProps = {
   project?: ProjectSummary | null;
@@ -117,6 +133,14 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
   // "Options" disclosure (spec §4.6): density + meaningful live behind one quiet control.
   const [optionsOpen, setOptionsOpen] = createSignal(false);
+  // On-demand counted browser (spec §6.5, D10): opened from the match count, never standing.
+  const [browserOpen, setBrowserOpen] = createSignal(false);
+  // null = unavailable (loading, aborted, error, or the server's backfill omission). The header
+  // and browser render nothing rather than a number for a different q.
+  const [facetCounts, setFacetCounts] = createSignal<EventFacetCounts | null>(null);
+  let facetsTimer: ReturnType<typeof setTimeout> | undefined;
+  let facetsAbort: AbortController | undefined;
+  let facetsToken = 0;
 
   const submitted = () => params.q ?? "";
   const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
@@ -135,7 +159,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   });
   // The result-header scope phrase (spec §4.6): the standing "meaningful" word whenever the
   // default filter is active (its visible representation under P3), plus the parsed time tokens.
-  // Counts are slice 8 — until then the line is scope phrase only.
+  // The match count renders beside these when available and is omitted otherwise.
   const scopePhrases = createMemo(() => {
     const phrases: string[] = [];
     if (!parsed().isAll) phrases.push("meaningful");
@@ -247,6 +271,39 @@ export default function StreamPage(props: StreamPageProps = {}) {
       });
   });
 
+  // Counts follow the query with a debounce and abort-on-change: the stale value clears the
+  // moment q moves, the in-flight request is aborted, and only the newest response ever lands —
+  // a count for a different q must never render (spec §4.6/§6.5).
+  createEffect(() => {
+    const pendingScope = props.projectScopePending;
+    const q = apiQuery();
+    const token = ++facetsToken;
+    setFacetCounts(null);
+    facetsAbort?.abort();
+    if (facetsTimer) clearTimeout(facetsTimer);
+    if (pendingScope) return;
+    facetsTimer = setTimeout(() => {
+      const controller = new AbortController();
+      facetsAbort = controller;
+      getEventFacets({ q, meaningful: true }, controller.signal)
+        .then((counts) => {
+          if (token === facetsToken) setFacetCounts(counts);
+        })
+        .catch(() => {
+          // Unavailable counts stay omitted (scope phrase only) — never an error state.
+        });
+    }, FACETS_DEBOUNCE_MS);
+  });
+
+  const countedFields = createMemo<EventFacetFields | null>(() => {
+    const counts = facetCounts();
+    return counts && counts.total !== null && counts.fields ? counts.fields : null;
+  });
+  const matchTotal = createMemo<number | null>(() => {
+    const counts = facetCounts();
+    return counts && counts.fields ? counts.total : null;
+  });
+
   const editing = createMemo<EditingToken | null>(() => {
     const tokens = draft().split(/\s+/);
     const last = tokens[tokens.length - 1] ?? "";
@@ -258,13 +315,19 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (!field) return null;
     return { key: field.key, prefix: last.slice(sep + 1) };
   });
-  const [suggestions] = createSignalResource(editing, async (edit) => {
+  const [suggestions] = createSignalResource(editing, async (edit): Promise<Suggestion[]> => {
     if (!edit) return [];
-    if (edit.key === "session") return sessionSuggestions(edit.prefix);
+    if (edit.key === "session") return (await sessionSuggestions(edit.prefix)).map((value) => ({ value }));
     // Empty prefix on an enumerable facet surfaces the static quick values (spec §4.6);
-    // a typed prefix — and tool:/project: always — goes to the live value index.
-    if (!edit.prefix && QUICK_VALUES[edit.key].length) return QUICK_VALUES[edit.key];
-    return searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []);
+    // tool:/project: prefer the facets endpoint's counted top values under the current query
+    // (spec §6.4), falling back to the live value index when counts are unavailable.
+    if (!edit.prefix && QUICK_VALUES[edit.key].length) return QUICK_VALUES[edit.key].map((value) => ({ value }));
+    if (!edit.prefix && (edit.key === "tool" || edit.key === "project")) {
+      const fields = countedFields();
+      if (fields) return fields[edit.key].slice(0, 8).map(({ value, count }) => ({ value, count }));
+    }
+    const values = await searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []);
+    return values.map((value) => ({ value }));
   });
   const showSuggestions = () => suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
   // Keyboard highlight for the popover: -1 means "typing, nothing highlighted".
@@ -311,6 +374,16 @@ export default function StreamPage(props: StreamPageProps = {}) {
     run(serializeQuery(state));
   }
 
+  // Counted-browser click = replace that facet's value (spec §6.5). The no-project sentinel is
+  // only expressible as an exact token — a substring project: filter for it would match nothing.
+  function pickCountedValue(key: FacetField["key"], value: string) {
+    if (key === "project" && value === "__no_project__") {
+      run(setFacet(visibleSubmitted(), "project_exact", value));
+      return;
+    }
+    run(setFacet(visibleSubmitted(), key, value));
+  }
+
   function dismissSuggestions() {
     setSuggestionsOpen(false);
     setActiveSuggestion(-1);
@@ -334,7 +407,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     } else if (event.key === "Enter" && showSuggestions() && activeSuggestion() >= 0) {
       // Enter with a highlight accepts the suggestion; without one it submits the form.
       event.preventDefault();
-      pickSuggestion(list[activeSuggestion()]);
+      pickSuggestion(list[activeSuggestion()].value);
     }
   }
 
@@ -415,6 +488,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
   onCleanup(() => {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
     if (liveTimer) clearTimeout(liveTimer);
+    if (facetsTimer) clearTimeout(facetsTimer);
+    facetsAbort?.abort();
   });
 
   return (
@@ -445,15 +520,18 @@ export default function StreamPage(props: StreamPageProps = {}) {
             <Show when={showSuggestions()}>
               <ul class="suggest-popover" role="listbox" id="stream-suggest-list" aria-label="Query suggestions">
                 <For each={suggestions()}>
-                  {(value, index) => (
+                  {(suggestion, index) => (
                     <li
                       role="option"
                       id={`stream-suggest-option-${index()}`}
                       aria-selected={index() === activeSuggestion()}
                       classList={{ "suggest-option": true, "suggest-option--active": index() === activeSuggestion() }}
-                      onClick={() => pickSuggestion(value)}
+                      onClick={() => pickSuggestion(suggestion.value)}
                     >
-                      {value}
+                      <span class="suggest-option-value">{suggestion.value}</span>
+                      <Show when={suggestion.count !== undefined}>
+                        <span class="suggest-option-count">{suggestion.count}</span>
+                      </Show>
                     </li>
                   )}
                 </For>
@@ -630,8 +708,21 @@ export default function StreamPage(props: StreamPageProps = {}) {
         {(message) => <p class="empty-state">{message()}</p>}
       </Show>
 
-      <Show when={scopePhrases().length > 0 || livePaused()}>
+      <Show when={matchTotal() !== null || scopePhrases().length > 0 || livePaused()}>
         <div class="stream-result-header">
+          {/* The count is omitted entirely while unavailable (loading, aborted, error, FTS
+              backfill) — the scope phrase stands alone, never a stale number (spec §4.6). */}
+          <Show when={matchTotal() !== null}>
+            <button
+              type="button"
+              class="stream-result-count"
+              aria-expanded={browserOpen()}
+              aria-controls="stream-count-browser"
+              onClick={() => setBrowserOpen((open) => !open)}
+            >
+              {formatMatchCount(matchTotal()!)}
+            </button>
+          </Show>
           <Show when={scopePhrases().length}>
             <span class="stream-result-scope">{scopePhrases().join(" · ")}</span>
           </Show>
@@ -639,6 +730,40 @@ export default function StreamPage(props: StreamPageProps = {}) {
             <span class="stream-live-paused">live paused — historical scope</span>
           </Show>
         </div>
+      </Show>
+
+      {/* On-demand counted browser (spec §6.5, D10): opens from the match count, no standing
+          rail. It renders only while counts exist for the current q — a query change closes it
+          with the counts rather than showing numbers for a different query. */}
+      <Show when={browserOpen() ? countedFields() : null}>
+        {(fields) => (
+          <div id="stream-count-browser" class="stream-count-browser">
+            <For each={FACET_FIELDS}>
+              {(field) => (
+                <div class="stream-count-field">
+                  <span class="facet-label">{field.label}</span>
+                  <For each={browserRows(fields()[field.key], parsed().facets[field.key] ?? [])}>
+                    {(row) => (
+                      <button
+                        type="button"
+                        classList={{
+                          "stream-count-value": true,
+                          "stream-count-value--zero": row.count === 0,
+                        }}
+                        onClick={() => pickCountedValue(field.key, row.value)}
+                      >
+                        <span class="stream-count-value-label">
+                          {field.key === "project" ? truncatePath(row.value) : row.value}
+                        </span>
+                        <span class="stream-count-value-count">{row.count}</span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              )}
+            </For>
+          </div>
+        )}
       </Show>
 
       {/* Persistent live region (spec §4.6): the N-new pill mounts conditionally and cannot be
@@ -738,6 +863,19 @@ function dedupe(items: EventFeedItem[]): EventFeedItem[] {
   return result;
 }
 
+// Counted rows plus any currently-active values the cap or the filter pushed out of the server's
+// list — those render with an honest zero, dim but clickable, never silently hidden (spec §4.6).
+function browserRows(listed: FacetValueCount[], active: string[]): FacetValueCount[] {
+  const missing = active
+    .filter((value) => !listed.some((row) => row.value === value))
+    .map((value) => ({ value, count: 0 }));
+  return [...listed, ...missing];
+}
+
+function formatMatchCount(total: number): string {
+  return `${total.toLocaleString("en-US")} ${total === 1 ? "match" : "matches"}`;
+}
+
 function appendProjectGroupScope(query: string, canonicalKey: string): string {
   return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
 }
@@ -767,7 +905,7 @@ function sessionStreamLink(visibleQuery: string, sessionId: string, projectKey: 
 }
 
 // session: suggestions from the recent-sessions listing — the cheapest live-value source
-// already in api.ts; counted top-N value suggestions arrive with slice 8 (§6.4).
+// already in api.ts; tool:/project: get counted top values from the facets endpoint instead.
 async function sessionSuggestions(prefix: string): Promise<string[]> {
   try {
     const sessions = await getSessions(50);

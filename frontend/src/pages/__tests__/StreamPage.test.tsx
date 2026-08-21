@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EventFeedItem, EventFeedResponse, ProjectSummary } from "../../lib/api";
+import type { EventFacetCounts, EventFeedItem, EventFeedResponse, ProjectSummary } from "../../lib/api";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -10,6 +10,7 @@ let setParams: SetStoreFunction<{ q?: string }>;
 
 const mocks = vi.hoisted(() => ({
   getEventFeed: vi.fn(),
+  getEventFacets: vi.fn(),
   liveEvents: () => [] as unknown[],
   setLiveEvents: (_events: unknown[]) => undefined,
 }));
@@ -42,6 +43,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     getEventFeed: mocks.getEventFeed,
+    getEventFacets: mocks.getEventFacets,
     searchValues: vi.fn(async (_field: string, prefix: string) =>
       ["Decision", "Handoff", "Observation"].filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase())),
     ),
@@ -72,6 +74,10 @@ beforeEach(() => {
   mocks.setLiveEvents = setLiveEvents;
   getEventFeed.mockReset();
   getEventFeed.mockResolvedValue(feed([eventItem("event-1", "Make stream default")]));
+  mocks.getEventFacets.mockReset();
+  // Default to the degraded envelope: counts omitted, so every pre-slice-8 expectation about the
+  // result header holds unchanged unless a test opts into real counts.
+  mocks.getEventFacets.mockResolvedValue({ total: null, fields: null, reason: "backfill" });
 });
 
 describe("StreamPage", () => {
@@ -926,7 +932,149 @@ describe("StreamPage", () => {
     expect(articles[1].classList.contains("stream-row-wrap")).toBe(true);
     expect(feedEl.querySelector("section")).not.toBeInTheDocument();
   });
+
+  it("renders the match count in the result header when counts are available", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(1204));
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const countButton = await screen.findByRole("button", { name: "1,204 matches" });
+    expect(countButton).toHaveAttribute("aria-expanded", "false");
+    expect(mocks.getEventFacets).toHaveBeenCalledWith({ q: "", meaningful: true }, expect.any(AbortSignal));
+    // The header reads "N matches · meaningful" — count beside the scope phrase (spec §4.6).
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful");
+  });
+
+  it("omits the match count while counts are unavailable — scope phrase only", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "last:2h" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    await waitFor(() => expect(mocks.getEventFacets).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful · past 2 hours");
+    expect(document.querySelector(".stream-result-count")).not.toBeInTheDocument();
+    expect(document.querySelector(".stream-count-browser")).not.toBeInTheDocument();
+  });
+
+  it("aborts in-flight counts on a query change and never renders a stale count", async () => {
+    const stale = deferred<EventFacetCounts>();
+    let staleSignal: AbortSignal | undefined;
+    mocks.getEventFacets.mockReset();
+    mocks.getEventFacets
+      .mockImplementationOnce((_params: unknown, signal: AbortSignal) => {
+        staleSignal = signal;
+        return stale.promise;
+      })
+      .mockResolvedValueOnce(countsPayload(7));
+
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0); // flush the feed promise
+      await vi.advanceTimersByTimeAsync(300); // first debounce fires
+      expect(mocks.getEventFacets).toHaveBeenCalledTimes(1);
+
+      setParams({ q: "kind:Decision" });
+      await vi.advanceTimersByTimeAsync(300); // second debounce fires for the new q
+      expect(mocks.getEventFacets).toHaveBeenCalledTimes(2);
+      expect(staleSignal?.aborted).toBe(true);
+
+      stale.resolve(countsPayload(999)); // the old q's response lands late
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.queryByRole("button", { name: "999 matches" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "7 matches" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("debounces count fetches while the query keeps changing", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(7));
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(100);
+      setParams({ q: "kind:Decision" });
+      await vi.advanceTimersByTimeAsync(100);
+      setParams({ q: "kind:Handoff" });
+      await vi.advanceTimersByTimeAsync(300);
+      // Three q states, one surviving fetch — the earlier debounce windows never fired.
+      expect(mocks.getEventFacets).toHaveBeenCalledTimes(1);
+      expect(mocks.getEventFacets).toHaveBeenCalledWith({ q: "kind:Handoff", meaningful: true }, expect.any(AbortSignal));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens the counted browser from the match count, narrows on click, and dims zero counts", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(42));
+    [params, setParams] = createStore<{ q?: string }>({ q: "tool:Zed" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(document.querySelector(".stream-count-browser")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "42 matches" }));
+    const browser = document.querySelector(".stream-count-browser") as HTMLElement;
+    expect(browser).toBeInTheDocument();
+
+    // Project values render through truncatePath but click with the raw value.
+    expect(within(browser).getByText("~/Developer/proj/sba-agentic")).toBeInTheDocument();
+    // The active tool:Zed is absent from the server's list: honest zero, dim, still clickable.
+    const zed = within(browser).getByRole("button", { name: "Zed 0" });
+    expect(zed.classList.contains("stream-count-value--zero")).toBe(true);
+    const bash = within(browser).getByRole("button", { name: "Bash 500" });
+    expect(bash.classList.contains("stream-count-value--zero")).toBe(false);
+
+    fireEvent.click(bash);
+    await waitFor(() => expect(params.q).toBe("tool:Bash"));
+  });
+
+  it("suggests counted top tool values from the facets endpoint for an empty tool: prefix", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(42));
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: "42 matches" }); // counts have arrived
+
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "tool:" } });
+    const option = await screen.findByRole("option", { name: "Bash 500" });
+    expect(option.querySelector(".suggest-option-count")?.textContent).toBe("500");
+
+    fireEvent.click(option);
+    expect(input).toHaveValue("tool:Bash ");
+  });
+
+  it("falls back to searchValues for tool: suggestions while counts are unavailable", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "tool:" } });
+    const option = await screen.findByRole("option", { name: "Decision" });
+    expect(option.querySelector(".suggest-option-count")).not.toBeInTheDocument();
+  });
 });
+
+function countsPayload(total: number): EventFacetCounts {
+  return {
+    total,
+    fields: {
+      source: [
+        { value: "codex", count: 900 },
+        { value: "claude", count: 304 },
+      ],
+      kind: [{ value: "Decision", count: 700 }],
+      tool: [
+        { value: "Bash", count: 500 },
+        { value: "Read", count: 404 },
+      ],
+      project: [{ value: "/Users/nathan/Developer/proj/sba-agentic", count: total }],
+    },
+    reason: null,
+  };
+}
 
 function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFeedResponse {
   return {

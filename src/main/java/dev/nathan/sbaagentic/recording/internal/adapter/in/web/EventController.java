@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 import java.util.List;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EventFacetCounts;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
@@ -57,6 +58,22 @@ public class EventController {
                 .distinct()
                 .toList();
         return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
+    }
+
+    /**
+     * Query-scoped facet counts for the counted instrument (spec §6.5): same grammar, same
+     * {@code is:all}-beats-{@code meaningful} precedence, and the same hidden project-group
+     * resolution as the feed — the two endpoints must never disagree about what matches.
+     */
+    @GetMapping("/events/facets")
+    public EventFacetCounts eventFacets(
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "false") boolean meaningful) {
+        List<String> scopes = EventQuery.parse(q).projectGroups().stream()
+                .flatMap(group -> projectScopes.scopesFor(group).stream())
+                .distinct()
+                .toList();
+        return repository.facetCounts(q, meaningful, scopes);
     }
 
     @GetMapping("/events/{id}")

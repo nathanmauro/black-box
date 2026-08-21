@@ -34,6 +34,12 @@ public interface RecordingCatalog {
         return feed(query, meaningfulOnly, before, since, List.of(), limit);
     }
 
+    EventFacetCounts facetCounts(String query, boolean meaningfulOnly, List<String> projectScopes);
+
+    default EventFacetCounts facetCounts(String query, boolean meaningfulOnly) {
+        return facetCounts(query, meaningfulOnly, List.of());
+    }
+
     void saveSummaryAndTitle(String sessionId, String summary, String title, int titleRank);
 
     StorageStats stats();

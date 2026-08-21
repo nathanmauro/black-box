@@ -4,6 +4,7 @@ GET /api/ask/retrieve
 GET /api/ask/status
 GET /api/dag
 GET /api/events
+GET /api/events/facets
 GET /api/events/{id}
 GET /api/exports/targets
 GET /api/health/elasticsearch

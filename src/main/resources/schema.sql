@@ -54,6 +54,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_observed
 CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
     ON agent_events (source, event_type, observed_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_agent_events_tool_observed
+    ON agent_events (tool_name, observed_at DESC);
+
 CREATE TABLE IF NOT EXISTS memory_embeddings (
     target_kind  TEXT NOT NULL,          -- 'event' | 'session_summary'
     target_id    TEXT NOT NULL,          -- agent_events.id | agent_sessions.id
