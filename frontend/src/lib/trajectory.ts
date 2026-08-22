@@ -81,6 +81,10 @@ export type TrajectoryGraphNode = {
   path?: TrajectoryPath;
   confidence?: number | null;
   sourceBurstId?: string;
+  // Burst time range in epoch ms (deep-past/burst/head only) — the basis for the "View in
+  // Stream" absolute since:/until: link (spec §9, D14).
+  startMs?: number;
+  endMs?: number;
 };
 
 export type TrajectoryGraphEdge = {
@@ -184,6 +188,9 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
       memberCount,
       hasDecision: collapsedCaptures.some((capture) => capture.kind === "decision"),
       members: collapsedCaptures,
+      ...(collapsedBursts.length
+        ? { startMs: collapsedBursts[0].startMs, endMs: collapsedBursts[collapsedBursts.length - 1].endMs }
+        : {}),
     });
     spineIndex += 1;
   }
@@ -205,6 +212,12 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
     labelSide: spineIndex % 2 === 0 ? "above" : "below",
     memberCount: newestBurst.captures.length,
     hasDecision: newestBurst.hasDecision,
+    // The head represents the newest burst, so it carries that burst's members and time range —
+    // this is what lets focus=capture:<id> resolve for recent captures and gives the head a
+    // "View in Stream" span (spec §9).
+    members: newestBurst.captures,
+    startMs: newestBurst.startMs,
+    endMs: newestBurst.endMs,
     sourceCapture: headCapture,
     sessionId: headCapture.sessionId,
     observedAt: headCapture.observedAt,
@@ -278,6 +291,18 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
   }
 
   return { nodes, edges, headId, stale };
+}
+
+/**
+ * Resolves a `focus=capture:<eventId>` selection (spec §9, D14) to the trajectory node that
+ * CONTAINS the capture — deep-past/burst/head membership first, falling back to a node merely
+ * sourced from it (futures, stubs). Null when the capture is not represented in the graph.
+ */
+export function findTrajectoryNodeForCapture(graph: TrajectoryGraph, eventId: string): TrajectoryGraphNode | null {
+  if (!eventId) return null;
+  const containing = graph.nodes.find((node) => node.members?.some((capture) => capture.id === eventId));
+  if (containing) return containing;
+  return graph.nodes.find((node) => node.sourceCapture?.id === eventId) ?? null;
 }
 
 export function layoutTrajectory(graph: TrajectoryGraph): TrajectoryLayout {
@@ -397,6 +422,8 @@ function burstNode(burst: Burst, spineIndex: number): TrajectoryGraphNode {
     id: burst.id,
     kind: "burst",
     label: burst.label,
+    startMs: burst.startMs,
+    endMs: burst.endMs,
     eyebrow: `${burst.captures.length} ${plural("capture", burst.captures.length)}`,
     fullText: `${burst.label} · ${burst.captures.length} ${plural("capture", burst.captures.length)}`,
     spineIndex,

@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
         displayName = "Recording",
-        allowedDependencies = {})
+        allowedDependencies = {"query"})
 package dev.nathan.sbaagentic.recording;

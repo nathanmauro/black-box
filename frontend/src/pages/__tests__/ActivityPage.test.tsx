@@ -256,7 +256,7 @@ describe("ActivityPage", () => {
     localStorage.setItem("blackbox.activity.projectKey", "sba-key");
     render(() => <ActivityPage />);
 
-    expect(await screen.findByRole("button", { name: /sba-agentic/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Project sba-agentic/ })).toBeInTheDocument();
     await waitFor(() => expect(params.project).toBe("sba-key"));
     expect(params.session).toBeUndefined();
     expect(params.event).toBeUndefined();
@@ -409,5 +409,44 @@ describe("ActivityPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear project" }));
     await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }));
+  });
+
+  it("keeps ?view=stream on / rendering the stream", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ view: "stream", q: "kind:Decision" });
+    render(() => <ActivityPage />);
+
+    const modes = screen.getByRole("tablist", { name: "Activity mode" });
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() =>
+      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
+    );
+  });
+
+  it("locks the /stream route to stream mode regardless of ?view=", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ view: "browse" });
+    render(() => <ActivityPage lockedMode="stream" />);
+
+    const modes = screen.getByRole("tablist", { name: "Activity mode" });
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "false");
+    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }));
+    expect(document.querySelector(".sessions-page")).not.toBeInTheDocument();
+  });
+
+  it("navigates mode tabs off /stream to / while preserving q", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({ q: "source:codex last:2h" });
+    render(() => <ActivityPage lockedMode="stream" />);
+
+    const modes = screen.getByRole("tablist", { name: "Activity mode" });
+    fireEvent.click(within(modes).getByRole("tab", { name: "Browse" }));
+    expect(navigate).toHaveBeenCalledWith(`/?${new URLSearchParams({ view: "browse", q: "source:codex last:2h" }).toString()}`);
+    // navigate(), never setParams: /stream must not render a non-stream mode at a lying address.
+    expect(params.view).toBeUndefined();
+
+    fireEvent.click(within(modes).getByRole("tab", { name: "Ask" }));
+    expect(navigate).toHaveBeenLastCalledWith(`/?${new URLSearchParams({ view: "ask", q: "source:codex last:2h" }).toString()}`);
+
+    fireEvent.click(within(modes).getByRole("tab", { name: "Stream" }));
+    expect(navigate).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.DashboardStats;
+import dev.nathan.sbaagentic.recording.EventFacetCounts;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
@@ -24,7 +26,8 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
-import dev.nathan.sbaagentic.recording.EventFeedQuery;
+import dev.nathan.sbaagentic.query.EventQuery;
+import dev.nathan.sbaagentic.query.EventQuery.Field;
 
 import jakarta.annotation.PostConstruct;
 
@@ -39,16 +42,21 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
+    // Arms are ordered cheapest-first on purpose: SQLite short-circuits OR left-to-right, and in
+    // an agent_events row the huge tool JSON columns sit between tool_name and metadata_json, so
+    // an arm touching metadata_json walks the row's overflow chain. On the live corpus ~91% of
+    // rows match `tool_name IS NOT NULL` and never reach the expensive arms — measured 10x faster
+    // for full-corpus scans (facet counts) with identical semantics.
     private static final String MEANINGFUL_EVENT_PREDICATE = """
             (
-              lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
-              OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
-              OR e.tool_name IS NOT NULL
+              e.tool_name IS NOT NULL
+              OR lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
               OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
               OR lower(coalesce(e.event_type, '')) LIKE '%error%'
               OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
+              OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
             )
             """;
 
@@ -62,12 +70,18 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
+    private final EventFtsIndex ftsIndex;
 
     public RecordingSqlStore(
             JdbcTemplate jdbcTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            Clock clock,
+            EventFtsIndex ftsIndex) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.clock = clock;
+        this.ftsIndex = ftsIndex;
     }
 
     /**
@@ -302,7 +316,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String since,
             List<String> projectScopes,
             int limit) {
-        EventFeedQuery facets = EventFeedQuery.parse(query);
+        EventQuery facets = EventQuery.parse(query);
         FeedCursor beforeCursor = parseBefore(before);
         Instant sinceInstant = parseSince(since);
 
@@ -314,56 +328,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n")
                 .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
                 .append(" WHERE 1=1\n");
-        if (facets.source() != null) {
-            sql.append("   AND lower(e.source) = lower(?)\n");
-            args.add(facets.source());
-        }
-        if (facets.eventType() != null) {
-            sql.append("   AND lower(e.event_type) = lower(?)\n");
-            args.add(facets.eventType());
-        }
-        if (facets.toolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
-            args.add(facets.toolName());
-        }
-        if (facets.cwd() != null) {
-            sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
-            args.add("%" + facets.cwd() + "%");
-        }
-        if (facets.exactCwd() != null) {
-            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
-            args.add(facets.exactCwd());
-        }
-        appendProjectGroup(sql, args, facets.groupCwd(), projectScopes);
-        if (facets.excludedSource() != null) {
-            sql.append("   AND lower(e.source) <> lower(?)\n");
-            args.add(facets.excludedSource());
-        }
-        if (facets.excludedEventType() != null) {
-            sql.append("   AND lower(e.event_type) <> lower(?)\n");
-            args.add(facets.excludedEventType());
-        }
-        if (facets.excludedToolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) <> lower(?)\n");
-            args.add(facets.excludedToolName());
-        }
-        if (facets.excludedCwd() != null) {
-            sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
-            args.add("%" + facets.excludedCwd() + "%");
-        }
-        String freePhrase = facets.freeTextPhrase();
-        if (!freePhrase.isBlank()) {
-            String like = "%" + freePhrase.toLowerCase() + "%";
-            sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
-                    .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
-                    .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
-            args.add(like);
-            args.add(like);
-            args.add(like);
-        }
-        if (meaningfulOnly) {
-            sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
-        }
+        boolean usedFts = appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null);
         if (sinceInstant != null) {
             sql.append("   AND e.observed_at >= ?\n");
             args.add(sinceInstant.toString());
@@ -378,11 +343,304 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append(" LIMIT ?");
         args.add(limit + 1);
 
-        List<EventFeedItem> fetched = jdbcTemplate.query(sql.toString(), this::mapFeedItem, args.toArray());
+        List<EventFeedItem> fetched;
+        try {
+            fetched = jdbcTemplate.query(sql.toString(), this::mapFeedItem, args.toArray());
+        }
+        catch (org.springframework.dao.DataAccessException ex) {
+            if (!usedFts) {
+                throw ex;
+            }
+            // Fail soft: a broken FTS table must never take the feed down — drop to LIKE and retry.
+            ftsIndex.markUnavailable();
+            return feed(query, meaningfulOnly, before, since, projectScopes, limit);
+        }
         boolean hasMore = fetched.size() > limit;
         List<EventFeedItem> kept = hasMore ? fetched.subList(0, limit) : fetched;
         String nextBefore = hasMore && !kept.isEmpty() ? cursorFor(kept.get(kept.size() - 1)) : null;
         return new EventFeedResponse(limit, kept.size(), List.copyOf(kept), nextBefore);
+    }
+
+    /**
+     * Query-scoped facet counts (spec §6.5): one total plus a GROUP BY per counted field, each
+     * per-field query dropping that field's own include list so counts answer "what if I switched".
+     * Free text without a ready FTS index skips counting entirely — four unindexed LIKE scans over
+     * the corpus would blow the latency budget — and reports the degradation instead of a number.
+     */
+    @Override
+    public EventFacetCounts facetCounts(String query, boolean meaningfulOnly, List<String> projectScopes) {
+        EventQuery facets = EventQuery.parse(query);
+        if (!facets.freeTerms().isEmpty() && !ftsIndex.ready()) {
+            return EventFacetCounts.skipped("backfill");
+        }
+        try {
+            // Without counted-field include lists every per-field WHERE is identical, so all four
+            // group-bys plus the total can share one scan (the meaningful predicate makes each
+            // scan ~250ms on the live corpus — paying it once instead of four times matters).
+            // With includes set, drop-own-field makes the predicates genuinely differ per field.
+            if (!hasCountedIncludes(facets)) {
+                return onePassCounts(facets, meaningfulOnly, projectScopes);
+            }
+            Long total = queryTotal(facets, meaningfulOnly, projectScopes);
+            return new EventFacetCounts(
+                    total == null ? 0L : total,
+                    new EventFacetCounts.Fields(
+                            groupCounts(facets, meaningfulOnly, projectScopes, Field.SOURCE, "e.source", null),
+                            groupCounts(facets, meaningfulOnly, projectScopes, Field.KIND, "e.event_type", null),
+                            // Anchoring on tool_name IS NOT NULL lets the planner drive the whole
+                            // group-by off idx_agent_events_tool_observed (measured ~11ms) while
+                            // also keeping NULL out of the value list.
+                            groupCounts(facets, meaningfulOnly, projectScopes, Field.TOOL, "e.tool_name",
+                                    "e.tool_name IS NOT NULL"),
+                            projectCounts(facets, meaningfulOnly, projectScopes)),
+                    null);
+        }
+        catch (org.springframework.dao.DataAccessException ex) {
+            if (facets.freeTerms().isEmpty()) {
+                throw ex;
+            }
+            // A broken FTS table must never 500 the counts: report them unavailable (same envelope
+            // as the backfill window) and drop the index so the feed's LIKE fallback takes over.
+            ftsIndex.markUnavailable();
+            return EventFacetCounts.skipped("backfill");
+        }
+    }
+
+    private static boolean hasCountedIncludes(EventQuery facets) {
+        return !facets.values(Field.SOURCE).isEmpty()
+                || !facets.values(Field.KIND).isEmpty()
+                || !facets.values(Field.TOOL).isEmpty()
+                || !facets.values(Field.PROJECT).isEmpty();
+    }
+
+    /**
+     * One scan, five answers: materialize the matching rows' grouping columns once, then take the
+     * total and all four group-bys off the temp table. Valid only while no counted field carries
+     * an include list (then every per-field WHERE is the same); ordering and the per-field cap
+     * are applied in Java after the single round trip.
+     */
+    private EventFacetCounts onePassCounts(
+            EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder matched = new StringBuilder()
+                .append("SELECT e.source AS source, e.event_type AS event_type, ")
+                .append("e.tool_name AS tool_name, e.session_id AS session_id\n")
+                .append("  FROM agent_events e\n");
+        appendSessionsJoinIfNeeded(matched, facets, null);
+        matched.append(" WHERE 1=1\n");
+        appendQueryPredicates(matched, args, facets, meaningfulOnly, projectScopes, null);
+        String sql = """
+                WITH matched AS MATERIALIZED (
+                %s)
+                SELECT 'total' AS field, '' AS value, COUNT(*) AS cnt FROM matched
+                UNION ALL
+                SELECT 'source', source, COUNT(*) FROM matched GROUP BY 2
+                UNION ALL
+                SELECT 'kind', event_type, COUNT(*) FROM matched GROUP BY 2
+                UNION ALL
+                SELECT 'tool', tool_name, COUNT(*) FROM matched WHERE tool_name IS NOT NULL GROUP BY 2
+                UNION ALL
+                SELECT 'project', %s, SUM(t.cnt)
+                  FROM (SELECT session_id, COUNT(*) AS cnt FROM matched GROUP BY session_id) t
+                  JOIN agent_sessions s ON s.id = t.session_id
+                 GROUP BY 2
+                """.formatted(matched, SESSION_CANONICAL_CWD_SQL);
+
+        long[] total = {0};
+        Map<String, List<EventFacetCounts.ValueCount>> byField = new java.util.HashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            String field = rs.getString("field");
+            if ("total".equals(field)) {
+                total[0] = rs.getLong("cnt");
+                return;
+            }
+            byField.computeIfAbsent(field, ignored -> new ArrayList<>())
+                    .add(new EventFacetCounts.ValueCount(rs.getString("value"), rs.getLong("cnt")));
+        }, args.toArray());
+        return new EventFacetCounts(
+                total[0],
+                new EventFacetCounts.Fields(
+                        topValues(byField.get("source")),
+                        topValues(byField.get("kind")),
+                        topValues(byField.get("tool")),
+                        topValues(byField.get("project"))),
+                null);
+    }
+
+    /** Count-desc / value-asc, capped — the same order and cap the SQL path applies. */
+    private static List<EventFacetCounts.ValueCount> topValues(List<EventFacetCounts.ValueCount> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .sorted(java.util.Comparator
+                        .comparingLong(EventFacetCounts.ValueCount::count).reversed()
+                        .thenComparing(EventFacetCounts.ValueCount::value))
+                .limit(EventFacetCounts.VALUE_LIMIT)
+                .toList();
+    }
+
+    private Long queryTotal(EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append("SELECT COUNT(*)\n")
+                .append("  FROM agent_events e\n");
+        appendSessionsJoinIfNeeded(sql, facets, null);
+        sql.append(" WHERE 1=1\n");
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null);
+        return jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
+    }
+
+    private List<EventFacetCounts.ValueCount> groupCounts(
+            EventQuery facets,
+            boolean meaningfulOnly,
+            List<String> projectScopes,
+            Field droppedInclude,
+            String valueExpr,
+            String extraPredicate) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append("SELECT ").append(valueExpr).append(" AS value, COUNT(*) AS cnt\n")
+                .append("  FROM agent_events e\n");
+        appendSessionsJoinIfNeeded(sql, facets, droppedInclude);
+        sql.append(" WHERE 1=1\n");
+        if (extraPredicate != null) {
+            sql.append("   AND ").append(extraPredicate).append("\n");
+        }
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, droppedInclude);
+        sql.append(" GROUP BY value\n")
+                .append(" ORDER BY cnt DESC, value ASC\n")
+                .append(" LIMIT ").append(EventFacetCounts.VALUE_LIMIT);
+        return jdbcTemplate.query(sql.toString(), this::mapValueCount, args.toArray());
+    }
+
+    /**
+     * Project counts group events by session first (riding idx_agent_events_session_observed's
+     * key column), then fold the small agent_sessions table over the per-session totals — the
+     * spec's §6.5 SQL sketch. Joining sessions per event row measured ~90ms slower on the live
+     * corpus for the same result.
+     */
+    private List<EventFacetCounts.ValueCount> projectCounts(
+            EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append("SELECT ").append(SESSION_CANONICAL_CWD_SQL).append(" AS value, SUM(t.cnt) AS cnt\n")
+                .append("  FROM (SELECT e.session_id AS session_id, COUNT(*) AS cnt\n")
+                .append("          FROM agent_events e\n");
+        appendSessionsJoinIfNeeded(sql, facets, Field.PROJECT);
+        sql.append("         WHERE 1=1\n");
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, Field.PROJECT);
+        sql.append("         GROUP BY e.session_id) t\n")
+                .append("  JOIN agent_sessions s ON s.id = t.session_id\n")
+                .append(" GROUP BY value\n")
+                .append(" ORDER BY cnt DESC, value ASC\n")
+                .append(" LIMIT ").append(EventFacetCounts.VALUE_LIMIT);
+        return jdbcTemplate.query(sql.toString(), this::mapValueCount, args.toArray());
+    }
+
+    private EventFacetCounts.ValueCount mapValueCount(java.sql.ResultSet rs, int rowNum)
+            throws java.sql.SQLException {
+        return new EventFacetCounts.ValueCount(rs.getString("value"), rs.getLong("cnt"));
+    }
+
+    /**
+     * The counts queries join agent_sessions only when some surviving predicate actually reads
+     * {@code s.*} — project substring/exact/group tokens. The common unfaceted query then scans
+     * agent_events alone, which measured ~30-90ms faster per GROUP BY on the live corpus.
+     */
+    private void appendSessionsJoinIfNeeded(StringBuilder sql, EventQuery facets, Field droppedInclude) {
+        boolean needsSessions = (droppedInclude != Field.PROJECT && !facets.values(Field.PROJECT).isEmpty())
+                || !facets.excluded(Field.PROJECT).isEmpty()
+                || !facets.values(Field.PROJECT_EXACT).isEmpty()
+                || !facets.excluded(Field.PROJECT_EXACT).isEmpty()
+                || !facets.projectGroups().isEmpty();
+        if (needsSessions) {
+            sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
+        }
+    }
+
+    /**
+     * The one grammar-driven WHERE builder shared by the feed and the facet counts. Appends every
+     * predicate the parsed query implies; {@code droppedInclude} omits that single field's include
+     * list (counts' "what if I switched" semantics — its exclusions still apply). Returns whether
+     * the free-text predicate rode FTS, so callers can fail soft on a broken index.
+     */
+    private boolean appendQueryPredicates(
+            StringBuilder sql,
+            List<Object> args,
+            EventQuery facets,
+            boolean meaningfulOnly,
+            List<String> projectScopes,
+            Field droppedInclude) {
+        if (droppedInclude != Field.SOURCE) {
+            appendInList(sql, args, "lower(e.source)", facets.values(Field.SOURCE), false);
+        }
+        if (droppedInclude != Field.KIND) {
+            appendInList(sql, args, "lower(e.event_type)", facets.values(Field.KIND), false);
+        }
+        if (droppedInclude != Field.TOOL) {
+            appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.values(Field.TOOL), false);
+        }
+        if (droppedInclude != Field.PROJECT) {
+            appendCwdLikes(sql, args, facets.values(Field.PROJECT), false);
+        }
+        List<String> exactCwds = facets.values(Field.PROJECT_EXACT);
+        if (!exactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" IN (")
+                    .append(String.join(", ", Collections.nCopies(exactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(exactCwds);
+        }
+        appendProjectGroup(sql, args, facets.projectGroups(), projectScopes);
+        appendInList(sql, args, "lower(e.source)", facets.excluded(Field.SOURCE), true);
+        appendInList(sql, args, "lower(e.event_type)", facets.excluded(Field.KIND), true);
+        appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.excluded(Field.TOOL), true);
+        appendCwdLikes(sql, args, facets.excluded(Field.PROJECT), true);
+        List<String> excludedExactCwds = facets.excluded(Field.PROJECT_EXACT);
+        if (!excludedExactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" NOT IN (")
+                    .append(String.join(", ", Collections.nCopies(excludedExactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(excludedExactCwds);
+        }
+        facets.sessionRef().ifPresent(ref -> {
+            // Resolve through agent_sessions (small, uniquely keyed) so the event scan rides
+            // idx_agent_events_session_observed; a naive OR on agent_events table-scans.
+            sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+            args.add(ref);
+            args.add(ref);
+        });
+        // Free text prefers the FTS5 index (which also reaches the clipped tool JSON in its
+        // `extra` column) and falls back to the per-term LIKE path with identical AND semantics
+        // whenever FTS is absent or the backfill has not finished.
+        boolean usedFts = !facets.freeTerms().isEmpty() && ftsIndex.ready();
+        if (usedFts) {
+            sql.append("   AND e.rowid IN (SELECT rowid FROM event_fts WHERE event_fts MATCH ?)\n");
+            args.add(EventFtsIndex.matchExpression(facets.freeTerms()));
+        }
+        else {
+            for (String term : facets.freeTerms()) {
+                String like = "%" + term.toLowerCase() + "%";
+                sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
+                        .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
+                        .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+                args.add(like);
+                args.add(like);
+                args.add(like);
+            }
+        }
+        if (meaningfulOnly && !facets.includeAll()) {
+            sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
+        }
+        facets.sinceSpec().ifPresent(spec -> {
+            sql.append("   AND e.observed_at >= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
+        facets.untilSpec().ifPresent(spec -> {
+            sql.append(spec.exclusiveEnd() ? "   AND e.observed_at < ?\n" : "   AND e.observed_at <= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
+        return usedFts;
     }
 
      /**
@@ -450,9 +708,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private void appendProjectGroup(
             StringBuilder sql,
             List<Object> args,
-            String projectScope,
+            List<String> projectGroups,
             List<String> projectScopes) {
-        if (projectScope == null) {
+        if (projectGroups.isEmpty()) {
             return;
         }
         List<String> scopes = projectScopes == null ? List.of() : projectScopes;
@@ -466,6 +724,38 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append(String.join(", ", Collections.nCopies(scopes.size(), "?")))
                 .append(")\n");
         args.addAll(scopes);
+    }
+
+    private static void appendInList(
+            StringBuilder sql, List<Object> args, String columnExpr, List<String> values, boolean negated) {
+        if (values.isEmpty()) {
+            return;
+        }
+        sql.append("   AND ").append(columnExpr).append(negated ? " NOT IN (" : " IN (")
+                .append(String.join(", ", Collections.nCopies(values.size(), "lower(?)")))
+                .append(")\n");
+        args.addAll(values);
+    }
+
+    private static void appendCwdLikes(
+            StringBuilder sql, List<Object> args, List<String> values, boolean negated) {
+        if (values.isEmpty()) {
+            return;
+        }
+        if (negated) {
+            for (String value : values) {
+                sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
+                args.add("%" + value + "%");
+            }
+            return;
+        }
+        sql.append("   AND (")
+                .append(String.join(" OR ",
+                        Collections.nCopies(values.size(), "lower(coalesce(s.cwd, '')) LIKE lower(?)")))
+                .append(")\n");
+        for (String value : values) {
+            args.add("%" + value + "%");
+        }
     }
 
     private AgentSession mapSession(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

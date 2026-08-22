@@ -25,7 +25,7 @@ describe("editPresenter", () => {
       new_string: "const a = 2;",
     }));
     const presentation = editPresenter(event);
-    expect(presentation.kindPill).toEqual({ label: "Edit", tone: "write" });
+    expect(presentation.kindPill).toEqual({ label: "Edit", tone: "edit" });
     expect(headlineText(presentation)).toBe("~/Developer/proj/x/a.ts");
     expect(presentation.blocks).toEqual([{
       kind: "diff",

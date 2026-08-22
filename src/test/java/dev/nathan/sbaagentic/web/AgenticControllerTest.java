@@ -218,6 +218,71 @@ class AgenticControllerTest {
     }
 
     @Test
+    void eventFacetsEndpointReturnsScopedCountsWithHouseErrors() throws Exception {
+        String key = "facets-http-" + UUID.randomUUID().toString().replace("-", "");
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "codex-%s",
+                                  "clientSessionId": "%s-decision",
+                                  "eventType": "Decision",
+                                  "role": "agent",
+                                  "text": "HTTP facet decision %s",
+                                  "cwd": "/tmp/%s",
+                                  "metadata": { "title": "Facet decision" },
+                                  "observedAt": "2026-07-01T12:00:00Z"
+                                }
+                                """.formatted(key, key, key, key)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "source": "claude-%s",
+                                  "clientSessionId": "%s-noise",
+                                  "eventType": "UserPromptSubmit",
+                                  "role": "user",
+                                  "text": "HTTP facet noise %s",
+                                  "cwd": "/tmp/%s",
+                                  "metadata": { "title": "Facet noise" },
+                                  "observedAt": "2026-07-01T12:01:00Z"
+                                }
+                                """.formatted(key, key, key, key)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/events/facets")
+                        .param("q", "source:codex-" + key + " " + key)
+                        .param("meaningful", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.reason").isEmpty())
+                // Drop-own-field: the other source still shows its would-be count.
+                .andExpect(jsonPath("$.fields.source.length()").value(2))
+                .andExpect(jsonPath("$.fields.source[0].value").isNotEmpty())
+                .andExpect(jsonPath("$.fields.source[0].count").isNumber())
+                .andExpect(jsonPath("$.fields.kind[0].value").value("Decision"))
+                .andExpect(jsonPath("$.fields.project[0].value").value("/tmp/" + key));
+
+        // is:all in q beats meaningful=true on the wire — same precedence as the feed (D16).
+        mockMvc.perform(get("/api/events/facets")
+                        .param("q", key)
+                        .param("meaningful", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+        mockMvc.perform(get("/api/events/facets")
+                        .param("q", key + " is:all")
+                        .param("meaningful", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(2));
+
+        mockMvc.perform(get("/api/events/facets").param("meaningful", "not-a-boolean"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.status").value(400))
+                .andExpect(jsonPath("$.error.type").value("invalid_argument"));
+    }
+
+    @Test
     void summarizeByClientSessionUsesSameSummaryPath() throws Exception {
         mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import type { JSX } from "solid-js";
+import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteProjectAlias,
@@ -16,6 +17,8 @@ import {
 import ProjectsPage from "../ProjectsPage";
 
 let routeParams: { projectKey?: string };
+let searchParams: { focus?: string };
+let setSearchParamsStore: SetStoreFunction<{ focus?: string }>;
 const navigate = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
@@ -24,6 +27,9 @@ vi.mock("@solidjs/router", () => ({
   ),
   useNavigate: () => navigate,
   useParams: () => routeParams,
+  // Same store idiom as the StreamPage tests; the component may pass navigate options as a
+  // second argument, which the store setter must never see.
+  useSearchParams: () => [searchParams, (update: { focus?: string }) => setSearchParamsStore(update)],
 }));
 
 vi.mock("../../lib/api", async (importOriginal) => {
@@ -103,6 +109,7 @@ const protectedProjects: ProjectSummary[] = [
 
 beforeEach(() => {
   routeParams = {};
+  [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({});
   localStorage.clear();
   navigate.mockReset();
   vi.mocked(getProjects).mockReset().mockResolvedValue([groupedProject, otherProject, ...protectedProjects]);
@@ -401,6 +408,98 @@ describe("ProjectsPage", () => {
     expect(getProjectTimeline).toHaveBeenNthCalledWith(3, "sba-key", 250, 151);
   });
 
+  it("writes trajectory selection to ?focus= and follows external focus changes (back button)", async () => {
+    render(() => <ProjectsPage />);
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const rail = document.querySelector(".project-context-rail") as HTMLElement;
+    const headNode = await waitFor(() => {
+      const node = document.querySelector('[data-node-kind="head"]');
+      expect(node).toBeInTheDocument();
+      return node as Element;
+    });
+
+    fireEvent.click(headNode);
+    expect(searchParams.focus).toBe("head:trajectory-handoff");
+    expect(within(rail).getByRole("region", { name: "Trajectory detail" })).toBeInTheDocument();
+
+    // The URL is the selection: an external param change (what the back button does) drives it.
+    setSearchParamsStore({ focus: undefined });
+    expect(within(rail).queryByRole("region", { name: "Trajectory detail" })).not.toBeInTheDocument();
+
+    setSearchParamsStore({ focus: "head:trajectory-handoff" });
+    expect(within(rail).getByRole("region", { name: "Trajectory detail" })).toHaveTextContent("Current project state");
+
+    // Escape clears the selection by clearing the param.
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(searchParams.focus).toBeUndefined();
+    expect(within(rail).queryByRole("region", { name: "Trajectory detail" })).not.toBeInTheDocument();
+  });
+
+  it("restores a deep-linked ?focus= selection on load so it survives reload", async () => {
+    [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({ focus: "head:trajectory-handoff" });
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const rail = document.querySelector(".project-context-rail") as HTMLElement;
+    const detail = await within(rail).findByRole("region", { name: "Trajectory detail" });
+    expect(detail).toHaveTextContent("Current project state");
+    expect(document.querySelector(".traj-node--selected")).toHaveAttribute("data-node-id", "head:trajectory-handoff");
+    // The deep-linked focus was never cleared by the initial catalog resolve.
+    expect(searchParams.focus).toBe("head:trajectory-handoff");
+  });
+
+  it("resolves focus=capture:<eventId> to the node containing that capture", async () => {
+    vi.mocked(getProjectTrajectory).mockReset().mockResolvedValue(twoBurstTrajectoryResponse());
+    [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({ focus: "capture:old-observation" });
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const rail = document.querySelector(".project-context-rail") as HTMLElement;
+    const detail = await within(rail).findByRole("region", { name: "Trajectory detail" });
+    expect(detail).toHaveTextContent("2 captures");
+    expect(detail).toHaveTextContent("Old burst observation");
+    expect(document.querySelector(".traj-node--selected")).toHaveAttribute("data-node-id", "burst:0:old-observation");
+
+    // A capture in the newest burst resolves to the head node.
+    setSearchParamsStore({ focus: "capture:trajectory-handoff" });
+    expect(within(rail).getByRole("region", { name: "Trajectory detail" })).toHaveTextContent("Current project state");
+    expect(document.querySelector(".traj-node--selected")).toHaveAttribute("data-node-id", "head:trajectory-handoff");
+  });
+
+  it("links burst and head nodes into the Stream with absolute ISO bounds and the project param", async () => {
+    vi.mocked(getProjectTrajectory).mockReset().mockResolvedValue(twoBurstTrajectoryResponse());
+    [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({ focus: "burst:0:old-observation" });
+    render(() => <ProjectsPage />);
+
+    expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
+    const rail = document.querySelector(".project-context-rail") as HTMLElement;
+    const burstDetail = await within(rail).findByRole("region", { name: "Trajectory detail" });
+    const burstQuery = new URLSearchParams({
+      q: "since:2026-06-01T12:00:00.000Z until:2026-06-01T13:00:00.000Z",
+      project: "sba-key",
+    });
+    expect(within(burstDetail).getByRole("link", { name: "View in Stream" })).toHaveAttribute(
+      "href",
+      `/stream?${burstQuery.toString()}`,
+    );
+
+    setSearchParamsStore({ focus: "head:trajectory-handoff" });
+    const headDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+    const headQuery = new URLSearchParams({
+      q: "since:2026-07-15T16:00:00.000Z until:2026-07-15T16:00:00.000Z",
+      project: "sba-key",
+    });
+    expect(within(headDetail).getByRole("link", { name: "View in Stream" })).toHaveAttribute(
+      "href",
+      `/stream?${headQuery.toString()}`,
+    );
+
+    // Future nodes are not burst-shaped: no Stream span, no link.
+    setSearchParamsStore({ focus: "future:next:trajectory-handoff" });
+    const futureDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+    expect(within(futureDetail).queryByRole("link", { name: "View in Stream" })).not.toBeInTheDocument();
+  });
+
   it("shows an explicit invalid project state", async () => {
     routeParams = { projectKey: "missing-project" };
     render(() => <ProjectsPage />);
@@ -462,6 +561,35 @@ function trajectoryResponse(): ProjectTrajectoryResponse {
       },
     ],
     tasks: [],
+  };
+}
+
+// Two bursts more than GAP_HOURS apart: an older two-capture burst (June 1, 12:00–13:00 UTC)
+// and the newest single-handoff burst that becomes the head (July 15, 16:00 UTC).
+function twoBurstTrajectoryResponse(): ProjectTrajectoryResponse {
+  const base = trajectoryResponse();
+  return {
+    ...base,
+    totalCaptures: 3,
+    captures: [
+      {
+        id: "old-observation",
+        kind: "observation",
+        sessionId: "session-old",
+        headline: "Old burst observation",
+        text: "An observation from the earlier burst.",
+        observedAt: "2026-06-01T12:00:00Z",
+      },
+      {
+        id: "old-decision",
+        kind: "decision",
+        sessionId: "session-old",
+        headline: "Old burst decision",
+        text: "A decision closing the earlier burst.",
+        observedAt: "2026-06-01T13:00:00Z",
+      },
+      ...base.captures,
+    ],
   };
 }
 

@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -13,7 +14,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.memory.QueryFacets;
+import dev.nathan.sbaagentic.query.EventQuery;
+import dev.nathan.sbaagentic.query.EventQuery.Field;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -35,29 +37,40 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
-    public MemorySqlQueryAdapter(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public MemorySqlQueryAdapter(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     @Override
     public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
-        QueryFacets facets = QueryFacets.parse(query);
+        EventQuery facets = EventQuery.parse(query);
         if (!facets.hasAnyFacet()) {
-            String like = "%" + (query == null ? "" : query).toLowerCase() + "%";
-            return jdbcTemplate.query("""
-                    SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
-                      FROM agent_events
-                     WHERE lower(coalesce(text, '')) LIKE ?
-                        OR lower(coalesce(tool_name, '')) LIKE ?
-                        OR lower(coalesce(event_type, '')) LIKE ?
-                        OR lower(coalesce(source, '')) LIKE ?
-                        OR lower(coalesce(metadata_json, '')) LIKE ?
-                     ORDER BY observed_at DESC
-                     LIMIT ?
-                    """, this::mapEvent, like, like, like, like, like, limit);
+            // Facetless legacy path: free text still sweeps the wider column set (event_type and
+            // source included), but terms now AND per-term instead of matching one joined phrase.
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder()
+                    .append("SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,\n")
+                    .append("       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at\n")
+                    .append("  FROM agent_events\n")
+                    .append(" WHERE 1=1\n");
+            for (String term : facets.freeTerms()) {
+                String like = "%" + term.toLowerCase() + "%";
+                sql.append("   AND (lower(coalesce(text, '')) LIKE ?")
+                        .append(" OR lower(coalesce(tool_name, '')) LIKE ?")
+                        .append(" OR lower(coalesce(event_type, '')) LIKE ?")
+                        .append(" OR lower(coalesce(source, '')) LIKE ?")
+                        .append(" OR lower(coalesce(metadata_json, '')) LIKE ?)\n");
+                for (int i = 0; i < 5; i++) {
+                    args.add(like);
+                }
+            }
+            sql.append(" ORDER BY observed_at DESC\n LIMIT ?");
+            args.add(limit);
+            return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
         }
 
         List<Object> args = new ArrayList<>();
@@ -66,29 +79,73 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
                 .append("e.observed_at\n")
                 .append("  FROM agent_events e\n");
-        boolean joinSessions = facets.cwd() != null
-                || facets.excludedCwd() != null
-                || facets.exactCwd() != null
-                || facets.groupCwd() != null;
+        boolean joinSessions = !facets.values(Field.PROJECT).isEmpty()
+                || !facets.excluded(Field.PROJECT).isEmpty()
+                || !facets.values(Field.PROJECT_EXACT).isEmpty()
+                || !facets.excluded(Field.PROJECT_EXACT).isEmpty()
+                || !facets.projectGroups().isEmpty();
         if (joinSessions) {
             sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
         }
         sql.append(" WHERE 1=1\n");
-        appendKeywordFacets(sql, args, facets);
-        if (facets.cwd() != null) {
-            sql.append("   AND lower(coalesce(s.cwd, '')) LIKE lower(?)\n");
-            args.add("%" + facets.cwd() + "%");
+        appendInList(sql, args, "lower(e.source)", facets.values(Field.SOURCE), false);
+        appendInList(sql, args, "lower(e.event_type)", facets.values(Field.KIND), false);
+        appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.values(Field.TOOL), false);
+        appendInList(sql, args, "lower(e.source)", facets.excluded(Field.SOURCE), true);
+        appendInList(sql, args, "lower(e.event_type)", facets.excluded(Field.KIND), true);
+        appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.excluded(Field.TOOL), true);
+        List<String> cwds = facets.values(Field.PROJECT);
+        if (!cwds.isEmpty()) {
+            sql.append("   AND (")
+                    .append(String.join(" OR ",
+                            Collections.nCopies(cwds.size(), "lower(coalesce(s.cwd, '')) LIKE lower(?)")))
+                    .append(")\n");
+            for (String cwd : cwds) {
+                args.add("%" + cwd + "%");
+            }
         }
-        if (facets.exactCwd() != null) {
-            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
-            args.add(facets.exactCwd());
+        List<String> exactCwds = facets.values(Field.PROJECT_EXACT);
+        if (!exactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" IN (")
+                    .append(String.join(", ", Collections.nCopies(exactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(exactCwds);
         }
-        appendProjectGroup(sql, args, facets.groupCwd(), projectScopes);
-        if (facets.excludedCwd() != null) {
+        List<String> excludedExactCwds = facets.excluded(Field.PROJECT_EXACT);
+        if (!excludedExactCwds.isEmpty()) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" NOT IN (")
+                    .append(String.join(", ", Collections.nCopies(excludedExactCwds.size(), "?")))
+                    .append(")\n");
+            args.addAll(excludedExactCwds);
+        }
+        appendProjectGroup(sql, args, facets.projectGroups(), projectScopes);
+        for (String cwd : facets.excluded(Field.PROJECT)) {
             sql.append("   AND lower(coalesce(s.cwd, '')) NOT LIKE lower(?)\n");
-            args.add("%" + facets.excludedCwd() + "%");
+            args.add("%" + cwd + "%");
         }
-        appendFreeText(sql, args, facets.freeTextPhrase());
+        facets.sessionRef().ifPresent(ref -> {
+            sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+            args.add(ref);
+            args.add(ref);
+        });
+        facets.sinceSpec().ifPresent(spec -> {
+            sql.append("   AND e.observed_at >= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
+        facets.untilSpec().ifPresent(spec -> {
+            sql.append(spec.exclusiveEnd() ? "   AND e.observed_at < ?\n" : "   AND e.observed_at <= ?\n");
+            args.add(spec.resolve(clock).toString());
+        });
+        // is:all is deliberately a no-op here: search has no meaningful filter to disable.
+        for (String term : facets.freeTerms()) {
+            String like = "%" + term.toLowerCase() + "%";
+            sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
+                    .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+            args.add(like);
+            args.add(like);
+            args.add(like);
+        }
         sql.append(" ORDER BY e.observed_at DESC\n LIMIT ?");
         args.add(limit);
         return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
@@ -170,36 +227,20 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
                 rs.getString("recall_cwd")), args.toArray());
     }
 
-    private static void appendKeywordFacets(StringBuilder sql, List<Object> args, QueryFacets facets) {
-        if (facets.source() != null) {
-            sql.append("   AND lower(e.source) = lower(?)\n");
-            args.add(facets.source());
+    private static void appendInList(
+            StringBuilder sql, List<Object> args, String columnExpr, List<String> values, boolean negated) {
+        if (values.isEmpty()) {
+            return;
         }
-        if (facets.eventType() != null) {
-            sql.append("   AND lower(e.event_type) = lower(?)\n");
-            args.add(facets.eventType());
-        }
-        if (facets.toolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) = lower(?)\n");
-            args.add(facets.toolName());
-        }
-        if (facets.excludedSource() != null) {
-            sql.append("   AND lower(e.source) <> lower(?)\n");
-            args.add(facets.excludedSource());
-        }
-        if (facets.excludedEventType() != null) {
-            sql.append("   AND lower(e.event_type) <> lower(?)\n");
-            args.add(facets.excludedEventType());
-        }
-        if (facets.excludedToolName() != null) {
-            sql.append("   AND lower(coalesce(e.tool_name, '')) <> lower(?)\n");
-            args.add(facets.excludedToolName());
-        }
+        sql.append("   AND ").append(columnExpr).append(negated ? " NOT IN (" : " IN (")
+                .append(String.join(", ", Collections.nCopies(values.size(), "lower(?)")))
+                .append(")\n");
+        args.addAll(values);
     }
 
     private static void appendProjectGroup(
-            StringBuilder sql, List<Object> args, String group, List<String> projectScopes) {
-        if (group == null) {
+            StringBuilder sql, List<Object> args, List<String> groups, List<String> projectScopes) {
+        if (groups.isEmpty()) {
             return;
         }
         List<String> scopes = projectScopes == null ? List.of() : projectScopes;
@@ -211,19 +252,6 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
                 .append(String.join(", ", Collections.nCopies(scopes.size(), "?")))
                 .append(")\n");
         args.addAll(scopes);
-    }
-
-    private static void appendFreeText(StringBuilder sql, List<Object> args, String freePhrase) {
-        if (freePhrase.isBlank()) {
-            return;
-        }
-        String like = "%" + freePhrase.toLowerCase() + "%";
-        sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
-                .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
-                .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
-        args.add(like);
-        args.add(like);
-        args.add(like);
     }
 
     private AgentEvent mapEvent(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

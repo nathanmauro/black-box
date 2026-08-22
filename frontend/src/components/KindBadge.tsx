@@ -10,9 +10,11 @@ const KIND_CLASSES: Record<string, string> = {
 
 type KindBadgeProps = {
   kind?: string | null;
+  /** Display text override; the kind still drives color. Lets tight layouts shorten long kinds. */
+  label?: string;
 };
 
 export default function KindBadge(props: KindBadgeProps) {
   const kind = () => props.kind || "Event";
-  return <span class={`kind-badge ${KIND_CLASSES[kind()] || ""}`}>{kind()}</span>;
+  return <span class={`kind-badge ${KIND_CLASSES[kind()] || ""}`}>{props.label ?? kind()}</span>;
 }

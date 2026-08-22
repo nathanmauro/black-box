@@ -9,6 +9,7 @@ import {
   deleteProjectAlias,
   enqueueTask,
   getEvent,
+  getEventFacets,
   getSessionChildCounts,
   getSessionDag,
   getSession,
@@ -32,6 +33,7 @@ import {
   type RecallResult,
   type AgentEvent,
   type AgentSession,
+  type EventFacetCounts,
   type TaskChange,
   type CompleteTaskRequest,
   type CreateAnnotationRequest,
@@ -55,6 +57,24 @@ afterEach(() => {
 });
 
 describe("Phase 2 API helpers", () => {
+  it("fetches query-scoped facet counts with an abort signal and trimmed q", async () => {
+    const payload: EventFacetCounts = {
+      total: 3,
+      fields: { source: [{ value: "codex", count: 3 }], kind: [], tool: [], project: [] },
+      reason: null,
+    };
+    const fetchMock = stubJson(payload);
+    const controller = new AbortController();
+
+    const counts = await getEventFacets({ q: " kind:Decision ", meaningful: true }, controller.signal);
+
+    expect(counts).toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/events/facets?q=kind%3ADecision&meaningful=true", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+  });
+
   it("gets an exact event by its stable id", async () => {
     const payload: AgentEvent = {
       id: "event/old",

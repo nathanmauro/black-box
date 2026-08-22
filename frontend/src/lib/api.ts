@@ -47,6 +47,26 @@ export type EventFeedParams = {
   meaningful?: boolean;
 };
 
+export type FacetValueCount = {
+  value: string;
+  count: number;
+};
+
+export type EventFacetFields = {
+  source: FacetValueCount[];
+  kind: FacetValueCount[];
+  tool: FacetValueCount[];
+  project: FacetValueCount[];
+};
+
+// Counts degrade honestly (spec §6.5): total/fields are null together (reason names why, e.g.
+// "backfill") and consumers must omit the number rather than showing a stale or partial one.
+export type EventFacetCounts = {
+  total: number | null;
+  fields: EventFacetFields | null;
+  reason?: string | null;
+};
+
 export type ElasticHealth = {
   enabled?: boolean;
   available?: boolean;
@@ -555,6 +575,17 @@ export function getEventFeed(params: EventFeedParams = {}): Promise<EventFeedRes
   return getJson(`/api/events${suffix ? `?${suffix}` : ""}`);
 }
 
+export function getEventFacets(
+  params: { q?: string; meaningful?: boolean } = {},
+  signal?: AbortSignal,
+): Promise<EventFacetCounts> {
+  const query = new URLSearchParams();
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.meaningful !== undefined) query.set("meaningful", String(params.meaningful));
+  const suffix = query.toString();
+  return getJson(`/api/events/facets${suffix ? `?${suffix}` : ""}`, signal);
+}
+
 export function getRecall(scope: string, withinHours: number, kinds: string[]): Promise<RecallResult> {
   const params = new URLSearchParams({
     withinHours: String(withinHours),
@@ -720,8 +751,8 @@ export function listTasks(filters: TaskFilters = {}): Promise<TaskSnapshot[]> {
   return getJson(`/api/tasks${suffix ? `?${suffix}` : ""}`);
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { headers: { Accept: "application/json" }, signal });
   return readJson<T>(response);
 }
 

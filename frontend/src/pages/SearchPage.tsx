@@ -3,7 +3,7 @@ import { createEffect, createMemo, createResource, createSignal, For, onCleanup,
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
 import { ask, askStatus, search, searchValues, type AgentEvent, type ProjectSummary, type SearchResponse } from "../lib/api";
-import { FACET_FIELDS, parseQuery, setFacet, type FacetField } from "../lib/query";
+import { FACET_FIELDS, parseQuery, removeFacetValue, setFacet, type FacetField, type FacetKey, type FacetMode } from "../lib/query";
 import { primaryProjectScope } from "../lib/projects";
 import { timeAgo, truncatePath } from "../lib/format";
 
@@ -101,12 +101,15 @@ export default function SearchPage(props: SearchPageProps = {}) {
   function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
     run(setFacet(visibleSubmitted(), key, value, mode));
   }
+  function removeFacetChip(key: FacetKey, value: string, mode: FacetMode = "include") {
+    run(removeFacetValue(visibleSubmitted(), key, value, mode));
+  }
 
   // Solid resource accessors throw after a rejected request. Guard the accessor so Find can
   // render a retryable failure without escaping through the route's render tree.
   const local = () => (response.error ? [] : response()?.local ?? []);
   const filtered = createMemo(() => {
-    const hasKindFacet = Boolean(parsed().facets.kind);
+    const hasKindFacet = Boolean(parsed().facets.kind?.length);
     return local().filter((event) => !(meaningfulOnly() && !hasKindFacet && event.eventType === "PostToolUse"));
   });
   const structured = () => filtered().filter((event) => STRUCTURED.has(event.eventType));
@@ -231,26 +234,26 @@ export default function SearchPage(props: SearchPageProps = {}) {
               {(field) => (
                 <div class="facet-group">
                   <span class="facet-label">{field.label}</span>
-                  <Show when={parsed().facets[field.key]}>
+                  <For each={parsed().facets[field.key] ?? []}>
                     {(value) => (
-                      <button type="button" class="facet-chip facet-chip--active" onClick={() => applyFacet(field.key, null)}>
-                        {value()} ✕
+                      <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
+                        {value} ✕
                       </button>
                     )}
-                  </Show>
-                  <Show when={parsed().excludeFacets[field.key]}>
+                  </For>
+                  <For each={parsed().excludeFacets[field.key] ?? []}>
                     {(value) => (
                       <button
                         type="button"
                         class="facet-chip facet-chip--active facet-chip--exclude"
-                        aria-label={`${field.key} != ${value()}`}
-                        onClick={() => applyFacet(field.key, null, "exclude")}
+                        aria-label={`${field.key} != ${value}`}
+                        onClick={() => removeFacetChip(field.key, value, "exclude")}
                       >
-                        {field.key} != {value()} x
+                        {field.key} != {value} x
                       </button>
                     )}
-                  </Show>
-                  <Show when={!parsed().facets[field.key] && !parsed().excludeFacets[field.key]}>
+                  </For>
+                  <Show when={!parsed().facets[field.key]?.length && !parsed().excludeFacets[field.key]?.length}>
                     <div class="facet-quick">
                       <For each={QUICK_VALUES[field.key]}>
                         {(value) => (
@@ -338,8 +341,10 @@ function appendProjectGroupScope(query: string, canonicalKey: string): string {
   return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
 }
 
+// Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
+// canonicalKey containing one would fan out into bogus project groups.
 function quoteHiddenFacet(value: string): string {
-  return /[\s"]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+  return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
 function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, eventId?: string) => void }) {
@@ -370,7 +375,10 @@ function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, ev
 }
 
 function AskPanel(props: { project?: ProjectSummary | null } = {}) {
-  const [question, setQuestion] = createSignal("");
+  const [params] = useSearchParams<{ q?: string }>();
+  // ?q= prefills the question (the Stream's "Ask memory about «text» →" affordance, spec §6.3);
+  // asking still requires an explicit submit.
+  const [question, setQuestion] = createSignal(params.q ?? "");
   const [asked, setAsked] = createSignal("");
   const [answer] = createResource(asked, async (q) => (q.trim() ? ask(q) : null));
   return (

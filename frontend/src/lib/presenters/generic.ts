@@ -1,9 +1,10 @@
 import type { AgentEvent } from "../api";
+import { outputLooksFailed } from "./failure";
 import type { Presentation } from "./types";
 
 export function genericPresenter(event: AgentEvent): Presentation {
   return {
-    kindPill: { label: event.toolName || event.eventType || "Event", tone: "neutral" },
+    kindPill: { label: event.toolName || event.eventType || "Event", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "neutral" },
     headline: [],
     blocks: [{
       kind: "fallback",

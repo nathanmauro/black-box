@@ -35,6 +35,16 @@ class SpaForwardingTest {
     }
 
     @Test
+    void streamRouteForwardsToIndexWithoutShadowingTheSseEndpoint() throws Exception {
+        mvc.perform(get("/stream"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
+
+        mvc.perform(get("/api/stream"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void boardRouteForwardsToIndexWithoutShadowingTheTaskApi() throws Exception {
         mvc.perform(get("/board"))
                 .andExpect(status().isOk())

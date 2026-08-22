@@ -13,6 +13,7 @@ import {
   SPINE_MAX,
   STALE_DAYS,
   buildTrajectory,
+  findTrajectoryNodeForCapture,
   layoutTrajectory,
 } from "./trajectory";
 
@@ -358,6 +359,50 @@ describe("buildTrajectory", () => {
     expect(stubs.find((node) => node.sourceBurstId === graph.headId)?.alternatives).toEqual(["Defer the graph"]);
     expect(stubs.every((node) => !node.sourceBurstId?.startsWith("future:"))).toBe(true);
     expect(rejectedEdges.every((edge) => !edge.from.startsWith("future:"))).toBe(true);
+  });
+
+  it("carries burst time ranges on deep-past, burst, and head nodes for View-in-Stream links", () => {
+    const startMs = Date.parse("2026-01-01T00:00:00Z");
+    const captures = [
+      capture("b0-a", "observation", iso(startMs)),
+      capture("b0-b", "decision", iso(startMs + HOUR_MS)),
+      ...Array.from({ length: SPINE_MAX + 1 }, (_, index) =>
+        capture(`b${index + 1}`, "observation", iso(startMs + (index + 1) * 3 * DAY_MS)),
+      ),
+      capture("head", "handoff", iso(startMs + (SPINE_MAX + 2) * 3 * DAY_MS), { sessionId: "session-1" }),
+    ];
+
+    const graph = buildTrajectory(response(captures), startMs + (SPINE_MAX + 2) * 3 * DAY_MS);
+    const deepPast = graph.nodes.find((node) => node.kind === "deep-past");
+    const bursts = graph.nodes.filter((node) => node.kind === "burst");
+    const head = graph.nodes.find((node) => node.kind === "head");
+
+    // Deep past spans its first collapsed burst's start to its last collapsed burst's end.
+    expect(deepPast?.startMs).toBe(startMs);
+    expect(deepPast?.endMs).toBeGreaterThanOrEqual(deepPast?.startMs ?? Infinity);
+    for (const burst of bursts) {
+      expect(typeof burst.startMs).toBe("number");
+      expect(burst.endMs).toBeGreaterThanOrEqual(burst.startMs!);
+    }
+    // The head carries its (newest) burst's range and members, so recent captures resolve.
+    expect(head?.startMs).toBe(startMs + (SPINE_MAX + 2) * 3 * DAY_MS);
+    expect(head?.endMs).toBe(head?.startMs);
+    expect(head?.members?.map((member) => member.id)).toEqual(["head"]);
+  });
+
+  it("resolves capture ids to their containing node, falling back to sourced nodes", () => {
+    const nowMs = Date.parse("2026-07-15T16:00:00Z");
+    const captures = [
+      capture("old", "observation", iso(nowMs - 10 * DAY_MS)),
+      capture("head", "handoff", iso(nowMs), { sessionId: "session-1", nextAction: "Do the next thing" }),
+    ];
+    const graph = buildTrajectory(response(captures), nowMs);
+
+    expect(findTrajectoryNodeForCapture(graph, "old")?.kind).toBe("burst");
+    // The head capture is contained by the head node, not merely sourced by future-next.
+    expect(findTrajectoryNodeForCapture(graph, "head")?.kind).toBe("head");
+    expect(findTrajectoryNodeForCapture(graph, "missing")).toBeNull();
+    expect(findTrajectoryNodeForCapture(graph, "")).toBeNull();
   });
 });
 

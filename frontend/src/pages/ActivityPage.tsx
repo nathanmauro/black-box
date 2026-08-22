@@ -1,4 +1,4 @@
-import { useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import ProjectPicker from "../components/ProjectPicker";
 import { getProjects } from "../lib/api";
@@ -15,9 +15,17 @@ const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
   { id: "ask", label: "Ask", hint: "synthesized answer with citations" },
 ];
 
-export default function ActivityPage() {
+type ActivityPageProps = {
+  // Set by the /stream route (spec §6.6): the page renders only this mode regardless of ?view=,
+  // so /stream never renders a non-stream mode at a lying address.
+  lockedMode?: "stream";
+};
+
+export default function ActivityPage(props: ActivityPageProps = {}) {
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string; project?: string; event?: string }>();
-  const [mode, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
+  const [modeSignal, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
+  const mode = () => props.lockedMode ?? modeSignal();
   const [rememberedProjectKey, setRememberedProjectKey] = createSignal(readRememberedProjectKey());
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, { initialValue: [] });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
@@ -64,6 +72,16 @@ export default function ActivityPage() {
   });
 
   function selectMode(next: ActivityMode) {
+    if (props.lockedMode) {
+      if (next === props.lockedMode) return;
+      // Mode tabs navigate() off /stream instead of setParams (spec §6.6), preserving the query
+      // and project scope across the route change.
+      const search = new URLSearchParams({ view: next });
+      if (params.q) search.set("q", params.q);
+      if (params.project !== undefined) search.set("project", params.project);
+      navigate(`/?${search.toString()}`);
+      return;
+    }
     setModeSignal(next);
     if (next === "stream") {
       setParams({ view: undefined });
@@ -90,11 +108,11 @@ export default function ActivityPage() {
 
   return (
     <section class="activity-page">
+      {/* One compact row (spec §1 complaint: the old eyebrow + blurb block cost ~200px of
+          vertical space before the first event row). */}
       <header class="activity-header">
         <div class="activity-title">
-          <p class="eyebrow">workspace</p>
           <h1>Activity</h1>
-          <p>Filter recorded activity, browse session transcripts, and ask memory from one surface.</p>
         </div>
 
         <ProjectPicker
@@ -160,7 +178,12 @@ export default function ActivityPage() {
               />
             </Match>
             <Match when={mode() === "stream"}>
-              <StreamPage project={selectedProject()} projectScopePending={projectScopePending()} />
+              <StreamPage
+                project={selectedProject()}
+                projects={availableProjects()}
+                projectScopePending={projectScopePending()}
+                onClearProject={() => selectProject(undefined)}
+              />
             </Match>
           </Switch>
         </Show>

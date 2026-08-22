@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../api";
 import { truncatePath } from "../format";
 import { parseJsonObject, payloadText } from "../payload";
+import { outputLooksFailed } from "./failure";
 import { genericPresenter } from "./generic";
 import type { Presentation } from "./types";
 
@@ -27,7 +28,7 @@ export function readPresenter(event: AgentEvent): Presentation {
   const range = offset !== null ? `:${offset}${limit !== null ? `–${offset + limit}` : ""}` : "";
 
   return {
-    kindPill: { label: "Read", tone: "read" },
+    kindPill: { label: "Read", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "read" },
     headline: [{ kind: "fileLink", label: `${truncatePath(pathValue)}${range}`, file }],
     blocks: content
       ? [{ kind: "code", lang: langForPath(pathValue), text: content, file, label: `Content (${content.length.toLocaleString("en-US")} chars)` }]

@@ -363,6 +363,14 @@ index for new events; it is not used by atomic claims or the Board.
 | `specs`, `tasks`, `task_events` | workflow | Frozen work definitions, queue state, lifecycle transitions, and annotations |
 | `session_links` | workflow | Explicit session lineage links used by Board and DAG projections |
 | `project_aliases` | project | Reversible logical-project grouping over recorded working directories |
+| `event_fts`, `search_index_state` | recording | Contentless FTS5 index over `agent_events` (text, tool_name, clipped tool JSON) plus its backfill progress row; trigger-maintained inside the canonical write transaction and fully rebuildable |
+
+The FTS index is a rebuildable secondary inside canonical SQLite: insert/delete/update triggers on
+`agent_events` keep it consistent by construction, the chunked background backfill doubles as the
+rebuild job, and free-text search falls back to per-term LIKE with identical semantics whenever FTS
+is unavailable. **Invariant: never `VACUUM` the live database without an FTS rebuild afterwards.**
+`agent_events` has a TEXT primary key, so its implicit rowids may be renumbered by VACUUM, silently
+remapping every FTS hit (2026-08-20 stream spec §6.3, D8).
 
 Session summarization has a separate privacy and process boundary. The `external` backend passes
 the configured `SBA_SUMMARY_EXTERNAL_COMMAND` to `/bin/sh -c`; the default command is the bundled

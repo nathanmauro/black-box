@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording;
 
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.nio.file.Path;
@@ -53,7 +54,9 @@ class EventRepositoryMigrationTest {
 
         RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
-                new ObjectMapper());
+                new ObjectMapper(),
+                java.time.Clock.systemDefaultZone(),
+                new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
         repository.ensureSchema();
 
         // The legacy session keeps its title but is protected (LEGACY) so only an AI retitle replaces it.
@@ -96,7 +99,9 @@ class EventRepositoryMigrationTest {
 
         RecordingSqlStore repository = new RecordingSqlStore(
                 jdbc,
-                new ObjectMapper());
+                new ObjectMapper(),
+                java.time.Clock.systemDefaultZone(),
+                new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
         repository.ensureSchema();
 
         // Existing sessions backfill as parents: spawned_by is NULL and maps through the record.

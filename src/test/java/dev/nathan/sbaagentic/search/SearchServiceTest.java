@@ -38,16 +38,22 @@ class SearchServiceTest {
         SearchResponse exact = service.search("kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         SearchResponse grouped = service.search("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         SearchResponse negative = service.search("NOT kind:PostToolUse project:sba-agentic", 25);
+        SearchResponse session = service.search("session:abc failing", 25);
+        SearchResponse timed = service.search("since:2026-08-01 deploy", 25);
 
         assertThat(exact.elastic()).isEmpty();
         assertThat(grouped.elastic()).isEmpty();
         assertThat(negative.elastic()).isEmpty();
+        assertThat(session.elastic()).isEmpty();
+        assertThat(timed.elastic()).isEmpty();
         verify(repository).searchEvents(
                 "kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of(), 25);
         verify(repository).searchEvents(
                 "project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of("/project"), 25);
         verify(repository).searchEvents("NOT kind:PostToolUse project:sba-agentic", List.of(), 25);
-        verify(elastic, times(3)).health();
+        verify(repository).searchEvents("session:abc failing", List.of(), 25);
+        verify(repository).searchEvents("since:2026-08-01 deploy", List.of(), 25);
+        verify(elastic, times(5)).health();
         verifyNoMoreInteractions(elastic);
     }
 
