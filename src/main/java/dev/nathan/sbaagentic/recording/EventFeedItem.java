@@ -18,5 +18,6 @@ public record EventFeedItem(
         Map<String, Object> metadata,
         Instant observedAt,
         String cwd,
-        String sessionTitle) {
+        String sessionTitle,
+        Instant lastSeenAt) {
 }

@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import java.util.List;
+
+import dev.nathan.sbaagentic.platform.internal.domain.AgentProcess;
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 
@@ -42,6 +45,10 @@ public final class StreamEvents {
 
     /** A committed task annotation, named SSE event {@code task.note}. */
     public record TaskNoted(Task task, TaskAnnotation annotation, String observedAt) {
+    }
+
+    /** Running agent processes, named SSE event {@code processes}. Broadcast only on change. */
+    public record ProcessesUpdated(List<AgentProcess> processes, boolean available) {
     }
 
     private StreamEvents() {

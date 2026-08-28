@@ -40,6 +40,7 @@ export type RunSegment = {
   eventCount: number;
   newestAt: string;
   oldestAt: string;
+  lastSeenAt: string | null;
   rows: Row[];
 };
 
@@ -77,6 +78,7 @@ type MutableRun = {
   clientSessionId: string;
   cwd: string | null;
   sessionTitle: string | null;
+  lastSeenAt: string | null;
   dateKey: string;
   newestMs: number;
   newestAt: string;
@@ -120,6 +122,7 @@ export function segmentStream(items: EventFeedItem[], opts: SegmentOptions = {})
         clientSessionId: item.clientSessionId,
         cwd: item.cwd ?? null,
         sessionTitle: item.sessionTitle ?? null,
+        lastSeenAt: item.lastSeenAt ?? null,
         dateKey,
         newestMs: ms,
         newestAt: item.observedAt,
@@ -162,6 +165,7 @@ export function segmentStream(items: EventFeedItem[], opts: SegmentOptions = {})
       eventCount: run.items.length,
       newestAt: run.newestAt,
       oldestAt: run.oldestAt,
+      lastSeenAt: run.lastSeenAt,
       rows: buildRows(run.items, opts.folds),
     });
     previous = run;

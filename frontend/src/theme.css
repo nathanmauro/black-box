@@ -2476,11 +2476,17 @@ a {
 
 /* z-index 2 on the scale stated at .stream-run: the pill floats above sticky run headers (1)
    and below the suggest popover (30). Sticky so it stays visible while scrolled into a run. */
-.stream-new-pill {
+.stream-live-controls {
   position: sticky;
   top: 4px;
   z-index: 2;
   align-self: center;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stream-new-pill {
   flex: none;
   height: 28px;
   padding: 0 12px;
@@ -2490,6 +2496,69 @@ a {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.follow-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.follow-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.follow-toggle--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.follow-indicator {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.stream-run-heartbeat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.heartbeat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.heartbeat-dot--running {
+  background: var(--green);
+}
+
+.heartbeat-dot--idle {
+  background: var(--yellow);
+}
+
+.heartbeat-dot--stale {
+  background: var(--text-disabled);
+}
+
+.heartbeat-time {
+  font-family: var(--font-mono);
 }
 
 /* ---- ask --------------------------------------------------------------- */

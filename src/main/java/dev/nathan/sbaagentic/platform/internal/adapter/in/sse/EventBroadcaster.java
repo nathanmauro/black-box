@@ -87,6 +87,10 @@ public class EventBroadcaster {
         send("task.note", payload);
     }
 
+    public void publishProcesses(StreamEvents.ProcessesUpdated payload) {
+        send("processes", payload);
+    }
+
     private void send(String name, Object payload) {
         for (SseEmitter emitter : emitters) {
             try {
