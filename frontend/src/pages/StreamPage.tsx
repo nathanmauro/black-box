@@ -101,6 +101,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [pendingItems, setPendingItems] = createSignal<EventFeedItem[]>([]);
   const [followMode, setFollowMode] = createSignal(loadFollowMode());
   const [nextBefore, setNextBefore] = createSignal<string | null>(null);
+  // Track lastSeenAt per session from SSE session.updated events for live heartbeat display
+  const [lastSeenBySession, setLastSeenBySession] = createSignal<Map<string, string>>(new Map());
   const [loading, setLoading] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -379,6 +381,20 @@ export default function StreamPage(props: StreamPageProps = {}) {
       void refetchHead(newestObservedAt());
     }, 500);
     return liveCount;
+  });
+
+  // Track lastSeenAt per session from SSE session.updated events for live heartbeat display
+  createEffect(() => {
+    const unsubscribe = live.onSessionUpdated((event) => {
+      if (event.lastSeenAt) {
+        setLastSeenBySession((prev) => {
+          const next = new Map(prev);
+          next.set(event.sessionId, event.lastSeenAt);
+          return next;
+        });
+      }
+    });
+    onCleanup(unsubscribe);
   });
 
   function run(next: string) {
@@ -969,6 +985,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
                         run={run()}
                         sticky={run().eventCount >= 3}
                         sessionHref={runSessionHref(run().sessionId, props.project)}
+                        lastSeenAt={lastSeenBySession().get(run().sessionId)}
                         actions={
                           <RowSessionActions
                             sessionId={run().sessionId}

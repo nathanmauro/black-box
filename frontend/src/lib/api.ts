@@ -30,7 +30,6 @@ export type AgentEvent = {
 export type EventFeedItem = AgentEvent & {
   cwd?: string | null;
   sessionTitle?: string | null;
-  lastSeenAt?: string | null;
 };
 
 export type EventFeedResponse = {

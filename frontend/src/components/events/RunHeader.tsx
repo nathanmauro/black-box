@@ -9,6 +9,7 @@ type RunHeaderProps = {
   run: RunSegment;
   sticky: boolean;
   sessionHref: string;
+  lastSeenAt?: string;
   actions?: JSX.Element;
 };
 
@@ -20,8 +21,8 @@ type RunHeaderProps = {
 export default function RunHeader(props: RunHeaderProps) {
   const run = () => props.run;
   const title = () => run().sessionTitle || run().clientSessionId;
-  const status = () => getSessionStatus(run().lastSeenAt);
-  const heartbeat = () => formatRelativeTime(run().lastSeenAt);
+  const status = () => getSessionStatus(props.lastSeenAt);
+  const heartbeat = () => formatRelativeTime(props.lastSeenAt);
 
   return (
     <article
@@ -43,7 +44,7 @@ export default function RunHeader(props: RunHeaderProps) {
         {run().eventCount === 1 ? "1 event" : `${run().eventCount} events`}
       </span>
       <span class="stream-run-span">{runSpan(run())}</span>
-      <Show when={run().lastSeenAt}>
+      <Show when={props.lastSeenAt}>
         <span class="stream-run-heartbeat">
           <span
             class={`heartbeat-dot heartbeat-dot--${status()}`}

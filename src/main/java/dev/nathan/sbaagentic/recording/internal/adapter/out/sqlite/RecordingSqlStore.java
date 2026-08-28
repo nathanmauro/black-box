@@ -324,7 +324,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         StringBuilder sql = new StringBuilder()
                 .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
-                .append("e.observed_at, s.cwd AS cwd, s.title AS session_title, s.last_seen_at\n")
+                .append("e.observed_at, s.cwd AS cwd, s.title AS session_title\n")
                 .append("  FROM agent_events e\n")
                 .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
                 .append(" WHERE 1=1\n");
@@ -806,8 +806,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 event.metadata(),
                 event.observedAt(),
                 rs.getString("cwd"),
-                rs.getString("session_title"),
-                mapInstant(rs.getTimestamp("last_seen_at")));
+                rs.getString("session_title"));
     }
 
     private static FeedCursor parseBefore(String before) {
