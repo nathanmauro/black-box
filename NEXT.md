@@ -24,9 +24,11 @@ stream-legibility-queriability).
 - **ProcessPanel component**: displays running agent processes with CPU bar, memory, and uptime; 
   color-coded by agent; collapses when empty or unavailable
 - **Follow mode**: pin-to-newest toggle beside the "N new" pill; when enabled, auto-merges pending 
-  items and scrolls to top; persisted in localStorage
+  items and scrolls to top; persisted in localStorage; distinct from existing `livePaused` (which 
+  is about `until:` query bounds)
 - **Session heartbeat**: RunHeader now shows "last event Xs ago" with status dot (🟢 running <10s, 
-  🟡 idle 10s–5m, ⚫ stale >5m)
+  🟡 idle 10s–5m, ⚫ stale >5m); updates reactively from SSE `session.updated.lastSeenAt` events, 
+  not from feed query snapshot (corrected in commit bd4ab72)
 - **SSE processes handling**: live store extended to receive and store processes updates
 - **Utilities**: formatRelativeTime and getSessionStatus with thresholds per spec
 

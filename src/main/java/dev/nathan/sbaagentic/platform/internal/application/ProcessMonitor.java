@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +38,7 @@ public class ProcessMonitor {
             "^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+([\\d.]+)\\s+(\\S+)\\s+(.+)$");
 
     private static final Set<String> AGENT_BINARIES = Set.of("claude", "codex", "cursor", "raycast");
+    private static final long PS_TIMEOUT_SECONDS = 5;
 
     private final EventBroadcaster broadcaster;
     private List<AgentProcess> lastSnapshot = Collections.emptyList();
@@ -73,8 +75,9 @@ public class ProcessMonitor {
     }
 
     private List<AgentProcess> pollProcesses() {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("ps", "-eo", "pid,ppid,rss,pcpu,etime,comm")
+            process = new ProcessBuilder("ps", "-eo", "pid,ppid,rss,pcpu,etime,comm")
                     .redirectErrorStream(true)
                     .start();
 
@@ -91,7 +94,16 @@ public class ProcessMonitor {
                 }
             }
 
-            process.waitFor();
+            boolean completed = process.waitFor(PS_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!completed) {
+                log.warn("ps command timed out after {} seconds", PS_TIMEOUT_SECONDS);
+                process.destroyForcibly();
+                if (available) {
+                    available = false;
+                }
+                return Collections.emptyList();
+            }
+
             if (process.exitValue() != 0) {
                 log.warn("ps command exited with code {}", process.exitValue());
                 if (available) {
@@ -106,26 +118,40 @@ public class ProcessMonitor {
             }
 
             return processes;
-        } catch (IOException | InterruptedException ex) {
+        } catch (IOException ex) {
             if (available) {
                 log.warn("Process poll failed, degrading to unavailable: {}", ex.getMessage());
                 available = false;
             }
             return Collections.emptyList();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            if (available) {
+                log.warn("Process poll interrupted, degrading to unavailable");
+                available = false;
+            }
+            return Collections.emptyList();
+        } finally {
+            if (process != null && process.isAlive()) {
+                process.destroyForcibly();
+            }
         }
     }
 
     /**
      * Parse a single line from {@code ps -eo pid,ppid,rss,pcpu,etime,comm}.
      * <p>
-     * Example format:
+     * Example formats:
      * <pre>
      *   12345   1234  123456  12.3  01:23:45 /path/to/claude
+     *   12346   1234  456789  25.1     12:34 codex
+     *   12347   1234  789012   5.0 3-04:56:78 /usr/bin/cursor
      * </pre>
+     * Package-private for testing.
      *
      * @return AgentProcess if the line matches a known agent, else null
      */
-    private AgentProcess parsePsLine(String line) {
+    AgentProcess parsePsLine(String line) {
         Matcher matcher = PS_LINE_PATTERN.matcher(line);
         if (!matcher.matches()) {
             return null;
@@ -152,13 +178,21 @@ public class ProcessMonitor {
 
     /**
      * Match a process command to a known agent binary.
+     * <p>
+     * Matches on basename (final path segment) to avoid substring false positives (e.g.,
+     * "cursor" substring matching Cursor IDE helpers, paths containing "cursor"). Known agent
+     * binaries: claude, codex, cursor (CLI), raycast.
+     * Package-private for testing.
      *
      * @return agent name ("claude", "codex", etc.) or null if not an agent
      */
-    private String identifyAgent(String comm) {
-        String name = comm.toLowerCase();
+    String identifyAgent(String comm) {
+        // Extract basename: final segment after last / or \
+        String basename = comm.substring(Math.max(comm.lastIndexOf('/'), comm.lastIndexOf('\\')) + 1);
+        String normalized = basename.toLowerCase();
+        
         for (String agent : AGENT_BINARIES) {
-            if (name.contains(agent)) {
+            if (normalized.equals(agent) || normalized.startsWith(agent + ".")) {
                 return agent;
             }
         }
