@@ -9,6 +9,7 @@ GET /api/events/{id}
 GET /api/exports/targets
 GET /api/health/elasticsearch
 GET /api/health/local-ai
+GET /api/processes
 GET /api/projects
 GET /api/projects/code-scopes
 GET /api/projects/{projectKey}/graph

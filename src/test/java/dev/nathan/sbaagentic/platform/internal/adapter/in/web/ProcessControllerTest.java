@@ -6,34 +6,23 @@ import dev.nathan.sbaagentic.platform.internal.application.ProcessMonitor;
 import dev.nathan.sbaagentic.platform.internal.domain.AgentProcess;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(ProcessController.class)
 class ProcessControllerTest {
 
-    @Configuration
-    static class TestConfig {
-        @Bean
-        ProcessMonitor processMonitor() {
-            return mock(ProcessMonitor.class);
-        }
-    }
-
-    @Autowired
-    private MockMvc mvc;
-
-    @Autowired
-    private ProcessMonitor processMonitor;
+    private final ProcessMonitor processMonitor = mock(ProcessMonitor.class);
+    private final MockMvc mvc = MockMvcBuilders
+            .standaloneSetup(new ProcessController(processMonitor))
+            .build();
 
     @Test
     void getProcesses_returnsEmpty_whenNone() throws Exception {
@@ -41,6 +30,7 @@ class ProcessControllerTest {
 
         mvc.perform(get("/api/processes"))
                 .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$").isEmpty());
     }
@@ -52,6 +42,7 @@ class ProcessControllerTest {
 
         mvc.perform(get("/api/processes"))
                 .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].pid").value(12345))
                 .andExpect(jsonPath("$[0].agent").value("claude"))
