@@ -1,13 +1,15 @@
 import { A } from "@solidjs/router";
-import { type JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import { durationLabel, timeAgo, truncatePath } from "../../lib/format";
 import type { RunSegment } from "../../lib/streamGroups";
 import SourceDot from "../SourceDot";
+import { formatRelativeTime, getSessionStatus } from "../../lib/heartbeat";
 
 type RunHeaderProps = {
   run: RunSegment;
   sticky: boolean;
   sessionHref: string;
+  lastSeenAt?: string;
   actions?: JSX.Element;
 };
 
@@ -19,6 +21,8 @@ type RunHeaderProps = {
 export default function RunHeader(props: RunHeaderProps) {
   const run = () => props.run;
   const title = () => run().sessionTitle || run().clientSessionId;
+  const status = () => getSessionStatus(props.lastSeenAt);
+  const heartbeat = () => formatRelativeTime(props.lastSeenAt);
 
   return (
     <article
@@ -40,6 +44,16 @@ export default function RunHeader(props: RunHeaderProps) {
         {run().eventCount === 1 ? "1 event" : `${run().eventCount} events`}
       </span>
       <span class="stream-run-span">{runSpan(run())}</span>
+      <Show when={props.lastSeenAt}>
+        <span class="stream-run-heartbeat">
+          <span
+            class={`heartbeat-dot heartbeat-dot--${status()}`}
+            title={`Session ${status()}`}
+            aria-label={`Session status: ${status()}`}
+          />
+          <span class="heartbeat-time">{heartbeat()}</span>
+        </span>
+      </Show>
       {props.actions}
       <A href={props.sessionHref} class="stream-session-link">
         View session <span aria-hidden="true">→</span>

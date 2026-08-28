@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import dev.nathan.sbaagentic.platform.internal.application.port.ProcessEventPublisher;
+import dev.nathan.sbaagentic.platform.internal.domain.AgentProcess;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventRecorded;
@@ -23,7 +25,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * can never break ingestion.
  */
 @Component
-public class EventBroadcaster {
+public class EventBroadcaster implements ProcessEventPublisher {
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
@@ -85,6 +87,11 @@ public class EventBroadcaster {
 
     public void publishTaskNote(StreamEvents.TaskNoted payload) {
         send("task.note", payload);
+    }
+
+    @Override
+    public void publishProcesses(List<AgentProcess> processes, boolean available) {
+        send("processes", new StreamEvents.ProcessesUpdated(processes, available));
     }
 
     private void send(String name, Object payload) {

@@ -34,6 +34,8 @@ import {
 import { useLiveStore } from "../lib/sse";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
 import { reconcileSegments, segmentStream, type FoldRow, type Segment } from "../lib/streamGroups";
+import { loadFollowMode, saveFollowMode } from "../lib/followMode";
+import ProcessPanel from "../components/processes/ProcessPanel";
 
 const FEED_LIMIT = 100;
 const MAX_ROWS = 500;
@@ -97,7 +99,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   const [draft, setDraft] = createSignal(params.q ?? "");
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
   const [pendingItems, setPendingItems] = createSignal<EventFeedItem[]>([]);
+  const [followMode, setFollowMode] = createSignal(loadFollowMode());
   const [nextBefore, setNextBefore] = createSignal<string | null>(null);
+  // Track lastSeenAt per session from SSE session.updated events for live heartbeat display
+  const [lastSeenBySession, setLastSeenBySession] = createSignal<Map<string, string>>(new Map());
   const [loading, setLoading] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -378,6 +383,20 @@ export default function StreamPage(props: StreamPageProps = {}) {
     return liveCount;
   });
 
+  // Track lastSeenAt per session from SSE session.updated events for live heartbeat display
+  createEffect(() => {
+    const unsubscribe = live.onSessionUpdated((event) => {
+      if (event.lastSeenAt) {
+        setLastSeenBySession((prev) => {
+          const next = new Map(prev);
+          next.set(event.sessionId, event.lastSeenAt!);
+          return next;
+        });
+      }
+    });
+    onCleanup(unsubscribe);
+  });
+
   function run(next: string) {
     setParams({ q: next.trim() || undefined });
   }
@@ -495,8 +514,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
       if (!fresh.length) return;
-      if (nearTop()) {
+      // When follow mode is on, merge immediately and scroll to top
+      if (followMode() || nearTop()) {
         setItems((current) => dedupe([...fresh, ...current]).slice(0, MAX_ROWS));
+        if (followMode()) {
+          feedRef?.scrollTo({ top: 0 });
+        }
       } else {
         setPendingItems((current) => {
           const merged = dedupe([...fresh, ...current]).slice(0, MAX_ROWS);
@@ -524,6 +547,15 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setPendingItems([]);
     setNewCount(0);
     feedRef?.scrollTo({ top: 0 });
+  }
+
+  function toggleFollowMode() {
+    const next = !followMode();
+    setFollowMode(next);
+    saveFollowMode(next);
+    if (next) {
+      showNewItems();
+    }
   }
 
   document.addEventListener("pointerdown", handleDocumentPointerDown);
@@ -894,11 +926,42 @@ export default function StreamPage(props: StreamPageProps = {}) {
         {newCount() > 0 ? `${newCount()} new ${newCount() === 1 ? "event" : "events"}` : ""}
       </div>
 
+      <Show when={live.processes().length > 0 || !live.processesAvailable()}>
+        <ProcessPanel processes={live.processes()} available={live.processesAvailable()} />
+      </Show>
+
       <div ref={feedRef} class="stream-feed" role="feed" aria-busy={loadingMore()} aria-label="Activity stream">
-        <Show when={newCount() && !livePaused()}>
-          <button type="button" class="stream-new-pill" onClick={showNewItems}>
-            {newCount()} new
-          </button>
+        <Show when={!followMode()}>
+          <Show when={newCount() && !livePaused()}>
+            <div class="stream-live-controls">
+              <button type="button" class="stream-new-pill" onClick={showNewItems}>
+                {newCount()} new
+              </button>
+              <button
+                type="button"
+                class="follow-toggle"
+                onClick={toggleFollowMode}
+                title="Pin to newest (follow mode)"
+                aria-label="Enable follow mode"
+              >
+                📌
+              </button>
+            </div>
+          </Show>
+        </Show>
+        <Show when={followMode()}>
+          <div class="stream-live-controls">
+            <span class="follow-indicator">Following</span>
+            <button
+              type="button"
+              class="follow-toggle follow-toggle--active"
+              onClick={toggleFollowMode}
+              title="Unpin (pause follow mode)"
+              aria-label="Disable follow mode"
+            >
+              📌
+            </button>
+          </div>
         </Show>
         <Show when={!loading()} fallback={<p class="empty-state">Loading activity...</p>}>
           <For each={segments()}>
@@ -922,6 +985,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
                         run={run()}
                         sticky={run().eventCount >= 3}
                         sessionHref={runSessionHref(run().sessionId, props.project)}
+                        lastSeenAt={lastSeenBySession().get(run().sessionId)}
                         actions={
                           <RowSessionActions
                             sessionId={run().sessionId}
