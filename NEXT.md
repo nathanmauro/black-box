@@ -2,10 +2,11 @@
 
 **Shipped**: Phase 1 **slice 4** of the stream-first consolidation
 (`docs/superpowers/specs/2026-07-28-agent-observatory-consolidation-design.md` §13) on branch
-`cursor/stream-observatory-live-d4f2`. The branch is three commits above `main` at `af4ba42`: 
-initial implementation (191bccb), NEXT.md update (5f64f49), and heartbeat fix (bd4ab72). 
-Pushed to origin but not yet merged. Local `main` remains at `af4ba42` (Merge PR #26 
-stream-legibility-queriability).
+`cursor/stream-observatory-live-d4f2`. The branch is 7 commits above `main` at `af4ba42`. 
+Includes implementation, heartbeat SSE fix, ProcessMonitor hardening (basename matching, timeout, 
+parse tests), frontend bundle, contract updates, and hexagonal architecture port. All 549 backend 
+tests pass. Pushed to origin as PR #27, not yet merged. Local `main` remains at `af4ba42` (Merge 
+PR #26 stream-legibility-queriability).
 
 ## What landed
 
