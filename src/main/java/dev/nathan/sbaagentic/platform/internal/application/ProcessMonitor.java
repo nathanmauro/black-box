@@ -13,8 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.EventBroadcaster;
-import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
+import dev.nathan.sbaagentic.platform.internal.application.port.ProcessEventPublisher;
 import dev.nathan.sbaagentic.platform.internal.domain.AgentProcess;
 
 import org.slf4j.Logger;
@@ -40,12 +39,12 @@ public class ProcessMonitor {
     private static final Set<String> AGENT_BINARIES = Set.of("claude", "codex", "cursor", "raycast");
     private static final long PS_TIMEOUT_SECONDS = 5;
 
-    private final EventBroadcaster broadcaster;
+    private final ProcessEventPublisher publisher;
     private List<AgentProcess> lastSnapshot = Collections.emptyList();
     private boolean available = true;
 
-    public ProcessMonitor(EventBroadcaster broadcaster) {
-        this.broadcaster = broadcaster;
+    public ProcessMonitor(ProcessEventPublisher publisher) {
+        this.publisher = publisher;
     }
 
     /**
@@ -56,7 +55,7 @@ public class ProcessMonitor {
         List<AgentProcess> current = pollProcesses();
         if (!Objects.equals(current, lastSnapshot)) {
             lastSnapshot = current;
-            broadcaster.publishProcesses(new StreamEvents.ProcessesUpdated(current, available));
+            publisher.publishProcesses(current, available);
         }
     }
 

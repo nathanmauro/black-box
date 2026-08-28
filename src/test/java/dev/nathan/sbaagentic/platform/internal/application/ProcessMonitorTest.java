@@ -2,7 +2,7 @@ package dev.nathan.sbaagentic.platform.internal.application;
 
 import java.util.List;
 
-import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.EventBroadcaster;
+import dev.nathan.sbaagentic.platform.internal.application.port.ProcessEventPublisher;
 import dev.nathan.sbaagentic.platform.internal.domain.AgentProcess;
 
 import org.junit.jupiter.api.Test;
@@ -12,8 +12,8 @@ import static org.mockito.Mockito.mock;
 
 class ProcessMonitorTest {
 
-    private final EventBroadcaster broadcaster = mock(EventBroadcaster.class);
-    private final ProcessMonitor monitor = new ProcessMonitor(broadcaster);
+    private final ProcessEventPublisher publisher = mock(ProcessEventPublisher.class);
+    private final ProcessMonitor monitor = new ProcessMonitor(publisher);
 
     @Test
     void currentProcesses_initiallyEmpty() {
