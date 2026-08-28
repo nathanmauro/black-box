@@ -389,7 +389,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
       if (event.lastSeenAt) {
         setLastSeenBySession((prev) => {
           const next = new Map(prev);
-          next.set(event.sessionId, event.lastSeenAt);
+          next.set(event.sessionId, event.lastSeenAt!);
           return next;
         });
       }
