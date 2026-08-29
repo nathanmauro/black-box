@@ -51,6 +51,10 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
         return limit == null ? 10 : Math.max(1, Math.min(limit, 50));
     }
 
+    private static int clampMaxChars(Integer maxChars) {
+        return RecallResultClamp.normalizeMaxChars(maxChars);
+    }
+
     @Tool(description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input.")
     public List<AgentSession> recentSessions(
             @ToolParam(required = false,
@@ -83,8 +87,14 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     + "'observation', or 'projection'. Omit to recall decisions and handoffs.") List<String> kinds,
             @ToolParam(required = false,
                     description = "Maximum number of items to return. Omit for 10, max 50. Recalled "
-                    + "items carry full captured text, so raise this deliberately.") Integer limit) {
-        return memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
+                    + "items carry full captured text, so raise this deliberately.") Integer limit,
+            @ToolParam(required = false,
+                    description = "Upper bound on the total characters of the returned items' text fields. "
+                    + "Omit for 24000 (minimum 500). When the result overflows, the first overflowing "
+                    + "item's rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
+                    + "every later item is dropped; `truncated` reports whether anything was cut.") Integer maxChars) {
+        RecallResult result = memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
+        return RecallResultClamp.clamp(result, clampMaxChars(maxChars));
     }
 
     @Tool(description = "Commit a decision you made into the recorder so later agents can recall WHY, "

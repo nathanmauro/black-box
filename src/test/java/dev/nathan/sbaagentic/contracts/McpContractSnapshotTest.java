@@ -137,13 +137,15 @@ class McpContractSnapshotTest {
     }
 
     private static void assertRecallResultShape(JsonNode result) {
-        assertThat(fieldNames(result)).contains("scope", "withinHours", "kinds", "count", "items", "mode");
+        assertThat(fieldNames(result)).contains("scope", "withinHours", "kinds", "count", "items", "mode",
+                "truncated");
         assertThat(result.path("scope").isTextual()).isTrue();
         assertThat(result.path("withinHours").isInt()).isTrue();
         assertThat(result.path("kinds").isArray()).isTrue();
         assertThat(result.path("count").isInt()).isTrue();
         assertThat(result.path("items").isArray()).isTrue();
         assertThat(result.path("mode").isTextual()).isTrue();
+        assertThat(result.path("truncated").isBoolean()).isTrue();
     }
 
     private static void assertRecalledItemShape(JsonNode item) {

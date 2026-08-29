@@ -1,10 +1,14 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.in.mcp;
 
+import java.time.Instant;
 import java.util.List;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
@@ -48,6 +52,8 @@ class MemoryMcpToolsTest {
     @Mock
     RecordingCaptureOperations captureOperations;
 
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+
     private MemoryMcpTools tools;
 
     @BeforeEach
@@ -64,6 +70,100 @@ class MemoryMcpToolsTest {
 
         assertThat(result).contains("sba-agentic");
         verify(memoryRecall).recall(eq("sba-agentic"), eq(0), isNull(), isNull());
+    }
+
+    @Test
+    void recallContextDefaultMaxCharsBoundsLargeResults() throws Exception {
+        List<RecalledItem> items = java.util.stream.IntStream.range(0, 40)
+                .mapToObj(index -> item("event-" + index, "headline-" + index, "r".repeat(3_000)))
+                .toList();
+        when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of("handoff"), items.size(), items, "hybrid"));
+
+        RecallResult result = recallResult(callback("recallContext").call("{\"repoOrTopic\":\"sba-agentic\"}"));
+
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.count()).isLessThan(40);
+        assertThat(RecallResultClamp.cost(result)).isLessThanOrEqualTo(RecallResultClamp.DEFAULT_MAX_CHARS);
+    }
+
+    @Test
+    void recallContextExplicitMaxCharsTrimsFirstOverflowingItem() throws Exception {
+        List<RecalledItem> items = List.of(
+                item("event-1", null, "a".repeat(600)),
+                item("event-2", null, "b".repeat(600)),
+                item("event-3", null, "c".repeat(600)));
+        when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of("handoff"), items.size(), items, "hybrid"));
+
+        RecallResult result = recallResult(callback("recallContext").call("""
+                {"repoOrTopic":"sba-agentic","maxChars":1300}
+                """));
+
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.count()).isEqualTo(2);
+        assertThat(result.items().getFirst()).isEqualTo(items.getFirst());
+        assertThat(result.items().get(1).rationale()).contains("… (+");
+        assertThat(result.items().get(1).rationale().length()).isLessThan(600);
+        assertThat(result.items()).extracting(RecalledItem::eventId).containsExactly("event-1", "event-2");
+        assertThat(RecallResultClamp.cost(result)).isLessThanOrEqualTo(1_300);
+    }
+
+    @Test
+    void recallContextLeavesFittingItemsByteIdenticalAndUntruncated() throws Exception {
+        List<RecalledItem> items = List.of(
+                new RecalledItem(
+                        "event-1",
+                        "session-1",
+                        "decision",
+                        "codex",
+                        "client-1",
+                        "/repo",
+                        Instant.parse("2026-08-28T12:00:00Z"),
+                        "Keep MCP result bounded",
+                        "Claude Code rejects oversized tool results.",
+                        List.of("Raise every client cap", "Return opaque handles"),
+                        0.8,
+                        List.of("Run contract tests"),
+                        "Ship the adapter clamp.",
+                        "next-agent",
+                        0.91),
+                item("event-2", "Second item", "Still comfortably under the cap."));
+        when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of("decision"), items.size(), items, "hybrid"));
+
+        RecallResult result = recallResult(callback("recallContext").call("""
+                {"repoOrTopic":"sba-agentic","maxChars":5000}
+                """));
+
+        assertThat(result.truncated()).isFalse();
+        assertThat(result.count()).isEqualTo(items.size());
+        assertThat(result.items()).containsExactlyElementsOf(items);
+        assertThat(RecallResultClamp.cost(result)).isEqualTo(RecallResultClamp.cost(
+                new RecallResult("sba-agentic", 168, List.of("decision"), items.size(), items, "hybrid")));
+    }
+
+    @Test
+    void recallContextRaisesExplicitMaxCharsToFiveHundredFloor() throws Exception {
+        List<RecalledItem> items = List.of(item("event-1", null, "r".repeat(290)));
+        when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of("handoff"), items.size(), items, "hybrid"));
+
+        RecallResult result = recallResult(callback("recallContext").call("""
+                {"repoOrTopic":"sba-agentic","maxChars":100}
+                """));
+
+        assertThat(result.truncated()).isFalse();
+        assertThat(result.count()).isEqualTo(1);
+        assertThat(result.items()).containsExactlyElementsOf(items);
+        assertThat(RecallResultClamp.cost(result)).isLessThanOrEqualTo(RecallResultClamp.MIN_MAX_CHARS);
+    }
+
+    @Test
+    void recallResultSixArgumentConstructionDefaultsToUntruncated() {
+        RecallResult result = new RecallResult("sba-agentic", 168, List.of("handoff"), 0, List.of(), "lexical");
+
+        assertThat(result.truncated()).isFalse();
     }
 
     @Test
@@ -152,5 +252,28 @@ class MemoryMcpToolsTest {
             }
         }
         throw new IllegalStateException("no tool named " + name);
+    }
+
+    private RecallResult recallResult(String result) throws Exception {
+        return objectMapper.readValue(result, RecallResult.class);
+    }
+
+    private static RecalledItem item(String id, String headline, String rationale) {
+        return new RecalledItem(
+                id,
+                "session-" + id,
+                "handoff",
+                "codex",
+                "client-" + id,
+                "/repo",
+                Instant.parse("2026-08-28T12:00:00Z"),
+                headline,
+                rationale,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                null,
+                null);
     }
 }
