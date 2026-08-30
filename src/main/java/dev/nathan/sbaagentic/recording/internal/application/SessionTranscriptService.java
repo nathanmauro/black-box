@@ -6,8 +6,10 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
@@ -165,10 +167,34 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
     }
 
     private static AgentEvent toEvent(EventFeedItem item) {
+        Map<String, Object> metadata = withoutRawHook(item.metadata());
+        String text = duplicatesRawToolResponse(item) ? null : item.text();
         return new AgentEvent(
                 item.id(), item.sessionId(), item.source(), item.clientSessionId(), item.turnId(),
-                item.eventType(), item.role(), item.text(), item.toolName(), item.toolInputJson(),
-                item.toolOutputJson(), item.metadata(), item.observedAt());
+                item.eventType(), item.role(), text, item.toolName(), item.toolInputJson(),
+                item.toolOutputJson(), metadata, item.observedAt());
+    }
+
+    private static Map<String, Object> withoutRawHook(Map<String, Object> metadata) {
+        if (metadata == null || !metadata.containsKey("rawHook")) return metadata == null ? Map.of() : metadata;
+        Map<String, Object> projected = new LinkedHashMap<>(metadata);
+        projected.remove("rawHook");
+        return Map.copyOf(projected);
+    }
+
+    private static boolean duplicatesRawToolResponse(EventFeedItem item) {
+        if (item.text() == null || item.text().isBlank() || item.toolOutputJson() == null) return false;
+        Object rawHook = item.metadata() == null ? null : item.metadata().get("rawHook");
+        if (!(rawHook instanceof Map<?, ?> raw)) return false;
+        Object response = firstPresent(raw, "tool_response", "toolResponse", "tool_output", "toolOutput");
+        return response instanceof String value && value.trim().equals(item.text().trim());
+    }
+
+    private static Object firstPresent(Map<?, ?> values, String... keys) {
+        for (String key : keys) {
+            if (values.containsKey(key)) return values.get(key);
+        }
+        return null;
     }
 
     private static boolean isBefore(AgentEvent event, Cursor cursor) {

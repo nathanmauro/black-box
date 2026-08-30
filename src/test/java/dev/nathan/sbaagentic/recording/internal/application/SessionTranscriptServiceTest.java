@@ -140,6 +140,36 @@ class SessionTranscriptServiceTest {
         assertThat(second.events()).extracting(AgentEvent::id).containsExactly("recorded-answer");
     }
 
+    @Test
+    void projectsHookDuplicatesOutOfSessionPagesWithoutDroppingVisibleToolPayloads() {
+        when(repository.findSessionById("session-1")).thenReturn(Optional.of(session));
+        when(repository.transcriptPathsForSession("session-1")).thenReturn(List.of());
+        when(messageSource.read(session, List.of())).thenReturn(TranscriptRead.unavailable("missing"));
+        String output = "tool output that remains available in the payload";
+        EventFeedItem duplicate = new EventFeedItem(
+                "tool-duplicate", "session-1", "codex", "client-1", "turn-1", "PostToolUse", "tool",
+                output, "Bash", "{\"command\":\"echo hi\"}", "\"" + output + "\"",
+                Map.of("rawHook", Map.of("tool_response", output), "trace", "keep-me"),
+                Instant.parse("2026-08-30T12:03:00Z"), "/tmp/project", "Session");
+        EventFeedItem distinct = new EventFeedItem(
+                "tool-distinct", "session-1", "codex", "client-1", "turn-1", "PostToolUse", "tool",
+                "human-readable status", "SendMessage", "{}", "{\"delivered\":true}",
+                Map.of("rawHook", Map.of("tool_response", "different response")),
+                Instant.parse("2026-08-30T12:02:00Z"), "/tmp/project", "Session");
+        when(repository.feedForSession("session-1", null, null, 100)).thenReturn(new EventFeedResponse(
+                100, 2, List.of(duplicate, distinct), null));
+
+        SessionTranscriptResponse response = service.transcript("session-1", null, null, 100);
+
+        AgentEvent projectedDuplicate = response.events().get(0);
+        assertThat(projectedDuplicate.text()).isNull();
+        assertThat(projectedDuplicate.toolInputJson()).isEqualTo("{\"command\":\"echo hi\"}");
+        assertThat(projectedDuplicate.toolOutputJson()).isEqualTo("\"" + output + "\"");
+        assertThat(projectedDuplicate.metadata()).containsEntry("trace", "keep-me").doesNotContainKey("rawHook");
+        assertThat(response.events().get(1).text()).isEqualTo("human-readable status");
+        assertThat(response.events().get(1).metadata()).doesNotContainKey("rawHook");
+    }
+
     private EventFeedItem item(
             String id, String eventType, String role, String text, String toolName, String observedAt) {
         return new EventFeedItem(
