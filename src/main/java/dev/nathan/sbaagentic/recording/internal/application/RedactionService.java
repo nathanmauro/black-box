@@ -48,6 +48,11 @@ public class RedactionService {
         return redacted;
     }
 
+    /** Whether {@link #redact(String)} will clip this scalar before scanning it. */
+    public boolean clips(String text) {
+        return enabled && text != null && text.length() > MAX_SCAN_CHARS;
+    }
+
     public Object redactDeep(Object value) {
         if (!enabled || value == null) {
             return value;

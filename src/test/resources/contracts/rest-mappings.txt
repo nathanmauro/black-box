@@ -24,6 +24,7 @@ GET /api/sessions
 GET /api/sessions/{sessionId}
 GET /api/sessions/{sessionId}/events
 GET /api/sessions/{sessionId}/links
+GET /api/sessions/{sessionId}/transcript
 GET /api/specs/{specId}
 GET /api/stats
 GET /api/status

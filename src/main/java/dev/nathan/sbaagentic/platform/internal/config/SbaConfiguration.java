@@ -8,6 +8,7 @@ import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
+import dev.nathan.sbaagentic.recording.TranscriptProperties;
 import dev.nathan.sbaagentic.summary.SummaryExportProperties;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import dev.nathan.sbaagentic.summary.SummaryProperties;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
         AskProperties.class,
         ElasticsearchProperties.class,
         IngestionProperties.class,
+        TranscriptProperties.class,
         MemoryEmbeddingProperties.class,
         MemoryRecallProperties.class,
         MemoryRetrievalProperties.class,

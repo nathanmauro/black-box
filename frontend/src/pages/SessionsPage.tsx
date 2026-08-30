@@ -909,15 +909,8 @@ function isDuplicatePrompt(turn: PromptTurn, event: AgentEvent): boolean {
 }
 
 function appendUniqueEvent(turn: PromptTurn, event: AgentEvent) {
-  const identity = conversationIdentity(event);
-  if (identity && turn.events.some((candidate) => conversationIdentity(candidate) === identity)) return;
+  if (turn.events.some((candidate) => candidate.id === event.id)) return;
   turn.events.push(event);
-}
-
-function conversationIdentity(event: AgentEvent): string | null {
-  const role = conversationRole(event);
-  const text = event.text?.replace(/\s+/g, " ").trim();
-  return role && text ? `${role}:${text}` : null;
 }
 
 function normalizedConversationText(value: string | null | undefined): string {

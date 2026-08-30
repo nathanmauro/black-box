@@ -8,6 +8,7 @@ import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
+import dev.nathan.sbaagentic.recording.TranscriptProperties;
 
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnableConfigurationProperties({
         ElasticsearchProperties.class,
         IngestionProperties.class,
+        TranscriptProperties.class,
         MemoryEmbeddingProperties.class,
         MemoryRecallProperties.class,
         MemoryRetrievalProperties.class,

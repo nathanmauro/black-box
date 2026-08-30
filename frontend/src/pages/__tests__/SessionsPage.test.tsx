@@ -439,7 +439,7 @@ describe("SessionsPage", () => {
     expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2);
   });
 
-  it("groups event-name variants, deduplicates repeated responses, and navigates with dock proximity", async () => {
+  it("groups event-name variants, preserves repeated responses, and navigates with dock proximity", async () => {
     const variantEvents: AgentEvent[] = [
       {
         id: "evt-blank-stop",
@@ -547,7 +547,7 @@ describe("SessionsPage", () => {
     expect(within(turns[0] as HTMLElement).queryByText(/SHOW me the first/)).not.toBeInTheDocument();
     expect(within(turns[0] as HTMLElement).getByText("First captured response.")).toBeInTheDocument();
     expect(within(turns[1] as HTMLElement).getByText("Show me the second exchange.")).toBeInTheDocument();
-    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(1);
+    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(2);
     expect(screen.queryByText("Lifecycle metadata should stay hidden.")).not.toBeInTheDocument();
     expect(screen.queryByText("Startup metadata should stay hidden.")).not.toBeInTheDocument();
 

@@ -303,6 +303,94 @@ class EventFeedTest {
     }
 
     @Test
+    void hardSessionFeedCannotBeEscapedByAConflictingQueryFacet() {
+        String key = uniqueKey("hard-session");
+        SeededEvent mine = seed(key, "codex", key + "-mine", "PostToolUse", "tool",
+                "Hard scoped payload " + key, "/tmp/" + key, "Read",
+                Instant.parse("2026-07-01T12:00:00Z"));
+        seed(key, "codex", key + "-other", "PostToolUse", "tool",
+                "Hard scoped payload " + key, "/tmp/" + key, "Read",
+                Instant.parse("2026-07-01T12:01:00Z"));
+        String mineSessionId = repository.feed(key, false, null, null, 10).items().stream()
+                .filter(item -> item.id().equals(mine.id()))
+                .findFirst().orElseThrow().sessionId();
+
+        EventFeedResponse response = repository.feedForSession(
+                mineSessionId, "session:" + key + "-other " + key, null, 10);
+
+        assertThat(response.items()).extracting(EventFeedItem::id).containsExactly(mine.id());
+    }
+
+    @Test
+    void transcriptPathsPreferSessionStartOverNewerChildHooks() {
+        String key = uniqueKey("transcript-path");
+        IngestResponse started = ingestService.ingest(new EventIngestRequest(
+                "codex", key, null, "SessionStart", "agent", null, "/tmp/" + key, null,
+                null, null,
+                Map.of("rawHook", Map.of("transcript_path", "/allowed/root-" + key + ".jsonl")),
+                Instant.parse("2026-07-01T12:00:00Z")));
+        ingestService.ingest(new EventIngestRequest(
+                "codex", key, "turn-1", "PostToolUse", "tool", null, "/tmp/" + key, "Read",
+                Map.of("path", "README.md"), Map.of("ok", true),
+                Map.of("rawHook", Map.of("transcript_path", "/allowed/child-" + key + ".jsonl")),
+                Instant.parse("2026-07-01T12:01:00Z")));
+
+        assertThat(repository.transcriptPathsForSession(started.sessionId())).containsExactly(
+                "/allowed/root-" + key + ".jsonl",
+                "/allowed/child-" + key + ".jsonl");
+    }
+
+    @Test
+    void likeFallbackSearchesToolInputAndOutput() {
+        String key = uniqueKey("tool-json-like");
+        String needle = "outputneedle" + key;
+        IngestResponse captured = ingestService.ingest(new EventIngestRequest(
+                "codex", key, "turn-1", "PostToolUse", "tool", null, "/tmp/" + key, "Read",
+                Map.of("path", "input-" + key), Map.of("result", needle), Map.of("title", "Tool row"),
+                Instant.parse("2026-07-01T12:00:00Z")));
+
+        try {
+            ftsIndex.markUnavailable();
+            assertThat(repository.feed(needle, false, null, null, 10).items())
+                    .extracting(EventFeedItem::id)
+                    .containsExactly(captured.eventId());
+        }
+        finally {
+            ftsIndex.ensureFtsSchema();
+            ftsIndex.rebuild();
+        }
+    }
+
+    @Test
+    void likeFallbackHonorsTheSameToolPayloadClipsAsFts() {
+        String key = uniqueKey("tool-json-clips");
+        String inputNeedle = "lateinput" + key;
+        String outputNeedle = "lateoutput" + key;
+        String metadataNeedle = "latemetadata" + key;
+        ingestService.ingest(new EventIngestRequest(
+                "codex", key, "turn-1", "PostToolUse", "tool", null, "/tmp/" + key, "Read",
+                Map.of("value", "i".repeat(2_100) + inputNeedle),
+                Map.of("value", "o".repeat(6_100) + outputNeedle),
+                Map.of("note", "m".repeat(4_100) + metadataNeedle),
+                Instant.parse("2026-07-01T12:00:00Z")));
+
+        assertThat(ftsIndex.ready()).isTrue();
+        assertThat(repository.feed(inputNeedle, false, null, null, 10).items()).isEmpty();
+        assertThat(repository.feed(outputNeedle, false, null, null, 10).items()).isEmpty();
+        assertThat(repository.feed(metadataNeedle, false, null, null, 10).items()).isEmpty();
+        try {
+            ftsIndex.markUnavailable();
+            assertThat(repository.feed(inputNeedle, false, null, null, 10).items()).isEmpty();
+            assertThat(repository.feed(outputNeedle, false, null, null, 10).items()).isEmpty();
+            assertThat(repository.feed(metadataNeedle, false, null, null, 10).items()).isEmpty();
+        }
+        finally {
+            ftsIndex.ensureFtsSchema();
+            ftsIndex.rebuild();
+        }
+    }
+
+    @Test
     void grammarSinceAndUntilBoundObservedAtInclusively() {
         String key = uniqueKey("bounds");
         seed(key, "codex", key + "-early", "Decision", "assistant",

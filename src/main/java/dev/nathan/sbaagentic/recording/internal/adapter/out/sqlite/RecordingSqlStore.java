@@ -309,6 +309,79 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 """, this::mapEvent, sessionId, limit);
     }
 
+    @Override
+    public EventFeedResponse feedForSession(String sessionId, String query, String before, int limit) {
+        return feed(query, false, before, null, List.of(), limit, sessionId);
+    }
+
+    @Override
+    public List<String> transcriptPathsForSession(String sessionId) {
+        List<String> metadataRows = jdbcTemplate.queryForList("""
+                SELECT metadata_json
+                  FROM agent_events
+                 WHERE session_id = ?
+                   AND metadata_json IS NOT NULL
+                   AND (metadata_json LIKE '%transcript_path%' OR metadata_json LIKE '%transcriptPath%')
+                 ORDER BY CASE
+                            WHEN lower(replace(replace(event_type, '_', ''), '-', '')) = 'sessionstart' THEN 0
+                            ELSE 1
+                          END,
+                          observed_at DESC,
+                          id DESC
+                 LIMIT 100
+                """, String.class, sessionId);
+        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+        for (String json : metadataRows) {
+            Map<String, Object> metadata = fromJsonMap(json);
+            addTranscriptPath(paths, metadata);
+            Object rawHook = metadata.get("rawHook");
+            if (rawHook instanceof Map<?, ?> raw) {
+                addTranscriptPath(paths, raw);
+            }
+            Object capture = metadata.get("cockpit_capture");
+            if (capture instanceof Map<?, ?> captureMap) {
+                Object replay = captureMap.get("replay");
+                if (replay instanceof Map<?, ?> replayMap) {
+                    addTranscriptPath(paths, replayMap);
+                }
+            }
+        }
+        return List.copyOf(paths);
+    }
+
+    @Override
+    public List<AgentEvent> conversationEventsForSession(String sessionId) {
+        return jdbcTemplate.query("""
+                SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text, observed_at
+                  FROM agent_events
+                 WHERE session_id = ?
+                   AND text IS NOT NULL
+                   AND trim(text) <> ''
+                   AND (
+                        lower(coalesce(role, '')) IN ('user', 'assistant')
+                        OR lower(replace(replace(event_type, '_', ''), '-', '')) IN (
+                            'userpromptsubmit', 'beforesubmitprompt', 'stop', 'assistantmessage',
+                            'agentmessage', 'agentresponse', 'finalresponse'
+                        )
+                   )
+                 ORDER BY observed_at DESC, id DESC
+                """, (rs, rowNum) -> new AgentEvent(
+                        rs.getString("id"),
+                        rs.getString("session_id"),
+                        rs.getString("source"),
+                        rs.getString("client_session_id"),
+                        rs.getString("turn_id"),
+                        rs.getString("event_type"),
+                        rs.getString("role"),
+                        rs.getString("text"),
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        Instant.parse(rs.getString("observed_at"))),
+                sessionId);
+    }
+
     public EventFeedResponse feed(
             String query,
             boolean meaningfulOnly,
@@ -316,6 +389,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String since,
             List<String> projectScopes,
             int limit) {
+        return feed(query, meaningfulOnly, before, since, projectScopes, limit, null);
+    }
+
+    private EventFeedResponse feed(
+            String query,
+            boolean meaningfulOnly,
+            String before,
+            String since,
+            List<String> projectScopes,
+            int limit,
+            String hardSessionId) {
         EventQuery facets = EventQuery.parse(query);
         FeedCursor beforeCursor = parseBefore(before);
         Instant sinceInstant = parseSince(since);
@@ -328,7 +412,12 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n")
                 .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
                 .append(" WHERE 1=1\n");
-        boolean usedFts = appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null);
+        if (hardSessionId != null) {
+            sql.append("   AND e.session_id = ?\n");
+            args.add(hardSessionId);
+        }
+        boolean usedFts = appendQueryPredicates(
+                sql, args, facets, meaningfulOnly, projectScopes, null, hardSessionId == null);
         if (sinceInstant != null) {
             sql.append("   AND e.observed_at >= ?\n");
             args.add(sinceInstant.toString());
@@ -353,7 +442,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             }
             // Fail soft: a broken FTS table must never take the feed down — drop to LIKE and retry.
             ftsIndex.markUnavailable();
-            return feed(query, meaningfulOnly, before, since, projectScopes, limit);
+            return feed(query, meaningfulOnly, before, since, projectScopes, limit, hardSessionId);
         }
         boolean hasMore = fetched.size() > limit;
         List<EventFeedItem> kept = hasMore ? fetched.subList(0, limit) : fetched;
@@ -428,7 +517,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n");
         appendSessionsJoinIfNeeded(matched, facets, null);
         matched.append(" WHERE 1=1\n");
-        appendQueryPredicates(matched, args, facets, meaningfulOnly, projectScopes, null);
+        appendQueryPredicates(matched, args, facets, meaningfulOnly, projectScopes, null, true);
         String sql = """
                 WITH matched AS MATERIALIZED (
                 %s)
@@ -487,7 +576,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n");
         appendSessionsJoinIfNeeded(sql, facets, null);
         sql.append(" WHERE 1=1\n");
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null, true);
         return jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
     }
 
@@ -507,7 +596,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         if (extraPredicate != null) {
             sql.append("   AND ").append(extraPredicate).append("\n");
         }
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, droppedInclude);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, droppedInclude, true);
         sql.append(" GROUP BY value\n")
                 .append(" ORDER BY cnt DESC, value ASC\n")
                 .append(" LIMIT ").append(EventFacetCounts.VALUE_LIMIT);
@@ -529,7 +618,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("          FROM agent_events e\n");
         appendSessionsJoinIfNeeded(sql, facets, Field.PROJECT);
         sql.append("         WHERE 1=1\n");
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, Field.PROJECT);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, Field.PROJECT, true);
         sql.append("         GROUP BY e.session_id) t\n")
                 .append("  JOIN agent_sessions s ON s.id = t.session_id\n")
                 .append(" GROUP BY value\n")
@@ -571,7 +660,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             EventQuery facets,
             boolean meaningfulOnly,
             List<String> projectScopes,
-            Field droppedInclude) {
+            Field droppedInclude,
+            boolean applySessionFacet) {
         if (droppedInclude != Field.SOURCE) {
             appendInList(sql, args, "lower(e.source)", facets.values(Field.SOURCE), false);
         }
@@ -603,13 +693,15 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                     .append(")\n");
             args.addAll(excludedExactCwds);
         }
-        facets.sessionRef().ifPresent(ref -> {
-            // Resolve through agent_sessions (small, uniquely keyed) so the event scan rides
-            // idx_agent_events_session_observed; a naive OR on agent_events table-scans.
-            sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
-            args.add(ref);
-            args.add(ref);
-        });
+        if (applySessionFacet) {
+            facets.sessionRef().ifPresent(ref -> {
+                // Resolve through agent_sessions (small, uniquely keyed) so the event scan rides
+                // idx_agent_events_session_observed; a naive OR on agent_events table-scans.
+                sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+                args.add(ref);
+                args.add(ref);
+            });
+        }
         // Free text prefers the FTS5 index (which also reaches the clipped tool JSON in its
         // `extra` column) and falls back to the per-term LIKE path with identical AND semantics
         // whenever FTS is absent or the backfill has not finished.
@@ -623,7 +715,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 String like = "%" + term.toLowerCase() + "%";
                 sql.append("   AND (lower(coalesce(e.text, '')) LIKE ?")
                         .append(" OR lower(coalesce(e.tool_name, '')) LIKE ?")
-                        .append(" OR lower(coalesce(e.metadata_json, '')) LIKE ?)\n");
+                        .append(" OR lower(substr(coalesce(e.tool_input_json, ''), 1, 2000)) LIKE ?")
+                        .append(" OR lower(substr(coalesce(e.tool_output_json, ''), 1, 6000)) LIKE ?")
+                        .append(" OR lower(substr(coalesce(e.metadata_json, ''), 1, 4000)) LIKE ?)\n");
+                args.add(like);
+                args.add(like);
                 args.add(like);
                 args.add(like);
                 args.add(like);
@@ -865,6 +961,15 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         catch (JsonProcessingException ex) {
             return Map.of("unparsed", json);
+        }
+    }
+
+    private static void addTranscriptPath(java.util.Set<String> paths, Map<?, ?> values) {
+        Object snake = values.get("transcript_path");
+        Object camel = values.get("transcriptPath");
+        Object candidate = snake instanceof String ? snake : camel;
+        if (candidate instanceof String path && !path.isBlank()) {
+            paths.add(path);
         }
     }
 

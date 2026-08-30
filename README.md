@@ -197,7 +197,10 @@ recallContext({
 
 ## Product surfaces
 
-- **Activity** — the filterable global event stream, session browser, and optional Ask surface.
+- **Activity** — the filterable global event stream, optional Ask surface, and a paged session
+  browser that shows recorded tools alongside the conversation. Session search stays scoped to the
+  selected session and can match message text, tool names, inputs, and outputs beyond the loaded
+  page.
 - **Projects** — a searchable logical-project workspace that groups verified worktree scopes without
   rewriting recorded paths. The center pane defaults to the trajectory graph (epochs, ranked
   futures, ghost projections, rejected stubs); the Hybrid Storyline stays on the Timeline tab.
