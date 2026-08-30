@@ -55,6 +55,18 @@ describe("theme conversation navigator contracts", () => {
     expectRule(".timeline-pane", ["grid-row: 1;", "grid-column: 2;"]);
     expectRule(".conversation-navigator", ["grid-row: 1;", "grid-column: 1;"]);
   });
+
+  it("keeps transcript search compact and outside the scrolling turn pane", () => {
+    expectRule(".session-transcript-search", [
+      "display: grid;",
+      "flex: none;",
+      "border-bottom: 1px solid var(--border);",
+    ]);
+    expectRule(".session-transcript-search-actions", ["display: inline-flex;"]);
+    expectRule(".session-transcript-status", ["flex: none;", "border-bottom: 1px solid var(--border);"]);
+    expectRule(".transcript-page-controls", ["display: flex;", "justify-content: center;"]);
+    expectRule(".prompt-turn--search-active::before", ["background: var(--green);"]);
+  });
 });
 
 describe("theme session lineage contracts", () => {

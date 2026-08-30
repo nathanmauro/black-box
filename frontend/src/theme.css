@@ -1247,6 +1247,86 @@ a {
   color: var(--text);
   text-align: center;
 }
+.session-transcript-search {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, auto) auto;
+  align-items: end;
+  gap: 10px;
+  flex: none;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg-surface) 96%, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+.session-transcript-search label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.session-transcript-search input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  color: var(--text-bright);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.session-transcript-search input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 64%, var(--border));
+  outline: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  outline-offset: 1px;
+}
+.session-transcript-search output {
+  align-self: center;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+}
+.session-transcript-search-actions {
+  display: inline-flex;
+  gap: 5px;
+}
+.session-transcript-search-actions button {
+  height: 34px;
+  min-width: 34px;
+  padding: 0 9px;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.session-transcript-search-actions button:hover:not(:disabled),
+.session-transcript-search-actions button:focus-visible {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.session-transcript-search-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+.session-transcript-status {
+  flex: none;
+  margin: 0;
+  padding: 6px 16px;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--yellow) 5%, var(--bg-surface));
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
 .detail-body {
   position: relative;
   flex: 1;
@@ -1290,7 +1370,49 @@ a {
   background: var(--accent);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
 }
+.prompt-turn--search-active::before {
+  background: var(--green);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 14%, transparent);
+}
 .event-flow-row { padding: 0 2px 12px; }
+.transcript-page-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  max-width: 940px;
+  margin: 0 auto 16px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+.transcript-page-controls button {
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--text);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.transcript-page-controls button:hover:not(:disabled),
+.transcript-page-controls button:focus-visible {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.transcript-page-controls button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.transcript-page-error {
+  margin: 8px auto 0;
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: center;
+}
 .event-flow-row--target {
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--yellow) 10%, transparent);
@@ -1643,6 +1765,15 @@ a {
 
   .activity-workspace > .sessions-page .detail-summary p {
     max-height: 52px;
+  }
+
+  .session-transcript-search {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 9px 12px;
+  }
+
+  .session-transcript-search output {
+    display: none;
   }
 
   .activity-workspace > .sessions-page .detail-body {
