@@ -34,7 +34,8 @@ session-scoped, and non-mutating.
    outputs, with match counts and next/previous navigation. Search is always server-bound to the
    selected session and reaches beyond the currently loaded page.
 6. Reduce the idle session rail to a bounded recent slice while preserving direct hydration of an
-   exact session URL.
+   exact session URL. Request 50 transcript events at a time so tool-heavy sessions stay responsive;
+   older events remain reachable by cursor and search still spans the full session server-side.
 
 ## Out of scope
 

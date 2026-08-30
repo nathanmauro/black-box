@@ -106,7 +106,7 @@ function transcriptResponse(
     available: true,
     complete: true,
     reason: null,
-    limit: 100,
+    limit: 50,
     count: responseEvents.length,
     events: responseEvents,
     nextBefore: null,
@@ -413,7 +413,7 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByText("1 matching turn")).toBeInTheDocument();
     expect(getSessionTranscript).toHaveBeenCalledWith("session-1", {
-      limit: 100,
+      limit: 50,
       q: 'read "vite.config"',
     });
     expect(document.querySelectorAll(".prompt-turn")).toHaveLength(1);
@@ -615,7 +615,7 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Older exact session" })).toBeInTheDocument();
     expect(getSession).toHaveBeenCalledWith("session-old");
-    expect(getSessionTranscript).toHaveBeenCalledWith("session-old", { limit: 100, q: undefined });
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-old", { limit: 50, q: undefined });
     expect(getSessionEvents).not.toHaveBeenCalled();
   });
 
@@ -660,7 +660,7 @@ describe("SessionsPage", () => {
     expect(await screen.findByText("Load the older exchange.")).toBeInTheDocument();
     expect(screen.getByText("An older response loaded on demand.")).toBeInTheDocument();
     expect(getSessionTranscript).toHaveBeenCalledWith("session-1", {
-      limit: 100,
+      limit: 50,
       before: "2026-06-22T20:00:00Z|evt-user",
       q: undefined,
     });
@@ -714,7 +714,7 @@ describe("SessionsPage", () => {
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
-    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 100, q: undefined }));
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
     vi.mocked(getSessionTranscript).mockClear();
 
     setProject({
@@ -775,7 +775,7 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
     expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
-    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 100, q: undefined }));
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
     expect(getSessionTranscript).not.toHaveBeenCalledWith("session-2", expect.anything());
   });
 
@@ -807,7 +807,7 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByText("Keep the exact older decision reachable")).toBeInTheDocument();
     expect(document.getElementById(`event-${olderTarget.id}`)).toHaveClass("event-flow-row--target");
-    expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 100, q: undefined });
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined });
     expect(getEvent).toHaveBeenCalledOnce();
     expect(getEvent).toHaveBeenCalledWith(olderTarget.id);
   });

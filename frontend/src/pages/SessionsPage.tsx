@@ -72,7 +72,7 @@ type SessionTranscriptState = SessionTranscriptResponse & {
 
 const DUPLICATE_PROMPT_WINDOW_MS = 2 * 60 * 1_000;
 const RECENT_SESSION_LIMIT = 120;
-const TRANSCRIPT_PAGE_LIMIT = 100;
+const TRANSCRIPT_PAGE_LIMIT = 50;
 const TRANSCRIPT_SEARCH_DEBOUNCE_MS = 240;
 const EMPTY_TRANSCRIPT: SessionTranscriptState = {
   sessionId: "",
