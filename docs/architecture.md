@@ -325,7 +325,10 @@ selecting a project never infers work or broadens the authoritative queue query.
 ## Continuity and search components
 
 - **Recording.** Normalizes hook/API event payloads and persists sessions plus structured events in
-  SQLite behind recording-owned store ports.
+  SQLite behind recording-owned store ports. Its paged session reader keeps recorded events
+  canonical and can transiently fill missing user/assistant text from the session's known local
+  Codex or Claude JSONL. The reader canonicalizes and confines that stored path, validates transcript
+  identity, redacts returned text, and never persists the enrichment.
 - **Memory.** Captures and recalls decisions, Handoffs, and observations by repo, topic, semantic
   paraphrase, or direct event id; fuses lexical SQLite recall with local vector recall when memory
   embeddings are available; searches SQLite events and optionally combines Elasticsearch hits.
@@ -344,11 +347,13 @@ selecting a project never infers work or broadens the authoritative queue query.
 - **Workflow.** Owns specs, tasks, annotations, lifecycle, session lineage, and DAG projection.
 - **SolidJS web UI.** Reads the same REST surfaces for Activity, Board, Recall, search, and supporting
   views, including the read-oriented Projects workspace and its explicit identity-curation controls.
-  Recall links carry the owning session and event; Browse uses the exact-event read when a target
-  falls outside its bounded session-event batch. Presenter file references resolve reactively
-  against the verified code-scope projection; unresolved paths remain copy-only, while open/reveal
-  success and typed failures render locally. Vite assets are packaged into the Spring Boot jar by
-  the `frontend` Maven profile.
+  Browse pages the full selected session with tools visible by default, keeps memory events opt-in,
+  and runs session-bound search over both recorded events and transcript-only conversation text.
+  Recall links carry the owning session and event; Browse still uses the exact-event read when a
+  target falls outside its current page. Presenter file references resolve reactively against the
+  verified code-scope projection; unresolved paths remain copy-only, while open/reveal success and
+  typed failures render locally. Vite assets are packaged into the Spring Boot jar by the `frontend`
+  Maven profile.
 
 ## Local-first and model boundaries
 

@@ -14,16 +14,25 @@ import {
   getSessionDag,
   getSessionEvents,
   getSessionLinks,
+  getSessionTranscript,
   getSessions,
   getTaskDag,
   type AgentEvent,
   type AgentSession,
   type ProjectSummary,
   type SessionLink,
+  type SessionTranscriptResponse,
 } from "../lib/api";
 import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
 import { projectMatchesSession } from "../lib/projects";
 import { parseQuery } from "../lib/query";
+import {
+  filterSessionTranscriptTurns,
+  isSessionMemoryEvent as isMemoryEvent,
+  isSessionReaderEvent as isPrimaryReaderEvent,
+  mergeSessionEvents,
+  sessionConversationRole as conversationRole,
+} from "../lib/sessionTranscript";
 import { LiveStoreContext } from "../lib/sse";
 import { sourceFilter } from "../lib/stores";
 
@@ -50,12 +59,33 @@ type ProjectSessionResult = {
   sessions: AgentSession[];
 };
 
-type SessionEventRequest = {
+type SessionTranscriptRequest = {
   sessionId: string;
   targetEventId?: string;
+  query: string;
+};
+
+type SessionTranscriptState = SessionTranscriptResponse & {
+  query: string;
+  legacyFallback: boolean;
 };
 
 const DUPLICATE_PROMPT_WINDOW_MS = 2 * 60 * 1_000;
+const RECENT_SESSION_LIMIT = 120;
+const TRANSCRIPT_PAGE_LIMIT = 50;
+const TRANSCRIPT_SEARCH_DEBOUNCE_MS = 240;
+const EMPTY_TRANSCRIPT: SessionTranscriptState = {
+  sessionId: "",
+  available: true,
+  complete: true,
+  reason: null,
+  limit: TRANSCRIPT_PAGE_LIMIT,
+  count: 0,
+  events: [],
+  nextBefore: null,
+  query: "",
+  legacyFallback: false,
+};
 
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
@@ -63,6 +93,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const navigate = useNavigate();
   const live = useContext(LiveStoreContext);
   const [sessionFilter, setSessionFilter] = createSignal("");
+  const [transcriptQuery, setTranscriptQuery] = createSignal("");
+  const [debouncedTranscriptQuery, setDebouncedTranscriptQuery] = createSignal("");
+  const [activeSearchTurnId, setActiveSearchTurnId] = createSignal("");
+  const [baselineEvents, setBaselineEvents] = createSignal<{ sessionId: string; events: AgentEvent[] }>({
+    sessionId: "",
+    events: [],
+  });
+  const [olderEventsLoading, setOlderEventsLoading] = createSignal(false);
+  const [olderEventsError, setOlderEventsError] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
   const [dagExpanded, setDagExpanded] = createSignal(false);
   const [taskContext, { refetch: refetchTaskContext }] = createResource(
@@ -71,7 +110,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   );
   const [allSessions] = createResource(
     () => (props.project ? null : sourceFilter.key()),
-    async () => sourceFilter.matches(await getSessions(2_000)),
+    async () => sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT)),
     { initialValue: [] as AgentSession[] },
   );
   const [projectSessions] = createResource(
@@ -80,7 +119,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       projectKey
         ? {
             projectKey,
-            sessions: (await getProjectSessions(projectKey, 2_000)).filter((s) => !s.spawnedBy),
+            sessions: (await getProjectSessions(projectKey, RECENT_SESSION_LIMIT)).filter((s) => !s.spawnedBy),
           }
         : null,
     { initialValue: null as ProjectSessionResult | null },
@@ -158,24 +197,63 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       return next;
     });
   };
-  const [events, { refetch: refetchEvents }] = createResource(
-    (): SessionEventRequest | undefined => {
+  const [transcript, { refetch: refetchEvents, mutate: mutateTranscript }] = createResource(
+    (): SessionTranscriptRequest | undefined => {
       const sessionId = selectedId();
-      return sessionId ? { sessionId, targetEventId: props.targetEventId } : undefined;
+      return sessionId
+        ? { sessionId, targetEventId: props.targetEventId, query: debouncedTranscriptQuery() }
+        : undefined;
     },
-    async ({ sessionId, targetEventId }) => {
-      const listed = await getSessionEvents(sessionId, 2_000);
-      if (!targetEventId || listed.some((event) => event.id === targetEventId)) return listed;
+    async ({ sessionId, targetEventId, query }): Promise<SessionTranscriptState> => {
       try {
-        const target = await getEvent(targetEventId);
-        return target.sessionId === sessionId ? [...listed, target] : listed;
+        const response = await getSessionTranscript(sessionId, {
+          limit: TRANSCRIPT_PAGE_LIMIT,
+          q: query || undefined,
+        });
+        const listed = !query && targetEventId
+          ? await mergeExactTarget(response.events, sessionId, targetEventId)
+          : response.events;
+        return {
+          ...response,
+          count: listed.length,
+          events: listed,
+          query,
+          legacyFallback: false,
+        };
       } catch {
-        return listed;
+        const recorded = await getSessionEvents(sessionId, 2_000);
+        const listed = !query && targetEventId
+          ? await mergeExactTarget(recorded, sessionId, targetEventId)
+          : recorded;
+        return {
+          sessionId,
+          available: false,
+          complete: false,
+          reason: null,
+          limit: 2_000,
+          count: listed.length,
+          events: listed,
+          nextBefore: null,
+          query,
+          legacyFallback: true,
+        };
       }
     },
-    { initialValue: [] as AgentEvent[] },
+    { initialValue: EMPTY_TRANSCRIPT },
   );
-  const timelineEvents = createMemo(() => [...events()].reverse());
+  const transcriptData = createMemo<SessionTranscriptState>(() => (transcript.error ? EMPTY_TRANSCRIPT : transcript()));
+  const searchPending = createMemo(() => (
+    transcriptQuery().trim() !== debouncedTranscriptQuery()
+    || (Boolean(debouncedTranscriptQuery()) && transcriptData().query !== debouncedTranscriptQuery())
+  ));
+  const transcriptLoading = createMemo(() => transcript.loading || searchPending());
+  const newestEvents = createMemo(() => {
+    const data = transcriptData();
+    if (!data.query) return data.events;
+    const baseline = baselineEvents();
+    return mergeSessionEvents(baseline.sessionId === data.sessionId ? baseline.events : [], data.events);
+  });
+  const timelineEvents = createMemo(() => [...newestEvents()].reverse());
   const visibleEvents = createMemo(() =>
     timelineEvents().filter(
       (event) =>
@@ -184,10 +262,39 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         (showMemoryEvents() && isMemoryEvent(event)),
     ),
   );
-  const promptTurns = createMemo(() => groupPromptTurns(visibleEvents()));
+  const groupedPromptTurns = createMemo(() => groupPromptTurns(visibleEvents()));
+  const searchResultIds = createMemo(() => new Set(
+    transcriptData().query ? transcriptData().events.map((event) => event.id) : [],
+  ));
+  const promptTurns = createMemo(() => {
+    const turns = groupedPromptTurns();
+    if (!transcriptData().query) return turns;
+    if (transcriptData().legacyFallback) {
+      return filterSessionTranscriptTurns(turns, transcriptData().query);
+    }
+    const matchingIds = searchResultIds();
+    return turns.filter((turn) => (
+      turn.events.some((event) => matchingIds.has(event.id))
+      || filterSessionTranscriptTurns([turn], transcriptData().query).length > 0
+    ));
+  });
+  const matchingPromptTurns = createMemo(() => transcriptData().query ? promptTurns() : []);
+  const displayedPromptTurns = createMemo(() => promptTurns());
   const memoryEventCount = createMemo(() => timelineEvents().filter(isMemoryEvent).length);
+  const transcriptStatusNote = createMemo(() => {
+    if (transcript.error) return "Session events could not be loaded.";
+    const data = transcriptData();
+    const reason = data.reason?.trim() ? ` (${data.reason.trim()})` : "";
+    if (data.legacyFallback) return "Full transcript service could not be reached; showing recorded events.";
+    if (!data.available) return `Source transcript unavailable; showing recorded events${reason}.`;
+    if (!data.complete) return `Source transcript may be incomplete${reason}.`;
+    return "";
+  });
+  const activeSearchPosition = createMemo(() => (
+    matchingPromptTurns().findIndex((turn) => turn.id === activeSearchTurnId())
+  ));
   const navigatorTurns = createMemo<ConversationNavigatorTurn[]>(() =>
-    promptTurns().flatMap((turn) => turn.prompt
+    displayedPromptTurns().flatMap((turn) => turn.prompt
       ? [{
           id: turn.id,
           prompt: turn.prompt,
@@ -195,6 +302,31 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         }]
       : []),
   );
+
+  createEffect(() => {
+    const query = transcriptQuery().trim();
+    const timer = window.setTimeout(() => setDebouncedTranscriptQuery(query), TRANSCRIPT_SEARCH_DEBOUNCE_MS);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+
+  createEffect(() => {
+    const data = transcriptData();
+    if (!transcript.loading && !transcript.error && data.sessionId === selectedId() && !data.query) {
+      setBaselineEvents({ sessionId: data.sessionId, events: data.events });
+    }
+  });
+
+  let searchSessionId = "";
+  createEffect(() => {
+    const nextSessionId = selectedId();
+    if (searchSessionId && nextSessionId !== searchSessionId) {
+      setTranscriptQuery("");
+      setDebouncedTranscriptQuery("");
+      setActiveSearchTurnId("");
+      setOlderEventsError("");
+    }
+    searchSessionId = nextSessionId;
+  });
 
   createEffect(() => {
     if (!live || !selectedId()) return;
@@ -217,7 +349,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   createEffect(() => {
     const targetId = props.targetEventId;
-    if (!targetId || events.loading) return;
+    if (!targetId || transcript.loading) return;
     const exists = timelineEvents().some((event) => event.id === targetId);
     if (!exists) return;
     queueMicrotask(() => {
@@ -232,6 +364,68 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       return;
     }
     navigate(`/sessions/${encodeURIComponent(id)}`);
+  }
+
+  function updateTranscriptQuery(value: string) {
+    setTranscriptQuery(value);
+    setActiveSearchTurnId("");
+    setOlderEventsError("");
+  }
+
+  function moveTranscriptSearch(direction: -1 | 1) {
+    const turns = matchingPromptTurns();
+    if (transcriptLoading() || !transcriptQuery().trim() || !turns.length) return;
+    const current = activeSearchPosition();
+    const next = current < 0
+      ? direction > 0 ? 0 : turns.length - 1
+      : (current + direction + turns.length) % turns.length;
+    const turn = turns[next];
+    setActiveSearchTurnId(turn.id);
+    queueMicrotask(() => {
+      document.getElementById(turn.id)?.scrollIntoView?.({
+        block: "center",
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
+    });
+  }
+
+  async function loadOlderTranscriptEvents() {
+    const current = transcriptData();
+    const before = current.nextBefore;
+    if (!before || olderEventsLoading() || transcriptLoading()) return;
+
+    const sessionId = current.sessionId;
+    const query = current.query;
+    setOlderEventsLoading(true);
+    setOlderEventsError("");
+    try {
+      const response = await getSessionTranscript(sessionId, {
+        limit: TRANSCRIPT_PAGE_LIMIT,
+        before,
+        q: query || undefined,
+      });
+      if (selectedId() !== sessionId || debouncedTranscriptQuery() !== query) return;
+      mutateTranscript((latest) => {
+        if (latest.sessionId !== sessionId || latest.query !== query) return latest;
+        const merged = mergeSessionEvents(latest.events, response.events);
+        return {
+          ...latest,
+          available: latest.available && response.available,
+          complete: latest.complete && response.complete,
+          reason: latest.reason ?? response.reason,
+          limit: response.limit,
+          count: merged.length,
+          events: merged,
+          nextBefore: response.nextBefore,
+        };
+      });
+    } catch {
+      if (selectedId() === sessionId && debouncedTranscriptQuery() === query) {
+        setOlderEventsError("Older transcript events could not be loaded. Try again.");
+      }
+    } finally {
+      setOlderEventsLoading(false);
+    }
   }
 
   return (
@@ -379,7 +573,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                   <div class="detail-title-block">
                     <div class="detail-kicker">
                       <SourceDot source={session().source} label />
-                      <span>{session().eventCount.toLocaleString()} events</span>
+                      <span>{session().eventCount.toLocaleString()} recorded</span>
                       <span>{timeAgo(session().lastSeenAt)}</span>
                     </div>
                     <h1 title={session().title || session().clientSessionId}>
@@ -419,43 +613,137 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                   )}
                 </Show>
 
+                <div class="session-transcript-search" role="search" aria-label="Search this session transcript">
+                  <label for="session-transcript-search">
+                    <span>Find in session</span>
+                    <input
+                      id="session-transcript-search"
+                      type="search"
+                      value={transcriptQuery()}
+                      placeholder="Messages, tools, inputs, outputs"
+                      autocomplete="off"
+                      onInput={(event) => updateTranscriptQuery(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          moveTranscriptSearch(event.shiftKey ? -1 : 1);
+                        } else if (event.key === "Escape" && transcriptQuery()) {
+                          event.preventDefault();
+                          updateTranscriptQuery("");
+                        }
+                      }}
+                    />
+                  </label>
+                  <output for="session-transcript-search" aria-live="polite">
+                    <Show when={transcriptQuery().trim()} fallback="Search user and agent messages plus tool activity">
+                      <Show when={!transcriptLoading()} fallback="Searching…">
+                        <Show
+                          when={matchingPromptTurns().length}
+                          fallback="No matching turns"
+                        >
+                          {activeSearchPosition() >= 0
+                            ? `${activeSearchPosition() + 1} of ${matchingPromptTurns().length} matching ${matchingPromptTurns().length === 1 ? "turn" : "turns"}`
+                            : `${matchingPromptTurns().length} matching ${matchingPromptTurns().length === 1 ? "turn" : "turns"}`}
+                        </Show>
+                      </Show>
+                    </Show>
+                  </output>
+                  <div class="session-transcript-search-actions">
+                    <button
+                      type="button"
+                      aria-label="Previous transcript match"
+                      disabled={transcriptLoading() || !transcriptQuery().trim() || !matchingPromptTurns().length}
+                      onClick={() => moveTranscriptSearch(-1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next transcript match"
+                      disabled={transcriptLoading() || !transcriptQuery().trim() || !matchingPromptTurns().length}
+                      onClick={() => moveTranscriptSearch(1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Clear transcript search"
+                      disabled={!transcriptQuery()}
+                      onClick={() => updateTranscriptQuery("")}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <Show when={transcriptStatusNote()}>
+                  {(note) => <p class="session-transcript-status" role="status">{note()}</p>}
+                </Show>
+
                 <div class="detail-body">
                   <div class="timeline-pane">
-                    <Show when={!events.loading} fallback={<p class="empty-state">Loading events...</p>}>
-                      <For each={promptTurns()}>
-                        {(turn) => (
-                          <section
-                            id={turn.id}
-                            classList={{
-                              "prompt-turn": true,
-                              "conversation-turn": true,
-                              "prompt-turn--preamble": !turn.prompt,
-                            }}
+                    <Show when={!transcriptLoading()} fallback={<p class="empty-state">Loading transcript…</p>}>
+                      <Show when={transcriptData().nextBefore && transcriptData().query === debouncedTranscriptQuery()}>
+                        <div class="transcript-page-controls">
+                          <button
+                            type="button"
+                            disabled={olderEventsLoading()}
+                            onClick={() => void loadOlderTranscriptEvents()}
                           >
-                            <For each={turn.events}>
-                              {(event) => (
-                                <div
-                                  id={`event-${event.id}`}
-                                  classList={{
-                                    "event-flow-row": true,
-                                    "event-flow-row--target": props.targetEventId === event.id,
-                                  }}
-                                >
-                                  <Show
-                                    when={conversationRole(event)}
-                                    fallback={<EventRenderer event={event} />}
+                            {olderEventsLoading()
+                              ? "Loading older…"
+                              : transcriptData().query ? "Load older matches" : "Load older events"}
+                          </button>
+                          <span>{transcriptData().events.length.toLocaleString()} loaded</span>
+                        </div>
+                      </Show>
+                      <Show when={olderEventsError()}>
+                        {(message) => <p class="transcript-page-error" role="status">{message()}</p>}
+                      </Show>
+                      <Show
+                        when={displayedPromptTurns().length}
+                        fallback={
+                          <p class="empty-state transcript-empty-state">
+                            {transcriptQuery().trim() ? "No transcript turns match this search." : "No readable transcript events were captured."}
+                          </p>
+                        }
+                      >
+                        <For each={displayedPromptTurns()}>
+                          {(turn) => (
+                            <section
+                              id={turn.id}
+                              classList={{
+                                "prompt-turn": true,
+                                "conversation-turn": true,
+                                "prompt-turn--preamble": !turn.prompt,
+                                "prompt-turn--search-active": activeSearchTurnId() === turn.id,
+                              }}
+                            >
+                              <For each={turn.events}>
+                                {(event) => (
+                                  <div
+                                    id={`event-${event.id}`}
+                                    classList={{
+                                      "event-flow-row": true,
+                                      "event-flow-row--target": props.targetEventId === event.id,
+                                    }}
                                   >
-                                    {(role) => <ConversationMessage event={event} role={role()} />}
-                                  </Show>
-                                </div>
-                              )}
-                            </For>
-                            <Show when={turn.prompt && !turn.events.some((event) => conversationRole(event) === "assistant")}>
-                              <p class="conversation-response-missing">Agent response not captured for this turn.</p>
-                            </Show>
-                          </section>
-                        )}
-                      </For>
+                                    <Show
+                                      when={conversationRole(event)}
+                                      fallback={<EventRenderer event={event} />}
+                                    >
+                                      {(role) => <ConversationMessage event={event} role={role()} />}
+                                    </Show>
+                                  </div>
+                                )}
+                              </For>
+                              <Show when={turn.prompt && !turn.events.some((event) => conversationRole(event) === "assistant")}>
+                                <p class="conversation-response-missing">Agent response not captured for this turn.</p>
+                              </Show>
+                            </section>
+                          )}
+                        </For>
+                      </Show>
                     </Show>
                   </div>
                   <ConversationNavigator turns={navigatorTurns()} />
@@ -467,6 +755,16 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       </section>
     </>
   );
+}
+
+async function mergeExactTarget(events: AgentEvent[], sessionId: string, targetEventId: string): Promise<AgentEvent[]> {
+  if (events.some((event) => event.id === targetEventId)) return events;
+  try {
+    const target = await getEvent(targetEventId);
+    return target.sessionId === sessionId ? mergeSessionEvents([target], events) : events;
+  } catch {
+    return events;
+  }
 }
 
 function SessionChildRows(props: { parentId: string; onSelect: (id: string) => void }) {
@@ -571,51 +869,10 @@ function ConversationMessage(props: { event: AgentEvent; role: "user" | "assista
   );
 }
 
-function isPromptEvent(event: AgentEvent): boolean {
-  const type = normalizedEventType(event);
-  return normalizedRole(event) === "user"
-    || type === "userpromptsubmit"
-    || type === "beforesubmitprompt";
-}
-
-function isAssistantEvent(event: AgentEvent): boolean {
-  const type = normalizedEventType(event);
-  if (normalizedRole(event) === "assistant") return Boolean(event.text?.trim());
-  return Boolean(event.text?.trim()) && (
-    type === "assistantmessage"
-    || type === "agentmessage"
-    || type === "agentresponse"
-    || type === "finalresponse"
-    || type === "stop"
-  );
-}
-
-function isMemoryEvent(event: AgentEvent): boolean {
-  const type = normalizedEventType(event);
-  return type === "decision" || type === "observation" || type === "handoff";
-}
-
-function isToolEvent(event: AgentEvent): boolean {
-  const type = normalizedEventType(event);
-  return Boolean(
-    event.toolName
-    || event.toolInputJson
-    || event.toolOutputJson
-    || normalizedRole(event) === "tool"
-    || type.includes("tooluse")
-    || type.includes("toolresult")
-    || type.includes("tooloutput"),
-  );
-}
-
-function isPrimaryReaderEvent(event: AgentEvent): boolean {
-  return !isMemoryEvent(event) && !isToolEvent(event) && (isPromptEvent(event) || isAssistantEvent(event));
-}
-
 function groupPromptTurns(events: AgentEvent[]): PromptTurn[] {
   const turns: PromptTurn[] = [];
   for (const event of events) {
-    if (isPromptEvent(event)) {
+    if (conversationRole(event) === "user") {
       const current = turns[turns.length - 1];
       if (current && isDuplicatePrompt(current, event)) continue;
       turns.push({ id: `prompt-${event.id}`, prompt: event, events: [event] });
@@ -652,34 +909,12 @@ function isDuplicatePrompt(turn: PromptTurn, event: AgentEvent): boolean {
 }
 
 function appendUniqueEvent(turn: PromptTurn, event: AgentEvent) {
-  const identity = conversationIdentity(event);
-  if (identity && turn.events.some((candidate) => conversationIdentity(candidate) === identity)) return;
+  if (turn.events.some((candidate) => candidate.id === event.id)) return;
   turn.events.push(event);
-}
-
-function conversationIdentity(event: AgentEvent): string | null {
-  const role = conversationRole(event);
-  const text = event.text?.replace(/\s+/g, " ").trim();
-  return role && text ? `${role}:${text}` : null;
 }
 
 function normalizedConversationText(value: string | null | undefined): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function conversationRole(event: AgentEvent): "user" | "assistant" | null {
-  if (isMemoryEvent(event) || isToolEvent(event)) return null;
-  if (isPromptEvent(event)) return "user";
-  if (isAssistantEvent(event)) return "assistant";
-  return null;
-}
-
-function normalizedEventType(event: AgentEvent): string {
-  return String(event.eventType ?? "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-}
-
-function normalizedRole(event: AgentEvent): string {
-  return String(event.role ?? "").trim().toLowerCase();
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -692,4 +927,10 @@ function formatDate(iso: string | null | undefined): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

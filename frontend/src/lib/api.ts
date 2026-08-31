@@ -27,6 +27,23 @@ export type AgentEvent = {
   observedAt: string;
 };
 
+export type SessionTranscriptResponse = {
+  sessionId: string;
+  available: boolean;
+  complete: boolean;
+  reason?: string | null;
+  limit: number;
+  count: number;
+  events: AgentEvent[];
+  nextBefore?: string | null;
+};
+
+export type SessionTranscriptParams = {
+  limit?: number;
+  before?: string;
+  q?: string;
+};
+
 export type EventFeedItem = AgentEvent & {
   cwd?: string | null;
   sessionTitle?: string | null;
@@ -558,6 +575,16 @@ export function getEvent(id: string): Promise<AgentEvent> {
 
 export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[]> {
   return getJson(`/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}`);
+}
+
+export function getSessionTranscript(
+  id: string,
+  params: SessionTranscriptParams = {},
+): Promise<SessionTranscriptResponse> {
+  const query = new URLSearchParams({ limit: String(params.limit ?? 100) });
+  if (params.before) query.set("before", params.before);
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  return getJson(`/api/sessions/${encodeURIComponent(id)}/transcript?${query.toString()}`);
 }
 
 export function search(q: string, limit = 80): Promise<SearchResponse> {

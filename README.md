@@ -197,7 +197,10 @@ recallContext({
 
 ## Product surfaces
 
-- **Activity** — the filterable global event stream, session browser, and optional Ask surface.
+- **Activity** — the filterable global event stream, optional Ask surface, and a paged session
+  browser that shows recorded tools alongside the conversation. Session search stays scoped to the
+  selected session and can match message text, tool names, inputs, and outputs beyond the loaded
+  page.
 - **Projects** — a searchable logical-project workspace that groups verified worktree scopes without
   rewriting recorded paths. The center pane defaults to the trajectory graph (epochs, ranked
   futures, ghost projections, rejected stubs); the Hybrid Storyline stays on the Timeline tab.
@@ -391,7 +394,9 @@ and render beside the path instead of silently doing nothing.
 | `SBA_EXPORT_OBSIDIAN_DIR` | unset | Enables the built-in Obsidian summary export target |
 
 The hook bridges additionally read `SBA_AGENTIC_URL`, `SBA_AGENT_SOURCE`,
-`SBA_RECALL_WITHIN_HOURS`, `SBA_RECALL_LIMIT`, and `SBA_RECALL_MAX_CHARS`. See
+`SBA_RECALL_WITHIN_HOURS`, `SBA_RECALL_LIMIT`, `SBA_RECALL_MAX_CHARS`, `SBA_RECALL_CLIENT`
+(log label when `--client` is not passed), and `SBA_RECALL_LOG` (fire-log path; `off` or empty
+disables it). See
 [Local writes and Elasticsearch](docs/local-writes-and-elasticsearch.md) for the complete operational
 reference.
 
@@ -405,11 +410,58 @@ Black Box does not capture agent sessions until you opt in.
   `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
   the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
   can nest subagents under their parent.
-- `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code
-  `SessionStart` and prints a bounded context block.
+- `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code or
+  Codex `SessionStart` and prints a bounded context block. Codex has supported `SessionStart` hooks
+  since codex-cli rust-v0.114.0 (2026-03-11), and both clients inject the hook's plain stdout as
+  session context. Defaults are 30 days, 3 items, and 4000 chars. The hook skips compaction re-fires
+  and spawned subagents, and appends a fire log to `~/.blackbox/recall.log` with TSV columns `ts`,
+  `client`, `outcome`, `cwd`, `session_id`, `items`, and `chars`.
 
-Codex sessions should call `recallContext` through MCP near the start of relevant work. A short
-instruction in `AGENTS.md` works well.
+Register recall globally in each client, alongside any existing hooks:
+
+`~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/black-box/scripts/hooks/sba-recall-hook.sh --client claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`~/.codex/hooks.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/black-box/scripts/hooks/sba-recall-hook.sh --client codex",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Use `recallContext` through MCP for topic queries mid-session, more kinds, or a larger recall slice.
 
 ### Subagent lineage (Claude Code)
 

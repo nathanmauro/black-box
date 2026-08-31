@@ -193,7 +193,7 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$.items[0].eventId").value(handoffId))
                 .andExpect(jsonPath("$.items[0].clientSessionId").value("rest-transcript-session"))
                 .andReturn();
-        assertThat(memoryTools.recallContext(handoffId, 168, List.of("handoff"), null).items())
+        assertThat(memoryTools.recallContext(handoffId, 168, List.of("handoff"), null, null).items())
                 .singleElement()
                 .extracting(item -> item.eventId())
                 .isEqualTo(handoffId);
@@ -774,7 +774,7 @@ class TaskApiContractTest {
         Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
         Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);
         Method recall = MemoryMcpTools.class.getMethod(
-                "recallContext", String.class, Integer.class, List.class, Integer.class);
+                "recallContext", String.class, Integer.class, List.class, Integer.class, Integer.class);
         Method decision = MemoryMcpTools.class.getMethod(
                 "captureDecision",
                 String.class,

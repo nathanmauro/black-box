@@ -62,6 +62,8 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 - Activity Find result selection — embedded Activity Find results now open the selected session in the Browse reader without bouncing to standalone `/sessions/:id`; standalone Search links still deep-link normally.
 - Local deploy safety — `scripts/deploy-local.sh` unloads the launchd service before rebuilding the executable jar and restarts it before status polling, with `scripts/test-deploy-local.sh` covering command order.
 - FULL_AUTO board-driven runner — server annotations, `session_links`, DAG read model, and `task.note` SSE; runner CLI/daemon with a test-used `fake` engine; and the Board's New Story form, card tendril, and DAG view have landed. See [`docs/superpowers/specs/2026-07-15-full-auto-board-runner.md`](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md).
+- Read half wired — the SessionStart recall hook ships with working defaults (720h / 3 items / 4000 chars), a best-effort fire log at `~/.blackbox/recall.log`, and Codex-compatible plain-text output; `recallContext` gained a bounded `maxChars` (default 24000) with visible truncation so results survive Claude Code's tool-result cap.
+- Complete searchable session transcripts — session pages render the full event transcript (read safely with bounds, duplicate hook payloads trimmed, tool-heavy sessions kept responsive) and frontend packaging is pinned to a supported Node.
 
 ## Verification checklist
 

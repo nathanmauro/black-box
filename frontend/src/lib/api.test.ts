@@ -14,6 +14,7 @@ import {
   getSessionDag,
   getSession,
   getSessionLinks,
+  getSessionTranscript,
   getSessions,
   getSpec,
   getTaskDag,
@@ -41,6 +42,7 @@ import {
   type DagResponse,
   type SessionLink,
   type SessionLinksResponse,
+  type SessionTranscriptResponse,
   type TaskAnnotation,
   type TaskEvent,
   type UpdateTaskStatusRequest,
@@ -107,6 +109,50 @@ describe("Phase 2 API helpers", () => {
     await expect(getSession(payload.id)).resolves.toEqual(payload);
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session%2Fold", expect.anything());
+  });
+
+  it("gets a bounded transcript page with encoded cursor and session-scoped search", async () => {
+    const payload: SessionTranscriptResponse = {
+      sessionId: "session/old",
+      available: true,
+      complete: true,
+      reason: null,
+      limit: 100,
+      count: 1,
+      events: [],
+      nextBefore: "2026-08-30T14:00:00Z|event-1",
+    };
+    const fetchMock = stubJson(payload);
+
+    await expect(getSessionTranscript("session/old", {
+      limit: 100,
+      before: "2026-08-30T14:01:00Z|event/2",
+      q: "  read vite.config  ",
+    })).resolves.toEqual(payload);
+
+    const requestPath = String(fetchMock.mock.calls[0]?.[0]);
+    const url = new URL(requestPath, "http://blackbox.test");
+    expect(url.pathname).toBe("/api/sessions/session%2Fold/transcript");
+    expect(url.searchParams.get("limit")).toBe("100");
+    expect(url.searchParams.get("before")).toBe("2026-08-30T14:01:00Z|event/2");
+    expect(url.searchParams.get("q")).toBe("read vite.config");
+  });
+
+  it("defaults transcript reads to a 100-event page", async () => {
+    const fetchMock = stubJson({
+      sessionId: "session-1",
+      available: false,
+      complete: false,
+      reason: "missing",
+      limit: 100,
+      count: 0,
+      events: [],
+      nextBefore: null,
+    } satisfies SessionTranscriptResponse);
+
+    await getSessionTranscript("session-1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/sessions/session-1/transcript?limit=100");
   });
 
   it("builds the recall query from scope, window, and selected kinds", async () => {

@@ -2,8 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEvent, getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessions, getTaskDag } from "../../lib/api";
-import type { AgentEvent, AgentSession, DagResponse, SessionLinksResponse } from "../../lib/api";
+import { getEvent, getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessionTranscript, getSessions, getTaskDag } from "../../lib/api";
+import type { AgentEvent, AgentSession, DagResponse, SessionLinksResponse, SessionTranscriptParams, SessionTranscriptResponse } from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
@@ -97,6 +97,23 @@ const events: AgentEvent[] = [
   },
 ];
 
+function transcriptResponse(
+  responseEvents: AgentEvent[] = events,
+  overrides: Partial<SessionTranscriptResponse> = {},
+): SessionTranscriptResponse {
+  return {
+    sessionId: "session-1",
+    available: true,
+    complete: true,
+    reason: null,
+    limit: 50,
+    count: responseEvents.length,
+    events: responseEvents,
+    nextBefore: null,
+    ...overrides,
+  };
+}
+
 const childLinks: SessionLinksResponse = {
   parents: [],
   children: [
@@ -139,6 +156,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getEvent: vi.fn(),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
+    getSessionTranscript: vi.fn(async () => transcriptResponse()),
     getTaskDag: vi.fn(async () => ({ nodes: [], edges: [] })),
     getSessionDag: vi.fn(async () => ({ nodes: [], edges: [] })),
     getSessionLinks: vi.fn(async () => ({ parents: [], children: [] })),
@@ -159,6 +177,8 @@ beforeEach(() => {
   vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
   vi.mocked(getSessionEvents).mockReset();
   vi.mocked(getSessionEvents).mockResolvedValue(events);
+  vi.mocked(getSessionTranscript).mockReset();
+  vi.mocked(getSessionTranscript).mockImplementation(async (id: string) => transcriptResponse(events, { sessionId: id }));
   vi.mocked(getTaskDag).mockReset();
   vi.mocked(getTaskDag).mockResolvedValue({ nodes: [], edges: [] });
   vi.mocked(getSessionDag).mockReset();
@@ -264,7 +284,7 @@ describe("SessionsPage", () => {
     expect(within(rail).getByText("Focused session")).toBeInTheDocument();
   });
 
-  it("renders live-shaped prompts and agent responses with memory events opt-in and tools hidden", async () => {
+  it("renders prompts, agent responses, and tools by default with memory events opt-in", async () => {
     render(() => <SessionsPage />);
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
@@ -291,16 +311,135 @@ describe("SessionsPage", () => {
 
     expect(screen.queryByText("Use the calmer session layout")).not.toBeInTheDocument();
     expect(screen.queryByText("Reader should keep memory cards behind a layer toggle.")).not.toBeInTheDocument();
-    expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/hidden-tool-output/)).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Show tool events" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Show memory events" }));
     expect(await screen.findByText("Use the calmer session layout")).toBeInTheDocument();
     expect(screen.getByText("Reader should keep memory cards behind a layer toggle.")).toBeInTheDocument();
-    expect(screen.queryByText(/hidden-tool-output/)).not.toBeInTheDocument();
+    expect(screen.getByText(/hidden-tool-output/)).toBeInTheDocument();
   });
 
-  it("groups event-name variants, deduplicates repeated responses, and navigates with dock proximity", async () => {
+  it("searches message and tool fields, retains complete matching turns, and navigates matches", async () => {
+    const searchableEvents: AgentEvent[] = [
+      {
+        id: "evt-answer-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "assistant",
+        text: "The second turn stays independent.",
+        observedAt: "2026-06-22T20:06:00Z",
+      },
+      {
+        id: "evt-tool-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "tool_result",
+        role: "tool",
+        toolName: "Bash",
+        toolInputJson: '{"command":"npm test"}',
+        toolOutputJson: '{"output":"42 tests passed"}',
+        observedAt: "2026-06-22T20:05:30Z",
+      },
+      {
+        id: "evt-prompt-2",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "user",
+        text: "Run the checks.",
+        observedAt: "2026-06-22T20:05:00Z",
+      },
+      {
+        id: "evt-answer-1",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "assistant",
+        text: "This full answer remains visible for turn context.",
+        observedAt: "2026-06-22T20:02:00Z",
+      },
+      {
+        id: "evt-tool-1",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "tool_call",
+        role: "tool",
+        toolName: "Read",
+        toolInputJson: '{"file_path":"frontend/vite.config.ts"}',
+        toolOutputJson: '{"content":"defineConfig"}',
+        observedAt: "2026-06-22T20:01:30Z",
+      },
+      {
+        id: "evt-prompt-1",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "user",
+        text: "Inspect the frontend config.",
+        observedAt: "2026-06-22T20:01:00Z",
+      },
+    ];
+    vi.mocked(getSessionTranscript).mockImplementation(async (
+      id: string,
+      params: SessionTranscriptParams = {},
+    ) => {
+      if (params.q === 'read "vite.config"') {
+        return transcriptResponse([searchableEvents[4]], { sessionId: id, count: 1 });
+      }
+      if (params.q === "42 tests passed") {
+        return transcriptResponse([searchableEvents[1]], { sessionId: id, count: 1 });
+      }
+      return transcriptResponse(searchableEvents, { sessionId: id });
+    });
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(() => <SessionsPage />);
+
+    const search = await screen.findByRole("searchbox", { name: "Find in session" });
+    await waitFor(() => expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2));
+    fireEvent.input(search, { target: { value: 'read "vite.config"' } });
+
+    expect(await screen.findByText("1 matching turn")).toBeInTheDocument();
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-1", {
+      limit: 50,
+      q: 'read "vite.config"',
+    });
+    expect(document.querySelectorAll(".prompt-turn")).toHaveLength(1);
+    expect(screen.getByText("Inspect the frontend config.")).toBeInTheDocument();
+    expect(screen.getByText("This full answer remains visible for turn context.")).toBeInTheDocument();
+    expect(screen.queryByText("Run the checks.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next transcript match" }));
+    await waitFor(() => expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "center", behavior: "smooth" }));
+    expect(document.getElementById("prompt-evt-prompt-1")).toHaveClass("prompt-turn--search-active");
+    expect(screen.getByText("1 of 1 matching turn")).toBeInTheDocument();
+
+    fireEvent.input(search, { target: { value: "42 tests passed" } });
+    expect(await screen.findByText("Run the checks.")).toBeInTheDocument();
+    expect(screen.getByText("The second turn stays independent.")).toBeInTheDocument();
+    expect(screen.queryByText("Inspect the frontend config.")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(document.getElementById("prompt-evt-prompt-2")).toHaveClass("prompt-turn--search-active");
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(await screen.findByText("Inspect the frontend config.")).toBeInTheDocument();
+    expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2);
+  });
+
+  it("groups event-name variants, preserves repeated responses, and navigates with dock proximity", async () => {
     const variantEvents: AgentEvent[] = [
       {
         id: "evt-blank-stop",
@@ -393,7 +532,7 @@ describe("SessionsPage", () => {
         observedAt: "2026-06-22T20:00:00Z",
       },
     ];
-    vi.mocked(getSessionEvents).mockResolvedValue(variantEvents);
+    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse(variantEvents));
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -408,7 +547,7 @@ describe("SessionsPage", () => {
     expect(within(turns[0] as HTMLElement).queryByText(/SHOW me the first/)).not.toBeInTheDocument();
     expect(within(turns[0] as HTMLElement).getByText("First captured response.")).toBeInTheDocument();
     expect(within(turns[1] as HTMLElement).getByText("Show me the second exchange.")).toBeInTheDocument();
-    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(1);
+    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(2);
     expect(screen.queryByText("Lifecycle metadata should stay hidden.")).not.toBeInTheDocument();
     expect(screen.queryByText("Startup metadata should stay hidden.")).not.toBeInTheDocument();
 
@@ -452,7 +591,7 @@ describe("SessionsPage", () => {
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
     expect(rail.querySelector(".session-group")).not.toBeInTheDocument();
-    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 2_000);
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
     expect(createSessionsResource).not.toHaveBeenCalled();
     expect(getSessions).not.toHaveBeenCalled();
   });
@@ -476,7 +615,85 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Older exact session" })).toBeInTheDocument();
     expect(getSession).toHaveBeenCalledWith("session-old");
-    expect(getSessionEvents).toHaveBeenCalledWith("session-old", 2_000);
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-old", { limit: 50, q: undefined });
+    expect(getSessionEvents).not.toHaveBeenCalled();
+  });
+
+  it("loads older transcript pages by cursor without a client-side event cap", async () => {
+    const olderPage: AgentEvent[] = [
+      {
+        id: "evt-older-response",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "assistant",
+        text: "An older response loaded on demand.",
+        observedAt: "2026-06-22T19:01:00Z",
+      },
+      {
+        id: "evt-older-prompt",
+        sessionId: "session-1",
+        source: "codex",
+        clientSessionId: "client-1",
+        eventType: "response_item",
+        role: "user",
+        text: "Load the older exchange.",
+        observedAt: "2026-06-22T19:00:00Z",
+      },
+    ];
+    vi.mocked(getSessionTranscript).mockImplementation(async (id: string, params: SessionTranscriptParams = {}) => (
+      params.before
+        ? transcriptResponse(olderPage, { sessionId: id, nextBefore: null })
+        : transcriptResponse(events, {
+            sessionId: id,
+            nextBefore: "2026-06-22T20:00:00Z|evt-user",
+          })
+    ));
+
+    render(() => <SessionsPage />);
+
+    const loadOlder = await screen.findByRole("button", { name: "Load older events" });
+    expect(screen.getByText(`${events.length} loaded`)).toBeInTheDocument();
+    fireEvent.click(loadOlder);
+
+    expect(await screen.findByText("Load the older exchange.")).toBeInTheDocument();
+    expect(screen.getByText("An older response loaded on demand.")).toBeInTheDocument();
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-1", {
+      limit: 50,
+      before: "2026-06-22T20:00:00Z|evt-user",
+      q: undefined,
+    });
+    expect(screen.queryByRole("button", { name: "Load older events" })).not.toBeInTheDocument();
+  });
+
+  it("uses recorded events returned with an unavailable transcript without falling back", async () => {
+    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse(events, {
+      available: false,
+      complete: false,
+      reason: "missing",
+    }));
+
+    render(() => <SessionsPage />);
+
+    expect(await screen.findByText("I made the reading view calmer.")).toBeInTheDocument();
+    expect(document.querySelector(".session-transcript-status")).toHaveTextContent(
+      "Source transcript unavailable; showing recorded events (missing).",
+    );
+    expect(getSessionEvents).not.toHaveBeenCalled();
+  });
+
+  it("degrades to the legacy recorded-event endpoint only when the transcript request fails", async () => {
+    vi.mocked(getSessionTranscript).mockRejectedValue(new Error("route unavailable"));
+    vi.mocked(getSessionEvents).mockResolvedValue(events);
+
+    render(() => <SessionsPage />);
+
+    expect(await screen.findByText("I made the reading view calmer.")).toBeInTheDocument();
+    expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000);
+    expect(document.querySelector(".session-transcript-status")).toHaveTextContent(
+      "Full transcript service could not be reached; showing recorded events.",
+    );
   });
 
   it("clears previous project sessions while the next project is loading", async () => {
@@ -497,8 +714,8 @@ describe("SessionsPage", () => {
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
-    await waitFor(() => expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000));
-    vi.mocked(getSessionEvents).mockClear();
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
+    vi.mocked(getSessionTranscript).mockClear();
 
     setProject({
       projectKey: "project-b",
@@ -509,9 +726,9 @@ describe("SessionsPage", () => {
       savedMeldCount: 0,
     });
 
-    await waitFor(() => expect(getProjectSessions).toHaveBeenCalledWith("project-b", 2_000));
+    await waitFor(() => expect(getProjectSessions).toHaveBeenCalledWith("project-b", 120));
     expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument();
-    expect(getSessionEvents).not.toHaveBeenCalled();
+    expect(getSessionTranscript).not.toHaveBeenCalled();
   });
 
   it("applies source filtering to project-scoped sessions", async () => {
@@ -557,9 +774,9 @@ describe("SessionsPage", () => {
     ));
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
-    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 2_000);
-    await waitFor(() => expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000));
-    expect(getSessionEvents).not.toHaveBeenCalledWith("session-2", expect.anything());
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
+    expect(getSessionTranscript).not.toHaveBeenCalledWith("session-2", expect.anything());
   });
 
   it("reveals and highlights a target event", async () => {
@@ -583,14 +800,14 @@ describe("SessionsPage", () => {
       metadata: { decision: "Keep the exact older decision reachable" },
       observedAt: "2026-05-01T20:00:00Z",
     };
-    vi.mocked(getSessionEvents).mockResolvedValue(events.filter((event) => event.id !== olderTarget.id));
+    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse(events.filter((event) => event.id !== olderTarget.id)));
     vi.mocked(getEvent).mockResolvedValue(olderTarget);
 
     render(() => <SessionsPage selectedSessionId="session-1" targetEventId={olderTarget.id} />);
 
     expect(await screen.findByText("Keep the exact older decision reachable")).toBeInTheDocument();
     expect(document.getElementById(`event-${olderTarget.id}`)).toHaveClass("event-flow-row--target");
-    expect(getSessionEvents).toHaveBeenCalledWith("session-1", 2_000);
+    expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined });
     expect(getEvent).toHaveBeenCalledOnce();
     expect(getEvent).toHaveBeenCalledWith(olderTarget.id);
   });
@@ -632,7 +849,7 @@ describe("SessionsPage", () => {
       "false",
     );
     expect(getSessionChildCounts).toHaveBeenCalledWith(["session-1", "session-2"]);
-    expect(getSessions).toHaveBeenCalledWith(2_000);
+    expect(getSessions).toHaveBeenCalledWith(120);
     const cockpitRow = within(rail).getByText("Cockpit cleanup").closest(".session-row-block") as HTMLElement;
     expect(within(cockpitRow).queryByRole("button", { name: /subagent sessions/ })).not.toBeInTheDocument();
     expect(getSessionLinks).not.toHaveBeenCalled();

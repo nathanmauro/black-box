@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.architecture;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
+import dev.nathan.sbaagentic.recording.TranscriptProperties;
 
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ApplicationModuleTest(module = "recording")
-@EnableConfigurationProperties(IngestionProperties.class)
+@EnableConfigurationProperties({IngestionProperties.class, TranscriptProperties.class})
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-recording-module-test-${random.uuid}.db",
         "sba.memory.embedding.enabled=false"

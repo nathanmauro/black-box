@@ -37,6 +37,7 @@ import static org.hamcrest.Matchers.is;
         "sba.elasticsearch.enabled=false",
         "sba.ask.embedding-enabled=false",
         "sba.memory.embedding.enabled=false",
+        "sba.transcript.codex-roots[0]=${java.io.tmpdir}",
         "sba.exports.targets[0].id=obsidian",
         "sba.exports.targets[0].label=Obsidian",
         "sba.exports.targets[0].type=markdown-file",
@@ -149,6 +150,65 @@ class AgenticControllerTest {
 
         mockMvc.perform(get("/api/events/{eventId}", "missing-event"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void sessionTranscriptPagesRecordedToolsAndKnownTranscriptMessagesWithHardScopedSearch() throws Exception {
+        String clientSessionId = "transcript-" + UUID.randomUUID();
+        Path transcript = Files.createTempFile(clientSessionId, ".jsonl");
+        try {
+            Files.writeString(transcript, """
+                    {"timestamp":"2026-08-30T12:00:00Z","type":"session_meta","payload":{"id":"%s","session_id":"%s"}}
+                    {"timestamp":"2026-08-30T12:02:00Z","type":"response_item","payload":{"type":"message","id":"answer-1","role":"assistant","content":[{"type":"output_text","text":"Transcript only answer"}]}}
+                    """.formatted(clientSessionId, clientSessionId));
+            String startBody = mockMvc.perform(post("/api/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "source", "codex",
+                                    "clientSessionId", clientSessionId,
+                                    "eventType", "SessionStart",
+                                    "role", "agent",
+                                    "cwd", "/tmp/transcript-test",
+                                    "metadata", Map.of("rawHook", Map.of("transcript_path", transcript.toString())),
+                                    "observedAt", "2026-08-30T12:00:00Z"))))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            String sessionId = objectMapper.readTree(startBody).path("sessionId").asText();
+            jdbcTemplate.update(
+                    "UPDATE agent_sessions SET summary = ? WHERE id = ?",
+                    "Transcript endpoint fixture",
+                    sessionId);
+            mockMvc.perform(post("/api/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "source", "codex",
+                                    "clientSessionId", clientSessionId,
+                                    "eventType", "PostToolUse",
+                                    "role", "tool",
+                                    "toolName", "Read",
+                                    "toolInput", Map.of("path", "README.md"),
+                                    "toolOutput", Map.of("ok", true),
+                                    "observedAt", "2026-08-30T12:01:00Z"))))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId).param("limit", "100"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(true))
+                    .andExpect(jsonPath("$.complete").value(true))
+                    .andExpect(jsonPath("$.events[?(@.text == 'Transcript only answer')].role")
+                            .value(hasItem("assistant")))
+                    .andExpect(jsonPath("$.events[?(@.toolName == 'Read')].eventType")
+                            .value(hasItem("PostToolUse")));
+
+            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId)
+                            .param("q", "session:some-other-session \"Transcript only answer\""))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.count").value(1))
+                    .andExpect(jsonPath("$.events[0].text").value("Transcript only answer"));
+        }
+        finally {
+            Files.deleteIfExists(transcript);
+        }
     }
 
     @Test

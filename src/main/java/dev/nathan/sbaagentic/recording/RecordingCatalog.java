@@ -21,6 +21,15 @@ public interface RecordingCatalog {
 
     List<AgentEvent> eventsForSession(String sessionId, int limit);
 
+    /** Cursor-paged event search with a hard internal-session boundary. */
+    EventFeedResponse feedForSession(String sessionId, String query, String before, int limit);
+
+    /** Known transcript paths observed for this session, ordered from strongest to weakest. */
+    List<String> transcriptPathsForSession(String sessionId);
+
+    /** Lightweight text-only rows used to deduplicate transcript messages across cursor pages. */
+    List<AgentEvent> conversationEventsForSession(String sessionId);
+
     EventFeedResponse feed(
             String query,
             boolean meaningfulOnly,

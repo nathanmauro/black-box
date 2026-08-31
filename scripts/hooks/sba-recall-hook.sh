@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Black Box recall bridge. Reads a Claude Code SessionStart payload on stdin, recalls prior
-# decisions and handoffs for the current repo, and prints compact context for injection.
+# Black Box recall bridge. Reads a Claude Code or Codex SessionStart payload on stdin, recalls prior
+# decisions and handoffs for the current repo, and prints compact context for injection. Both hosts
+# inject plain stdout as session context. The hook appends a best-effort fire log, skips Claude Code
+# compaction re-fires (`source=compact`), and skips spawned subagents (`agent_id` present).
 #
 # Safety contract: this hook must NEVER fail its host agent's session start. If the recorder is
 # down, slow, empty, or jq is missing, the agent should carry on as if nothing happened. So we do
@@ -9,26 +11,131 @@
 set -uo pipefail
 
 SBA_AGENTIC_URL="${SBA_AGENTIC_URL:-http://localhost:8766}"
-SBA_RECALL_WITHIN_HOURS="${SBA_RECALL_WITHIN_HOURS:-168}"
-SBA_RECALL_LIMIT="${SBA_RECALL_LIMIT:-5}"
+SBA_RECALL_WITHIN_HOURS="${SBA_RECALL_WITHIN_HOURS:-720}"
+SBA_RECALL_LIMIT="${SBA_RECALL_LIMIT:-3}"
 SBA_RECALL_MAX_CHARS="${SBA_RECALL_MAX_CHARS:-4000}"
 
+CLIENT="${SBA_RECALL_CLIENT:-unknown}"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --client)
+      if [ "${2:-}" != "" ]; then
+        CLIENT="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+[ -n "$CLIENT" ] || CLIENT="unknown"
+
+sanitize_log_field() {
+  local value="${1:-"-"}"
+  value="${value//$'\t'/ }"
+  value="${value//$'\r'/ }"
+  value="${value//$'\n'/ }"
+  [ -n "$value" ] || value="-"
+  printf '%s' "$value"
+}
+
+recall_log() {
+  local outcome="$1"
+  local cwd="${2:-"-"}"
+  local session_id="${3:-"-"}"
+  local items="${4:-0}"
+  local chars="${5:-0}"
+  local log_path
+  local log_dir
+  local ts
+
+  if [ "${SBA_RECALL_LOG+x}" = "x" ]; then
+    case "$SBA_RECALL_LOG" in
+      ""|"off")
+        return 0
+        ;;
+      *)
+        log_path="$SBA_RECALL_LOG"
+        ;;
+    esac
+  else
+    [ -n "${HOME:-}" ] || return 0
+    log_path="$HOME/.blackbox/recall.log"
+  fi
+
+  log_dir="$(dirname "$log_path" 2>/dev/null)" || return 0
+  mkdir -p "$log_dir" 2>/dev/null || return 0
+  ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)" || ts="-"
+
+  {
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$(sanitize_log_field "$ts")" \
+      "$(sanitize_log_field "$CLIENT")" \
+      "$(sanitize_log_field "$outcome")" \
+      "$(sanitize_log_field "$cwd")" \
+      "$(sanitize_log_field "$session_id")" \
+      "$(sanitize_log_field "$items")" \
+      "$(sanitize_log_field "$chars")" >>"$log_path"
+  } 2>/dev/null || true
+}
+
+count_block_items() {
+  local text="$1"
+  local count=0
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[0-9]+[.][[:space:]] ]]; then
+      count=$((count + 1))
+    fi
+  done <<<"$text"
+  printf '%s' "$count"
+}
+
 # If jq is unavailable there is nothing useful we can do — never fail the host agent over it.
-command -v jq >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || {
+  recall_log "skipped:no-jq" "-" "-" 0 0
+  exit 0
+}
 
 RAW="$(cat)"
 # Tolerate non-JSON stdin silently. SessionStart recall should add context or add nothing.
-printf '%s' "$RAW" | jq -e . >/dev/null 2>&1 || exit 0
+printf '%s' "$RAW" | jq -e . >/dev/null 2>&1 || {
+  recall_log "skipped:bad-payload" "-" "-" 0 0
+  exit 0
+}
 
-CWD="$(jq -r '.cwd // empty' <<<"$RAW")"
+SESSION_ID="$(jq -r '.session_id // "-"' <<<"$RAW" 2>/dev/null)"
+[ -n "$SESSION_ID" ] || SESSION_ID="-"
+CWD="$(jq -r '.cwd // empty' <<<"$RAW" 2>/dev/null)"
+
+SOURCE="$(jq -r '.source // empty' <<<"$RAW" 2>/dev/null)"
+if [ "$SOURCE" = "compact" ]; then
+  recall_log "skipped:compact" "${CWD:-"-"}" "$SESSION_ID" 0 0
+  exit 0
+fi
+
+AGENT_ID="$(jq -r 'if has("agent_id") then (.agent_id // "" | tostring) else "" end' <<<"$RAW" 2>/dev/null)"
+if [ -n "$AGENT_ID" ]; then
+  recall_log "skipped:subagent" "${CWD:-"-"}" "$SESSION_ID" 0 0
+  exit 0
+fi
+
 if [ -z "$CWD" ]; then
+  recall_log "skipped:no-cwd" "-" "$SESSION_ID" 0 0
   exit 0
 fi
 
 ENCODED_CWD="$(jq -nr --arg v "$CWD" '$v | @uri')"
-RECALL_URL="$SBA_AGENTIC_URL/api/recall?scope=$ENCODED_CWD&withinHours=$SBA_RECALL_WITHIN_HOURS&kinds=decision,handoff"
-RESPONSE="$(curl -fsS --max-time 3 "$RECALL_URL" 2>/dev/null)" || exit 0
+RECALL_URL="$SBA_AGENTIC_URL/api/recall?scope=$ENCODED_CWD&withinHours=$SBA_RECALL_WITHIN_HOURS&kinds=decision,handoff&limit=$SBA_RECALL_LIMIT"
+if ! RESPONSE="$(curl -fsS --max-time 3 "$RECALL_URL" 2>/dev/null)"; then
+  recall_log "unreachable" "$CWD" "$SESSION_ID" 0 0
+  exit 0
+fi
 if [ -z "$RESPONSE" ]; then
+  recall_log "unreachable" "$CWD" "$SESSION_ID" 0 0
   exit 0
 fi
 
@@ -74,7 +181,7 @@ BLOCK="$(jq -r \
         "\($kind | ascii_upcase) (\(source_label), \(day)): \((.headline | clean))."
       end;
   def window_label:
-    (.withinHours // 168) as $hours
+    (.withinHours // 720) as $hours
     | if ($hours % 24) == 0 then
         ($hours / 24 | floor) as $days
         | "last \($days) day\(if $days == 1 then "" else "s" end)"
@@ -93,21 +200,26 @@ BLOCK="$(jq -r \
             | "\($trimmed) … (+\(($text | length) - ($trimmed | length)) more)"
           end
       end;
-  ($limit | positive_int(5)) as $limit
+  ($limit | positive_int(3)) as $limit
   | ($maxChars | positive_int(4000)) as $max
   | (.items // [] | sort_by(.observedAt // "") | reverse | .[:$limit]) as $items
   | if ($items | length) == 0 then empty
     else
-      (["[Black Box recall] Prior agent decisions/handoffs for this repo (\(window_label)):"]
+      (["Black Box recall: prior agent decisions/handoffs for this repo (\(window_label)):"]
         + ($items | to_entries | map("\(.key + 1). \(.value | sentence)"))
-        + ["Query more with the sba-agentic recallContext MCP tool, or see \($agenticUrl)."])
+        + ["Query more with the sba-agentic recallContext MCP tool (topic queries, more kinds), or see \($agenticUrl)."])
       | join("\n")
       | trim_block($max)
     end
 ' <<<"$RESPONSE" 2>/dev/null)" || BLOCK=""
 
 if [ -n "$BLOCK" ]; then
+  ITEMS="$(count_block_items "$BLOCK")"
+  CHARS="${#BLOCK}"
+  recall_log "ok" "$CWD" "$SESSION_ID" "$ITEMS" "$CHARS"
   printf '%s\n' "$BLOCK"
+else
+  recall_log "empty" "$CWD" "$SESSION_ID" 0 0
 fi
 
 exit 0
