@@ -115,6 +115,10 @@ Do not build from the earlier EC2-only snapshot. Run the appropriate repository 
 PostgreSQL/authentication checks, then package the JAR. The build helper rejects a JAR missing the
 PostgreSQL profile, JDBC driver, or authentication configuration classes.
 
+If a local service runs the JAR in this checkout, build in an isolated clone instead. Never
+replace a packaged JAR underneath a running JVM. The local service's own deployment script
+remains responsible for its restart; deploying this cloud image does not update that service.
+
 ```bash
 mvn -q -DskipTests package
 python3 scripts/cloud/lightsail_build.py \
@@ -126,6 +130,20 @@ python3 scripts/cloud/lightsail_build.py \
 `--apply` here only builds a local Docker image. Record the emitted image tag, exact image ID,
 source revision, and JAR SHA256. These metadata checks establish artifact identity; they do not
 replace behavior tests. The Docker build itself verifies that the copied JAR matches its checksum.
+
+The upload command is a custom AWS CLI plugin operation. `lightsailctl` emits a plain-text
+registration receipt even when `--output json` is supplied; the deploy helper parses that exact
+receipt from either output stream and requires the requested service and label. It never selects
+an image by guessing the newest version. See the [official plugin implementation](https://github.com/aws/lightsailctl/blob/v1.0.8/internal/cs/pushimage.go).
+
+If upload succeeds but receipt parsing or a later deployment step fails, inspect
+`aws lightsail get-container-images --service-name blackbox-cloud` before taking another write
+step. Do not blindly repeat the upload. Compare the exact registered image and registry manifest
+with the reviewed local image, then use the existing `--rollback-image` option to deploy that
+verified registered version through CloudFormation without uploading again. Docker may report an
+OCI image-index digest while Lightsail reports its platform manifest digest. Match the registered
+digest to the platform manifest retained from the verified build, or inspect the corresponding
+index/manifest/config chain; do not assume all image identifiers represent the same object.
 
 After local container verification under `--memory=1g --cpus=0.5`, use those exact values:
 
@@ -177,10 +195,17 @@ Before calling the cloud service ready:
 5. Check memory, latency, and database connection use at the chosen 1 GB limits. Keep the node count
    at one until process-local sessions/SSE behavior has an intentional multi-node design.
 
-There is no promise that a permanently idle SSE socket survives indefinitely. The current UI uses
-EventSource reconnection, and its authoritative data remains in the API/database; test reconnect
-behavior and consider heartbeats if the managed endpoint closes idle streams. Long-running agent
-work must be an asynchronous job that records progress and handoffs, not a single long HTTP request.
+The initial live Lightsail acceptance observed an idle SSE connection close after 60.30 seconds;
+the browser reconnected and subsequent event delivery and logout revocation passed. Black Box now
+sends an SSE comment heartbeat every 15 seconds using one shared Spring scheduler. Comments do not
+create records or trigger frontend event handlers. Every heartbeat rechecks browser session validity,
+so logout/expiry also closes an otherwise idle stream without waiting for a new agent write.
+Completion, timeout, network error, and application shutdown remove subscribers.
+
+This is an idle-timeout mitigation, not a promise of indefinite connection survival. Repeat the
+measured cloud observation after deployment and retain EventSource reconnection; the API/database
+remain authoritative. Long-running agent work must be an asynchronous job that records progress
+and handoffs, not a single long HTTP request.
 
 ## Recovery and rollback
 

@@ -14,6 +14,8 @@ import jakarta.annotation.PreDestroy;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -24,6 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * can never break ingestion.
  */
 @Component
+@EnableScheduling
 public class EventBroadcaster {
 
     private record Subscriber(SseEmitter emitter, BooleanSupplier authorized) {}
@@ -44,11 +47,7 @@ public class EventBroadcaster {
         subscribers.add(subscriber);
         // Flush the response immediately so the browser fires `open` (and the UI shows "live")
         // right away, instead of staying "connecting" until the first real event is published.
-        try {
-            emitter.send(SseEmitter.event().comment("connected"));
-        } catch (IOException ex) {
-            subscribers.remove(subscriber);
-        }
+        send(subscriber, SseEmitter.event().comment("connected"));
         return emitter;
     }
 
@@ -95,17 +94,39 @@ public class EventBroadcaster {
         send("task.note", payload);
     }
 
+    /** One shared Spring scheduler keeps idle proxy connections active; comments create no events. */
+    @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
+    void heartbeat() {
+        for (Subscriber subscriber : subscribers) {
+            send(subscriber, SseEmitter.event().comment("heartbeat"));
+        }
+    }
+
     private void send(String name, Object payload) {
         for (Subscriber subscriber : subscribers) {
+            send(subscriber, SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
+        }
+    }
+
+    private void send(Subscriber subscriber, SseEmitter.SseEventBuilder event) {
+        try {
+            // Heartbeats also expire idle/logged-out browser streams even when no agent writes.
+            if (!subscriber.authorized().getAsBoolean()) {
+                subscribers.remove(subscriber);
+                subscriber.emitter().complete();
+                return;
+            }
+            subscriber.emitter().send(event);
+        } catch (IOException ex) {
+            // The servlet container owns completion after a failed network write.
+            subscribers.remove(subscriber);
+        } catch (RuntimeException ex) {
+            // One invalid session/emitter must not stop the shared heartbeat or other subscribers.
+            subscribers.remove(subscriber);
             try {
-                if (!subscriber.authorized().getAsBoolean()) {
-                    subscribers.remove(subscriber);
-                    subscriber.emitter().complete();
-                    continue;
-                }
-                subscriber.emitter().send(SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
-            } catch (IOException | IllegalStateException ex) {
-                subscribers.remove(subscriber); // subscriber gone; EventSource will reconnect
+                subscriber.emitter().complete();
+            } catch (RuntimeException ignored) {
+                // already closing
             }
         }
     }

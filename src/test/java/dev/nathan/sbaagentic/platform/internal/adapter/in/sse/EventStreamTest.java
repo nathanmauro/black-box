@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
@@ -54,6 +55,33 @@ class EventStreamTest {
 
     @Autowired
     EventBroadcaster broadcaster;
+
+    @Test
+    void idleStreamReceivesHeartbeatBeforeProxyTimeoutWithoutNewEvents() throws Exception {
+        var client = HttpClient.newHttpClient();
+        var response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                .header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofInputStream());
+        var reader = Executors.newSingleThreadExecutor(runnable -> {
+            var thread = new Thread(runnable, "sse-idle-test-reader");
+            thread.setDaemon(true);
+            return thread;
+        });
+        var input = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
+        try {
+            assertThat(response.statusCode()).isEqualTo(200);
+            assertThat(input.readLine()).isEqualTo(":connected");
+            assertThat(input.readLine()).isEmpty();
+            // No ingestion or manual scheduler invocation: this is an actual idle HTTP socket.
+            var nextLine = reader.submit(input::readLine);
+            assertThat(nextLine.get(20, TimeUnit.SECONDS)).isEqualTo(":heartbeat");
+            assertThat(input.readLine()).isEmpty();
+        } finally {
+            // Close the underlying response first: BufferedReader.close waits on a blocked read lock.
+            response.body().close();
+            reader.shutdownNow();
+            client.shutdownNow();
+        }
+    }
 
     @Test
     void newEventIsPushedToSubscriber() {

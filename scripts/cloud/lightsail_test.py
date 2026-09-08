@@ -168,6 +168,42 @@ class SafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "do not guess"):
             deploy.parse_image_push("Pushed something without a version")
 
+    def test_actual_lightsailctl_success_text_routes_through_aws_wrapper(self):
+        # Exact fmt.Printf shape from aws/lightsailctl v1.0.8/internal/cs/pushimage.go.
+        digest = "sha256:" + "b" * 64
+        success = ('85fcec7ef3ef: Layer already exists\nDigest: ' + digest +
+                   '\nImage "sha256:' + "a" * 64 + '" registered.\n' +
+                   'Refer to this image as ":blackbox-cloud.raaaaaaaa.1" in deployments.\n')
+        for stdout, stderr in ((success, ""), ("", success)):
+            with self.subTest(channel="stdout" if stdout else "stderr"):
+                result = SimpleNamespace(returncode=0, stdout=stdout, stderr=stderr)
+                with patch.object(subprocess, "run", return_value=result), contextlib.redirect_stdout(io.StringIO()) as log:
+                    parsed = deploy.Aws("fixture", "us-east-2")("lightsail", "push-container-image", "--service-name", "blackbox-cloud",
+                                                                "--label", "raaaaaaaa", "--image", "sha256:" + "a" * 64)
+                self.assertEqual({"containerImage": {"image": ":blackbox-cloud.raaaaaaaa.1", "digest": digest}}, parsed)
+                self.assertEqual("", log.getvalue())
+
+    def test_push_success_must_name_the_requested_service_and_label(self):
+        for image in (":unrelated.raaaaaaaa.1", ":blackbox-cloud.wrong.1"):
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                deploy.parse_image_push('Refer to this image as "' + image + '" in deployments.\n',
+                                        service_name="blackbox-cloud", label="raaaaaaaa")
+
+    def test_conflicting_push_versions_are_not_resolved_by_guessing_latest(self):
+        output = 'Refer to this image as ":blackbox-cloud.raaaaaaaa.1" in deployments.\n'
+        conflict = 'Refer to this image as ":blackbox-cloud.raaaaaaaa.2" in deployments.\n'
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            deploy.parse_image_push(output, conflict)
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            deploy.parse_image_push(output + 'Digest: sha256:' + 'a' * 64 + '\nDigest: sha256:' + 'b' * 64 + '\n')
+
+    def test_unversioned_or_merely_mentioned_image_does_not_count_as_success(self):
+        for output in ('Refer to this image as ":blackbox-cloud.raaaaaaaa.latest" in deployments.\n',
+                       'Image ":blackbox-cloud.raaaaaaaa.1" registered.\n',
+                       'Error: cannot refer to :blackbox-cloud.raaaaaaaa.1\n'):
+            with self.assertRaisesRegex(RuntimeError, "do not guess"):
+                deploy.parse_image_push(output)
+
     def test_image_push_uses_immutable_id_after_slow_database_preparation(self):
         selected = args(prepare_only=False, image="mutable:tag", image_id="sha256:" + "a" * 64, source_revision="reviewed")
         facts = deploy.preflight(FakeAws(), args())

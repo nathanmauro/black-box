@@ -12,6 +12,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -109,8 +111,27 @@ class AuthenticationHttpTest {
                 var loggedOut = send(browser, get("/logout").header("X-XSRF-TOKEN", csrf).POST(HttpRequest.BodyPublishers.noBody()));
                 assertThat(loggedOut.statusCode()).isEqualTo(302);
                 assertThat(loggedOut.headers().firstValue("Location")).contains("/login?logout");
+                var reader = Executors.newSingleThreadExecutor(runnable -> {
+                    var thread = new Thread(runnable, "auth-heartbeat-test-reader");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+                try {
+                    var closed = reader.submit(() -> {
+                        String line;
+                        while ((line = streamReader.readLine()) != null) {
+                            // A comment already flushed before logout is harmless; private events are not.
+                            assertThat(line).isIn("", ":heartbeat");
+                        }
+                        return true;
+                    });
+                    assertThat(closed.get(20, TimeUnit.SECONDS))
+                            .as("logout closes an idle stream on its next heartbeat, without publishing an event").isTrue();
+                } finally {
+                    stream.body().close(); // release a blocked read before BufferedReader.close acquires its lock
+                    reader.shutdownNow();
+                }
                 assertThat(send(agent, postEvent("after-logout-agent", null).header("Authorization", "Bearer " + TOKEN)).statusCode()).isEqualTo(200);
-                assertThat(streamReader.readLine()).as("a logged-out stream must close before receiving new private events").isNull();
                 assertUnauthorized(send(browser, get("/api/status")));
                 assertUnauthorized(send(browser, postEvent("after-logout", csrf)));
                 var events = send(agent, get("/api/events").header("Authorization", "Bearer " + TOKEN));

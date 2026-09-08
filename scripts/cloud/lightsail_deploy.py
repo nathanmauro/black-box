@@ -40,22 +40,50 @@ class Aws:
                 print(completed.stdout.strip(), flush=True)
             return {}
         if args[:2] == ("lightsail", "push-container-image"):
-            return parse_image_push(completed.stdout)
+            return parse_image_push(completed.stdout, completed.stderr,
+                                    service_name=args[args.index("--service-name") + 1],
+                                    label=args[args.index("--label") + 1])
         return json.loads(completed.stdout) if completed.stdout.strip() else {}
 
 
-def parse_image_push(output):
+def parse_image_push(stdout, stderr="", service_name=None, label=None):
+    # lightsailctl v1.0.8 prints fmt.Printf success lines, even with --output json:
+    # https://github.com/aws/lightsailctl/blob/v1.0.8/internal/cs/pushimage.go
+    # AWS CLI inherits the plugin's streams; accept either without logging raw output.
+    candidates, digests = set(), set()
     decoder = json.JSONDecoder()
-    for offset, character in enumerate(output):
-        if character != "{":
-            continue
-        try:
-            payload, _ = decoder.raw_decode(output[offset:])
-        except ValueError:
-            continue
-        if isinstance(payload, dict) and "containerImage" in payload:
-            return payload
-    raise RuntimeError("Image push did not return a registered containerImage; do not guess its version")
+    for output in (stdout, stderr):
+        for match in re.finditer(r'^Refer to this image as "(:[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.[0-9]+)" in deployments\.[ \t]*$', output, re.MULTILINE):
+            candidates.add(match.group(1))
+        digests.update(re.findall(r'^Digest: (sha256:[0-9a-f]{64})[ \t]*$', output, re.MULTILINE))
+        # Retain compatibility with structured wrappers, but return only validated metadata.
+        for offset, character in enumerate(output):
+            if character != "{":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(output[offset:])
+            except ValueError:
+                continue
+            registered = payload.get("containerImage") if isinstance(payload, dict) else None
+            if not isinstance(registered, dict):
+                continue
+            image = registered.get("image")
+            if isinstance(image, str) and re.fullmatch(r":[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.[0-9]+", image):
+                candidates.add(image)
+            digest = registered.get("digest")
+            if isinstance(digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                digests.add(digest)
+    if len(candidates) != 1 or len(digests) > 1:
+        raise RuntimeError("Image push did not identify exactly one registered image; upload may have succeeded. "
+                           "Inspect get-container-images; do not guess a version or blindly repeat the upload")
+    image = next(iter(candidates))
+    parts = image[1:].split(".")
+    if (service_name is not None and parts[0] != service_name) or (label is not None and parts[1] != label):
+        raise RuntimeError("Registered image does not match the requested service and label; refusing deployment")
+    registered = {"image": image}
+    if digests:
+        registered["digest"] = next(iter(digests))
+    return {"containerImage": registered}
 
 
 def pages(aws, operation, key):
