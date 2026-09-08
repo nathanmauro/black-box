@@ -54,7 +54,10 @@ Any request with an `Authorization` header enters a separate stateless Spring Se
 server chain. Only a valid Bearer credential authenticates it. Malformed, wrong-scheme, or invalid
 headers cannot fall back to a logged-in browser session. This chain exempts CSRF because authorization
 requires the explicit agent credential before a controller can run. It creates no session or CSRF
-cookies. Removing the header from a subsequent agent request returns `401`.
+cookies. Removing the header from a subsequent agent request returns `401`. Authentication is retained
+only in a servlet request attribute so asynchronous completion of that same request remains
+authorized, including completion after an SSE response has already been flushed. The Bearer filter
+and security chain share this request-scoped repository; it does not authenticate a later request.
 
 App pages, static assets, APIs, streams, MCP, and actuator information/metrics are protected. Only
 the login/logout flow (including Spring's login-page CSS) and exact GET `/actuator/health`,
@@ -65,7 +68,7 @@ default `never` values.
 
 ## Verification and sources
 
-`mvn -Dtest=AuthSettingsTest,AuthenticationHttpTest,SecureAuthenticationCookiesHttpTest,SpaForwardingTest test` starts an isolated real HTTP
+`mvn -Dtest=AuthSettingsTest,AgentAsyncAuthenticationTest,AuthenticationHttpTest,SecureAuthenticationCookiesHttpTest,SpaForwardingTest test` starts an isolated real HTTP
 server and temporary database, checks anonymous denial, logs in using the real form, captures with
 session + CSRF, rejects missing/wrong CSRF and malformed Bearer with a valid browser session, captures
 with a stateless agent, initializes MCP, connects SSE, logs out, and checks that only authorized

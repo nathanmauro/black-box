@@ -1,7 +1,39 @@
 # Black Box cloud prototype and product reset
 
 Date: 2026-09-08
-Status: in progress; temporary EC2 validation deployed, shared container architecture in implementation
+Status: shared AWS prototype live and verified; final authentication cleanup in verification
+
+## Current outcome
+
+The shared Lightsail container and managed PostgreSQL deployment is live. Browser login/logout,
+secure cookies, authenticated HTTP capture/recall, a real MCP recall call, and retained data across
+container replacement passed against AWS. A 15-second SSE comment heartbeat resolved the observed
+60-second idle disconnect: the updated deployment kept its original stream open throughout a
+75-second observation, with no browser reconnect or error. This is measured behavior, not a claim
+of indefinite socket survival or production capacity.
+
+A separate native AgentCore/Step Functions synthetic job completed after its launching client
+exited. The model returned fenced JSON; a narrowly scoped validator update and validator-only
+redrive recovered the original execution without repeating inference or changing its answer.
+The failed history and raw output were retained. An independently recalled Black Box handoff
+records the outcome. The coordinator performed that ingestion; an automatic workflow-to-Black-Box
+completion adapter and real repository-backed coding execution remain future work. The pilot's
+execution gates are closed and its result retained.
+
+The three selected Linear issues are published and duplicate-safe repeat publication passed.
+Prototype/SDLC work-mode instructions were installed and exercised in native Codex. Local SQLite,
+capture routing, the running local JAR, Elasticsearch and the local model remain intact. Cloud and
+local stores are separate, and no private transcript corpus was uploaded.
+
+The full integrated suite passed 569 tests with zero failures/errors and two existing native-vector
+skips. Frontend verification passed 607 tests; deployment safety passed 31 tests. Live log review
+also identified a request-scoped bearer-authentication context issue during asynchronous cleanup;
+its focused regression and fix are being verified before the final release checkpoint.
+
+Operator-specific URLs, resource identities, access instructions, proof artifacts, strategic
+recommendations, rejected ideas and the interview narrative are retained in the private project
+notes. The earlier sections below preserve the investigation sequence and are superseded by this
+current outcome where they differ.
 
 ## Outcome
 

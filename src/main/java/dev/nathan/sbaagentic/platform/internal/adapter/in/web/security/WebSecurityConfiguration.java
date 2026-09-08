@@ -21,6 +21,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -31,9 +32,10 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.Pbkdf2PasswordEncoder;
 import org.springframework.security.oauth2.core.DefaultOAuth2AuthenticatedPrincipal;
 import org.springframework.security.oauth2.server.resource.introspection.BadOpaqueTokenException;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.context.NullSecurityContextRepository;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration(proxyBeanMethods = false)
@@ -58,15 +60,24 @@ public class WebSecurityConfiguration {
     @Order(1)
     SecurityFilterChain agentSecurity(HttpSecurity http, AuthSettings settings) throws Exception {
         byte[] expected = digest(settings.apiToken());
+        // Keep authentication through this request's ASYNC dispatch, without storing it in a session.
+        var requestContexts = new RequestAttributeSecurityContextRepository();
         http.securityMatcher(request -> settings.enabled() && request.getHeader("Authorization") != null)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .securityContext(context -> context.securityContextRepository(new NullSecurityContextRepository()))
+                .securityContext(context -> context.securityContextRepository(requestContexts))
                 .requestCache(cache -> cache.disable())
                 .csrf(csrf -> csrf.disable())
                 .logout(logout -> logout.disable())
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) -> unauthorized(response)))
                 .oauth2ResourceServer(resource -> resource
+                        .withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
+                            @Override
+                            public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+                                filter.setSecurityContextRepository(requestContexts);
+                                return filter;
+                            }
+                        })
                         .authenticationEntryPoint((request, response, exception) -> unauthorized(response))
                         .opaqueToken(opaque -> opaque.introspector(token -> {
                             if (!MessageDigest.isEqual(expected, digest(token))) {
