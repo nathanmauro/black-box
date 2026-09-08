@@ -202,9 +202,12 @@ create records or trigger frontend event handlers. Every heartbeat rechecks brow
 so logout/expiry also closes an otherwise idle stream without waiting for a new agent write.
 Completion, timeout, network error, and application shutdown remove subscribers.
 
-This is an idle-timeout mitigation, not a promise of indefinite connection survival. Repeat the
-measured cloud observation after deployment and retain EventSource reconnection; the API/database
-remain authoritative. Long-running agent work must be an asynchronous job that records progress
+The final cloud acceptance kept the original stream open for 75 seconds with one browser open
+and zero errors. Event delivery, bearer reconnection, browser logout revocation, real MCP recall,
+and readback of the original capture after two container replacements passed. Post-completion
+logs contained no authentication-cleanup errors. This is an idle-timeout mitigation, not a promise
+of indefinite connection survival. Repeat the measured cloud observation after future deployments
+and retain EventSource reconnection; the API/database remain authoritative. Long-running agent work must be an asynchronous job that records progress
 and handoffs, not a single long HTTP request.
 
 ## Recovery and rollback

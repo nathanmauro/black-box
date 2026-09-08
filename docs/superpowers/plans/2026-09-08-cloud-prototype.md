@@ -1,7 +1,7 @@
 # Black Box cloud prototype and product reset
 
 Date: 2026-09-08
-Status: shared AWS prototype live and verified; final authentication cleanup in verification
+Status: shared AWS prototype live; final release acceptance passed
 
 ## Current outcome
 
@@ -27,8 +27,14 @@ local stores are separate, and no private transcript corpus was uploaded.
 
 The full integrated suite passed 569 tests with zero failures/errors and two existing native-vector
 skips. Frontend verification passed 607 tests; deployment safety passed 31 tests. Live log review
-also identified a request-scoped bearer-authentication context issue during asynchronous cleanup;
-its focused regression and fix are being verified before the final release checkpoint.
+also identified a request-scoped bearer-authentication context issue during asynchronous cleanup.
+Four new regression cases reproduce and cover the fix; all 15 focused security tests pass. The
+fix preserves stateless bearer authentication across dispatches within the same request without
+allowing a browser cookie to rescue an invalid bearer token. The final deployment passed real
+browser login/logout, event delivery, a 75-second uninterrupted stream, MCP recall and readback of
+the original capture after two container replacements. Independent post-completion log review
+found zero authentication-cleanup errors or ERROR lines in all available logs for that deployment.
+The deployed runtime is commit `7c090b0`; this acceptance update changes documentation only.
 
 Operator-specific URLs, resource identities, access instructions, proof artifacts, strategic
 recommendations, rejected ideas and the interview narrative are retained in the private project
