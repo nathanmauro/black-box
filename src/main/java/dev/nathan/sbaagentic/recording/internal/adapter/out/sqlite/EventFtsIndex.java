@@ -9,6 +9,9 @@ import jakarta.annotation.PostConstruct;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -49,12 +52,20 @@ public class EventFtsIndex {
 
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock;
+    private final boolean sqlite;
     private volatile boolean available;
     private volatile boolean backfillComplete;
 
     public EventFtsIndex(JdbcTemplate jdbcTemplate, Clock clock) {
+        this(jdbcTemplate, clock, "sqlite");
+    }
+
+    @Autowired
+    public EventFtsIndex(JdbcTemplate jdbcTemplate, Clock clock,
+            @Value("${sba.storage.backend:sqlite}") String backend) {
         this.jdbcTemplate = jdbcTemplate;
         this.clock = clock;
+        this.sqlite = "sqlite".equals(backend);
     }
 
     /**
@@ -64,6 +75,7 @@ public class EventFtsIndex {
      */
     @PostConstruct
     public void ensureFtsSchema() {
+        if (!sqlite) return;
         try {
             jdbcTemplate.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS event_fts

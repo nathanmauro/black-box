@@ -29,6 +29,9 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.TaskRow;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -108,6 +111,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final ProjectSqlDialect dialect;
     private final ObjectMapper objectMapper;
     private final ProjectScopeOperations aliasService;
 
@@ -115,6 +119,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             ProjectScopeOperations aliasService) {
+        this(jdbcTemplate, objectMapper, aliasService, "sqlite");
+    }
+
+    @Autowired
+    public ProjectRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            ProjectScopeOperations aliasService, @Value("${sba.storage.backend:sqlite}") String backend) {
+        this.dialect = ProjectSqlDialect.from(backend);
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.aliasService = aliasService;
@@ -205,13 +216,17 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.addAll(scopes);
-        Long count = jdbcTemplate.queryForObject(countTimelineBlocksSql(scopes.size()),
+        Long count = jdbcTemplate.queryForObject(countTimelineBlocksSql(scopes.size(), dialect),
                 Long.class,
                 args.toArray());
         return count == null ? 0 : count;
     }
 
     static String countTimelineBlocksSql(int scopeCount) {
+        return countTimelineBlocksSql(scopeCount, ProjectSqlDialect.SQLITE);
+    }
+
+    private static String countTimelineBlocksSql(int scopeCount, ProjectSqlDialect dialect) {
         return """
                 SELECT (
                     SELECT COUNT(*)
@@ -225,7 +240,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 )
                 """.formatted(
                         SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
-                        STORYLINE_PREDICATE,
+                        dialect.predicate(STORYLINE_PREDICATE),
                         placeholders(scopeCount));
     }
 
@@ -235,12 +250,16 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         args.addAll(scopes);
         args.add(limit);
         args.add(offset);
-        return jdbcTemplate.query(timelineBlocksSql(scopes.size()),
+        return jdbcTemplate.query(timelineBlocksSql(scopes.size(), dialect),
                 this::mapTimelineBlock,
                 args.toArray());
     }
 
     static String timelineBlocksSql(int scopeCount) {
+        return timelineBlocksSql(scopeCount, ProjectSqlDialect.SQLITE);
+    }
+
+    private static String timelineBlocksSql(int scopeCount, ProjectSqlDialect dialect) {
         return """
                 SELECT *
                   FROM (
@@ -300,9 +319,9 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  LIMIT ? OFFSET ?
                 """.formatted(
                         SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
-                        STORYLINE_PREDICATE,
+                        dialect.predicate(STORYLINE_PREDICATE),
                         placeholders(scopeCount),
-                        sortableInstant("observed_at"));
+                        dialect.sortableInstant("observed_at"));
     }
 
     public List<ProjectTimelineBlock> timelineBlocksForSession(String canonicalKey, String sessionId, int limit) {
@@ -310,12 +329,16 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<Object> args = new ArrayList<>(scopes);
         args.add(sessionId);
         args.add(limit);
-        return jdbcTemplate.query(timelineBlocksForSessionSql(scopes.size()),
+        return jdbcTemplate.query(timelineBlocksForSessionSql(scopes.size(), dialect),
                 this::mapTimelineBlock,
                 args.toArray());
     }
 
     static String timelineBlocksForSessionSql(int scopeCount) {
+        return timelineBlocksForSessionSql(scopeCount, ProjectSqlDialect.SQLITE);
+    }
+
+    private static String timelineBlocksForSessionSql(int scopeCount, ProjectSqlDialect dialect) {
         return """
                 SELECT e.id, 'raw_event' AS source_type,
                        e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
@@ -336,8 +359,8 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  LIMIT ?
                 """.formatted(
                         SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
-                        STORYLINE_PREDICATE,
-                        sortableInstant("e.observed_at"));
+                        dialect.predicate(STORYLINE_PREDICATE),
+                        dialect.sortableInstant("e.observed_at"));
     }
 
     public List<CaptureRow> recentCaptures(String canonicalKey, int limit) {
@@ -368,7 +391,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  ORDER BY %s DESC,
                           id ASC
                  LIMIT ?
-                """.formatted(placeholders(scopes.size()), sortableInstant("updated_at")),
+                """.formatted(placeholders(scopes.size()), dialect.sortableInstant("updated_at")),
                 this::mapTrajectoryTask,
                 args.toArray());
     }
@@ -377,13 +400,17 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.addAll(scopes);
-        Long count = jdbcTemplate.queryForObject(totalCapturesSql(scopes.size()),
+        Long count = jdbcTemplate.queryForObject(totalCapturesSql(scopes.size(), dialect),
                 Long.class,
                 args.toArray());
         return count == null ? 0 : count;
     }
 
     static String totalCapturesSql(int scopeCount) {
+        return totalCapturesSql(scopeCount, ProjectSqlDialect.SQLITE);
+    }
+
+    private static String totalCapturesSql(int scopeCount, ProjectSqlDialect dialect) {
         return """
                 SELECT (
                     SELECT COUNT(*)
@@ -397,7 +424,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 )
                 """.formatted(
                         SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
-                        MILESTONE_PREDICATE,
+                        dialect.predicate(MILESTONE_PREDICATE),
                         placeholders(scopeCount));
     }
 
@@ -405,12 +432,16 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.add(limit);
-        return jdbcTemplate.query(recentEventCapturesSql(scopes.size()),
+        return jdbcTemplate.query(recentEventCapturesSql(scopes.size(), dialect),
                 this::mapTrajectoryEventCapture,
                 args.toArray());
     }
 
     static String recentEventCapturesSql(int scopeCount) {
+        return recentEventCapturesSql(scopeCount, ProjectSqlDialect.SQLITE);
+    }
+
+    private static String recentEventCapturesSql(int scopeCount, ProjectSqlDialect dialect) {
         return """
                 SELECT e.id,
                        e.event_type,
@@ -429,8 +460,8 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                  LIMIT ?
                 """.formatted(
                         SESSION_SCOPED_EVENT_FILTER.formatted(placeholders(scopeCount)),
-                        MILESTONE_PREDICATE,
-                        sortableInstant("e.observed_at"));
+                        dialect.predicate(MILESTONE_PREDICATE),
+                        dialect.sortableInstant("e.observed_at"));
     }
 
     public void insertSavedMeld(
@@ -552,23 +583,6 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
 
     private static String placeholders(int count) {
         return String.join(", ", Collections.nCopies(count, "?"));
-    }
-
-    /**
-     * {@link Instant#toString()} emits variable-width fractional seconds; pad before SQLite TEXT
-     * comparisons so instant ordering stays chronological without rewriting stored values.
-     */
-    private static String sortableInstant(String column) {
-        return """
-                CASE
-                    WHEN instr(%1$s, '.') = 0
-                        THEN substr(%1$s, 1, length(%1$s) - 1) || '.000000000Z'
-                    ELSE substr(%1$s, 1, length(%1$s) - 1)
-                         || substr('000000000', 1,
-                                   9 - (length(%1$s) - instr(%1$s, '.') - 1))
-                         || 'Z'
-                END
-                """.formatted(column);
     }
 
     private static Instant parseInstant(String value) {

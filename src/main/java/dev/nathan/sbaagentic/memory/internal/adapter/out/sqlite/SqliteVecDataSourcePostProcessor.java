@@ -7,11 +7,14 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(name = "sba.storage.backend", havingValue = "sqlite", matchIfMissing = true)
 public class SqliteVecDataSourcePostProcessor implements BeanPostProcessor {
 
     private final MemoryVectorProperties properties;

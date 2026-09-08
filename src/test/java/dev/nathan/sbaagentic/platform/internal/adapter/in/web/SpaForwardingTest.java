@@ -10,11 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.context.annotation.Import;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.web.security.WebSecurityConfiguration;
 
 /**
  * The SPA client routes forward to {@code index.html} so deep links / hard refreshes resolve.
  */
 @WebMvcTest(controllers = SpaForwardingController.class)
+@Import(WebSecurityConfiguration.class)
 class SpaForwardingTest {
 
     @Autowired

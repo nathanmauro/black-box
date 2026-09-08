@@ -1,20 +1,6 @@
 spring:
   application:
     name: sba-agentic
-  datasource:
-    url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
-    driver-class-name: org.sqlite.JDBC
-    hikari:
-      # WAL (set once at startup) lets several connections read while one writes; a pool of a few
-      # connections plus a busy_timeout means concurrent agents can capture without blocking the UI,
-      # and the rare writer-vs-writer overlap waits briefly instead of erroring.
-      maximum-pool-size: 4
-      connection-test-query: SELECT 1
-      # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's
-      # connection-local settings need to be applied to every physical connection.
-      data-source-properties:
-        foreign_keys: "true"
-        busy_timeout: "5000"
   sql:
     init:
       mode: always
@@ -39,8 +25,7 @@ spring:
 
 server:
   port: ${SBA_PORT:8766}
-  # Localhost-only by default: there is no authentication layer. Set SBA_BIND_ADDRESS=0.0.0.0
-  # to expose Black Box on a network at your own risk.
+  # Localhost-only by default. Network deployments must enable SBA_AUTH_ENABLED and HTTPS.
   address: ${SBA_BIND_ADDRESS:127.0.0.1}
 
 management:
@@ -130,3 +115,24 @@ sba:
     # Secret-looking values (private key blocks, bearer/API keys, AWS credentials, and password/token
     # assignments) are replaced with [REDACTED] before persistence.
     redact-enabled: ${SBA_REDACT_ENABLED:true}
+
+---
+# Keep SQLite driver properties off the PostgreSQL connection pool.
+spring:
+  config:
+    activate:
+      on-profile: '!postgres'
+  datasource:
+    url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # WAL (set once at startup) lets several connections read while one writes; a pool of a few
+      # connections plus a busy_timeout means concurrent agents can capture without blocking the UI,
+      # and the rare writer-vs-writer overlap waits briefly instead of erroring.
+      maximum-pool-size: 4
+      connection-test-query: SELECT 1
+      # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's
+      # connection-local settings need to be applied to every physical connection.
+      data-source-properties:
+        foreign_keys: "true"
+        busy_timeout: "5000"

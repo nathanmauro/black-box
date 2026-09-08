@@ -25,6 +25,8 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +34,7 @@ import org.springframework.stereotype.Repository;
 
 @Primary
 @Repository
+@ConditionalOnProperty(name = "sba.storage.backend", havingValue = "sqlite", matchIfMissing = true)
 public class SqliteVecVectorStore implements MemoryVectorStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SqliteVecVectorStore.class);

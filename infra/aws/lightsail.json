@@ -1,0 +1,376 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Shared Black Box: one managed container, encrypted managed PostgreSQL, independent generated credentials. Base USD31.20/month; single-node prototype.",
+  "Parameters": {
+    "ServiceName": {
+      "Type": "String",
+      "Default": "blackbox-cloud",
+      "AllowedPattern": "[a-z][a-z0-9-]{2,35}"
+    },
+    "DatabaseBundle": {
+      "Type": "String",
+      "Description": "Active, encrypted standard bundle priced at USD15; verified by deployment script."
+    },
+    "DatabaseBlueprint": {
+      "Type": "String",
+      "Description": "Active PostgreSQL blueprint selected and pinned by deployment script."
+    },
+    "ContainerImage": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Exact Lightsail private image version; empty for initial resource preparation."
+    },
+    "DatabaseHost": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "[a-zA-Z0-9.-]*",
+      "Description": "Discovered from this stack database API; never user-selected arbitrary host."
+    },
+    "DatabasePort": {
+      "Type": "String",
+      "Default": "5432",
+      "AllowedValues": [
+        "5432"
+      ]
+    }
+  },
+  "Conditions": {
+    "HasDeployment": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "ContainerImage"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "DatabaseHost"
+                },
+                ""
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "DatabaseSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": {
+          "Fn::Sub": "${AWS::StackName} DatabaseSecret generated credential; never print the value"
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"username\":\"blackbox\"}",
+          "GenerateStringKey": "password",
+          "PasswordLength": 48,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "black-box"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "shared-container-prototype"
+          }
+        ]
+      }
+    },
+    "BrowserSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": {
+          "Fn::Sub": "${AWS::StackName} BrowserSecret generated credential; never print the value"
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"username\":\"blackbox\"}",
+          "GenerateStringKey": "password",
+          "PasswordLength": 48,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "black-box"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "shared-container-prototype"
+          }
+        ]
+      }
+    },
+    "ApiSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": {
+          "Fn::Sub": "${AWS::StackName} ApiSecret generated credential; never print the value"
+        },
+        "GenerateSecretString": {
+          "SecretStringTemplate": "{\"username\":\"blackbox\"}",
+          "GenerateStringKey": "token",
+          "PasswordLength": 48,
+          "ExcludePunctuation": true
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "black-box"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "shared-container-prototype"
+          }
+        ]
+      }
+    },
+    "Database": {
+      "Type": "AWS::Lightsail::Database",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "RelationalDatabaseName": {
+          "Fn::Sub": "${ServiceName}-db"
+        },
+        "RelationalDatabaseBlueprintId": {
+          "Ref": "DatabaseBlueprint"
+        },
+        "RelationalDatabaseBundleId": {
+          "Ref": "DatabaseBundle"
+        },
+        "MasterDatabaseName": "blackbox",
+        "MasterUsername": "blackbox",
+        "MasterUserPassword": {
+          "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+        },
+        "BackupRetention": true,
+        "PubliclyAccessible": true,
+        "RelationalDatabaseParameters": [
+          {
+            "ParameterName": "rds.force_ssl",
+            "ParameterValue": "1",
+            "ApplyMethod": "pending-reboot"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "black-box"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "shared-container-prototype"
+          }
+        ]
+      }
+    },
+    "Container": {
+      "Type": "AWS::Lightsail::Container",
+      "Properties": {
+        "ServiceName": {
+          "Ref": "ServiceName"
+        },
+        "Power": "small",
+        "Scale": 1,
+        "IsDisabled": false,
+        "ContainerServiceDeployment": {
+          "Fn::If": [
+            "HasDeployment",
+            {
+              "Containers": [
+                {
+                  "ContainerName": "blackbox",
+                  "Image": {
+                    "Ref": "ContainerImage"
+                  },
+                  "Ports": [
+                    {
+                      "Port": "8766",
+                      "Protocol": "HTTP"
+                    }
+                  ],
+                  "Environment": [
+                    {
+                      "Variable": "SPRING_PROFILES_ACTIVE",
+                      "Value": "postgres"
+                    },
+                    {
+                      "Variable": "SBA_DATASOURCE_URL",
+                      "Value": {
+                        "Fn::Sub": "jdbc:postgresql://${DatabaseHost}:${DatabasePort}/blackbox?sslmode=verify-full&sslrootcert=/opt/blackbox/certs/us-east-2-bundle.pem"
+                      }
+                    },
+                    {
+                      "Variable": "SBA_DATASOURCE_USERNAME",
+                      "Value": "blackbox"
+                    },
+                    {
+                      "Variable": "SBA_DATASOURCE_PASSWORD",
+                      "Value": {
+                        "Fn::Sub": "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+                      }
+                    },
+                    {
+                      "Variable": "SBA_DATASOURCE_POOL_SIZE",
+                      "Value": "4"
+                    },
+                    {
+                      "Variable": "SBA_AUTH_ENABLED",
+                      "Value": "true"
+                    },
+                    {
+                      "Variable": "SBA_AUTH_USERNAME",
+                      "Value": "blackbox"
+                    },
+                    {
+                      "Variable": "SBA_AUTH_PASSWORD",
+                      "Value": {
+                        "Fn::Sub": "{{resolve:secretsmanager:${BrowserSecret}:SecretString:password}}"
+                      }
+                    },
+                    {
+                      "Variable": "SBA_AUTH_API_TOKEN",
+                      "Value": {
+                        "Fn::Sub": "{{resolve:secretsmanager:${ApiSecret}:SecretString:token}}"
+                      }
+                    },
+                    {
+                      "Variable": "SBA_BIND_ADDRESS",
+                      "Value": "0.0.0.0"
+                    },
+                    {
+                      "Variable": "SBA_PORT",
+                      "Value": "8766"
+                    },
+                    {
+                      "Variable": "SBA_EDITOR_ENABLED",
+                      "Value": "false"
+                    },
+                    {
+                      "Variable": "SBA_ELASTICSEARCH_ENABLED",
+                      "Value": "false"
+                    },
+                    {
+                      "Variable": "SBA_LOCAL_AI_ENABLED",
+                      "Value": "false"
+                    },
+                    {
+                      "Variable": "SBA_MEMORY_EMBEDDING_ENABLED",
+                      "Value": "false"
+                    },
+                    {
+                      "Variable": "SBA_ASK_EMBEDDING_ENABLED",
+                      "Value": "false"
+                    },
+                    {
+                      "Variable": "SBA_SUMMARY_BACKEND",
+                      "Value": "local"
+                    },
+                    {
+                      "Variable": "SERVER_TOMCAT_THREADS_MAX",
+                      "Value": "32"
+                    },
+                    {
+                      "Variable": "SERVER_TOMCAT_THREADS_MIN_SPARE",
+                      "Value": "2"
+                    },
+                    {
+                      "Variable": "SBA_REDACT_ENABLED",
+                      "Value": "true"
+                    },
+                    {
+                      "Variable": "SBA_AUTH_SECURE_COOKIES",
+                      "Value": "true"
+                    }
+                  ]
+                }
+              ],
+              "PublicEndpoint": {
+                "ContainerName": "blackbox",
+                "ContainerPort": 8766,
+                "HealthCheckConfig": {
+                  "Path": "/actuator/health",
+                  "SuccessCodes": "200",
+                  "HealthyThreshold": 2,
+                  "UnhealthyThreshold": 5,
+                  "IntervalSeconds": 15,
+                  "TimeoutSeconds": 10
+                }
+              }
+            },
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "Project",
+            "Value": "black-box"
+          },
+          {
+            "Key": "Purpose",
+            "Value": "shared-container-prototype"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ServiceName": {
+      "Value": {
+        "Ref": "ServiceName"
+      }
+    },
+    "DatabaseName": {
+      "Value": {
+        "Fn::Sub": "${ServiceName}-db"
+      }
+    },
+    "Url": {
+      "Value": {
+        "Fn::GetAtt": [
+          "Container",
+          "Url"
+        ]
+      }
+    },
+    "DatabaseSecretArn": {
+      "Value": {
+        "Ref": "DatabaseSecret"
+      }
+    },
+    "BrowserSecretArn": {
+      "Value": {
+        "Ref": "BrowserSecret"
+      }
+    },
+    "ApiSecretArn": {
+      "Value": {
+        "Ref": "ApiSecret"
+      }
+    },
+    "MonthlyBaseUsd": {
+      "Value": "31.20"
+    }
+  }
+}

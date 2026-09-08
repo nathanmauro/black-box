@@ -46,7 +46,7 @@ public class EventIngestService implements EventRecorder {
         Instant observedAt = normalized.observedAt() == null ? Instant.now() : normalized.observedAt();
         TitleCandidate title = titleFor(normalized);
 
-        // SQLite is the source of truth: persist atomically first, then fan out to optional indexes.
+        // The selected relational store is canonical: persist first, then fan out to optional indexes.
         // Indexing runs outside the transaction so an external search backend can never hold the
         // database connection open or fail the canonical write.
         RecordingStore.Persisted persisted =

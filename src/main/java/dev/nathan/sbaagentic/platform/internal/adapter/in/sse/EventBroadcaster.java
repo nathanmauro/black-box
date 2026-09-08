@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -25,21 +26,28 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Component
 public class EventBroadcaster {
 
-    private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
+    private record Subscriber(SseEmitter emitter, BooleanSupplier authorized) {}
+    private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
 
     /** Registers a new subscriber. The browser's native {@code EventSource} reconnects on drop. */
     public SseEmitter register() {
+        return register(() -> true);
+    }
+
+    /** Recheck a browser session before each publication; an open stream must not outlive access. */
+    public SseEmitter register(BooleanSupplier authorized) {
         SseEmitter emitter = new SseEmitter(0L); // no server-side timeout
-        emitter.onCompletion(() -> emitters.remove(emitter));
-        emitter.onTimeout(() -> emitters.remove(emitter));
-        emitter.onError(ex -> emitters.remove(emitter));
-        emitters.add(emitter);
+        Subscriber subscriber = new Subscriber(emitter, authorized);
+        emitter.onCompletion(() -> subscribers.remove(subscriber));
+        emitter.onTimeout(() -> subscribers.remove(subscriber));
+        emitter.onError(ex -> subscribers.remove(subscriber));
+        subscribers.add(subscriber);
         // Flush the response immediately so the browser fires `open` (and the UI shows "live")
         // right away, instead of staying "connecting" until the first real event is published.
         try {
             emitter.send(SseEmitter.event().comment("connected"));
         } catch (IOException ex) {
-            emitters.remove(emitter);
+            subscribers.remove(subscriber);
         }
         return emitter;
     }
@@ -88,11 +96,16 @@ public class EventBroadcaster {
     }
 
     private void send(String name, Object payload) {
-        for (SseEmitter emitter : emitters) {
+        for (Subscriber subscriber : subscribers) {
             try {
-                emitter.send(SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
+                if (!subscriber.authorized().getAsBoolean()) {
+                    subscribers.remove(subscriber);
+                    subscriber.emitter().complete();
+                    continue;
+                }
+                subscriber.emitter().send(SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
             } catch (IOException | IllegalStateException ex) {
-                emitters.remove(emitter); // subscriber gone; EventSource will reconnect
+                subscribers.remove(subscriber); // subscriber gone; EventSource will reconnect
             }
         }
     }
@@ -100,18 +113,18 @@ public class EventBroadcaster {
     /** Completes any open streams on shutdown so the server never blocks waiting on idle subscribers. */
     @PreDestroy
     void closeAll() {
-        for (SseEmitter emitter : emitters) {
+        for (Subscriber subscriber : subscribers) {
             try {
-                emitter.complete();
+                subscriber.emitter().complete();
             } catch (RuntimeException ignored) {
                 // already closing
             }
         }
-        emitters.clear();
+        subscribers.clear();
     }
 
     /** Visible for tests. */
     int subscriberCount() {
-        return emitters.size();
+        return subscribers.size();
     }
 }

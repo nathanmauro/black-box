@@ -31,6 +31,9 @@ import dev.nathan.sbaagentic.workflow.internal.application.port.TaskHistoryStore
 import dev.nathan.sbaagentic.workflow.internal.application.port.TaskLifecycleStore;
 import dev.nathan.sbaagentic.workflow.internal.domain.TaskUpdate;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,11 +59,19 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
             """;
 
     private final JdbcTemplate jdbcTemplate;
+    private final WorkflowSqlDialect dialect;
     private final ObjectMapper objectMapper;
 
     public TaskRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, "sqlite");
+    }
+
+    @Autowired
+    public TaskRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            @Value("${sba.storage.backend:sqlite}") String backend) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.dialect = WorkflowSqlDialect.from(backend);
     }
 
     public TaskSpec createSpec(
@@ -206,7 +217,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                     .forEach(args::add);
         }
         sql.append(" ORDER BY t.priority DESC, ")
-                .append(sortableInstant("t.created_at"))
+                .append(dialect.sortableInstant("t.created_at"))
                 .append(" ASC, t.id ASC");
         if (normalized.limit() != null) {
             sql.append(" LIMIT ? OFFSET ?");
@@ -214,16 +225,16 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
             args.add(Math.max(0, normalized.offset()));
         }
         else if (normalized.offset() > 0) {
-            sql.append(" LIMIT -1 OFFSET ?");
+            sql.append(dialect.unlimitedOffset());
             args.add(normalized.offset());
         }
         return jdbcTemplate.query(sql.toString(), this::mapSnapshot, args.toArray());
     }
 
     /**
-     * Claims with one SQLite statement so candidate selection and ownership cannot race. The
-     * xerial driver exposes {@code RETURNING} through a result set, hence {@link JdbcTemplate#query}
-     * rather than {@code update}.
+     * Claims atomically and records the lifecycle event in the same transaction. PostgreSQL locks
+     * the candidate with SKIP LOCKED; SQLite serializes the write statement. Both drivers expose
+     * RETURNING through a result set.
      */
     @Transactional
     public Optional<TaskChange> claimNextTask(String lane, String agent) {
@@ -243,11 +254,14 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                           AND lane = ?
                         ORDER BY priority DESC, %s ASC
                         LIMIT 1
+                        %s
                  )
+                   AND status = 'open'
                 RETURNING id, spec_id, project_key, title, lane, status, priority,
                           created_by, claimed_by, blocked_reason, result_handoff_id,
                           created_at, updated_at
-                """.formatted(sortableInstant("created_at")), this::mapTask, agent, now.toString(), lane);
+                """.formatted(dialect.sortableInstant("created_at"), dialect.claimLock()),
+                this::mapTask, agent, now.toString(), lane);
         if (claimed.isEmpty()) {
             return Optional.empty();
         }
@@ -340,7 +354,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                   FROM tasks
                  WHERE spec_id = ?
                  ORDER BY %s ASC
-                """.formatted(sortableInstant("created_at")), this::mapTask, specId);
+                """.formatted(dialect.sortableInstant("created_at")), this::mapTask, specId);
     }
 
     public List<TaskEvent> eventsByType(TaskEventType type) {
@@ -352,7 +366,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                   FROM task_events
                  WHERE type = ?
                  ORDER BY %s ASC, id ASC
-                """.formatted(sortableInstant("observed_at")), this::mapEvent, type.value());
+                """.formatted(dialect.sortableInstant("observed_at")), this::mapEvent, type.value());
     }
 
     public TaskAnnotation appendAnnotation(
@@ -507,25 +521,6 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         catch (JsonProcessingException ex) {
             throw new IllegalStateException("Unable to parse stored task metadata", ex);
         }
-    }
-
-    /**
-     * {@link Instant#toString()} emits zero, three, six, or nine fractional digits. SQLite compares
-     * TEXT lexically, so a later six-digit value can otherwise sort before an earlier three-digit
-     * value. Right-padding the stored fraction for comparison preserves existing timestamp strings
-     * while making their ordering chronological.
-     */
-    private static String sortableInstant(String column) {
-        return """
-                CASE
-                    WHEN instr(%1$s, '.') = 0
-                        THEN substr(%1$s, 1, length(%1$s) - 1) || '.000000000Z'
-                    ELSE substr(%1$s, 1, length(%1$s) - 1)
-                         || substr('000000000', 1,
-                                   9 - (length(%1$s) - instr(%1$s, '.') - 1))
-                         || 'Z'
-                END
-                """.formatted(column);
     }
 
     private static void requireText(String value, String label) {

@@ -5,8 +5,9 @@ Black Box is the public/product name for this repo. The repo directory and Maven
 
 Black Box is a local-first, writable/queryable memory bus for coding agents. Agents commit
 structured intent through decisions, handoffs, and observations, then recall that context later
-through MCP, HTTP, CLI, or the local web surface. Treat SQLite as the source of truth. Treat
-Elasticsearch and local AI summaries as optional supporting systems.
+through MCP, HTTP, CLI, or the web surface. The selected relational database is canonical:
+SQLite remains the local default; the optional PostgreSQL profile supports a shared server.
+Treat Elasticsearch and model summaries as optional supporting systems.
 
 ## Response style
 
@@ -23,8 +24,9 @@ Default to normal prose: concise, direct, professional, and complete.
 - Avoid committing private machine state: local databases, `.codex` or `.claude` configs, IDE files,
   hook payload dumps, credentials, env files, and absolute workstation paths unless clearly marked as
   examples.
-- Keep storage local-first: SQLite is the source of truth, and Elasticsearch remains an optional
-  local secondary index. Session summaries are owned by Black Box and currently default to the
+- Preserve local-first behavior and the SQLite default. A PostgreSQL deployment owns its separate
+  canonical database; selecting a profile does not synchronize history or permit multiple API
+  replicas. Elasticsearch remains an optional secondary index. Session summaries currently default to the
   bundled Codex cloud wrapper; document that transcript text can leave the machine in that mode.
   Use `SBA_SUMMARY_BACKEND=local` only when explicitly choosing the LM Studio/OpenAI-compatible
   local model path.

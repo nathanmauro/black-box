@@ -1,0 +1,17 @@
+{
+  "scope": "/repos/example",
+  "withinHours": 168,
+  "truncated": false,
+  "items": [
+    {
+      "eventId": "example-event-1",
+      "sessionId": "example-session-1",
+      "kind": "handoff",
+      "repo": "/repos/example",
+      "observedAt": "2026-09-08T12:00:00Z",
+      "headline": "A fake-server delivery check passed; crash recovery is still unverified.",
+      "nextAction": "Verify delivery recovery after an interrupted request",
+      "openLoops": ["Verify delivery recovery after an interrupted request"]
+    }
+  ]
+}

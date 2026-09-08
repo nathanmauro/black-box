@@ -18,7 +18,7 @@
 ![Black Box Activity workspace showing agent decisions, handoffs, and tool activity.](docs/assets/hero.png)
 
 Black Box is a writable memory bus and coordination ledger for Codex, Claude Code, and other MCP
-clients. Agents commit the reasoning worth preserving, coordinate through a SQLite-backed task
+clients. Agents commit the reasoning worth preserving, coordinate through a durable task
 queue, and recall exact or semantically related structured decisions and completion handoffs in
 later sessions.
 
@@ -27,7 +27,12 @@ and exposes state; your agents and orchestrators still execute the work.
 
 | Remember | Coordinate | Observe | Stay local-first |
 | --- | --- | --- | --- |
-| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, logical Projects, project-aware Board, semantic structured Recall, search, SSE updates, and stats | SQLite is authoritative; Elasticsearch and model-backed features are optional |
+| Typed Decisions, Handoffs, Observations, alternatives, confidence, and open loops | Frozen specs, exact-lane queues, atomic claims, lifecycle rules, and completion Handoffs | Activity, logical Projects, project-aware Board, semantic structured Recall, search, SSE updates, and stats | SQLite by default; optional PostgreSQL for a shared server; search indexes and models remain optional |
+
+Selected work can feed Linear through the [evidence-to-Linear prototype](docs/linear-integration.md).
+It preserves source dates and IDs, requires current relevance and acceptance criteria, and reconciles
+repeated publication. Linear owns selected work; Black Box retains its supporting evidence. Existing
+board and workflow data remain available; the integration does not synchronize two boards.
 
 ## The loop
 
@@ -223,9 +228,11 @@ Open them directly:
 
 ## Trust and data boundaries
 
-SQLite is the source of truth for sessions, events, structured memory, specs, tasks, and lifecycle
-events. The server binds to `127.0.0.1` by default and has no built-in authentication. Do not expose
-it on a network unless you accept that trust model.
+The selected relational database is the source of truth for sessions, events, structured memory,
+specs, tasks, and lifecycle events. SQLite remains the local default. The server binds to
+`127.0.0.1` by default; network deployments must enable the optional
+[authentication boundary](docs/authentication.md) and HTTPS. The single-owner cloud prototype
+uses separate browser and agent credentials; it does not provide tenant isolation or OAuth installation.
 
 Logical project aliases affect catalog, session, storyline, and saved-meld reads only. Black Box
 never rewrites historical session/event paths or task/spec project scopes when projects are grouped.
@@ -351,6 +358,12 @@ docker run --rm -p 127.0.0.1:8766:8766 -v black-box-data:/data black-box
 ```
 
 ## Configuration
+
+SQLite remains the default. For an optional shared PostgreSQL server, see the
+[PostgreSQL backend guide](docs/postgres-backend.md) for its profile, configuration, and current limits.
+The [managed AWS prototype guide](docs/lightsail-prototype.md) covers CloudFormation, authenticated
+containers, persistent storage, deployment checks and costs. It preserves the existing local
+Docker path; cloud builds use `Dockerfile.cloud`.
 
 Defaults live in `src/main/resources/application.yml`.
 
@@ -533,6 +546,9 @@ paths or ownership marker are unsafe. It does not attach to port `8766` or the p
 For deeper implementation details:
 
 - [Architecture](docs/architecture.md)
+- [Authentication](docs/authentication.md)
+- [Evidence to Linear](docs/linear-integration.md)
+- [Managed AWS prototype](docs/lightsail-prototype.md)
 - [Agent task queue design](docs/superpowers/specs/2026-06-28-agent-task-queue-design.md)
 - [Local writes and Elasticsearch](docs/local-writes-and-elasticsearch.md)
 

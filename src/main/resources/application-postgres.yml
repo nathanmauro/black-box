@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: ${SBA_DATASOURCE_URL:jdbc:postgresql://localhost:5432/blackbox}
+    username: ${SBA_DATASOURCE_USERNAME:blackbox}
+    password: ${SBA_DATASOURCE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${SBA_DATASOURCE_POOL_SIZE:8}
+      connection-test-query: SELECT 1
+  sql:
+    init:
+      schema-locations: classpath:schema-postgres.sql
+
+sba:
+  storage:
+    backend: postgres

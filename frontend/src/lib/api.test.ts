@@ -55,7 +55,27 @@ function stubJson<T>(payload: T) {
 }
 
 afterEach(() => {
+  document.cookie = "XSRF-TOKEN=; Max-Age=0; path=/";
   vi.unstubAllGlobals();
+});
+
+describe("browser CSRF credentials", () => {
+  it("uses the current CSRF cookie for every mutation family, including task claims and alias deletion", async () => {
+    const fetchMock = stubJson({});
+    document.cookie = "XSRF-TOKEN=first%20token; path=/";
+    await createSpec({ projectKey: "black-box", title: "Spec", body: "Frozen", actor: "planner" });
+    await mergeProjectAlias("alias", "canonical");
+    await updateTaskStatus("task", { actor: "worker", status: "blocked", blockedReason: "dependency" });
+    await deleteProjectAlias("alias");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.headers).toMatchObject({ "X-XSRF-TOKEN": "first token" });
+    }
+    document.cookie = "XSRF-TOKEN=rotated-token; path=/";
+    await claimNextTask({ lane: "codex", agent: "worker" });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toMatchObject({ "X-XSRF-TOKEN": "rotated-token" });
+    await getSpec("spec");
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).not.toHaveProperty("X-XSRF-TOKEN");
+  });
 });
 
 describe("Phase 2 API helpers", () => {

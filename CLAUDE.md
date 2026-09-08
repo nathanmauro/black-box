@@ -59,7 +59,7 @@ ArchUnit tests.
 
 Modules (first package segment = owning capability):
 
-- `recording` — canonical session/event capture, redaction, and the SQLite write boundary
+- `recording` — canonical session/event capture, redaction, and the relational write boundary
 - `memory` — recall, search/facets, memory embeddings, optional Elasticsearch projection
 - `workflow` — spec/task coordination: frozen specs, exact-lane queues, atomic claims, lifecycle,
   completion Handoffs
@@ -75,8 +75,10 @@ Each module keeps a hexagonal internal layout: `internal/domain`, `internal/appl
 - A module may import another module's root API or `spi/`, never its `internal` packages.
 - Controllers call application use cases or a module facade, never repositories; application code
   never depends on web/MCP/JDBC/process implementations directly.
-- Canonical SQLite writes commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast,
-  discovery, summaries). SQLite is the source of truth; everything else is a rebuildable secondary.
+- Canonical relational writes commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast,
+  discovery, summaries). SQLite is the local default; the optional PostgreSQL profile owns a separate
+  shared database. Optional indexes are rebuildable. Do not infer history synchronization or safe
+  multiple API replicas from PostgreSQL support; see `docs/postgres-backend.md`.
 - No global `controller`/`service`/`util`/`common` buckets; tests mirror production packages.
 
 Wire surfaces: MCP over Streamable HTTP at `/mcp` (spring-ai MCP server; historical server id

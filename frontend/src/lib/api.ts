@@ -644,7 +644,7 @@ export function mergeProjectAlias(aliasKey: string, canonicalKey: string): Promi
 
 export async function deleteProjectAlias(aliasKey: string): Promise<void> {
   const query = new URLSearchParams({ aliasKey });
-  const response = await fetch(`/api/project-aliases?${query.toString()}`, {
+  const response = await apiRequest(`/api/project-aliases?${query.toString()}`, {
     method: "DELETE",
     headers: { Accept: "application/json" },
   });
@@ -751,7 +751,7 @@ export function getSessionDag(sessionId: string): Promise<DagResponse> {
 }
 
 export async function claimNextTask(request: ClaimTaskRequest): Promise<TaskChange | null> {
-  const response = await fetch("/api/tasks/claim", {
+  const response = await apiRequest("/api/tasks/claim", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(request),
@@ -778,13 +778,25 @@ export function listTasks(filters: TaskFilters = {}): Promise<TaskSnapshot[]> {
   return getJson(`/api/tasks${suffix ? `?${suffix}` : ""}`);
 }
 
+// The login page and authenticated GETs refresh this cookie after session/CSRF rotation.
+// HttpOnly session credentials stay in the browser; only the CSRF token is readable here.
+function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers = { ...init.headers } as Record<string, string>;
+  if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method) && typeof document !== "undefined") {
+    const cookie = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("XSRF-TOKEN="));
+    if (cookie) headers["X-XSRF-TOKEN"] = decodeURIComponent(cookie.slice("XSRF-TOKEN=".length));
+  }
+  return fetch(path, { ...init, headers }); // Fetch defaults to same-origin cookies.
+}
+
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: "application/json" }, signal });
+  const response = await apiRequest(path, { headers: { Accept: "application/json" }, signal });
   return readJson<T>(response);
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiRequest(path, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -793,7 +805,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function putJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiRequest(path, {
     method: "PUT",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -802,7 +814,7 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function patchJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiRequest(path, {
     method: "PATCH",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),

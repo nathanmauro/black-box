@@ -31,6 +31,9 @@ import dev.nathan.sbaagentic.query.EventQuery.Field;
 
 import jakarta.annotation.PostConstruct;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -72,12 +75,20 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final EventFtsIndex ftsIndex;
+    private final boolean postgres;
 
     public RecordingSqlStore(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             Clock clock,
             EventFtsIndex ftsIndex) {
+        this(jdbcTemplate, objectMapper, clock, ftsIndex, "sqlite");
+    }
+
+    @Autowired
+    public RecordingSqlStore(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, Clock clock,
+            EventFtsIndex ftsIndex, @Value("${sba.storage.backend:sqlite}") String backend) {
+        this.postgres = "postgres".equals(backend);
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -93,6 +104,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      */
     @PostConstruct
     public void ensureSchema() {
+        if (postgres) return;
         // WAL lets concurrent agents (a Claude hook and a Codex hook firing at once) read while one
         // writes, instead of serializing behind a global lock. It is a persistent property of the
         // database file, so setting it once per boot is enough; busy_timeout (set per connection in
@@ -779,7 +791,16 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                          GROUP BY source
                          ORDER BY count DESC, name ASC
                         """),
-                dailyCounts("""
+                postgres ? dailyCounts("""
+                        SELECT substring(observed_at, 1, 10) AS day, COUNT(*) AS count
+                          FROM agent_events
+                         WHERE substring(observed_at, 1, 10) >= ?
+                           AND substring(observed_at, 1, 10) <= ?
+                         GROUP BY substring(observed_at, 1, 10)
+                         ORDER BY day ASC
+                        """, java.time.LocalDate.now(clock.withZone(java.time.ZoneOffset.UTC)).minusDays(13).toString(),
+                        java.time.LocalDate.now(clock.withZone(java.time.ZoneOffset.UTC)).toString())
+                : dailyCounts("""
                         SELECT date(observed_at) AS day, COUNT(*) AS count
                           FROM agent_events
                          WHERE date(observed_at) >= date('now', ?)

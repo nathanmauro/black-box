@@ -13,6 +13,9 @@ import dev.nathan.sbaagentic.workflow.LinkType;
 import dev.nathan.sbaagentic.workflow.SessionLink;
 import dev.nathan.sbaagentic.workflow.internal.application.port.SessionLinkStore;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,9 +25,17 @@ import org.springframework.stereotype.Repository;
 public class SessionLinkRepository implements SessionLinkStore {
 
     private final JdbcTemplate jdbcTemplate;
+    private final WorkflowSqlDialect dialect;
 
     public SessionLinkRepository(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, "sqlite");
+    }
+
+    @Autowired
+    public SessionLinkRepository(JdbcTemplate jdbcTemplate,
+            @Value("${sba.storage.backend:sqlite}") String backend) {
         this.jdbcTemplate = jdbcTemplate;
+        this.dialect = WorkflowSqlDialect.from(backend);
     }
 
     public SessionLink createLink(
@@ -75,7 +86,7 @@ public class SessionLinkRepository implements SessionLinkStore {
                   FROM session_links
                  WHERE parent_session_id = ?
                  ORDER BY %s ASC
-                """.formatted(sortableInstant("created_at")), this::mapLink, sessionId);
+                """.formatted(dialect.sortableInstant("created_at")), this::mapLink, sessionId);
     }
 
     public List<SessionLink> linksWhereChild(String sessionId) {
@@ -85,7 +96,7 @@ public class SessionLinkRepository implements SessionLinkStore {
                   FROM session_links
                  WHERE child_session_id = ?
                  ORDER BY %s ASC
-                """.formatted(sortableInstant("created_at")), this::mapLink, sessionId);
+                """.formatted(dialect.sortableInstant("created_at")), this::mapLink, sessionId);
     }
 
     public List<SessionLink> linksForTaskId(String taskId) {
@@ -95,7 +106,7 @@ public class SessionLinkRepository implements SessionLinkStore {
                   FROM session_links
                  WHERE task_id = ?
                  ORDER BY %s ASC
-                """.formatted(sortableInstant("created_at")), this::mapLink, taskId);
+                """.formatted(dialect.sortableInstant("created_at")), this::mapLink, taskId);
     }
 
     public Map<String, Long> childCounts(List<String> parentSessionIds) {
@@ -125,25 +136,6 @@ public class SessionLinkRepository implements SessionLinkStore {
                 LinkType.fromValue(rs.getString("link_type")),
                 rs.getString("task_id"),
                 Instant.parse(rs.getString("created_at")));
-    }
-
-    /**
-     * {@link Instant#toString()} emits zero, three, six, or nine fractional digits. SQLite compares
-     * TEXT lexically, so a later six-digit value can otherwise sort before an earlier three-digit
-     * value. Right-padding the stored fraction for comparison preserves existing timestamp strings
-     * while making their ordering chronological.
-     */
-    private static String sortableInstant(String column) {
-        return """
-                CASE
-                    WHEN instr(%1$s, '.') = 0
-                        THEN substr(%1$s, 1, length(%1$s) - 1) || '.000000000Z'
-                    ELSE substr(%1$s, 1, length(%1$s) - 1)
-                         || substr('000000000', 1,
-                                   9 - (length(%1$s) - instr(%1$s, '.') - 1))
-                         || 'Z'
-                END
-                """.formatted(column);
     }
 
     /**
