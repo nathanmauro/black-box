@@ -33,27 +33,33 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
 
 - `./scripts/verify.sh` on this branch, 2026-09-17: Java 593 run, 0 failures, 0 errors, 11 skipped;
   type check clean; vitest 607 tests / 49 files.
-- **Both CI jobs were executed as written, in Linux containers, on a copy of the tree before this
-  branch can ever run on GitHub** (`maven:3.9-eclipse-temurin-21` with `mvn -B test`; `node:22` with
-  `npm ci`, `tsc --noEmit`, `npm test`). The first backend run **failed** on Linux with 5 failures
-  and 1 error: four runner script tests need `jq`, which the macOS machine has and the runner image
-  does not, and `CodeNavigationServiceTest.revealsOnlyAfterTheSameSecureResolution` asserts a
-  `/usr/bin/open` reveal that cannot exist off macOS. Fixed by installing `jq` in the backend job and
-  gating that test with `@EnabledOnOs(OS.MAC)` plus a `@DisabledOnOs(OS.MAC)` companion asserting the
-  typed `REVEAL_UNAVAILABLE` failure. Re-run: backend 593 run, 0 failures, 0 errors, 14 skipped;
-  frontend install, type check, and 607 tests all pass.
+- **Both CI jobs were executed as written in Linux containers before this branch could run on
+  GitHub**, and then for real on GitHub. Two rounds of environment-specific failures came out of it:
+  - *Container round.* Backend failed with 5 failures and 1 error: four runner script tests need
+    `jq`, which the macOS machine has and the base Linux image does not, and the Finder-reveal test
+    asserted a `/usr/bin/open` reveal that image lacks. Fixed by ensuring `jq` in the backend job and
+    gating the reveal tests.
+  - *Real-runner round (run 35282236056).* Frontend passed; backend still failed on one test, the
+    fail-closed companion added in the previous round. The GitHub `ubuntu-latest` image **does** ship
+    `/usr/bin/open`, so an OS-based gate was the wrong predicate: the test expected the command to be
+    absent and found it present. Both reveal tests now key on the actual precondition the service
+    checks (`/usr/bin/open` is a regular executable file) via JUnit assumptions, not on the OS.
+    Verified in containers both with and without that command, and in the full suite under the
+    command-present condition.
+  - **Lesson worth keeping:** a container is not the runner. Verify environment-sensitive tests
+    against the real image, or gate them on the condition the code actually tests.
 - Every commit SHA, file path, and anchor cited by the README and the five docs was resolved against
   the repo; two independent fact-check passes (one Codex, one Claude) ran against source.
 - `git diff --check` clean.
 
 ## Open loops (ranked)
 
-1. **Decide on GitHub Actions.** Either enable it and run the manual workflow once so a badge can
-   return honestly, or keep it disabled and rely on `scripts/verify.sh`. Do not re-add a badge until
-   a run exists for HEAD.
-2. **Set the GitHub About box** (description and topics) so the pitch reaches visitors before the
-   README: suggested description "Local-first memory and coordination ledger for coding agents. Codex
-   and Claude Code write typed decisions, handoffs, and projections and recall them before they act."
+1. **Re-add a CI badge once a green run exists for `main`.** Actions was re-enabled on 2026-09-17
+   and the workflow is manual dispatch plus pushes to `main`, Ubuntu only. The badge stays out until
+   a run for `main` is green, so it can never again show `passing` for a two-month-old commit.
+2. **Consider whether `docs/fleet/spec.md` should be scrubbed from history.** It is untracked and
+   gitignored as of this pass, but earlier commits still contain it, including a machine-specific
+   instruction string. Removing it entirely would mean rewriting published history.
 3. **Bi-temporal supersession** (`supersedes` on `captureDecision`, current-vs-historical recall) is
    the first item in [docs/futures.md](docs/futures.md) and the most requested primitive in adjacent
    tools.

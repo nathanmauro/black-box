@@ -18,13 +18,12 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.DisabledOnOs;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -205,8 +204,9 @@ class CodeNavigationServiceTest {
     }
 
     @Test
-    @EnabledOnOs(OS.MAC)
     void revealsOnlyAfterTheSameSecureResolution() throws Exception {
+        assumeTrue(finderCommandPresent(),
+                "Reveal needs the platform Finder command; it is absent on this machine.");
         Path repo = gitRepo("reveal");
         Path target = repo.resolve("file.txt");
         Files.writeString(target, "ok\n");
@@ -221,8 +221,9 @@ class CodeNavigationServiceTest {
     }
 
     @Test
-    @DisabledOnOs(OS.MAC)
     void revealFailsClosedWhereTheFinderCommandIsAbsent() throws Exception {
+        assumeFalse(finderCommandPresent(),
+                "This machine has the Finder command, so the unavailable path cannot be exercised.");
         Path repo = gitRepo("reveal-unavailable");
         Files.writeString(repo.resolve("file.txt"), "ok\n");
         String key = ProjectKey.of(repo.toString()).encoded();
@@ -233,6 +234,12 @@ class CodeNavigationServiceTest {
                 .satisfies(ex -> assertThat(((CodeNavigationException) ex).code())
                         .isEqualTo(CodeNavigationError.REVEAL_UNAVAILABLE));
         assertThat(launcher.commands).isEmpty();
+    }
+
+    /** Mirrors the precondition CodeNavigationService checks before it launches a reveal. */
+    private static boolean finderCommandPresent() {
+        Path command = Path.of("/usr/bin/open");
+        return Files.isRegularFile(command) && Files.isExecutable(command);
     }
 
     private CodeNavigationService service() {
