@@ -98,6 +98,8 @@ sba:
       sqlite-vec-path: ${SBA_SQLITE_VEC_PATH:}
     recall:
       relevance-floor: ${SBA_MEMORY_RECALL_RELEVANCE_FLOOR:0.61}
+      telemetry:
+        project-aliases: ${SBA_RECALL_TELEMETRY_PROJECT_ALIASES:}
   ask:
     memory-index: ${SBA_ASK_MEMORY_INDEX:agent-memory}
     vector-field: ${SBA_ASK_VECTOR_FIELD:vector}

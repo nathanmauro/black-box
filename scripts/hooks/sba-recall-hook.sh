@@ -130,7 +130,16 @@ fi
 
 ENCODED_CWD="$(jq -nr --arg v "$CWD" '$v | @uri')"
 RECALL_URL="$SBA_AGENTIC_URL/api/recall?scope=$ENCODED_CWD&withinHours=$SBA_RECALL_WITHIN_HOURS&kinds=decision,handoff&limit=$SBA_RECALL_LIMIT"
-if ! RESPONSE="$(curl -fsS --max-time 3 "$RECALL_URL" 2>/dev/null)"; then
+# These are declarations about this invocation, never inferred from recalled event authors.
+case "$CLIENT" in codex|claude|manual|other) TELEMETRY_CLIENT="$CLIENT" ;; *) TELEMETRY_CLIENT="unknown" ;; esac
+case "${SBA_RECALL_PURPOSE:-normal}" in normal|audit|test) TELEMETRY_PURPOSE="${SBA_RECALL_PURPOSE:-normal}" ;; *) TELEMETRY_PURPOSE="unknown" ;; esac
+TELEMETRY_PROJECT="${SBA_RECALL_PROJECT_ALIAS:-unknown}"
+[[ "$TELEMETRY_PROJECT" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || TELEMETRY_PROJECT="unknown"
+if ! RESPONSE="$(curl -fsS --max-time 3 \
+  -H "X-Blackbox-Client: $TELEMETRY_CLIENT" \
+  -H "X-Blackbox-Purpose: $TELEMETRY_PURPOSE" \
+  -H "X-Blackbox-Project: $TELEMETRY_PROJECT" \
+  "$RECALL_URL" 2>/dev/null)"; then
   recall_log "unreachable" "$CWD" "$SESSION_ID" 0 0
   exit 0
 fi

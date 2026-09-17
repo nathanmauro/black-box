@@ -1,11 +1,15 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.in.mcp;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
@@ -16,7 +20,11 @@ import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 
+import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.ai.tool.metadata.ToolMetadata;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -44,7 +52,30 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
 
     @Override
     public ToolCallback[] get() {
-        return MethodToolCallbackProvider.builder().toolObjects(this).build().getToolCallbacks();
+        return Arrays.stream(MethodToolCallbackProvider.builder().toolObjects(this).build().getToolCallbacks())
+                .map(callback -> callback.getToolDefinition().name().equals("recallContext")
+                        ? withOptionalToolContext(callback) : callback)
+                .toArray(ToolCallback[]::new);
+    }
+
+    private static ToolCallback withOptionalToolContext(ToolCallback delegate) {
+        return new ToolCallback() {
+            @Override
+            public ToolDefinition getToolDefinition() { return delegate.getToolDefinition(); }
+
+            @Override
+            public ToolMetadata getToolMetadata() { return delegate.getToolMetadata(); }
+
+            @Override
+            public String call(String input) { return call(input, null); }
+
+            @Override
+            public String call(String input, ToolContext context) {
+                // Spring requires a nonempty context for ToolContext parameters, even without an exchange.
+                return delegate.call(input, context == null || context.getContext().isEmpty()
+                        ? new ToolContext(Map.of("blackboxRecall", true)) : context);
+            }
+        };
     }
 
     private static int clampLimit(Integer limit) {
@@ -92,9 +123,39 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     description = "Upper bound on the total characters of the returned items' text fields. "
                     + "Omit for 24000 (minimum 500). When the result overflows, the first overflowing "
                     + "item's rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
-                    + "every later item is dropped; `truncated` reports whether anything was cut.") Integer maxChars) {
-        RecallResult result = memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
-        return RecallResultClamp.clamp(result, clampMaxChars(maxChars));
+                    + "every later item is dropped; `truncated` reports whether anything was cut.") Integer maxChars,
+            @ToolParam(required = false, description = "Optional telemetry declaration: codex, claude, manual, or other. "
+                    + "Not an authenticated identity; omit for unknown.") String telemetryClient,
+            @ToolParam(required = false, description = "Optional telemetry purpose: normal, audit, or test. "
+                    + "Use audit for research probes; omit for unknown.") String telemetryPurpose,
+            @ToolParam(required = false, description = "Optional operator-configured safe project alias. "
+                    + "Never supply a private path; unconfigured aliases are discarded.") String telemetryProject,
+            ToolContext toolContext) {
+        try (var ignored = RecallRequestContext.open("mcp", recallClient(toolContext, telemetryClient),
+                telemetryPurpose, telemetryProject)) {
+            RecallResult result = memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
+            return RecallResultClamp.clamp(result, clampMaxChars(maxChars));
+        }
+    }
+
+    public RecallResult recallContext(String repoOrTopic, Integer withinHours, List<String> kinds,
+            Integer limit, Integer maxChars) {
+        return recallContext(repoOrTopic, withinHours, kinds, limit, maxChars, null, null, null, null);
+    }
+
+    private static String recallClient(ToolContext context, String declaredClient) {
+        try {
+            String name = McpToolUtils.getMcpExchange(context).map(exchange -> exchange.getClientInfo())
+                    .map(info -> info.name()).orElse("");
+            if (name.length() <= 128) {
+                String normalized = name.strip().toLowerCase(Locale.ROOT);
+                if (normalized.matches("codex(?:[-_ /].*)?")) return "codex";
+                if (normalized.matches("claude(?:[-_ /].*)?")) return "claude";
+            }
+        } catch (RuntimeException ignored) {
+            // Missing/malformed attribution must never fail the tool.
+        }
+        return declaredClient;
     }
 
     @Tool(description = "Commit a decision you made into the recorder so later agents can recall WHY, "

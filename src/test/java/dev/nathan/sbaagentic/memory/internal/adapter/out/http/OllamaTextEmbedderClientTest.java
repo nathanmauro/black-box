@@ -5,6 +5,7 @@ import java.net.URI;
 import java.time.Duration;
 
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.internal.application.TextEmbeddingUnavailable;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 
@@ -22,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -37,6 +40,7 @@ class OllamaTextEmbedderClientTest {
         OllamaTextEmbedderClient client = new OllamaTextEmbedderClient(properties(), builder.build());
         server.expect(requestTo("http://embedding.test/api/embeddings"))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(headerDoesNotExist("X-Blackbox-Recall-Id"))
                 .andExpect(content().json("""
                         {"model":"nomic-embed-text","prompt":"search_query: why do tests deadlock"}
                         """))
@@ -150,6 +154,24 @@ class OllamaTextEmbedderClientTest {
                 .andRespond(withStatus(HttpStatus.NO_CONTENT));
 
         assertThat(client.available()).isTrue();
+        server.verify();
+    }
+
+    @Test
+    void recallCorrelationReachesBothAvailabilityAndEmbeddingHttpRequests() {
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://embedding.test");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        OllamaTextEmbedderClient client = new OllamaTextEmbedderClient(properties(), builder.build());
+        try (var context = RecallRequestContext.open("http", "codex", "test", null)) {
+            server.expect(requestTo("http://embedding.test/"))
+                    .andExpect(header("X-Blackbox-Recall-Id", context.requestId()))
+                    .andRespond(withStatus(HttpStatus.NO_CONTENT));
+            server.expect(requestTo("http://embedding.test/api/embeddings"))
+                    .andExpect(header("X-Blackbox-Recall-Id", context.requestId()))
+                    .andRespond(withSuccess("{\"embedding\":[1,0,0]}", APPLICATION_JSON));
+            assertThat(client.available()).isTrue();
+            client.embedQuery("private query");
+        }
         server.verify();
     }
 

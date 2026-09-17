@@ -16,6 +16,8 @@ import dev.nathan.sbaagentic.memory.MemoryHit;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecallRequestContext;
+import dev.nathan.sbaagentic.memory.internal.application.RecallTelemetry.Sample;
 import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
@@ -26,6 +28,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.Titles;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
      * The write+query loop that is Black Box's reason to exist. Agents write structured <em>intent</em>
@@ -63,16 +66,28 @@ public class ContextService implements MemoryRecallOperations {
     private final TextEmbedder embedder;
     private final MemoryVectorStore vectorStore;
     private final MemoryRecallProperties recallProperties;
+    private final RecallTelemetry telemetry;
 
     public ContextService(
             MemoryEventReader repository,
             TextEmbedder embedder,
             MemoryVectorStore vectorStore,
             MemoryRecallProperties recallProperties) {
+        this(repository, embedder, vectorStore, recallProperties, RecallTelemetry.noop());
+    }
+
+    @Autowired
+    public ContextService(
+            MemoryEventReader repository,
+            TextEmbedder embedder,
+            MemoryVectorStore vectorStore,
+            MemoryRecallProperties recallProperties,
+            RecallTelemetry telemetry) {
         this.repository = repository;
         this.embedder = embedder;
         this.vectorStore = vectorStore;
         this.recallProperties = recallProperties;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -82,6 +97,34 @@ public class ContextService implements MemoryRecallOperations {
      */
     @Override
     public RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit) {
+        if (RecallRequestContext.current() == null) {
+            try (var ignored = RecallRequestContext.open("internal", null, null, null)) {
+                return measuredRecall(scope, withinHours, kinds, limit);
+            }
+        }
+        return measuredRecall(scope, withinHours, kinds, limit);
+    }
+
+    private RecallResult measuredRecall(String scope, int withinHours, List<String> kinds, Integer limit) {
+        String category = scope == null || scope.isBlank() ? "blank"
+                : pathOrIdScope(scope) ? "path_or_id" : "topic";
+        Sample sample = new Sample(RecallRequestContext.current(), category);
+        sample.relevanceFloor = recallProperties.getRelevanceFloor();
+        try {
+            RecallResult result = recall(scope, withinHours, kinds, limit, sample);
+            sample.outcome = "success";
+            sample.resultCount = result.count();
+            return result;
+        } catch (RuntimeException ex) {
+            sample.errorCategory = "recall_error";
+            throw ex;
+        } finally {
+            sample.durationNanos = System.nanoTime() - sample.started;
+            try { telemetry.complete(sample); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    private RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit, Sample sample) {
         int resolvedLimit = limit == null || limit <= 0
                 ? DEFAULT_RECALL_ITEMS
                 : Math.min(limit, RECALL_LIMIT);
@@ -94,18 +137,26 @@ public class ContextService implements MemoryRecallOperations {
                 ? null
                 : "%" + trimmedScope.toLowerCase(Locale.ROOT) + "%";
 
-        List<AgentEvent> lexicalEvents = repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT);
+        long lexicalStarted = System.nanoTime();
+        List<AgentEvent> lexicalEvents;
+        try {
+            lexicalEvents = repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT);
+            sample.lexicalCandidates = lexicalEvents.size();
+        } finally {
+            sample.lexicalNanos = System.nanoTime() - lexicalStarted;
+        }
         Map<String, AgentEvent> eventsById = new LinkedHashMap<>();
         List<MemoryHit> lexicalHits = lexicalEvents.stream()
                 .peek(event -> eventsById.putIfAbsent(event.id(), event))
                 .map(event -> toMemoryHit(event, 0.0))
                 .toList();
 
-        SemanticRecall semantic = semanticRecall(trimmedScope, eventTypes, since, eventsById);
+        SemanticRecall semantic = semanticRecall(trimmedScope, eventTypes, since, eventsById, sample);
         List<MemoryHit> rankedHits = semantic.available()
                 ? ReciprocalRankFusion.fuse(lexicalHits, semantic.hits(), RECALL_LIMIT)
                 : ReciprocalRankFusion.fuse(lexicalHits, List.of(), RECALL_LIMIT);
         String mode = semantic.available() ? "hybrid" : "lexical";
+        sample.mode = mode;
 
         // Fusion still ranks the full RECALL_LIMIT candidate pool; only the returned page is
         // bounded. Narrowing the pool instead would change which items win, not just how many.
@@ -113,8 +164,10 @@ public class ContextService implements MemoryRecallOperations {
                 .filter(hit -> hit != null && eventsById.containsKey(hit.id()))
                 .limit(resolvedLimit)
                 .toList();
+        var semanticIds = semantic.hits().stream().map(MemoryHit::id).collect(java.util.stream.Collectors.toSet());
+        sample.semanticReturned = (int) returnedHits.stream().filter(hit -> semanticIds.contains(hit.id())).count();
         Map<String, Double> cosineByEventId = semantic.available()
-                ? cosineScores(returnedHits, semantic)
+                ? cosineScores(returnedHits, semantic, sample)
                 : Map.of();
         List<RecalledItem> items = returnedHits.stream()
                 .map(hit -> toRecalledItem(eventsById.get(hit.id()), cosineByEventId.get(hit.id())))
@@ -127,35 +180,82 @@ public class ContextService implements MemoryRecallOperations {
             String trimmedScope,
             List<String> eventTypes,
             Instant since,
-            Map<String, AgentEvent> eventsById) {
+            Map<String, AgentEvent> eventsById,
+            Sample sample) {
         if (trimmedScope == null || trimmedScope.isBlank()) {
+            sample.fallbackReason = "blank_scope";
             return SemanticRecall.unavailable();
         }
-        // A repo path or a session id is a LOCATION, not a subject. Embedding one and ranking
-        // in-repo events by similarity to it produces a near-arbitrary order, and fusing that
-        // into the lexical arm would perturb the recency ordering that "what was decided in this
-        // repo lately" — the dominant use of recall — depends on. Stay lexical for those, and
-        // engage semantic recall only for topic-shaped scopes.
+        // Location/id requests preserve lexical recency ordering rather than embedding a location.
         if (pathOrIdScope(trimmedScope)) {
+            sample.fallbackReason = "path_or_id_scope";
             return SemanticRecall.unavailable();
         }
+        sample.semanticAttempted = true;
+        long started = System.nanoTime();
         try {
             if (!embedder.available()) {
+                sample.embeddingProbeOutcome = "unavailable";
+                sample.fallbackReason = "embedding_unavailable";
                 return SemanticRecall.unavailable();
             }
-            Map<String, RecallCandidate> candidatesByKey = semanticCandidates(eventTypes, since);
-            Predicate<String> keyFilter = semanticKeyFilter(candidatesByKey, trimmedScope);
-            EmbeddingVector query = embedder.embedQuery(trimmedScope);
-            List<ScoredKey> scoredKeys = vectorStore.knn(query, RECALL_LIMIT, keyFilter);
-            List<MemoryHit> hits = scoredKeys.stream()
-                    .filter(scored -> admitsSemanticScore(scored.score()))
-                    .map(scored -> semanticHit(scored, candidatesByKey, eventsById))
-                    .filter(Objects::nonNull)
-                    .toList();
-            return SemanticRecall.available(query, hits);
-        }
-        catch (RuntimeException ex) {
+            sample.embeddingProbeOutcome = "success";
+        } catch (RuntimeException ex) {
+            sample.embeddingProbeOutcome = "error";
+            sample.fallbackReason = "embedding_error";
             return SemanticRecall.unavailable();
+        } finally {
+            sample.embeddingProbeNanos = System.nanoTime() - started;
+        }
+
+        Map<String, RecallCandidate> candidatesByKey;
+        Predicate<String> keyFilter;
+        try {
+            candidatesByKey = semanticCandidates(eventTypes, since);
+            sample.semanticCandidates = candidatesByKey.size();
+            keyFilter = semanticKeyFilter(candidatesByKey, trimmedScope);
+        } catch (RuntimeException ex) {
+            sample.fallbackReason = "candidates_error";
+            return SemanticRecall.unavailable();
+        }
+
+        EmbeddingVector query;
+        started = System.nanoTime();
+        try {
+            query = embedder.embedQuery(trimmedScope);
+            sample.embeddingOutcome = "success";
+        } catch (RuntimeException ex) {
+            sample.embeddingOutcome = "error";
+            sample.fallbackReason = "embedding_error";
+            return SemanticRecall.unavailable();
+        } finally {
+            sample.embeddingNanos = System.nanoTime() - started;
+        }
+
+        started = System.nanoTime();
+        try {
+            List<ScoredKey> scoredKeys = vectorStore.knn(query, RECALL_LIMIT, keyFilter);
+            List<MemoryHit> hits = new ArrayList<>();
+            for (ScoredKey scored : scoredKeys) {
+                if (!admitsSemanticScore(scored.score())) {
+                    sample.gateRejected++;
+                    continue;
+                }
+                sample.gateAdmitted++;
+                MemoryHit hit = semanticHit(scored, candidatesByKey, eventsById);
+                if (hit != null) hits.add(hit);
+            }
+            sample.vectorOutcome = "success";
+            sample.semanticCompleted = true;
+            sample.semanticContributed = !hits.isEmpty();
+            sample.semanticHits = hits.size();
+            return SemanticRecall.available(query, hits);
+        } catch (RuntimeException ex) {
+            sample.vectorOutcome = "error";
+            sample.fallbackReason = "vector_error";
+            return SemanticRecall.unavailable();
+        } finally {
+            sample.vectorNanos = System.nanoTime() - started;
         }
     }
 
@@ -164,7 +264,7 @@ public class ContextService implements MemoryRecallOperations {
         return floor <= 0.0 || score >= floor;
     }
 
-    private Map<String, Double> cosineScores(List<MemoryHit> returnedHits, SemanticRecall semantic) {
+    private Map<String, Double> cosineScores(List<MemoryHit> returnedHits, SemanticRecall semantic, Sample sample) {
         Map<String, Double> scores = new LinkedHashMap<>();
         for (MemoryHit hit : semantic.hits()) {
             if (hit != null && hit.id() != null) {
@@ -182,18 +282,27 @@ public class ContextService implements MemoryRecallOperations {
             return scores;
         }
 
-        Map<String, EmbeddingVector> vectors = vectorStore.fetchVectors(
-                unscoredKeys,
-                semantic.query().model(),
-                semantic.query().values().length);
-        for (MemoryHit hit : returnedHits) {
-            if (hit == null || hit.id() == null || scores.containsKey(hit.id())) {
-                continue;
+        long started = System.nanoTime();
+        try {
+            Map<String, EmbeddingVector> vectors = vectorStore.fetchVectors(
+                    unscoredKeys,
+                    semantic.query().model(),
+                    semantic.query().values().length);
+            for (MemoryHit hit : returnedHits) {
+                if (hit == null || hit.id() == null || scores.containsKey(hit.id())) {
+                    continue;
+                }
+                EmbeddingVector vector = vectors.get(eventVectorKey(hit.id()));
+                if (vector != null) {
+                    scores.put(hit.id(), semantic.query().cosineSimilarity(vector));
+                }
             }
-            EmbeddingVector vector = vectors.get(eventVectorKey(hit.id()));
-            if (vector != null) {
-                scores.put(hit.id(), semantic.query().cosineSimilarity(vector));
-            }
+            sample.vectorFetchOutcome = "success";
+        } catch (RuntimeException ex) {
+            // Optional score enrichment must not discard an already ranked, valid recall page.
+            sample.vectorFetchOutcome = "error";
+        } finally {
+            sample.vectorFetchNanos = System.nanoTime() - started;
         }
         return scores;
     }

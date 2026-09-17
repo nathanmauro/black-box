@@ -4,11 +4,13 @@ import java.util.List;
 import java.util.Map;
 
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.internal.application.TextEmbeddingUnavailable;
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -53,6 +55,7 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
         try {
             Map<?, ?> response = restClient.post()
                     .uri(properties.getPath())
+                    .headers(OllamaTextEmbedderClient::recallCorrelation)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("model", properties.getModel(), "prompt", text))
                     .retrieve()
@@ -75,7 +78,7 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
             return false;
         }
         try {
-            restClient.get().uri("/").retrieve().toBodilessEntity();
+            restClient.get().uri("/").headers(OllamaTextEmbedderClient::recallCorrelation).retrieve().toBodilessEntity();
             return true;
         }
         catch (RestClientException ex) {
@@ -91,6 +94,11 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
     @Override
     public int dimensions() {
         return properties.getDimensions();
+    }
+
+    private static void recallCorrelation(HttpHeaders headers) {
+        RecallRequestContext context = RecallRequestContext.current();
+        if (context != null) headers.set("X-Blackbox-Recall-Id", context.requestId());
     }
 
     private static RestClient restClient(MemoryEmbeddingProperties properties) {

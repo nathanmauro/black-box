@@ -774,7 +774,8 @@ class TaskApiContractTest {
         Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
         Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);
         Method recall = MemoryMcpTools.class.getMethod(
-                "recallContext", String.class, Integer.class, List.class, Integer.class, Integer.class);
+                "recallContext", String.class, Integer.class, List.class, Integer.class, Integer.class,
+                String.class, String.class, String.class, org.springframework.ai.chat.model.ToolContext.class);
         Method decision = MemoryMcpTools.class.getMethod(
                 "captureDecision",
                 String.class,

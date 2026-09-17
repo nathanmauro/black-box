@@ -127,6 +127,8 @@ run_hook() {
     "PATH=$FAKE_BIN:$PATH"
     "HOME=$RUN_HOME"
     "SBA_AGENTIC_URL=http://fixture.invalid"
+    "SBA_RECALL_PURPOSE=test"
+    "SBA_RECALL_PROJECT_ALIAS=fixture"
     "SBA_RECALL_TEST_RESPONSE_FILE=$RESPONSE_FILE"
     "SBA_RECALL_TEST_REQUEST_FILE=$REQUEST_CAPTURE"
   )
@@ -260,6 +262,20 @@ case_subagent() {
   assert_stderr_empty "$label"
   assert_no_request "$label"
   assert_log_outcome "$label" "skipped:subagent"
+  pass_case "$label"
+}
+
+case_telemetry_headers() {
+  local label="bounded telemetry headers"
+  reset_run_env
+  write_empty_response
+  run_hook "$VALID_PAYLOAD" --client codex
+  grep -q 'X-Blackbox-Client: codex' "$REQUEST_CAPTURE" || fail_case "$label" "client missing"
+  grep -q 'X-Blackbox-Purpose: test' "$REQUEST_CAPTURE" || fail_case "$label" "test purpose missing"
+  grep -q 'X-Blackbox-Project: fixture' "$REQUEST_CAPTURE" || fail_case "$label" "project declaration missing"
+  run_hook "$VALID_PAYLOAD" --client $'private-client\nInjected: secret'
+  grep -q 'X-Blackbox-Client: unknown' "$REQUEST_CAPTURE" || fail_case "$label" "unbounded client accepted"
+  if grep -Eq 'Injected|secret' "$REQUEST_CAPTURE"; then fail_case "$label" "raw client leaked"; fi
   pass_case "$label"
 }
 
@@ -403,6 +419,7 @@ case_bad_payload
 case_no_cwd
 case_compact
 case_subagent
+case_telemetry_headers
 case_curl_exit
 case_empty_response
 case_ok_response

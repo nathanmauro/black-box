@@ -551,6 +551,7 @@ For deeper implementation details:
 - [Managed AWS prototype](docs/lightsail-prototype.md)
 - [Agent task queue design](docs/superpowers/specs/2026-06-28-agent-task-queue-design.md)
 - [Local writes and Elasticsearch](docs/local-writes-and-elasticsearch.md)
+- [Recall observability](docs/recall-observability.md)
 
 ## License
 
