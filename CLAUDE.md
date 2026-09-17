@@ -72,23 +72,27 @@ Modules (first package segment = owning capability):
 Each module keeps a hexagonal internal layout: `internal/domain`, `internal/application` (+`port`),
 `internal/adapter/in/{web,mcp,cli}`, `internal/adapter/out/{sqlite,http,process,...}`. Key rules:
 
-- A module may import another module's root API or `spi/`, never its `internal` packages.
+- A module may import another module's root API, never its `internal` packages. (Package conventions
+  describe an optional `spi/` layout; no `spi/` package exists in the current tree.)
 - Controllers call application use cases or a module facade, never repositories; application code
   never depends on web/MCP/JDBC/process implementations directly.
-- Canonical relational writes commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast,
-  discovery, summaries). SQLite is the local default; the optional PostgreSQL profile owns a separate
+- Standalone captures commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast,
+  discovery, summaries); inside task completion the listeners run within the outer task transaction
+  (see the transaction note in `docs/architecture.md`). SQLite is the local default; the optional PostgreSQL profile owns a separate
   shared database. Optional indexes are rebuildable. Do not infer history synchronization or safe
   multiple API replicas from PostgreSQL support; see `docs/postgres-backend.md`.
 - No global `controller`/`service`/`util`/`common` buckets; tests mirror production packages.
 
 Wire surfaces: MCP over Streamable HTTP at `/mcp` (spring-ai MCP server; historical server id
-`sba-agentic`), a REST API that mirrors the seven coordination tools exactly (shared field names,
+`sba-agentic`), a REST API that mirrors the seven coordination operations (REST task listing additionally accepts
+`offset` and `excludeStatus`; shared field names,
 ISO-8601 timestamps, typed error envelopes), SSE at `/api/stream` as a best-effort wake hint (never
 a queue — `claimNextTask`/`listTasks` stay authoritative), and opt-in capture/recall hooks under
 `scripts/hooks/`.
 
 Configuration defaults live in `src/main/resources/application.yml`, overridden by `SBA_*` env vars
-(see README table). Server binds to `127.0.0.1:8766` with no auth.
+(see `docs/operations.md`). Server binds to `127.0.0.1:8766`; optional authentication is disabled by
+default. Enable it and HTTPS for network deployment; see `docs/authentication.md`.
 
 ## Constraints worth repeating
 

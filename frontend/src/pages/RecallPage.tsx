@@ -81,7 +81,7 @@ export default function RecallPage() {
           <input
             value={scope()}
             onInput={(event) => setScope(event.currentTarget.value)}
-            placeholder="/Users/nathan/Developer/proj/sba-agentic or a topic"
+            placeholder="/workspace/example-app or a topic"
           />
         </label>
         <fieldset class="recall-window">
@@ -189,13 +189,15 @@ function RecallCard(props: { item: RecalledItem }) {
       <Show when={props.item.rationale}>
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
       </Show>
-      <div class="confidence-row recall-confidence">
-        <span>confidence</span>
-        <meter min="0" max="1" value={confidence()}>
-          {confidence()}
-        </meter>
-        <span>{Math.round(confidence() * 100)}%</span>
-      </div>
+      <Show when={props.item.confidence != null}>
+        <div class="confidence-row recall-confidence">
+          <span>confidence</span>
+          <meter min="0" max="1" value={confidence()}>
+            {confidence()}
+          </meter>
+          <span>{Math.round(confidence() * 100)}%</span>
+        </div>
+      </Show>
       <RecallList title="alternatives" items={alternatives()} />
       <RecallList title="open loops" items={openLoops()} />
       <Show when={props.item.nextAction}>

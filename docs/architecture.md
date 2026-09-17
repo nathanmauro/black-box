@@ -45,7 +45,7 @@ flowchart LR
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
-    DB[("SQLite source of truth<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>memory_embeddings<br/>session_links · project_aliases")]
+    DB[("Canonical relational store (SQLite default)<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>memory_embeddings<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
@@ -65,7 +65,7 @@ flowchart LR
     RECORDING --> DB
     WORKFLOW --> DB
     WORKFLOW -. "after durable mutation" .-> BROADCAST
-    RECORDING -. "after durable event write" .-> BROADCAST
+    RECORDING -. "event recorded; see transaction note" .-> BROADCAST
     BROADCAST --> STREAM
     STREAM -. "refresh or try claim" .-> AGENTS & RUNNER & UI
     MEMORY -. "new event mirror when enabled" .-> ES
@@ -111,8 +111,14 @@ flowchart LR
 ```
 
 Arrows point from a consumer to the public API it imports. No module may import another module's
-`internal` package. Recording is the canonical session/event boundary; optional projections and
-reactions happen after its SQLite write. The stable package rules and contributor guidance live in
+`internal` package. Recording is the canonical session/event boundary. Standalone capture publishes
+`EventRecorded` after its persistence transaction commits. During task completion, however,
+`TaskService.completeInTransaction` calls capture inside an outer transaction: the ordinary
+synchronous listeners run before that outer transaction commits. Completion's Handoff and task
+transition remain atomic in the database, but this is not a universal after-commit fan-out guarantee.
+SSE is a hint and Elasticsearch is rebuildable; neither is authoritative evidence of completion.
+See `EventIngestService.ingest`, `TaskService.completeInTransaction`, and `EventBroadcaster`.
+The stable package rules and contributor guidance live in
 [`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
 
 The `project` module also owns local file navigation. `GET /api/projects/code-scopes` projects only
@@ -234,10 +240,11 @@ external REST client of Black Box:
 2. **Gate.** The runner evaluates deterministic readiness checks: the repo must exist, be a readable
    Git working tree, and appear in the runner config allowlist; the Acceptance criteria section must
    be non-empty; a verify command must be present or derivable from the repo; and push intent is
-   honored only when that repo's config permits it and carries no danger flag. An optional LLM pass
-   can add advisory feedback but cannot solely block the story. A pass enqueues an `auto`-lane task
-   and completes the gate task with a Handoff; a failure blocks the gate task with concrete repair
-   guidance.
+   honored only when that repo's config permits it and carries no danger flag. The gate is
+   deterministic only: a `GateAdvisor` seam exists for future advisory scoring, but the shipped
+   implementation is a no-op and never contributes to the pass/fail decision. A pass enqueues an
+   `auto`-lane task and completes the gate task with a Handoff; a failure blocks the gate task with
+   concrete repair guidance.
 3. **Execution.** For the claimed `auto` task, the runner creates an isolated worktree and branch,
    opens a tmux session, launches the configured engine, and appends `progress` annotations at
    milestones.
@@ -357,8 +364,11 @@ selecting a project never infers work or broadens the authoritative queue query.
 
 ## Local-first and model boundaries
 
-SQLite is the only canonical store. Elasticsearch is disabled by default and is only a secondary
-index for new events; it is not used by atomic claims or the Board.
+SQLite is the default canonical store. The optional PostgreSQL profile owns a separate canonical
+database; it does not synchronize SQLite history or provide safe multiple API replicas. See the
+[PostgreSQL backend guide](postgres-backend.md). SQLite-specific tables and indexing behavior below
+apply to the default backend. Elasticsearch is disabled by default and is only a secondary index
+for new events; it is not used by atomic claims or the Board.
 
 | Table | Owner | Purpose |
 | --- | --- | --- |
@@ -372,8 +382,9 @@ index for new events; it is not used by atomic claims or the Board.
 
 The FTS index is a rebuildable secondary inside canonical SQLite: insert/delete/update triggers on
 `agent_events` keep it consistent by construction, the chunked background backfill doubles as the
-rebuild job, and free-text search falls back to per-term LIKE with identical semantics whenever FTS
-is unavailable. **Invariant: never `VACUUM` the live database without an FTS rebuild afterwards.**
+rebuild job, and free-text search falls back to per-term LIKE whenever FTS is unavailable.
+The semantics differ: FTS5 matches token prefixes, while LIKE matches substrings; see
+[PostgreSQL behavior and limits](postgres-backend.md#behavior-and-limits). **Invariant: never `VACUUM` the live database without an FTS rebuild afterwards.**
 `agent_events` has a TEXT primary key, so its implicit rowids may be renumbered by VACUUM, silently
 remapping every FTS hit (2026-08-20 stream spec §6.3, D8).
 
@@ -389,9 +400,11 @@ participates in task coordination or structured recall.
 
 The Black Box server intentionally embeds no worker runner and adds no worker-process spawning,
 task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency-aware
-scheduling DAG, capability registry, multi-node broker, authentication layer, priority aging, or
+scheduling DAG, capability registry, multi-node broker, priority aging, or
 server-side automatic follow-up enqueue. Manual reset is the recovery mechanism for abandoned
-ownership. Those additions must preserve SQLite as the truth and keep task execution outside the
+ownership. Optional [authentication](authentication.md) exists and is disabled by default for the
+loopback deployment. Those additions must preserve the selected relational store as the truth and
+keep task execution outside the
 Black Box server. The separately configured session-summary subprocess described above is not a
 worker or task executor.
 

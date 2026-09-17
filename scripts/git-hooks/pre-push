@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Enabled with: git config core.hooksPath scripts/git-hooks
+# Skip once with: git push --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/verify.sh"

@@ -1,46 +1,41 @@
 # Local writes and Elasticsearch
 
-This project accepts captured agent events through HTTP, CLI, hooks, and MCP. Every write lands in SQLite first. When Elasticsearch is enabled, the ingest path also indexes each new event into Elasticsearch.
+This project accepts captured agent events through HTTP, CLI, hooks, and MCP. The selected relational database is canonical (SQLite by default, or a separate PostgreSQL profile). When Elasticsearch is enabled, the ingest path also attempts to index each new event into Elasticsearch. Standalone capture commits before indexing; completion-Handoff listeners run inside the outer task transaction, as described in the [architecture transaction note](architecture.md#java-module-graph).
 
-## Runtime setup applied
+## Runtime setup
 
-I added `compose.elasticsearch.yml` so Elasticsearch can run with Docker Compose on `localhost:9200`.
+[`compose.elasticsearch.yml`](../compose.elasticsearch.yml) runs a loopback-only Elasticsearch
+service for local development. Hook capture is independently opt-in: the bundled
+[`sba-agent-hook.sh`](../scripts/hooks/sba-agent-hook.sh) accepts supported Claude Code or Codex
+payloads and posts normalized events to `/api/events`. Client hook registration and subagent
+lineage are described in [Connect an agent](agent-integration.md).
 
-Use a local `.codex/hooks.json` if you want Codex to run the hook bridge for this repo on `UserPromptSubmit` and `PostToolUse`.
+A client may require trust approval before running a locally registered hook. Capture hooks are a
+best-effort recording layer: they use a short HTTP timeout and do not block the host turn when
+recording fails. Captured prompt and tool output can make broad search results noisy.
 
-Codex may ask you to trust the local hook the next time a session starts here. Approve it if you want automatic capture.
+Capture and context injection are separate. A write hook records events; an optional SessionStart
+recall hook prints a bounded context packet. On-demand MCP recall is available without either hook.
+There is no requirement to recall at every session start. Client hook protocols vary, so a
+human-visible status message should not be treated as evidence of model-visible context injection.
 
-## Hook behavior on this workstation
-
-The current local setup uses hooks as a low-noise event capture layer, not as a blocking control plane:
-
-The `cockpit-agent-hook` command referenced below is an example of a private, external hook binary; any command that POSTs the documented event JSON to `/api/events` works, and the in-repo reference implementation is `scripts/hooks/sba-agent-hook.sh`.
-
-- Codex has a global hook file at `~/.codex/hooks.json` that runs `/ABSOLUTE/PATH/TO/cockpit-agent-hook --client codex` for `SessionStart`, `UserPromptSubmit`, `PostToolUse`, and `Stop`.
-- Claude Code has a global user setting at `~/.claude/settings.json` that runs `/ABSOLUTE/PATH/TO/cockpit-agent-hook --client claude` for the same capture lifecycle.
-- This repo also has a Claude-local provenance hook at `.claude/settings.local.json` for edit tools only (`Write`, `Edit`, `MultiEdit`, and `NotebookEdit`). It calls `.claude/hooks/post-tool-call.py`, which posts changed file paths to the local provenance webserver when that server is available.
-- The Black Box/Cockpit capture hooks use a 5 second client timeout. The repo-local provenance hook does not currently declare a Claude-level timeout, but its HTTP call uses a 0.5 second timeout and only runs after edit tools.
-- The hook events are visible in Black Box as captured `SessionStart`, `UserPromptSubmit`, and `PostToolUse` rows. They can also make search results noisy because command output becomes indexed event text.
-
-Treat the hook output channels separately:
-
-- `statusMessage` is visible runner text such as "Loading Cockpit startup context" or "Running PostToolUse hooks". It is for humans and should be short.
-- `hookSpecificOutput.additionalContext` is the intended "console.log for the LLM" style channel: hook-produced text that could be injected into a session as model-visible context.
-- On the current Codex path, startup logs show that Codex does not consume `hookSpecificOutput.additionalContext`; the hook still captures/curates events, but it does not inject visible text into the model context. Use an explicit prompt wrapper, MCP recall call, or Black Box UI surface when model-visible injection is required.
-
-As an example from one local setup, the Codex config at `/path/to/.codex/config.toml` registered this MCP server:
+An MCP client can register the same local server. For example, the Codex configuration entry is:
 
 ```toml
 [mcp_servers.sba-agentic]
 url = "http://localhost:8766/mcp"
 ```
 
+These examples assume the default loopback deployment. Shared deployments require
+[authentication](authentication.md); the bundled hook bridge does not send a bearer header.
+Service configuration, summary privacy boundaries, and schema evolution are in [Run it](operations.md).
+
 The service uses:
 
 - Elasticsearch `8.15.3`
 - Kibana `8.15.3` when the optional `kibana` Compose profile is enabled
 - single-node discovery
-- disabled local security, because the current app client uses unauthenticated HTTP
+- disabled local security and loopback-only published ports; this Compose topology is for local development
 - a named Docker volume, `sba-agentic-elasticsearch`, for index persistence
 - new Black Box indices default to `number_of_replicas: 0`, because the local Compose topology is single-node
 
@@ -111,6 +106,8 @@ Expected Elasticsearch status:
 
 ## Write paths
 
+The commands below persist example events. Use a disposable recorder/database for smoke tests.
+
 HTTP write:
 
 ```bash
@@ -129,7 +126,7 @@ curl -fsS -H 'Content-Type: application/json' \
 CLI write:
 
 ```bash
-java -jar target/sba-agentic-0.1.0-SNAPSHOT.jar ingest \
+java -jar target/sba-agentic-0.1.0.jar ingest \
   --source=manual \
   --session=test \
   --type=ManualCapture \
@@ -141,12 +138,13 @@ Hook write:
 ```bash
 SBA_AGENT_SOURCE=codex \
 SBA_AGENTIC_URL=http://localhost:8766 \
-/ABSOLUTE/PATH/TO/scripts/hooks/sba-agent-hook.sh
+/path/to/black-box/scripts/hooks/sba-agent-hook.sh
 ```
 
-Replace `/ABSOLUTE/PATH/TO/...` with the path on your machine.
+The hook reads its payload from stdin; replace `/path/to/black-box` with the checkout path.
 
-Wire that command in a local `.codex/hooks.json` for `UserPromptSubmit` and `PostToolUse`.
+Register that command for supported capture events such as `UserPromptSubmit` and `PostToolUse`
+in the client hook settings, preserving existing entries.
 
 MCP write:
 
@@ -193,13 +191,13 @@ Search Elasticsearch directly:
 curl -fsS 'http://localhost:9200/sba-agentic-events/_search?q=elastic%20smoke' | jq
 ```
 
-Existing SQLite rows are not backfilled by the current app. Elasticsearch indexes new events written after `SBA_ELASTICSEARCH_ENABLED=true` is active.
+Existing canonical events are not backfilled into Elasticsearch by the current app. Elasticsearch indexes new events written after `SBA_ELASTICSEARCH_ENABLED=true` is active.
 
-## Verification performed
+## Historical verification
 
-Verified on 2026-05-21:
+The original operational record reports the following on 2026-05-21. These are historical results,
+not a current service-health check:
 
-- Docker Desktop was started because the Docker daemon was not running.
 - Elasticsearch was started with `docker compose -f compose.elasticsearch.yml up -d`.
 - The Spring app was restarted with `SBA_ELASTICSEARCH_ENABLED=true`, `SBA_ELASTICSEARCH_URL=http://localhost:9200`, and `SBA_ELASTICSEARCH_INDEX=sba-agentic-events`.
 - `curl -fsS http://localhost:8766/api/status | jq .` returned Elasticsearch `enabled: true` and `available: true`.

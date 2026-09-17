@@ -18,6 +18,9 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -202,6 +205,7 @@ class CodeNavigationServiceTest {
     }
 
     @Test
+    @EnabledOnOs(OS.MAC)
     void revealsOnlyAfterTheSameSecureResolution() throws Exception {
         Path repo = gitRepo("reveal");
         Path target = repo.resolve("file.txt");
@@ -214,6 +218,21 @@ class CodeNavigationServiceTest {
         assertThat(launcher.commands).singleElement()
                 .satisfies(command -> assertThat(command)
                         .containsExactly("/usr/bin/open", "-R", target.toRealPath().toString()));
+    }
+
+    @Test
+    @DisabledOnOs(OS.MAC)
+    void revealFailsClosedWhereTheFinderCommandIsAbsent() throws Exception {
+        Path repo = gitRepo("reveal-unavailable");
+        Files.writeString(repo.resolve("file.txt"), "ok\n");
+        String key = ProjectKey.of(repo.toString()).encoded();
+        when(catalog.summaries()).thenReturn(List.of(summary(repo, scope(repo.toString()))));
+
+        assertThatThrownBy(() -> service().revealInFinder(new CodeReference(key, "file.txt", null, null, null)))
+                .isInstanceOf(CodeNavigationException.class)
+                .satisfies(ex -> assertThat(((CodeNavigationException) ex).code())
+                        .isEqualTo(CodeNavigationError.REVEAL_UNAVAILABLE));
+        assertThat(launcher.commands).isEmpty();
     }
 
     private CodeNavigationService service() {

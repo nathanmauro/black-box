@@ -1,22 +1,20 @@
 name: ci
 
+# Runs on demand (workflow_dispatch) and on pushes to main. Pull requests and the macOS matrix were
+# dropped to keep Actions minutes near zero; the same checks run locally via ./scripts/verify.sh.
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  backend:
     timeout-minutes: 20
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -24,4 +22,22 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B verify
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+      - run: mvn -B test
+
+  frontend:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test

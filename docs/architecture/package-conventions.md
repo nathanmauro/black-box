@@ -16,7 +16,6 @@ dev.nathan.sbaagentic.<module>
 ├── package-info.java
 ├── <Module>Operations.java
 ├── <Module>Event.java
-├── spi/
 └── internal/
     ├── domain/
     ├── application/
@@ -40,9 +39,10 @@ or a dependency boundary justify another package.
 - Application code depends on domain types and owned ports, never web, MCP, CLI, JDBC,
   Elasticsearch, servlet, filesystem, or process implementations.
 - Infrastructure implements a port owned by the consuming feature.
-- A module may import another module's public API or named SPI, never its `internal` packages.
+- A module may import another module's root API, never its `internal` packages; no `spi/` package exists in the current tree.
 - Cross-module reads use a narrow API. Cross-module reactions prefer explicit application events.
-- Canonical SQLite writes commit before optional indexing, SSE, discovery, or summary fan-out.
+- Standalone capture commits before optional fan-out; completion-Handoff listeners run inside the
+  outer task transaction. See the [transaction note](../architecture.md#java-module-graph).
 - Spring transaction and lifecycle annotations stay on externally invoked Spring beans; package
   moves must not introduce proxy-bypassing self-invocation.
 - Tests mirror production packages so package-private seams do not become public for test
