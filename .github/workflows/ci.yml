@@ -22,7 +22,8 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+      - name: Ensure jq is available (runner scripts require it)
+        run: command -v jq >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
       - run: mvn -B test
 
   frontend:
