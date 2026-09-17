@@ -1,11 +1,11 @@
 name: ci
 
-# Runs on demand (workflow_dispatch) and on pushes to main. Pull requests and the macOS matrix were
-# dropped to keep Actions minutes near zero; the same checks run locally via ./scripts/verify.sh.
+# Runs on every push, plus on demand. Pull requests are covered by the push that created the branch,
+# so there is no pull_request trigger and no duplicate run per push. The macOS matrix was dropped to
+# keep minutes down; the same checks run locally via ./scripts/verify.sh, optionally as a pre-push hook.
 on:
   workflow_dispatch:
   push:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
