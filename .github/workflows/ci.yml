@@ -1,14 +1,17 @@
 name: ci
 
-# Runs on every push, plus on demand. Pull requests are covered by the push that created the branch,
-# so there is no pull_request trigger and no duplicate run per push. The macOS matrix was dropped to
-# keep minutes down; the same checks run locally via ./scripts/verify.sh, optionally as a pre-push hook.
+# Runs on pull requests and on pushes to main, plus on demand. A push to a branch with no open pull
+# request runs nothing, so work in progress does not spend Actions minutes; opening the pull request
+# starts CI, and every later push to that branch re-runs it. The macOS matrix was dropped to keep
+# minutes down; the same checks run locally via ./scripts/verify.sh, optionally as a pre-push hook.
 on:
   workflow_dispatch:
+  pull_request:
   push:
+    branches: [main]
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
