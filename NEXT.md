@@ -9,7 +9,7 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
   Claude Code), with the terminal proof near the top, the coordination queue demoted to an extension,
   on-demand recall stated as a design choice, a "why the implementation matters" section with dated
   test results, an evolution table, and a self-recorded-history section built from the store's own
-  210 captures about this repo (the 2026-06-10 positioning decision and the 2026-08-07 projection
+  215 captures about this repo (the 2026-06-10 positioning decision and the 2026-08-06 projection
   scorecard). The CI badge was removed rather than left pointing at a July run.
 - **Five docs absorb the operations manual:** [agent-integration](docs/agent-integration.md),
   [operations](docs/operations.md), [runner](docs/runner.md), [evolution](docs/evolution.md),
@@ -24,9 +24,9 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
 - **Local verification gate:** `scripts/verify.sh` (Java suite, frontend type check, vitest,
   whitespace; `--e2e` adds Playwright) and an optional pre-push hook via
   `git config core.hooksPath scripts/git-hooks`.
-- **CI workflow** reduced to `workflow_dispatch` plus pushes to `main`, Ubuntu only, with a frontend
-  job added. GitHub Actions stays **disabled at the repo level by choice**; the workflow is ready to
-  run manually when enabled.
+- **CI workflow** now runs on pull requests, on pushes to `main`, and on demand, Ubuntu only, with a
+  frontend job added and `jq` ensured for the runner script tests. GitHub Actions was re-enabled at
+  the repo level on 2026-09-17. A push to a branch with no open pull request runs nothing.
 - `CHANGELOG.md` gained an Unreleased section covering everything since 0.1.0.
 
 ## Verification
@@ -50,18 +50,19 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
     against the real image, or gate them on the condition the code actually tests.
   - *Verified end state.* Backend 593 tests, 0 failures, 0 errors on macOS, in Linux containers, and
     on GitHub; frontend 49 files / 607 tests in all three. Trigger behavior was verified in both
-    directions: pushing `c02c67b` with no open pull request started no run, and opening PR #29
-    started one.
+    directions: pushing `c02c67b` with no open pull request started no run; opening PR #29 started
+    one; and a later push to that branch re-ran it.
 - Every commit SHA, file path, and anchor cited by the README and the five docs was resolved against
-  the repo; two independent fact-check passes (one Codex, one Claude) ran against source.
+  the repo. Three independent adversarial fact-check passes ran against source and found nineteen
+  problems, all corrected, including one error in a fix that had already been applied.
 - `git diff --check` clean.
 
 ## Open loops (ranked)
 
 1. **Re-add a CI badge once a green run exists for `main`.** Actions was re-enabled on 2026-09-17
-   and the workflow runs on pull requests, on pushes to `main`, and on demand, Ubuntu only. A push to
-   a branch with no open pull request runs nothing. The badge stays out until
-   a run for `main` is green, so it can never again show `passing` for a two-month-old commit.
+   and the workflow runs on pull requests, on pushes to `main`, and on demand, Ubuntu only. The badge
+   stays out until a run for `main` is green, so it can never again show `passing` for a two-month-old
+   commit.
 2. **Consider whether `docs/fleet/spec.md` should be scrubbed from history.** It is untracked and
    gitignored as of this pass, but earlier commits still contain it, including a machine-specific
    instruction string. Removing it entirely would mean rewriting published history.
