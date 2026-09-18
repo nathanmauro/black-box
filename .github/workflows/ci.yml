@@ -1,22 +1,23 @@
 name: ci
 
+# Runs on pull requests and on pushes to main, plus on demand. A push to a branch with no open pull
+# request runs nothing, so work in progress does not spend Actions minutes; opening the pull request
+# starts CI, and every later push to that branch re-runs it. The macOS matrix was dropped to keep
+# minutes down; the same checks run locally via ./scripts/verify.sh, optionally as a pre-push hook.
 on:
+  workflow_dispatch:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  backend:
     timeout-minutes: 20
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -24,4 +25,23 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B verify
+      - name: Ensure jq is available (runner scripts require it)
+        run: command -v jq >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
+      - run: mvn -B test
+
+  frontend:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test

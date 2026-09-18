@@ -1,3 +1,7 @@
+> Historical record, written 2026-05-28 for the first public showcase pass and kept as-is.
+> Class names, counts, and "not yet" items reflect that date; see the README and
+> [Evolution](../evolution.md) for the current state.
+
 # Black Box — Public Showcase Plan
 
 > Repo dir is still `sba-agentic` (artifact id `sba-agentic`); the product is **Black Box**.
