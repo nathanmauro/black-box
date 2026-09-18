@@ -48,6 +48,10 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
     command-present condition.
   - **Lesson worth keeping:** a container is not the runner. Verify environment-sensitive tests
     against the real image, or gate them on the condition the code actually tests.
+  - *Verified end state.* Backend 593 tests, 0 failures, 0 errors on macOS, in Linux containers, and
+    on GitHub; frontend 49 files / 607 tests in all three. Trigger behavior was verified in both
+    directions: pushing `c02c67b` with no open pull request started no run, and opening PR #29
+    started one.
 - Every commit SHA, file path, and anchor cited by the README and the five docs was resolved against
   the repo; two independent fact-check passes (one Codex, one Claude) ran against source.
 - `git diff --check` clean.
@@ -55,7 +59,8 @@ what was verified, and the ranked open loops. Durable history is in [docs/evolut
 ## Open loops (ranked)
 
 1. **Re-add a CI badge once a green run exists for `main`.** Actions was re-enabled on 2026-09-17
-   and the workflow is manual dispatch plus pushes to `main`, Ubuntu only. The badge stays out until
+   and the workflow runs on pull requests, on pushes to `main`, and on demand, Ubuntu only. A push to
+   a branch with no open pull request runs nothing. The badge stays out until
    a run for `main` is green, so it can never again show `passing` for a two-month-old commit.
 2. **Consider whether `docs/fleet/spec.md` should be scrubbed from history.** It is untracked and
    gitignored as of this pass, but earlier commits still contain it, including a machine-specific
