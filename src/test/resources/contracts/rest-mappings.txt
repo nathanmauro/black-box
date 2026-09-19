@@ -45,6 +45,7 @@ PATCH /api/tasks/{taskId}
 POST /api/ask
 POST /api/decisions
 POST /api/events
+POST /api/events/idempotent
 POST /api/handoffs
 POST /api/melds
 POST /api/memory/embeddings/backfill
