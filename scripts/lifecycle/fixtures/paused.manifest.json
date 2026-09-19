@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "adapter": "fake",
+  "deploymentId": "demo-deployment",
+  "workspaceId": "demo-workspace",
+  "topology": "dedicated",
+  "desiredState": "PAUSED",
+  "operationId": "demo-pause-1",
+  "release": {
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "schemaVersion": 1
+  },
+  "resources": {
+    "compute": "fake:demo:compute",
+    "storage": "fake:demo:storage"
+  },
+  "drainDeadlineSeconds": 30,
+  "backupRef": null
+}

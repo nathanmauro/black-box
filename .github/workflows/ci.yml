@@ -25,6 +25,8 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
+      - name: Offline lifecycle rehearsal
+        run: python3 -B -m unittest discover -s scripts/lifecycle -p 'test_*.py'
       - name: Ensure jq is available (runner scripts require it)
         run: command -v jq >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
       - name: Hook durability and deployment recovery

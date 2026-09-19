@@ -24,6 +24,9 @@ done
 
 step() { printf '\n==> %s\n' "$*"; }
 
+step "Offline lifecycle rehearsal"
+python3 -B -m unittest discover -s scripts/lifecycle -p 'test_*.py'
+
 step "git diff --check (whitespace errors in tracked changes)"
 git diff --check
 git diff --cached --check
