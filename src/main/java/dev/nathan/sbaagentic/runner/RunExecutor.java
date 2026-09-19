@@ -11,6 +11,7 @@ import java.util.Optional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.engine.Engine;
 import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager;
+import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager.CreatedWorktree;
 import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader;
 import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader.BuildArtifact;
 import dev.nathan.sbaagentic.runner.internal.application.RunContextLoader;
@@ -171,6 +172,8 @@ public class RunExecutor implements AutoCycle {
         String branchName = null;
         String tmuxSessionName = null;
         boolean preserveWorktree = false;
+        CreatedWorktree createdWorktree = null;
+        String checkpoint = "task claimed; worktree creation not verified";
         try {
             TaskSpec spec = claimedAutoTask.snapshot().spec();
             if (spec == null) {
@@ -240,6 +243,8 @@ public class RunExecutor implements AutoCycle {
                         "Unable to create git worktree: " + processDetail(worktreeResult));
                 return;
             }
+            checkpoint = "worktree created; worker not started";
+            createdWorktree = worktreeManager.createdWorktree(repoDir, worktreeDir, branchName);
             apiClient.annotate(
                     task.id(),
                     actorId,
@@ -249,6 +254,7 @@ public class RunExecutor implements AutoCycle {
                     null);
 
             String prompt = goalPromptBuilder.build(task.id(), spec.body(), resolvedVerify);
+            checkpoint = "worktree created; worker execution entered, outcome not yet known";
             WorkerRunResult result = workerRunExecutor.execute(
                     task,
                     repoDir,
@@ -259,18 +265,25 @@ public class RunExecutor implements AutoCycle {
                     orchestratorSessionId,
                     RunStage.BUILD);
             tmuxSessionName = result.tmuxSessionName();
+            checkpoint = "worker returned " + result.outcome();
             if (result.outcome() == WorkerOutcome.NO_ENGINE) {
-                cleanupWorktreeAndBranch(repoDir, worktreeDir, branchName, tmuxSessionName);
+                String disposition = cleanupWorktreeAndBranch(createdWorktree, tmuxSessionName);
+                worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                        worktreeDir, branchName, checkpoint, disposition);
                 block(task.id(), actorId, "No enabled engine configured");
                 return;
             }
             if (result.outcome() == WorkerOutcome.REQUEUED) {
-                cleanupWorktreeAndBranch(repoDir, worktreeDir, branchName, tmuxSessionName);
+                String disposition = cleanupWorktreeAndBranch(createdWorktree, tmuxSessionName);
+                worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                        worktreeDir, branchName, checkpoint, disposition);
                 return;
             }
 
             switch (result.outcome()) {
                 case TIMED_OUT -> {
+                    worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                            worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
                     apiClient.updateTaskStatus(
                             task.id(),
                             actorId,
@@ -279,6 +292,8 @@ public class RunExecutor implements AutoCycle {
                     workerRunExecutor.killSessionBestEffort(tmuxSessionName);
                 }
                 case BLOCKED -> {
+                    worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                            worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
                     apiClient.updateTaskStatus(task.id(), actorId, "blocked", result.detail());
                     workerRunExecutor.killSessionBestEffort(tmuxSessionName);
                 }
@@ -321,7 +336,10 @@ public class RunExecutor implements AutoCycle {
                             task.title(),
                             workerSummary,
                             tmuxSessionName);
+                    checkpoint = "worker reported DONE; ship returned " + shipResult.status();
                     if ("blocked".equals(shipResult.status())) {
+                        worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                                worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
                         apiClient.updateTaskStatus(
                                 task.id(),
                                 actorId,
@@ -366,6 +384,7 @@ public class RunExecutor implements AutoCycle {
                             completionSummary,
                             openLoops,
                             nextAction);
+                    checkpoint = "task completion acknowledged; ship returned " + shipResult.status();
                     workerRunExecutor.killSessionBestEffort(tmuxSessionName);
                     if ("merged".equals(shipResult.status())) {
                         pruneMergedWorktree(task.id(), actorId, repoDir, worktreeDir);
@@ -377,18 +396,23 @@ public class RunExecutor implements AutoCycle {
         }
         catch (RuntimeException ex) {
             log.error("Auto-lane execution failed for task {}; releasing it back to open", task.id(), ex);
+            String disposition = preserveWorktree
+                    ? "SDLC build worktree and branch retained for review."
+                    : cleanupWorktreeAndBranch(createdWorktree, tmuxSessionName);
+            if (preserveWorktree) {
+                workerRunExecutor.killSessionBestEffort(tmuxSessionName);
+            }
+            String recovery = worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
+                    worktreeDir, branchName, checkpoint, disposition);
             try {
                 apiClient.updateTaskStatus(
                         task.id(),
                         actorId,
                         "open",
-                        "Auto-lane execution crashed: " + ex.getMessage());
+                        "Auto-lane execution crashed: " + ex.getMessage() + ". " + recovery);
             }
             catch (RuntimeException updateFailure) {
                 log.error("Unable to release crashed auto task {} back to open", task.id(), updateFailure);
-            }
-            if (!preserveWorktree) {
-                cleanupWorktreeAndBranch(repoDir, worktreeDir, branchName, tmuxSessionName);
             }
         }
         finally {
@@ -501,12 +525,11 @@ public class RunExecutor implements AutoCycle {
         worktreeManager.pruneMergedWorktree(taskId, actorId, repoDir, worktreeDir);
     }
 
-    private void cleanupWorktreeAndBranch(
-            File repoDir, File worktreeDir, String branchName, String tmuxSessionName) {
-        if (tmuxSessionName != null) {
-            workerRunExecutor.killSessionBestEffort(tmuxSessionName);
+    private String cleanupWorktreeAndBranch(CreatedWorktree createdWorktree, String tmuxSessionName) {
+        if (!workerRunExecutor.stopSessionForCleanup(tmuxSessionName)) {
+            return "Worktree and branch preserved: worker shutdown could not be confirmed.";
         }
-        worktreeManager.cleanupWorktreeAndBranch(repoDir, worktreeDir, branchName);
+        return worktreeManager.cleanupWorktreeAndBranch(createdWorktree);
     }
 
     private void block(String taskId, String actorId, String reason) {

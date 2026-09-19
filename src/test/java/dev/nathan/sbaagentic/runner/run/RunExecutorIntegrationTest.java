@@ -10,6 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import dev.nathan.sbaagentic.runner.EngineConfig;
 import dev.nathan.sbaagentic.runner.RepoConfig;
 import dev.nathan.sbaagentic.runner.RunExecutor;
@@ -19,6 +22,7 @@ import dev.nathan.sbaagentic.runner.SdlcPlanCycle;
 import dev.nathan.sbaagentic.runner.SdlcReviewCycle;
 import dev.nathan.sbaagentic.runner.engine.FakeEngine;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
+import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
@@ -36,6 +40,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class RunExecutorIntegrationTest {
@@ -48,6 +57,218 @@ class RunExecutorIntegrationTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void failedWorkerShutdownPreservesCleanCheckoutAfterPostLaunchApiFailure() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = spy(new FakeBlackBoxApiClient());
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        tmux.delayFirstWrite = true;
+        tmux.failKill = true;
+        doAnswer(invocation -> {
+            String text = invocation.getArgument(3);
+            if (text.startsWith("Engine '")) {
+                throw new IllegalStateException("post-launch API unavailable");
+            }
+            return invocation.callRealMethod();
+        }).when(apiClient).annotate(any(), any(), any(), any(), any());
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+
+        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-stop-uncertain");
+
+        Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
+        assertThat(tmux.sessionExists).isTrue();
+        assertThat(worktree).isDirectory();
+        assertThat(run(processRunner, worktree, "git", "status", "--porcelain").stdout()).isBlank();
+        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID)).stdout()).isNotBlank();
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call ->
+                assertThat(call.blockedReason()).contains("worker shutdown could not be confirmed", worktree.toString())
+                        .doesNotContain("no worker output was found"));
+        assertThat(apiClient.completeCalls).isEmpty();
+        verifyNoInteractions(shipExecutor);
+    }
+
+    @Test
+    void shippingCrashPreservesWorkerCommitDirtyFilesAndLog() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        tmux.leaveUnfinishedFiles = true;
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        when(shipExecutor.ship(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("controlled ship failure"));
+
+        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-failure");
+
+        Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
+        assertThat(worktree).isDirectory();
+        assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
+        assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
+        assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
+        assertThat(run(processRunner, worktree, "git", "branch", "--show-current").stdout().strip())
+                .isEqualTo(expectedBranch(TASK_ID));
+        assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
+                .contains("fake worker test commit");
+        assertThat(apiClient.completeCalls).isEmpty();
+        assertThat(tmux.sessionExists).isFalse();
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> {
+            assertThat(call.status()).isEqualTo("open");
+            assertThat(call.blockedReason()).contains(TASK_ID, "orchestrator-failure", worktree.toString(),
+                    expectedBranch(TASK_ID), "last verified checkpoint: worker returned DONE");
+        });
+    }
+
+    @Test
+    void unavailableApiAfterShippingStillLogsRecoveryAndPreservesCommit() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = spy(new FakeBlackBoxApiClient());
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        when(shipExecutor.ship(any(), any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
+                    .completeTask(any(), any(), any(), any(), any(), any(), any());
+            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
+                    .annotate(any(), any(), any(), any(), any());
+            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
+                    .updateTaskStatus(any(), any(), any(), any());
+            return new ShipExecutor.ShipResult("local-only", "push disabled", null, null, List.of());
+        });
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(WorktreeManager.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                    .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-api-failure");
+            Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
+            assertThat(worktree).isDirectory();
+            assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
+                    .contains("fake worker test commit");
+            assertThat(appender.list).anySatisfy(event -> assertThat(event.getFormattedMessage())
+                    .contains(TASK_ID, "orchestrator-api-failure", worktree.toString(), expectedBranch(TASK_ID),
+                            "last verified checkpoint: worker reported DONE; ship returned local-only",
+                            "preserved"));
+            assertThat(apiClient.completeCalls).isEmpty();
+            assertThat(tmux.sessionExists).isFalse();
+        }
+        finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
+    @Test
+    void interruptedWorkerPathPreservesActualFilesAndReportsBlocked() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        tmux.leaveUnfinishedFiles = true;
+        tmux.interruptInsteadOfReportingDone = true;
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        try {
+            executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                    .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-interrupted");
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        }
+        finally {
+            Thread.interrupted();
+        }
+        Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
+        assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
+        assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
+        assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> {
+            assertThat(call.status()).isEqualTo("blocked");
+            assertThat(call.blockedReason()).contains("Interrupted while waiting");
+        });
+        assertThat(tmux.sessionExists).isFalse();
+        verifyNoInteractions(shipExecutor);
+    }
+
+    @Test
+    void planWorkerCrashPreservesItsUnexpectedFilesAndCommit() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        tmux.leaveUnfinishedFiles = true;
+        tmux.crashPlanAfterWriting = true;
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor).executePlan(
+                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.IN_PROGRESS),
+                config(repo), "blackbox-runner", "orchestrator-plan-failure");
+        Path worktree = repo.resolve(RunnerNaming.worktreeDirName(PLAN_TASK_ID));
+        assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
+        assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
+        assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
+        assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
+                .contains("fake worker test commit");
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> assertThat(call.blockedReason())
+                .contains(PLAN_TASK_ID, "orchestrator-plan-failure", worktree.toString(), expectedBranch(PLAN_TASK_ID),
+                        "worker execution entered, outcome not yet known"));
+        assertThat(apiClient.completeCalls).isEmpty();
+        assertThat(tmux.sessionExists).isFalse();
+        verifyNoInteractions(shipExecutor);
+    }
+
+    @Test
+    void rateLimitRequeuePreservesWorkerOutputAndReportsRecovery() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        tmux.leaveUnfinishedFiles = true;
+        tmux.pane = "HTTP 429: Too Many Requests";
+        CompletionDetector detector = mock(CompletionDetector.class);
+        when(detector.awaitCompletion(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new CompletionDetector.CompletionResult(CompletionDetector.Outcome.TIMED_OUT, "still running"));
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        RunExecutor executor = new RunExecutor(apiClient, tmux, processRunner, detector,
+                new RecordingWorkerSessionIngest(apiClient), new GoalPromptBuilder(), new StoryFrontmatterParser(),
+                List.of(new FakeEngine()), new ActiveRunRegistry(), shipExecutor);
+
+        executor.execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-requeued");
+
+        Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
+        assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
+        assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
+        assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
+        assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
+                .contains("fake worker test commit");
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> assertThat(call.status()).isEqualTo("open"));
+        assertThat(apiClient.annotationCalls).anySatisfy(call -> assertThat(call.text())
+                .contains("orchestrator-requeued", "worker returned REQUEUED", "preserved"));
+        assertThat(apiClient.completeCalls).isEmpty();
+        assertThat(tmux.sessionExists).isFalse();
+        verifyNoInteractions(shipExecutor);
+    }
+
+    @Test
+    void noEnabledEngineRemovesUnchangedWorktreeAndBranch() throws Exception {
+        RealProcessRunner processRunner = new RealProcessRunner();
+        Path repo = initializeRepo(processRunner);
+        FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
+        TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
+        ShipExecutor shipExecutor = mock(ShipExecutor.class);
+        RunnerConfig config = new RunnerConfig(1, List.of(), null, config(repo).repos());
+        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                .execute(taskChange(repo), config, "blackbox-runner", "orchestrator-no-engine");
+
+        assertThat(repo.resolve(RunnerNaming.worktreeDirName(TASK_ID))).doesNotExist();
+        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID)).stdout()).isBlank();
+        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> {
+            assertThat(call.status()).isEqualTo("blocked");
+            assertThat(call.blockedReason()).isEqualTo("No enabled engine configured");
+        });
+        assertThat(tmux.sessionExists).isFalse();
+        verifyNoInteractions(shipExecutor);
+    }
 
     @Test
     void createsNamedWorktreeRunsFakeEngineAndInterimCompletes() throws Exception {
@@ -467,6 +688,12 @@ class RunExecutorIntegrationTest {
         private final FakeBlackBoxApiClient apiClient;
         private boolean sessionExists;
         private Path cwd;
+        private boolean leaveUnfinishedFiles;
+        private boolean interruptInsteadOfReportingDone;
+        private boolean crashPlanAfterWriting;
+        private boolean delayFirstWrite;
+        private boolean failKill;
+        private String pane = "";
 
         private TestTmuxController(
                 RealProcessRunner processRunner, FakeBlackBoxApiClient apiClient) {
@@ -481,6 +708,7 @@ class RunExecutorIntegrationTest {
 
         @Override
         public void killSession(String sessionName) {
+            if (failKill) throw new IllegalStateException("tmux shutdown unavailable");
             sessionExists = false;
         }
 
@@ -492,8 +720,9 @@ class RunExecutorIntegrationTest {
 
         @Override
         public void sendKeys(String sessionName, String text) {
+            if (delayFirstWrite) return;
             String taskId = exportedValue(text, "SBA_TASK_ID");
-            if (text.contains("SBA_STAGE='plan'")) {
+            if (text.contains("SBA_STAGE='plan'") && !crashPlanAfterWriting) {
                 apiClient.annotate(
                         taskId,
                         "blackbox-runner-worker",
@@ -530,12 +759,29 @@ class RunExecutorIntegrationTest {
             assertSuccess(run(processRunner, cwd, "git", "add", ".blackbox-fake-worker.log"));
             assertSuccess(run(
                     processRunner, cwd, "git", "commit", "-m", "fake worker test commit"));
+            if (leaveUnfinishedFiles) {
+                try {
+                    Files.writeString(cwd.resolve("README.md"), "unfinished edit\n");
+                    Files.writeString(cwd.resolve("untracked.txt"), "recover me\n");
+                    Files.writeString(cwd.resolve("worker.log"), "worker evidence\n");
+                }
+                catch (Exception ex) {
+                    throw new IllegalStateException(ex);
+                }
+            }
+            if (crashPlanAfterWriting) {
+                throw new IllegalStateException("controlled plan worker crash");
+            }
+            if (interruptInsteadOfReportingDone) {
+                Thread.currentThread().interrupt();
+                return;
+            }
             apiClient.setTaskEvents(taskId, List.of(workerDoneEvent(taskId)));
         }
 
         @Override
         public String capturePane(String sessionName) {
-            return "";
+            return pane;
         }
 
         private static String exportedValue(String command, String name) {
