@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "deploymentId": "demo-deployment",
+  "workspaceId": "demo-workspace",
+  "resources": {
+    "fake:demo:compute": {
+      "kind": "compute",
+      "deploymentId": "demo-deployment",
+      "workspaceId": "demo-workspace",
+      "shared": false,
+      "state": "RUNNING"
+    },
+    "fake:demo:storage": {
+      "kind": "storage",
+      "deploymentId": "demo-deployment",
+      "workspaceId": "demo-workspace",
+      "shared": false,
+      "state": "PRESENT"
+    }
+  },
+  "admissionOpen": true,
+  "streamsOpen": true,
+  "storageReady": true,
+  "release": {
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "schemaVersion": 1
+  },
+  "activeJobs": 1,
+  "inflightCaptures": 1,
+  "drainSeconds": 5,
+  "durableCommitsConfirmed": true,
+  "fence": 1,
+  "recoveryRequired": false,
+  "readiness": {
+    "authenticatedCaptureRecall": true,
+    "isolation": true
+  },
+  "captures": {
+    "capture-001": {
+      "text": "Synthetic lifecycle capture"
+    }
+  },
+  "checkpoints": {
+    "job-001": {
+      "sequence": 1
+    }
+  },
+  "backups": {},
+  "operations": {},
+  "lastFailure": null,
+  "workersFenced": false
+}

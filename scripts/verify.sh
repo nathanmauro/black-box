@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Local verification gate: the checks a green CI run would perform, runnable without CI.
 #
-#   ./scripts/verify.sh          # Java suite, frontend type check, frontend unit tests, whitespace
+#   ./scripts/verify.sh          # Lifecycle, Java, frontend type/unit checks, whitespace
 #   ./scripts/verify.sh --e2e    # additionally runs the Playwright suite (packages a jar; see note)
 #
-# Note: --e2e packages target/*.jar. If a local service runs the jar from target/, restart it
-# afterwards (macOS launchd: `launchctl kickstart -k gui/$UID/$SBA_LAUNCHD_LABEL`).
+# Note: --e2e packages target/*.jar. Never run it over a JAR used by a live service.
+# Use a separate checkout and output path for verification builds.
 #
 # Install as a pre-push hook (runs the default set before every push):
 #   git config core.hooksPath scripts/git-hooks
@@ -23,6 +23,9 @@ for arg in "$@"; do
 done
 
 step() { printf '\n==> %s\n' "$*"; }
+
+step "Offline lifecycle rehearsal"
+python3 -B -m unittest discover -s scripts/lifecycle -p 'test_*.py'
 
 step "git diff --check (whitespace errors in tracked changes)"
 git diff --check
