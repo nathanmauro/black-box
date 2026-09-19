@@ -269,3 +269,11 @@ The examples target the default loopback service. The bundled hooks do not send 
 header. An authenticated deployment needs a credential-aware client or bridge; changing
 `SBA_AGENTIC_URL` alone does not add authentication. See [Authentication](authentication.md) and
 [hook environment variables](operations.md#hook-environment-variables).
+
+### Reading a handoff in the web interface
+
+Choose **Read recalled context** to expand the context returned in a Recall result. Structured
+handoffs include their context summary; older unstructured events can provide only a first-line
+excerpt. **Open full handoff in Browse** links to the exact source event, where **Read full handoff**
+expands its context summary or recorded text. Compact headlines, next actions, and open loops stay
+visible. The disclosures support keyboard activation and display captured content as plain text.
