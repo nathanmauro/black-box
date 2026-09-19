@@ -60,6 +60,16 @@ class IdempotentCaptureHttpTest {
     }
 
     @Test
+    void delayedEventsKeepLatestSessionActivity() {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.delayedEvents(http, base, jdbc);
+    }
+
+    @Test
+    void concurrentDistinctEventsConvergeOnLatestSessionActivity() throws Exception {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.concurrentEvents(http, base, jdbc);
+    }
+
+    @Test
     void repeatedCaptureReturnsOriginalIdentityWithoutChangingSessionOrTimestamp() {
         String captureId = UUID.randomUUID().toString();
         var event = event("repeat-" + UUID.randomUUID());

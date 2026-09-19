@@ -95,8 +95,14 @@ can return 404 or 405. A client must not silently retry such a request through l
 and then assume it has an idempotent acknowledgement.
 
 This server capability is the prerequisite for a durable hook queue. It does not install such a
-queue, change hooks or MCP capture, or make existing fire-and-forget delivery reliable. Ordering
-older queued events and keeping `last_seen_at` monotonic remain separate work.
+queue, change hooks or MCP capture, or make existing fire-and-forget delivery reliable.
+Distinct events may arrive out of chronological order. Their original `observedAt` values are
+preserved, and each newly persisted event keeps `lastSeenAt` at the greater of its existing stored
+checkpoint and the incoming observed instant, including nanosecond precision. This prevents new
+backward movement; it does not repair historical sessions whose stored checkpoint was already
+incorrect. `startedAt` retains its existing meaning: the observed time of the first
+persisted event, rather than the minimum timestamp of later backfilled events. Replay changes
+neither timestamp. These rules also apply to legacy unkeyed ingestion.
 
 ## Verification
 

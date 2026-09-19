@@ -101,6 +101,16 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void delayedEventsKeepLatestSessionActivity() {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.delayedEvents(http, base, jdbc);
+    }
+
+    @Test
+    void concurrentDistinctEventsConvergeOnLatestSessionActivity() throws Exception {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.concurrentEvents(http, base, jdbc);
+    }
+
+    @Test
     void httpCaptureRecallFeedProjectsAndRestartPreserveData() {
         String session = "capture-" + UUID.randomUUID();
         JsonNode saved = post("/api/decisions", Map.of("source", "codex", "clientSessionId", session,

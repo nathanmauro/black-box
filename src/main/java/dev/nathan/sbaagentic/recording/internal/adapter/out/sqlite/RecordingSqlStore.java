@@ -183,7 +183,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     public AgentSession findOrCreateSession(EventIngestRequest request, Instant observedAt, String title, int titleRank) {
         // One atomic upsert: insert a fresh session, or — when (source, client_session_id) already
-        // exists — bump its activity and upgrade the title only if this event carries a strictly
+        // exists — acquire its write lock and upgrade the title only if this event carries a strictly
         // higher-ranked one. ON CONFLICT makes find-or-create race-free: two concurrent first events
         // for the same session can't double-insert or trip the UNIQUE constraint. started_at and
         // event_count are set only on insert, so an existing session keeps its origin and count.
@@ -197,7 +197,6 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT (source, client_session_id) DO UPDATE SET
-                    last_seen_at = excluded.last_seen_at,
                     cwd = COALESCE(excluded.cwd, agent_sessions.cwd),
                     spawned_by = COALESCE(agent_sessions.spawned_by, excluded.spawned_by),
                     title = CASE WHEN excluded.title_rank > agent_sessions.title_rank
@@ -271,12 +270,16 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 toJson(event.metadata()),
                 event.observedAt().toString());
 
+        // The session upsert above holds the SQLite writer/PostgreSQL row lock until this
+        // transaction commits. Compare parsed instants: variable-precision ISO timestamps do
+        // not sort chronologically as strings, and database date functions can lose nanos.
+        Instant lastSeenAt = session.lastSeenAt().isAfter(observedAt) ? session.lastSeenAt() : observedAt;
         jdbcTemplate.update("""
                 UPDATE agent_sessions
                    SET event_count = event_count + 1,
                        last_seen_at = ?
                  WHERE id = ?
-                """, observedAt.toString(), session.id());
+                """, lastSeenAt.toString(), session.id());
 
         return event;
     }
