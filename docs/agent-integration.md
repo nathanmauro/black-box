@@ -154,7 +154,9 @@ independent choices: registering a write hook does not enable SessionStart recal
   and `tool` roles so Browse can reconstruct the recorded conversation. `SubagentStart` and
   `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
   the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
-  can nest subagents under their parent.
+  can nest subagents under their parent. Set `SBA_CAPTURE_DURABLE=1` for an opt-in sanitized local
+  queue with idempotent retries; see [durable capture](durable-capture.md) for requirements,
+  destination restrictions, recovery commands, and privacy limits.
 - `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code or
   Codex `SessionStart` and prints a bounded context block. The bridge emits plain stdout for the
   host to inject as session context. Check that the installed client supports the configured hook
