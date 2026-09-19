@@ -1,3 +1,4 @@
+import HandoffContext from "../components/events/HandoffContext";
 import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js";
 import KindBadge from "../components/KindBadge";
@@ -186,6 +187,11 @@ function RecallCard(props: { item: RecalledItem }) {
         {props.item.clientSessionId ? <span>{props.item.clientSessionId}</span> : null}
         {props.item.toAgent ? <span>to {props.item.toAgent}</span> : null}
       </div>
+      <Show when={props.item.kind.toLowerCase() === "handoff"}>
+        <HandoffContext text={props.item.headline} label="Read recalled context">
+          <A href={recalledItemHref(props.item)}>Open full handoff in Browse</A>
+        </HandoffContext>
+      </Show>
       <Show when={props.item.rationale}>
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
       </Show>

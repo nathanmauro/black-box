@@ -1,0 +1,20 @@
+{
+  "provenance": "Synthetic golden cases from src/test/java/dev/nathan/sbaagentic/event/RedactionServiceTest.java and EventIngestServiceTest.java; additional local-outbox cases are explicitly marked.",
+  "javaCases": [
+    {"input":"before\n-----BEGIN RSA PRIVATE KEY-----\nprivate material\n-----END RSA PRIVATE KEY-----\nafter\n","expected":"before\n[REDACTED]\nafter\n"},
+    {"input":"export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY","expected":"export AWS_SECRET_ACCESS_KEY=[REDACTED]"},
+    {"input":"MY_SECRET_KEY=abcd1234efgh","expected":"MY_SECRET_KEY=[REDACTED]"},
+    {"input":"DB-ACCESS-TOKEN: hunter22hunter","expected":"DB-ACCESS-TOKEN: [REDACTED]"},
+    {"input":"Authorization: Bearer sk-proj-abc123def456ghi789jkl","expected":"Authorization: Bearer [REDACTED]"},
+    {"input":"ghp_abcdefghijklmnopqrstuvwxyz0123456789AB","expected":"[REDACTED]"},
+    {"input":"xoxb-1234567890-abcdefghij","expected":"[REDACTED]"},
+    {"input":"the token bucket algorithm","expected":"the token bucket algorithm"},
+    {"input":"password requirements documented","expected":"password requirements documented"}
+  ],
+  "outboxCases": [
+    {"input":"before -----BEGIN PRIVATE KEY-----\nunterminated private material and tail","expected":"before [REDACTED]"},
+    {"input":"password=short","expected":"password=[REDACTED]"},
+    {"input":"{\"password\":\"short with spaces\"}","expected":"{\"password\":\"[REDACTED]\"}"},
+    {"input":"AKIA1234567890ABCDEF","expected":"[REDACTED]"}
+  ]
+}

@@ -3,6 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK="$SCRIPT_DIR/hooks/sba-agent-hook.sh"
+# The legacy smoke must not inherit an opted-in user's real outbox settings. Durable tests below
+# use their own temporary directories and loopback HTTP fixtures.
+export SBA_CAPTURE_DURABLE=0
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -257,3 +260,5 @@ if [[ "$HOOK_STATUS" -ne 0 ]]; then
   exit 1
 fi
 echo "never-fail with non-JSON stdin: exit=0"
+
+python3 "$SCRIPT_DIR/hooks/test_capture_outbox.py"

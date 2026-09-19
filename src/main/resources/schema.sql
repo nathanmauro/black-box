@@ -57,6 +57,17 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
 CREATE INDEX IF NOT EXISTS idx_agent_events_tool_observed
     ON agent_events (tool_name, observed_at DESC);
 
+-- Reserved and bound in the same event transaction; no raw original request is retained.
+CREATE TABLE IF NOT EXISTS event_capture_receipts (
+    source TEXT NOT NULL,
+    client_session_id TEXT NOT NULL,
+    capture_id TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    event_id TEXT UNIQUE,
+    PRIMARY KEY (source, client_session_id, capture_id),
+    FOREIGN KEY (event_id) REFERENCES agent_events(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS memory_embeddings (
     target_kind  TEXT NOT NULL,          -- 'event' | 'session_summary'
     target_id    TEXT NOT NULL,          -- agent_events.id | agent_sessions.id

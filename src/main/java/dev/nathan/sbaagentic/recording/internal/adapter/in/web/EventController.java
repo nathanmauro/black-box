@@ -9,6 +9,8 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
+import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
 import dev.nathan.sbaagentic.query.EventQuery;
@@ -44,6 +46,11 @@ public class EventController {
     @PostMapping("/events")
     public IngestResponse ingest(@Valid @RequestBody EventIngestRequest request) {
         return ingestService.ingest(request);
+    }
+
+    @PostMapping("/events/idempotent")
+    public IdempotentIngestResponse ingestIdempotent(@Valid @RequestBody IdempotentEventIngestRequest request) {
+        return ingestService.ingestIdempotent(request);
     }
 
     @GetMapping("/events")

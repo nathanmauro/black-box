@@ -36,6 +36,12 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `recentSessions` | List recent agent sessions |
 | `localModelStatus` | Inspect the optional local model backend |
 
+Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
+Handoffs require `contextSummary`, Observations require `text`, and Projections require at least one
+path with a title. Missing, null, or blank required fields return an MCP tool error naming the field
+and do not write an event. Correct the named field before retrying. Optional handoff fields such as
+recipient, open loops, and next action retain their existing behavior.
+
 ### Coordination tools
 
 | Tool | Purpose |
@@ -148,7 +154,9 @@ independent choices: registering a write hook does not enable SessionStart recal
   and `tool` roles so Browse can reconstruct the recorded conversation. `SubagentStart` and
   `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
   the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
-  can nest subagents under their parent.
+  can nest subagents under their parent. Set `SBA_CAPTURE_DURABLE=1` for an opt-in sanitized local
+  queue with idempotent retries; see [durable capture](durable-capture.md) for requirements,
+  destination restrictions, recovery commands, and privacy limits.
 - `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code or
   Codex `SessionStart` and prints a bounded context block. The bridge emits plain stdout for the
   host to inject as session context. Check that the installed client supports the configured hook
@@ -263,3 +271,11 @@ The examples target the default loopback service. The bundled hooks do not send 
 header. An authenticated deployment needs a credential-aware client or bridge; changing
 `SBA_AGENTIC_URL` alone does not add authentication. See [Authentication](authentication.md) and
 [hook environment variables](operations.md#hook-environment-variables).
+
+### Reading a handoff in the web interface
+
+Choose **Read recalled context** to expand the context returned in a Recall result. Structured
+handoffs include their context summary; older unstructured events can provide only a first-line
+excerpt. **Open full handoff in Browse** links to the exact source event, where **Read full handoff**
+expands its context summary or recorded text. Compact headlines, next actions, and open loops stay
+visible. The disclosures support keyboard activation and display captured content as plain text.

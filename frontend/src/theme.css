@@ -5456,6 +5456,7 @@ a {
 .detail-block { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); margin-top: 8px; padding: 4px 10px; }
 .detail-block > summary { color: var(--text-dim); cursor: pointer; font-size: 12px; user-select: none; }
 .detail-block > summary:hover { color: var(--text); }
+.handoff-context > p { margin: 8px 0 4px; color: var(--text); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.5; margin: 8px 0 4px; max-height: 420px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .detail-pre--inline { border: 0; margin: 8px 0 0; }
 

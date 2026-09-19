@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
+import HandoffContext from "./HandoffContext";
 import SourceDot from "../SourceDot";
 import { looksLikeJson, metadataList, metadataText, parseMetadata } from "./eventData";
 
@@ -27,6 +28,7 @@ export default function HandoffCard(props: HandoffCardProps) {
         {metadataText(meta().toAgent) ? <span>to {metadataText(meta().toAgent)}</span> : null}
         {metadataText(meta().nextAction) ? <span>next: {truncatePath(metadataText(meta().nextAction))}</span> : null}
       </div>
+      <HandoffContext text={summary()} />
       <OpenLoops loops={metadataList(meta().openLoops)} />
     </article>
   );

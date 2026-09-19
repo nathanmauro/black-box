@@ -36,6 +36,8 @@ import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
+import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
@@ -199,6 +201,8 @@ class WireContractFixtureTest {
                 entry("EventFeedResponse", EventFeedResponse.class),
                 entry("EventIngestRequest", EventIngestRequest.class),
                 entry("IngestResponse", IngestResponse.class),
+                entry("IdempotentEventIngestRequest", IdempotentEventIngestRequest.class),
+                entry("IdempotentIngestResponse", IdempotentIngestResponse.class),
                 entry("MemoryEmbeddingBackfillRequest", MemoryEmbeddingBackfillRequest.class),
                 entry("MemoryEmbeddingBackfillResult", MemoryEmbeddingBackfillResult.class),
                 entry("ProjectAlias", ProjectAlias.class),

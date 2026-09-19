@@ -227,6 +227,23 @@ public final class WorkerRunExecutor {
         }
     }
 
+    /** Cleanup must not remove a worker's cwd while its session may still be running. */
+    public boolean stopSessionForCleanup(String tmuxSessionName) {
+        if (tmuxSessionName == null) {
+            return true;
+        }
+        try {
+            if (tmux.hasSession(tmuxSessionName)) {
+                tmux.killSession(tmuxSessionName);
+            }
+            return !tmux.hasSession(tmuxSessionName);
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to confirm worker shutdown for {}; preserving checkout", tmuxSessionName, ex);
+            return false;
+        }
+    }
+
     private void launchEngine(
             SelectedEngine selection,
             String prompt,

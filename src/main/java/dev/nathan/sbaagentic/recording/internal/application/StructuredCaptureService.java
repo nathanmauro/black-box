@@ -34,6 +34,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
 
     @Override
     public IngestResponse captureDecision(CaptureDecisionRequest request) {
+        requireNotBlank("decision", request.decision());
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", KIND_DECISION);
         metadata.put("decision", request.decision());
@@ -48,6 +49,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
 
     @Override
     public IngestResponse captureHandoff(CaptureHandoffRequest request) {
+        requireNotBlank("contextSummary", request.contextSummary());
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", KIND_HANDOFF);
         metadata.put("contextSummary", request.contextSummary());
@@ -77,6 +79,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     @Override
     public IngestResponse captureObservation(
             String source, String clientSessionId, String repo, String text) {
+        requireNotBlank("text", text);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", KIND_OBSERVATION);
         putIfPresent(metadata, "repo", repo);
@@ -90,6 +93,9 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             String eventType,
             String text,
             Map<String, Object> metadata) {
+        // MCP and in-process callers do not pass through REST's @Valid request validation.
+        requireNotBlank("source", source);
+        requireNotBlank("clientSessionId", clientSessionId);
         return recorder.ingest(new EventIngestRequest(
                 source, clientSessionId, null, eventType, "assistant", text, repo,
                 null, null, null, metadata, Instant.now()));
@@ -213,5 +219,11 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
 
     private static boolean notBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static void requireNotBlank(String field, String value) {
+        if (!notBlank(value)) {
+            throw new IllegalArgumentException(field + " must not be blank");
+        }
     }
 }
