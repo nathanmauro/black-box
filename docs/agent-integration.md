@@ -36,6 +36,12 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `recentSessions` | List recent agent sessions |
 | `localModelStatus` | Inspect the optional local model backend |
 
+Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
+Handoffs require `contextSummary`, Observations require `text`, and Projections require at least one
+path with a title. Missing, null, or blank required fields return an MCP tool error naming the field
+and do not write an event. Correct the named field before retrying. Optional handoff fields such as
+recipient, open loops, and next action retain their existing behavior.
+
 ### Coordination tools
 
 | Tool | Purpose |
