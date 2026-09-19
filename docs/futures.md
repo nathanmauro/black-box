@@ -101,8 +101,14 @@ ownership rules. The [Linear adapter](../scripts/linear/blackbox_linear.py) pers
 publication identity before sending a write and reconciles ambiguous responses; that is a bounded
 external-write precedent, not a general capture outbox.
 
-**What would be built.** Start with stable capture identities, a durable outbox, explicit delivery
-acknowledgements, and retry/deduplication behavior for disconnected clients. Add workspace access
+Local capture now has [payload-bound identities and acknowledgements](idempotent-capture.md),
+plus an [opt-in sanitized hook outbox](durable-capture.md). Actual local outage, lost-response and
+server-restart verification preserved one canonical event. This does not provide remote delivery,
+authenticated client wiring, workspace isolation, history synchronization or guaranteed downstream
+processing. Global hook activation is separate; the default legacy path remains unchanged.
+
+**What would be built.** Establish a demonstrated remote-sharing need before extending the local
+retry contract to authenticated remote clients and their privacy/retention requirements. Add workspace access
 boundaries only for a demonstrated sharing need. Multi-host workers would require explicit
 leases or fencing and recovery semantics, not merely a shared task table. Local/cloud history
 synchronization would be a separate design with conflict and deletion rules.

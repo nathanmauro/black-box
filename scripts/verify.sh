@@ -4,8 +4,8 @@
 #   ./scripts/verify.sh          # Java suite, frontend type check, frontend unit tests, whitespace
 #   ./scripts/verify.sh --e2e    # additionally runs the Playwright suite (packages a jar; see note)
 #
-# Note: --e2e packages target/*.jar. If a local service runs the jar from target/, restart it
-# afterwards (macOS launchd: `launchctl kickstart -k gui/$UID/$SBA_LAUNCHD_LABEL`).
+# Note: --e2e packages target/*.jar. Never run it over a JAR used by a live service.
+# Use an isolated checkout, then deploy the verified artifact with deploy-local.sh --prebuilt-jar.
 #
 # Install as a pre-push hook (runs the default set before every push):
 #   git config core.hooksPath scripts/git-hooks

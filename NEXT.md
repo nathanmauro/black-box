@@ -1,96 +1,84 @@
-# Handoff — 2026-09-17 (showcase pass)
+# Handoff — 2026-09-19 (verified local recovery and capture)
 
-Branch `showcase-pass` from `main` at `1833e07`. This is the repo's living handoff: current state,
-what was verified, and the ranked open loops. Durable history is in [docs/evolution.md](docs/evolution.md).
+Current reviewed implementation is on local branch `codex/2026-09-19-blackbox-improvements`,
+through `15ff1c5`, based on `6045d70`. The server candidate was deployed to the existing local
+installation and verified through HTTP and the browser. The changes are ready for pull-request
+review; local deployment does not imply a merge or released version. The separate dirty canonical
+checkout was preserved. This file is a continuation
+checkpoint; selected execution status remains in Linear. Earlier showcase history remains in Git
+and [docs/evolution.md](docs/evolution.md).
 
-## What landed
+## Completed slices
 
-- **README rewritten** around the smallest useful loop (capture → handoff → recall across Codex and
-  Claude Code), with the terminal proof near the top, the coordination queue demoted to an extension,
-  on-demand recall stated as a design choice, a "why the implementation matters" section with dated
-  test results, an evolution table, and a self-recorded-history section built from the store's own
-  215 captures about this repo (the 2026-06-10 positioning decision and the 2026-08-06 projection
-  scorecard). The CI badge was removed rather than left pointing at a July run.
-- **Five docs absorb the operations manual:** [agent-integration](docs/agent-integration.md),
-  [operations](docs/operations.md), [runner](docs/runner.md), [evolution](docs/evolution.md),
-  [futures](docs/futures.md). `PLAN.md` moved to `docs/history/2026-05-28-showcase-plan.md` as a dated
-  record. `docs/fleet/spec.md` (private fleet ledger) is untracked and ignored; the local file remains.
-- **Stale claims corrected:** `SBA_BIND_ADDRESS` "no built-in auth" row; "start in 60 seconds";
-  "REST mirrors exactly"; Projection semantic recall (lexical only); `docs/architecture.md` on SQLite
-  as the only store, the LIKE fallback semantics, authentication, and the after-commit fan-out claim
-  (narrowed: completion-Handoff listeners run inside the outer task transaction); the phantom `spi/`
-  package in package conventions and `CLAUDE.md`; the first-person workstation narrative in
-  `docs/local-writes-and-elasticsearch.md`.
-- **Local verification gate:** `scripts/verify.sh` (Java suite, frontend type check, vitest,
-  whitespace; `--e2e` adds Playwright) and an optional pre-push hook via
-  `git config core.hooksPath scripts/git-hooks`.
-- **CI workflow** now runs on pull requests, on pushes to `main`, and on demand, Ubuntu only, with a
-  frontend job added and `jq` ensured for the runner script tests. GitHub Actions was re-enabled at
-  the repo level on 2026-09-17. A push to a branch with no open pull request runs nothing.
-- `CHANGELOG.md` gained an Unreleased section covering everything since 0.1.0.
+- Structured capture validates required identity and content at the common service boundary,
+  including MCP calls. Missing handoff context now returns actionable validation instead of an
+  implementation dereference. [Acceptance and evidence](docs/superpowers/plans/2026-09-19-structured-capture-validation.md).
+- Runner failure/restart cleanup preserves dirty files, untracked and ignored files, unique
+  commits, uncertain ownership, and live or uncertain workers. Recovery pointers survive API
+  failure. [Runner behavior and limits](docs/runner.md).
+- `POST /api/events/idempotent` binds an immutable capture identity to the recognized request;
+  matching retries return the original event and session without a duplicate event or counter
+  update. [Protocol and compatibility](docs/idempotent-capture.md).
+- Delayed legacy or keyed captures preserve the greatest observed session activity time, including
+  fractional-second precision and concurrent writes. This does not repair historically regressed
+  checkpoints or change first-persisted `startedAt` semantics.
+- The optional hook outbox sanitizes before private local storage, bounds the whole hook, retains
+  unacknowledged rows, and retries immutable requests. It remains **opt-in**; global hooks were not
+  changed. Read [the limits and activation instructions](docs/durable-capture.md) first.
+- Recall exposes **Read recalled context** with an explicit full-source link; Browse exposes
+  **Read full handoff**. Legacy first-line recall excerpts are labeled accurately. The existing
+  fix for misleading handoff confidence is also present in the deployed candidate.
+- Local deployment supports a verified prebuilt artifact, exact installation identity, retained
+  recovery copies, confirmed shutdown, atomic replacement, and verified binary rollback.
+  [Operations and recovery](docs/operations.md).
 
-## Verification
+## Verification and boundaries
 
-- `./scripts/verify.sh` on this branch, 2026-09-17: Java 593 run, 0 failures, 0 errors, 11 skipped;
-  type check clean; vitest 607 tests / 49 files.
-- **Both CI jobs were executed as written in Linux containers before this branch could run on
-  GitHub**, and then for real on GitHub. Two rounds of environment-specific failures came out of it:
-  - *Container round.* Backend failed with 5 failures and 1 error: four runner script tests need
-    `jq`, which the macOS machine has and the base Linux image does not, and the Finder-reveal test
-    asserted a `/usr/bin/open` reveal that image lacks. Fixed by ensuring `jq` in the backend job and
-    gating the reveal tests.
-  - *Real-runner round (run 35282236056).* Frontend passed; backend still failed on one test, the
-    fail-closed companion added in the previous round. The GitHub `ubuntu-latest` image **does** ship
-    `/usr/bin/open`, so an OS-based gate was the wrong predicate: the test expected the command to be
-    absent and found it present. Both reveal tests now key on the actual precondition the service
-    checks (`/usr/bin/open` is a regular executable file) via JUnit assumptions, not on the OS.
-    Verified in containers both with and without that command, and in the full suite under the
-    command-present condition.
-  - **Lesson worth keeping:** a container is not the runner. Verify environment-sensitive tests
-    against the real image, or gate them on the condition the code actually tests.
-  - *Verified end state.* Backend 593 tests, 0 failures, 0 errors on macOS, in Linux containers, and
-    on GitHub; frontend 49 files / 607 tests in all three. Trigger behavior was verified in both
-    directions: pushing `c02c67b` with no open pull request started no run; opening PR #29 started
-    one; and a later push to that branch re-ran it.
-- Every commit SHA, file path, and anchor cited by the README and the five docs was resolved against
-  the repo. Three independent adversarial fact-check passes ran against source and found nineteen
-  problems, all corrected, including one error in a fix that had already been applied.
-- `git diff --check` clean.
+- Integrated Java: **637 tests, zero failures/errors, three intentional environment skips**,
+  including SQLite and disposable real PostgreSQL contracts. The earlier broad run exposed a
+  launcher fixture timeout; its focused rerun and this final full run passed.
+- Frontend: **607 tests / 49 files**, production build and package. Actual browser checks covered
+  long paragraphs, literal HTML, mouse and Enter/Space activation, exact source navigation,
+  legacy multiline records, and 390-pixel viewport wrapping. This is browser evidence, not a
+  physical-phone or full accessibility audit.
+- Deployment: **26 actual-entrypoint scenarios**; copied old → new → old binaries preserved a
+  disposable SQLite history and normal read/append behavior. Binary rollback does not undo data
+  changes; the old binary cannot serve the new idempotent route.
+- Hook: **32 durability tests plus 20 existing hook checks**. Actual hook → Java → SQLite proof
+  covered outage, committed response loss, server restart, identical retries and one stored event.
+  Fresh review caught and corrected raw Bash temporary files, secret-bearing JSON keys and an
+  input-wait deadline gap. Pre-acceptance loss and unknown-secret limits remain explicit.
+- Fresh independent reviews passed. Clean packaging was checked against source to exclude stale
+  hashed assets. The local deployment preserved configuration and database identity, retained a
+  private point-in-time backup and previous binary, and passed representative live routes. A real
+  deployment handoff was acknowledged, replayed once without duplication, recalled and opened at
+  its exact source in the deployed UI.
 
-## Open loops (ranked)
+## Remaining decisions and evidence gaps
 
-1. **Re-add a CI badge once a green run exists for `main`.** Actions was re-enabled on 2026-09-17
-   and the workflow runs on pull requests, on pushes to `main`, and on demand, Ubuntu only. The badge
-   stays out until a run for `main` is green, so it can never again show `passing` for a two-month-old
-   commit.
-2. **Consider whether `docs/fleet/spec.md` should be scrubbed from history.** It is untracked and
-   gitignored as of this pass, but earlier commits still contain it, including a machine-specific
-   instruction string. Removing it entirely would mean rewriting published history.
-3. **Bi-temporal supersession** (`supersedes` on `captureDecision`, current-vs-historical recall) is
-   the first item in [docs/futures.md](docs/futures.md) and the most requested primitive in adjacent
-   tools.
-4. **`query` separate from `scope` on recall** (seam at `ContextService.pathOrIdScope`); fold `ask`
-   into `memory`. Do not extract the runner.
-5. **SubagentStop auto-Handoff** (spawned sessions leave no handoff today).
-6. **`captureHandoff` without `contextSummary` returns a raw NullPointerException** instead of the
-   typed validation envelope every other tool uses.
-7. **Open PRs:** #27 (Cursor agent, process monitor; `/api/processes` 404s live) and #21 (fleet
-   round 1) are stale. Verify or close; merging #27 as-is would put non-maintainer commits on `main`.
-8. **Runner config example** advertises a disabled engine that has no implementation; only `codex`
-   and `fake` exist.
-9. Earlier loops still valid: runner `cleanupWorktreeAndBranch` exception path ungated
-   (`RunExecutor.java`), rev-list probe without `--` (`CrashRecovery.java`), no auto re-embed on
-   model change.
+1. Decide when to activate durable capture in a particular client after reviewing its local data
+   and retry limits. No implicit activation, remote routing, authentication expansion or scheduler.
+2. Preserve the existing continuation-evaluation gates. The five-case bare-agent ceiling remains
+   a negative result; checkpoint reconstruction and today's functional recovery proof do not show
+   superiority over ordinary handoff/search, adoption or productivity gains. Do not tune another
+   benchmark merely to manufacture a memory win; require a fresh, predeclared hypothesis.
+3. Review separate lifecycle/forgetting work against actual retention and canonical-storage
+   invariants before integration. This mission did not absorb unrelated drafts or dirty work.
+4. Supersession, query-versus-scope separation, automatic subagent handoffs and embedding refresh
+   remain possible future investments, not accepted work or proven customer demand. Old PR, CI
+   badge and history-cleanup observations need current verification and publication authority.
 
-## Gotchas (carried forward)
+## Operational cautions
 
-- Any `mvn package` (including the Playwright webServer and `verify.sh --e2e`) overwrites the jar a
-  local service may run from. Restart it afterwards (macOS launchd:
-  `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`).
-- Never `git add -A` except scoped `git add -A src/main/resources/static` after a bundle rebuild.
-- Recall hook stdout for Codex must not start with `[` or `{`.
-- Test DBs are temp **files**, never `cache=shared` memory. Never point a second app at the live DB;
-  snapshot with `sqlite3 sba-agentic.db ".backup <path>"`. The event table is `agent_events`.
-- Playwright against the live app uses `domcontentloaded`, never `networkidle` (SSE).
-- `POST /api/events` ingest takes `toolInput` / `toolOutput` as **objects**; `*Json` names are read-side.
-- Surefire counts: clear stale reports before trusting aggregates.
+- **Never package over a JAR used by a running service.** Build in an isolated checkout and use
+  `./scripts/deploy-local.sh --prebuilt-jar /absolute/path/to/verified.jar`. Rebuild mode is only
+  for the configured installation checkout and stops the service before Maven. See operations.
+- A normal Maven package can retain obsolete files in `target/classes`. Build the final artifact
+  from a clean, non-running target and verify generated asset references.
+- Stage exact owned paths. Generated frontend files come from the source build, never hand edits.
+- Test databases are disposable files, not the live database. Use a consistent online backup for
+  live recovery preparation; never start a second application against the canonical store.
+- Keep recall-hook stdout free of leading `[` or `{`; ingest takes object-valued `toolInput` and
+  `toolOutput`, while `*Json` names belong to read-side data.
+- Browser readiness uses a loaded document or concrete UI state, not `networkidle` with SSE.
+- Preserve fresh test reports before cleaning the build; stale report aggregates are not proof.

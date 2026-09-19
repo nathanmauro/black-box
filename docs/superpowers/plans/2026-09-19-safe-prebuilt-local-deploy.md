@@ -1,5 +1,7 @@
 # Safe local deployment
 
+Status: independently reviewed, integrated and exercised in a successful existing local installation.
+
 ## Safety contract
 
 The installed launchd plist owns the service label, Java command, working directory, and JAR
@@ -57,3 +59,15 @@ Bash syntax, and `git diff --check` passed. The final test output is retained lo
 `/tmp/blackbox-safe-deploy-final-reviewed.log`; the additional realistic missing-JAR red
 reproduction is `/tmp/blackbox-safe-deploy-missing-jar-red.log`. No commit or publication was
 performed by the implementation worker. The coordinator owns integration and real deployment.
+
+## Coordinator closure
+
+The coordinator reran all 26 scenarios, verified copied old → candidate → old binary compatibility
+against a disposable SQLite database, retained a consistent private online database backup, and
+deployed a clean prebuilt candidate through this entry point. The previous process stopped before
+replacement; the new launchd PID owned the configured port and reported healthy canonical storage.
+Installed plist and summary-wrapper fingerprints, working directory and database inode remained
+unchanged. Status, session, recall, exact-event and UI routes passed; the actual browser workflow
+and legitimate idempotent handoff replay also passed. Previous binary and recovery metadata remain
+retained. No real failure was induced in production; failure/rollback paths were tested with the
+disposable scenarios. This closes the previously pending real deployment step.

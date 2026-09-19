@@ -1,6 +1,6 @@
 # Read complete handoffs from Recall and Browse
 
-Status: selected after live interface reproduction.
+Status: implemented, independently reviewed, integrated and verified in the deployed local UI.
 
 ## Observed problem and smallest intervention
 
@@ -46,4 +46,10 @@ multiline text in Browse. Desktop and 390-pixel viewport checks showed no horizo
 overflow; the long reference wrapped inside the disclosure. Temporary viewport was reset.
 Fresh independent review accepted the corrected wording, implementation, docs, and generated
 assets. All 607 frontend tests passed again, along with Vite build and Maven package. No production
-data, hooks, or service changed. Screenshots and the private audit report remain outside the repo.
+data, hooks, or service changed during this isolated slice. Screenshots and the private audit report
+remain outside the repo.
+
+Coordinator closure: the server candidate was subsequently deployed through the verified local
+procedure. The real deployment handoff was recalled, expanded and followed to its exact source;
+keyboard expansion displayed the complete recorded context. Global hook configuration stayed
+unchanged. Deployment does not imply a merge or released version.

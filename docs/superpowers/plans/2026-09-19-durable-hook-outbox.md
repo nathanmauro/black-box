@@ -1,6 +1,7 @@
 # Opt-in durable hook outbox
 
-Status: implementation and disposable hook verification complete; coordinator review and integration remain.
+Status: independently reviewed, verified through the real Java delivery path and integrated locally.
+Server support is deployed locally; global hooks remain unchanged and activation remains opt-in.
 Acceptance was frozen before implementation. Server idempotent ingestion is already present.
 
 ## Scope and safety contract

@@ -30,4 +30,6 @@ Validate the common capture-service boundary before persistence, reusing the exi
 - Fresh independent review found no material correctness or compatibility issues. Its two
   verification suggestions were applied: require an integral event count with a positive write
   control, and assert exact recalled source/event identity. Final HTTP rerun verifies those checks.
-- No deployment or publication performed.
+- The implementation slice did not deploy. Coordinator integration subsequently passed the final
+  637-test suite (zero failures/errors, three intentional skips) and deployed the reviewed server
+  locally through the verified deployment procedure. No malformed production probe or publication.

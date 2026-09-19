@@ -9,9 +9,10 @@ Commands below assume the repository root unless a path is explicit.
 
 ### macOS launchd
 
-For a first installation, render and install
+The deployment script updates an **existing healthy installation**. For initial setup, render and install
 [`scripts/black-box.plist.template`](../scripts/black-box.plist.template) with the actual Java,
-JAR, database, log, and service-label settings. Then use:
+JAR, database, log, and service-label settings, build the initial JAR while no service uses it,
+bootstrap the service, and verify `/api/status`. For subsequent updates, use:
 
 ```bash
 ./scripts/deploy-local.sh

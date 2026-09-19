@@ -1,6 +1,6 @@
 # Preserve unfinished work after runner failure
 
-Status: implemented, runner regressions and independent correction review passed; coordinator integration pending. Tracked by NAT-5.
+Status: implemented, independently reviewed and integrated locally. Final combined regression passed; pull-request review is separate. Tracked by NAT-5.
 
 ## Problem and evidence
 
@@ -78,9 +78,11 @@ engine, shipping service, application database, or task.
 
 ### Boundaries and next step
 
-No live services, canonical databases, real tasks, deployments, commits, or publication changed.
+At the implementation handoff, no live services, canonical databases, real tasks or deployments changed.
 The change intentionally preserves work when state cannot be proven, which can retain disk usage.
 It does not add automatic failed-build resume or promise serialization against arbitrary external
 Git/filesystem writers. Recovery details rely on the runner's configured log retention when the API
 is unavailable. Coordinator owns fresh independent review, any full-suite verification, Git finish,
 and integration; do not describe this checkout-only result as deployed.
+
+Coordinator closure: the reviewed changes were committed and integrated. The final combined suite passed 637 tests with zero failures/errors and three intentional skips. The server artifact was deployed locally through the separately verified deployment procedure; no production runner task was launched.

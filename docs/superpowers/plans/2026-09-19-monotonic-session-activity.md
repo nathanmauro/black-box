@@ -1,6 +1,6 @@
 # Preserve session activity across delayed capture
 
-Status: implemented; focused real HTTP/database acceptance passed, final independent review pending.
+Status: implemented, independently reviewed, integrated and deployed locally; pull-request review is separate.
 
 ## Problem and scope
 
@@ -44,3 +44,5 @@ boundary: existing historically wrong checkpoints are not repaired. That clarifi
 Local verification logs: `/tmp/blackbox-chronology-red.log` and
 `/tmp/blackbox-chronology-green.log` (not committed). No live data or service was changed.
 Root owns this isolated checkout and Git integration. Full combined regression follows integration.
+
+Coordinator closure: final combined regression passed 637 tests with zero failures/errors and three intentional skips. The additive server candidate was deployed locally after binary/database compatibility proof; existing historical timestamps were not rewritten.

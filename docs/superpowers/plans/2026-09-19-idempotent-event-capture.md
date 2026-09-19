@@ -1,8 +1,8 @@
 # Idempotent event capture: server prerequisite
 
-Status: server prerequisite implemented and focused SQLite/PostgreSQL regressions verified;
-independent review and coordinator integration pending. NAT-6 remains open for a later durable
-client queue.
+Status: server prerequisite independently reviewed, integrated and deployed locally. The separately
+reviewed [opt-in hook outbox](2026-09-19-durable-hook-outbox.md) passed actual Java delivery proof;
+global client configuration remains unchanged. Pull-request review is separate.
 
 ## Safety and scope
 
@@ -48,7 +48,7 @@ policies, or public/external state. The coordinator owns review, Git finish, and
 3. Verify failure and concurrency cases using isolated databases and update documentation.
 4. Hand exact evidence and remaining limits to the coordinator.
 
-## Known separate work
+## Separate work identified at initial scope freeze
 
 Durable hook outbox/retry behavior remains a later slice. Existing ingestion can move a session's
 `last_seen_at` backwards when older queued events arrive; report this for the next slice rather
@@ -113,11 +113,13 @@ Verification used temporary SQLite files and a new disposable local `postgres:18
 with no host bind mount. The image creates an anonymous Docker data volume; the container was
 started with `--rm` for disposal together with that volume. PostgreSQL tests created and dropped
 only randomly named fixture schemas.
-Existing databases and containers were not changed. No deployment, live service, real task, Git
-commit, or publication was performed. The coordinator owns independent review, full-suite testing,
-Git finish/integration, and disposition of the temporary PostgreSQL test container.
+During that implementation slice, existing databases and containers were not changed. Coordinator
+review, full-suite testing and integration subsequently passed. The server candidate was deployed
+locally through the verified deployment procedure with unchanged configuration/database identity;
+the disposable PostgreSQL container and its anonymous volume were removed after final verification.
 
 The new endpoint provides canonical persistence with at-most-once publication attempts; it does
 not guarantee completion of optional downstream work across a crash. Receipts have no TTL, and
-future purge must explicitly define tombstone/forget semantics. Durable client queue/retry and
-monotonic session activity for old queued events remain separate follow-up slices; NAT-6 is open.
+future purge must explicitly define tombstone/forget semantics. The separate opt-in durable-hook
+and monotonic-activity slices are now reviewed and integrated. Remote/authenticated client capture
+and global hook activation remain outside this implementation.
