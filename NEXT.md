@@ -48,6 +48,8 @@ and [docs/evolution.md](docs/evolution.md).
   covered outage, committed response loss, server restart, identical retries and one stored event.
   Fresh review caught and corrected raw Bash temporary files, secret-bearing JSON keys and an
   input-wait deadline gap. Pre-acceptance loss and unknown-secret limits remain explicit.
+- The default local verification gate and PR backend job run the hook/deployment suites before
+  Java, so these failure-path checks are part of routine regression coverage.
 - Fresh independent reviews passed. Clean packaging was checked against source to exclude stale
   hashed assets. The local deployment preserved configuration and database identity, retained a
   private point-in-time backup and previous binary, and passed representative live routes. A real
