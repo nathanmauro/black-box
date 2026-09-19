@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.EventFacetCounts;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
@@ -143,9 +144,46 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         return new RecordingStore.Persisted(updated, event);
     }
 
+    @Transactional
+    @Override
+    public RecordingStore.IdempotentPersisted persistIdempotentEvent(
+            String captureId, String requestHash, EventIngestRequest request,
+            Instant observedAt, String title, int titleRank) {
+        // Reserve before any reads/session writes. Concurrent PostgreSQL inserts wait on this
+        // key; SQLite obtains its writer lock here, without a read-to-write snapshot upgrade.
+        int reserved = jdbcTemplate.update("""
+                INSERT INTO event_capture_receipts (source, client_session_id, capture_id, request_hash)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
+                """, request.source(), request.clientSessionId(), captureId, requestHash);
+        if (reserved == 0) {
+            return jdbcTemplate.queryForObject("""
+                    SELECT request_hash, event_id FROM event_capture_receipts
+                     WHERE source = ? AND client_session_id = ? AND capture_id = ?
+                    """, (row, rowNum) -> {
+                if (!requestHash.equals(row.getString("request_hash"))) {
+                    throw new CaptureIdConflictException();
+                }
+                AgentEvent event = findEventById(row.getString("event_id")).orElseThrow(
+                        () -> new IllegalStateException("Capture receipt has no canonical event."));
+                AgentSession session = findSessionById(event.sessionId()).orElseThrow();
+                return new RecordingStore.IdempotentPersisted(new RecordingStore.Persisted(session, event), true);
+            }, request.source(), request.clientSessionId(), captureId);
+        }
+        RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
+        int bound = jdbcTemplate.update("""
+                UPDATE event_capture_receipts SET event_id = ?
+                 WHERE source = ? AND client_session_id = ? AND capture_id = ?
+                """, persisted.event().id(), request.source(), request.clientSessionId(), captureId);
+        if (bound != 1) {
+            throw new IllegalStateException("Unable to bind capture receipt to its canonical event.");
+        }
+        return new RecordingStore.IdempotentPersisted(persisted, false);
+    }
+
     public AgentSession findOrCreateSession(EventIngestRequest request, Instant observedAt, String title, int titleRank) {
         // One atomic upsert: insert a fresh session, or — when (source, client_session_id) already
-        // exists — bump its activity and upgrade the title only if this event carries a strictly
+        // exists — acquire its write lock and upgrade the title only if this event carries a strictly
         // higher-ranked one. ON CONFLICT makes find-or-create race-free: two concurrent first events
         // for the same session can't double-insert or trip the UNIQUE constraint. started_at and
         // event_count are set only on insert, so an existing session keeps its origin and count.
@@ -159,7 +197,6 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT (source, client_session_id) DO UPDATE SET
-                    last_seen_at = excluded.last_seen_at,
                     cwd = COALESCE(excluded.cwd, agent_sessions.cwd),
                     spawned_by = COALESCE(agent_sessions.spawned_by, excluded.spawned_by),
                     title = CASE WHEN excluded.title_rank > agent_sessions.title_rank
@@ -233,12 +270,16 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 toJson(event.metadata()),
                 event.observedAt().toString());
 
+        // The session upsert above holds the SQLite writer/PostgreSQL row lock until this
+        // transaction commits. Compare parsed instants: variable-precision ISO timestamps do
+        // not sort chronologically as strings, and database date functions can lose nanos.
+        Instant lastSeenAt = session.lastSeenAt().isAfter(observedAt) ? session.lastSeenAt() : observedAt;
         jdbcTemplate.update("""
                 UPDATE agent_sessions
                    SET event_count = event_count + 1,
                        last_seen_at = ?
                  WHERE id = ?
-                """, observedAt.toString(), session.id());
+                """, lastSeenAt.toString(), session.id());
 
         return event;
     }

@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.zaxxer.hikari.HikariDataSource;
@@ -23,6 +24,8 @@ import dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite.SqliteVecVectorS
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.EventRecorded;
+import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
 import dev.nathan.sbaagentic.workflow.TaskQuery;
 import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
@@ -39,6 +42,11 @@ import org.springframework.boot.web.servlet.context.ServletWebServerApplicationC
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.PayloadApplicationEvent;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -93,6 +101,16 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void delayedEventsKeepLatestSessionActivity() {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.delayedEvents(http, base, jdbc);
+    }
+
+    @Test
+    void concurrentDistinctEventsConvergeOnLatestSessionActivity() throws Exception {
+        dev.nathan.sbaagentic.recording.SessionChronologyContract.concurrentEvents(http, base, jdbc);
+    }
+
+    @Test
     void httpCaptureRecallFeedProjectsAndRestartPreserveData() {
         String session = "capture-" + UUID.randomUUID();
         JsonNode saved = post("/api/decisions", Map.of("source", "codex", "clientSessionId", session,
@@ -118,6 +136,168 @@ class PostgresBackendContractTest {
         assertThat(pool.getDataSourceProperties()).doesNotContainKeys("foreign_keys", "busy_timeout", "enable_load_extension");
         assertThat(app.getBeansOfType(SqliteVecVectorStore.class)).isEmpty();
         assertThat(app.getBean(MemoryVectorStore.class)).isInstanceOf(BruteForceVectorStore.class);
+    }
+
+    @Test
+    void idempotentCaptureConcurrentRetriesConflictAndRestartKeepOneCanonicalEvent() throws Exception {
+        String captureId = UUID.randomUUID().toString();
+        String client = "idempotent-" + UUID.randomUUID();
+        Map<String, Object> event = new java.util.LinkedHashMap<>(Map.of("source", "codex", "clientSessionId", client,
+                "eventType", "Stop", "text", "password=first-private-value", "cwd", repo));
+        AtomicInteger recorded = new AtomicInteger();
+        AtomicInteger stopped = new AtomicInteger();
+        ApplicationListener<PayloadApplicationEvent<?>> listener = published -> {
+            if (published.getPayload() instanceof EventRecorded value && client.equals(value.event().clientSessionId())) recorded.incrementAndGet();
+            if (published.getPayload() instanceof SessionStopped value && client.equals(value.event().clientSessionId())) stopped.incrementAndGet();
+        };
+        app.addApplicationListener(listener);
+        List<JsonNode> responses = new ArrayList<>();
+        try (var workers = Executors.newFixedThreadPool(8)) {
+            CyclicBarrier barrier = new CyclicBarrier(8);
+            var futures = new ArrayList<java.util.concurrent.Future<JsonNode>>();
+            for (int i = 0; i < 8; i++) {
+                futures.add(workers.submit(() -> { barrier.await(); return post("/api/events/idempotent", Map.of("captureId", captureId, "event", event)); }));
+            }
+            for (var future : futures) responses.add(future.get(15, TimeUnit.SECONDS));
+        }
+        assertThat(responses.stream().filter(response -> !response.path("replayed").asBoolean()).count()).isEqualTo(1);
+        assertThat(responses.stream().map(response -> response.path("eventId").asText()).distinct()).hasSize(1);
+        assertThat(recorded.get()).isEqualTo(1);
+        assertThat(stopped.get()).isEqualTo(1);
+        String id = responses.getFirst().path("eventId").asText();
+        String lastSeen = jdbc.queryForObject("SELECT last_seen_at FROM agent_sessions WHERE client_session_id = ?", String.class, client);
+        event.put("text", "password=second-private-value");
+        var conflict = http.postForEntity(base + "/api/events/idempotent", Map.of("captureId", captureId, "event", event), JsonNode.class);
+        assertThat(conflict.getStatusCode().value()).isEqualTo(409);
+        assertThat(conflict.getBody().path("error").path("type").asText()).isEqualTo("capture_id_conflict");
+        event.put("text", "password=first-private-value");
+        app.close();
+        startApp();
+        JsonNode replay = post("/api/events/idempotent", Map.of("captureId", captureId, "event", event));
+        assertThat(replay.path("eventId").asText()).isEqualTo(id);
+        assertThat(replay.path("replayed").asBoolean()).isTrue();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM event_capture_receipts WHERE capture_id = ?", Integer.class, captureId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_events WHERE client_session_id = ?", Integer.class, client)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT event_count FROM agent_sessions WHERE client_session_id = ?", Integer.class, client)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT last_seen_at FROM agent_sessions WHERE client_session_id = ?", String.class, client)).isEqualTo(lastSeen);
+        assertThat(jdbc.queryForObject("SELECT text FROM agent_events WHERE id = ?", String.class, id)).isEqualTo("password=[REDACTED]");
+    }
+
+    @Test
+    void idempotentReservationRollsBackOnPostgresInsertFailure() {
+        String captureId = UUID.randomUUID().toString();
+        String client = "rollback-capture-" + UUID.randomUUID();
+        Map<String, Object> body = Map.of("captureId", captureId, "event", Map.of("source", "codex",
+                "clientSessionId", client, "eventType", "Observation", "text", "Keep atomic capture"));
+        jdbc.execute("CREATE FUNCTION reject_capture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.client_session_id = '"
+                + client + "' THEN RAISE EXCEPTION 'controlled capture failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER reject_capture BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION reject_capture()");
+        try {
+            assertThat(http.postForEntity(base + "/api/events/idempotent", body, JsonNode.class).getStatusCode().value()).isEqualTo(500);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM event_capture_receipts WHERE capture_id = ?", Integer.class, captureId)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_sessions WHERE client_session_id = ?", Integer.class, client)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_events WHERE client_session_id = ?", Integer.class, client)).isZero();
+        }
+        finally {
+            jdbc.execute("DROP TRIGGER reject_capture ON agent_events");
+            jdbc.execute("DROP FUNCTION reject_capture()");
+        }
+        assertThat(post("/api/events/idempotent", body).path("replayed").asBoolean()).isFalse();
+        assertThat(post("/api/events/idempotent", body).path("replayed").asBoolean()).isTrue();
+    }
+
+    @Test
+    void concurrentIdempotentConflictsChooseOneWinnerWithoutPoisoningTransactions() throws Exception {
+        String captureId = UUID.randomUUID().toString();
+        String client = "concurrent-conflict-" + UUID.randomUUID();
+        var first = Map.of("captureId", captureId, "event", Map.of("source", "codex", "clientSessionId", client,
+                "eventType", "Observation", "text", "first request"));
+        var second = Map.of("captureId", captureId, "event", Map.of("source", "codex", "clientSessionId", client,
+                "eventType", "Observation", "text", "second request"));
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            CyclicBarrier barrier = new CyclicBarrier(2);
+            var a = workers.submit(() -> { barrier.await(); return http.postForEntity(base + "/api/events/idempotent", first, JsonNode.class); });
+            var b = workers.submit(() -> { barrier.await(); return http.postForEntity(base + "/api/events/idempotent", second, JsonNode.class); });
+            var responses = List.of(a.get(15, TimeUnit.SECONDS), b.get(15, TimeUnit.SECONDS));
+            assertThat(responses.stream().map(response -> response.getStatusCode().value())).containsExactlyInAnyOrder(200, 409);
+            assertThat(responses.stream().filter(response -> response.getStatusCode().value() == 409).findFirst().orElseThrow()
+                    .getBody().path("error").path("type").asText()).isEqualTo("capture_id_conflict");
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM event_capture_receipts WHERE capture_id = ?", Integer.class, captureId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_events WHERE client_session_id = ?", Integer.class, client)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT event_count FROM agent_sessions WHERE client_session_id = ?", Integer.class, client)).isEqualTo(1);
+    }
+
+    @Test
+    void idempotentNamespacesValidationAndOptionalFailureRemainIndependent() {
+        String captureId = UUID.randomUUID().toString();
+        String client = "namespace-capture-" + UUID.randomUUID();
+        Map<String, Object> event = new java.util.LinkedHashMap<>(Map.of("source", " Codex ", "clientSessionId", " " + client + " ",
+                "eventType", "Observation", "text", "original", "toolInput", Map.of("z", 2, "a", 1)));
+        AtomicInteger recorded = new AtomicInteger();
+        ApplicationListener<PayloadApplicationEvent<?>> listener = published -> {
+            if (published.getPayload() instanceof EventRecorded value && client.equals(value.event().clientSessionId()) && "codex".equals(value.event().source())) {
+                recorded.incrementAndGet();
+                throw new IllegalStateException("controlled optional publication failure");
+            }
+        };
+        app.addApplicationListener(listener);
+        JsonNode first = post("/api/events/idempotent", Map.of("captureId", captureId, "event", event));
+        var sorted = new java.util.LinkedHashMap<String, Object>();
+        sorted.put("a", 1);
+        sorted.put("z", 2);
+        event.put("toolInput", sorted);
+        assertThat(post("/api/events/idempotent", Map.of("captureId", captureId.toUpperCase(), "event", event)).path("replayed").asBoolean()).isTrue();
+        event.put("source", "codex");
+        event.put("clientSessionId", client);
+        assertThat(post("/api/events/idempotent", Map.of("captureId", captureId, "event", event)).path("replayed").asBoolean()).isTrue();
+        assertThat(recorded.get()).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM agent_events WHERE id = ?", first.path("eventId").asText()))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+        event.put("source", "claude");
+        JsonNode otherSource = post("/api/events/idempotent", Map.of("captureId", captureId, "event", event));
+        event.put("clientSessionId", client + "-other");
+        JsonNode otherSession = post("/api/events/idempotent", Map.of("captureId", captureId, "event", event));
+        assertThat(List.of(first.path("eventId").asText(), otherSource.path("eventId").asText(), otherSession.path("eventId").asText())).doesNotHaveDuplicates();
+        for (var invalid : List.of(Map.of("event", event), Map.of("captureId", "1-1-1-1-1", "event", event),
+                Map.of("captureId", UUID.randomUUID().toString()), Map.of("captureId", UUID.randomUUID().toString(), "event", Map.of()))) {
+            assertThat(http.postForEntity(base + "/api/events/idempotent", invalid, JsonNode.class).getStatusCode().value()).isEqualTo(400);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM event_capture_receipts WHERE capture_id = ?", Integer.class, captureId)).isEqualTo(3);
+    }
+
+    @Test
+    void receiptSchemaUpgradePreservesPreChangePostgresHistory() throws Exception {
+        String migrationSchema = "bb_capture_migration_" + UUID.randomUUID().toString().replace("-", "");
+        try (Connection connection = connection()) {
+            connection.createStatement().execute("CREATE SCHEMA " + migrationSchema);
+            try {
+                connection.setSchema(migrationSchema);
+                var dataSource = new SingleConnectionDataSource(connection, true);
+                var migration = new ResourceDatabasePopulator(new ClassPathResource("schema-postgres.sql"));
+                migration.execute(dataSource);
+                JdbcTemplate migrationJdbc = new JdbcTemplate(dataSource);
+                migrationJdbc.execute("DROP TABLE event_capture_receipts");
+                migrationJdbc.update("""
+                        INSERT INTO agent_sessions (id, source, client_session_id, title, started_at, last_seen_at, event_count)
+                        VALUES ('legacy-session', 'codex', 'legacy-client', 'Original title', '2026-09-18T12:00:00Z', '2026-09-18T12:00:00Z', 1)
+                        """);
+                migrationJdbc.update("""
+                        INSERT INTO agent_events (id, session_id, source, client_session_id, event_type, text, observed_at)
+                        VALUES ('legacy-event', 'legacy-session', 'codex', 'legacy-client', 'Observation', 'Original evidence', '2026-09-18T12:00:00Z')
+                        """);
+                var sessionBefore = migrationJdbc.queryForMap("SELECT * FROM agent_sessions");
+                var eventBefore = migrationJdbc.queryForMap("SELECT * FROM agent_events");
+                migration.execute(dataSource);
+                migration.execute(dataSource);
+                assertThat(migrationJdbc.queryForMap("SELECT * FROM agent_sessions")).isEqualTo(sessionBefore);
+                assertThat(migrationJdbc.queryForMap("SELECT * FROM agent_events")).isEqualTo(eventBefore);
+                assertThat(migrationJdbc.queryForObject("SELECT count(*) FROM event_capture_receipts", Integer.class)).isZero();
+            }
+            finally {
+                connection.createStatement().execute("DROP SCHEMA " + migrationSchema + " CASCADE");
+            }
+        }
     }
 
     @Test

@@ -1,10 +1,12 @@
 package dev.nathan.sbaagentic.runner.internal.application;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import dev.nathan.sbaagentic.runner.RunnerNaming;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
@@ -195,27 +197,105 @@ public class WorktreeManager {
                 "Merged worktree removed and pruned: " + worktreeDir.getAbsolutePath());
     }
 
-    public void cleanupWorktreeAndBranch(File repoDir, File worktreeDir, String branchName) {
-        if (repoDir == null || worktreeDir == null) {
-            return;
-        }
-        ProcessResult remove = processRunner.run(
-                List.of("git", "-C", repoDir.getAbsolutePath(), "worktree", "remove",
-                        worktreeDir.getAbsolutePath(), "--force"),
-                repoDir,
-                GIT_TIMEOUT);
-        if (remove.exitCode() != 0 || remove.timedOut()) {
-            log.warn("Unable to remove worktree {} during cleanup: {}", worktreeDir, processDetail(remove));
-        }
-        if (branchName != null && !branchName.isBlank()) {
-            ProcessResult deleteBranch = processRunner.run(
-                    List.of("git", "-C", repoDir.getAbsolutePath(), "branch", "-D", branchName),
-                    repoDir,
-                    GIT_TIMEOUT);
-            if (deleteBranch.exitCode() != 0 || deleteBranch.timedOut()) {
-                log.warn("Unable to delete branch {} during cleanup: {}", branchName, processDetail(deleteBranch));
+    /** Capture only after this run successfully creates the worktree, before launching a worker. */
+    public CreatedWorktree createdWorktree(File repoDir, File worktreeDir, String branchName) {
+        try {
+            String head = probe(worktreeDir, "rev-parse", "HEAD");
+            if (!head.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
+                throw new IllegalStateException("Initial HEAD is not a commit ID");
             }
+            return new CreatedWorktree(
+                    realPath(repoDir.toPath()), realPath(worktreeDir.toPath()), branchName, head,
+                    realPath(Path.of(probe(worktreeDir, "rev-parse", "--absolute-git-dir"))));
         }
+        catch (RuntimeException ex) {
+            log.warn("Unable to capture ownership of created worktree {}; automatic cleanup disabled", worktreeDir, ex);
+            return null;
+        }
+    }
+
+    /** Remove only an unchanged checkout created by this run. Unknown state always preserves. */
+    public String cleanupWorktreeAndBranch(CreatedWorktree created) {
+        if (created == null) {
+            return "Cleanup skipped: this run has no verified worktree ownership.";
+        }
+        try {
+            File repo = created.repo().toFile();
+            File worktree = created.worktree().toFile();
+            if (!created.worktree().equals(realPath(Path.of(probe(worktree, "rev-parse", "--show-toplevel"))))
+                    || !created.gitDirectory().equals(realPath(Path.of(probe(worktree, "rev-parse", "--absolute-git-dir"))))
+                    || !realPath(Path.of(probe(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")))
+                            .equals(realPath(Path.of(probe(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"))))
+                    || !created.branch().equals(probe(worktree, "symbolic-ref", "--short", "HEAD"))) {
+                return "Worktree and branch preserved: ownership no longer matches this run.";
+            }
+            if (!created.initialHead().equals(probe(worktree, "rev-parse", "HEAD"))) {
+                return "Worktree and branch preserved: HEAD differs from the initial commit.";
+            }
+            // Include ignored output (such as worker logs) as well as tracked and untracked files.
+            if (!probe(worktree, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching").isBlank()) {
+                return "Worktree and branch preserved: tracked, untracked, or ignored files changed.";
+            }
+            ProcessResult remove = processRunner.run(
+                    List.of("git", "-C", repo.getAbsolutePath(), "worktree", "remove", worktree.getAbsolutePath()),
+                    repo, GIT_TIMEOUT);
+            if (remove.exitCode() != 0 || remove.timedOut()) {
+                return "Cleanup could not confirm worktree removal; branch retained: " + processDetail(remove);
+            }
+            // Compare-and-delete protects a branch that advanced after the probes. Never force-delete.
+            ProcessResult delete = processRunner.run(
+                    List.of("git", "-C", repo.getAbsolutePath(), "update-ref", "-d",
+                            "refs/heads/" + created.branch(), created.initialHead()),
+                    repo, GIT_TIMEOUT);
+            if (delete.exitCode() != 0 || delete.timedOut()) {
+                return "Unchanged worktree removed; branch deletion not confirmed (inspect ref): " + processDetail(delete);
+            }
+            return "Unchanged worktree and branch removed; no worker output was found.";
+        }
+        catch (RuntimeException ex) {
+            log.warn("Cleanup stopped for worktree {} and branch {}; inspect recovery state", created.worktree(), created.branch(), ex);
+            return "Cleanup stopped; worktree/branch state requires inspection: " + ex.getMessage();
+        }
+    }
+
+    public String reportRecovery(
+            String taskId, String actorId, String runId, File worktree, String branch,
+            String checkpoint, String disposition) {
+        String text = "Task " + taskId + "; run " + runId
+                + "; recovery worktree: " + (worktree == null ? "not allocated" : worktree.getAbsolutePath())
+                + "; branch: " + (branch == null ? "not allocated" : branch)
+                + "; last verified checkpoint: " + checkpoint + ". " + disposition;
+        // Keep the recovery pointer in runner logs even when the API is unavailable.
+        log.warn("{}", text);
+        try {
+            apiClient.annotate(taskId, actorId, "progress", text, Map.of("event", "run_recovery"));
+        }
+        catch (RuntimeException ex) {
+            log.warn("Unable to annotate recovery state for task {}; see runner log above", taskId, ex);
+        }
+        return text;
+    }
+
+    private String probe(File directory, String... arguments) {
+        java.util.ArrayList<String> command = new java.util.ArrayList<>(List.of("git", "-C", directory.getAbsolutePath()));
+        command.addAll(List.of(arguments));
+        ProcessResult result = processRunner.run(command, directory, GIT_TIMEOUT);
+        if (result.timedOut() || result.exitCode() != 0 || result.stdout() == null) {
+            throw new IllegalStateException("Unable to inspect worktree: " + processDetail(result));
+        }
+        return result.stdout().strip();
+    }
+
+    private static Path realPath(Path path) {
+        try {
+            return path.toRealPath();
+        }
+        catch (IOException ex) {
+            throw new IllegalStateException("Unable to resolve worktree identity: " + path, ex);
+        }
+    }
+
+    public record CreatedWorktree(Path repo, Path worktree, String branch, String initialHead, Path gitDirectory) {
     }
 
     private void block(String taskId, String actorId, String reason) {

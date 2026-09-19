@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
 import dev.nathan.sbaagentic.workflow.LinkDomainException;
 import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import dev.nathan.sbaagentic.workflow.TaskErrorCode;
@@ -34,6 +35,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(CaptureIdConflictException.class)
+    public ResponseEntity<ApiError> handleCaptureIdConflict(CaptureIdConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of(HttpStatus.CONFLICT, "capture_id_conflict", ex.getMessage()));
+    }
 
     /** A typed API error. {@code error} is always present so callers can branch on it unambiguously. */
     public record ApiError(ErrorBody error) {

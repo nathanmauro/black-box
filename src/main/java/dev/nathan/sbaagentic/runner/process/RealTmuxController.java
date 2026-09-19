@@ -19,7 +19,20 @@ public class RealTmuxController implements TmuxController {
 
     @Override
     public boolean hasSession(String sessionName) {
-        return run(List.of("tmux", "has-session", "-t", sessionName), null).exitCode() == 0;
+        ProcessRunner.ProcessResult result = run(List.of("tmux", "has-session", "-t", sessionName), null);
+        if (result.timedOut()) {
+            throw failure("inspect session " + sessionName, result);
+        }
+        if (result.exitCode() == 0) {
+            return true;
+        }
+        String detail = result.stderr() == null ? "" : result.stderr().strip();
+        if (result.exitCode() == 1 && (detail.startsWith("can't find session:")
+                || detail.startsWith("no server running on ")
+                || (detail.startsWith("error connecting to ") && detail.endsWith("(No such file or directory)")))) {
+            return false;
+        }
+        throw failure("inspect session " + sessionName, result);
     }
 
     @Override

@@ -30,6 +30,8 @@
     "EventFeedResponse": {"limit":100,"count":1,"items":[],"nextBefore":null},
     "EventIngestRequest": {"source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","cwd":"/repo","toolName":null,"toolInput":null,"toolOutput":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z"},
     "IngestResponse": {"eventId":"event-1","sessionId":"session-1","source":"codex","clientSessionId":"client-1","eventType":"Handoff","indexed":false},
+    "IdempotentEventIngestRequest": {"captureId":"5f067ad6-902f-4ae9-bc58-0fd1de998c33","event":{"source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","cwd":"/repo","toolName":null,"toolInput":null,"toolOutput":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z"}},
+    "IdempotentIngestResponse": {"captureId":"5f067ad6-902f-4ae9-bc58-0fd1de998c33","eventId":"event-1","sessionId":"session-1","replayed":false},
     "MemoryEmbeddingBackfillRequest": {"apply":false,"batchSize":100,"progressEvery":250},
     "MemoryEmbeddingBackfillResult": {"apply":false,"batchSize":100,"scanned":3,"candidates":2,"skipped":1,"embedded":0,"failed":0,"canceled":false},
     "CodeNavigationResult": {"status":"opened"},

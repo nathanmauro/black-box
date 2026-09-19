@@ -4,6 +4,8 @@ import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.core.io.ClassPathResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +28,32 @@ import static org.assertj.core.api.Assertions.assertThat;
  * on-disk databases take.
  */
 class EventRepositoryMigrationTest {
+
+    @Test
+    void receiptSchemaUpgradeKeepsExistingSessionsAndEvents(@TempDir Path tempDir) {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + tempDir.resolve("pre-receipts.db"));
+        dataSource.setDriverClassName("org.sqlite.JDBC");
+        var schema = new ResourceDatabasePopulator(new ClassPathResource("schema.sql"));
+        schema.execute(dataSource);
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        // The rest of the schema is unchanged; removing the new table recreates the prior schema.
+        jdbc.execute("DROP TABLE event_capture_receipts");
+        RecordingSqlStore repository = new RecordingSqlStore(jdbc, new ObjectMapper(),
+                java.time.Clock.systemUTC(), new EventFtsIndex(jdbc, java.time.Clock.systemUTC()));
+        var saved = repository.persistEvent(new EventIngestRequest("codex", "legacy-capture", null,
+                "Observation", "assistant", "Keep historical evidence", "/fixture", null, null, null,
+                Map.of(), Instant.parse("2026-09-18T12:00:00Z")), Instant.parse("2026-09-18T12:00:00Z"), "Original title", TitleRank.TEXT);
+        var sessionBefore = jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", saved.session().id());
+        var eventBefore = jdbc.queryForMap("SELECT * FROM agent_events WHERE id = ?", saved.event().id());
+
+        schema.execute(dataSource);
+        repository.ensureSchema();
+        schema.execute(dataSource);
+
+        assertThat(jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", saved.session().id())).isEqualTo(sessionBefore);
+        assertThat(jdbc.queryForMap("SELECT * FROM agent_events WHERE id = ?", saved.event().id())).isEqualTo(eventBefore);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM event_capture_receipts", Integer.class)).isZero();
+    }
 
     @Test
     void addsAndBackfillsTitleRankOnPreRankingDatabase(@TempDir Path tempDir) {

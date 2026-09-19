@@ -237,8 +237,20 @@ public class CrashRecovery {
     }
 
     private void pruneIfClean(Path repoPath, Path worktreePath, String defaultBranch) {
+        String taskShort = worktreePath.getFileName().toString().substring("bb-".length());
+        try {
+            if (tmux.hasSession(RunnerNaming.tmuxSessionName(taskShort))) {
+                log.warn("Preserving orphaned worktree {}: worker session is still running", worktreePath);
+                return;
+            }
+        }
+        catch (RuntimeException ex) {
+            log.warn("Preserving orphaned worktree {}: worker shutdown cannot be verified", worktreePath, ex);
+            return;
+        }
         ProcessRunner.ProcessResult status = processRunner.run(
-                List.of("git", "-C", worktreePath.toString(), "status", "--porcelain"),
+                List.of("git", "-C", worktreePath.toString(), "status", "--porcelain",
+                        "--untracked-files=all", "--ignored=matching"),
                 worktreePath.toFile(),
                 GIT_TIMEOUT);
         if (status.exitCode() != 0
@@ -261,8 +273,7 @@ public class CrashRecovery {
                         repoPath.toString(),
                         "worktree",
                         "remove",
-                        worktreePath.toString(),
-                        "--force"),
+                        worktreePath.toString()),
                 repoPath.toFile(),
                 GIT_TIMEOUT);
         if (remove.exitCode() != 0 || remove.timedOut()) {

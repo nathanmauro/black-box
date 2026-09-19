@@ -90,6 +90,26 @@ external REST client of Black Box:
 Fail-closed behavior is the invariant: an unknown repo, a danger flag, a red check, or a missing
 credential degrades the run to local-only or blocked state, never to a risky action.
 
+Execution-failure and requeue cleanup preserves recoverable worker output. The runner only removes
+a checkout it created in that execution after verifying its repository, worktree identity, branch,
+unchanged initial commit, and absence of tracked changes, untracked files, and ignored files
+(including logs). An unknown or mismatched identity, failed/interrupted Git probe, or changed commit
+preserves the checkout and branch. Removal uses ordinary `git worktree remove`; branch deletion
+compares the current ref to the initial commit so a concurrently advanced branch survives.
+Clean no-engine runs and unchanged completed plan stages can still be cleaned up.
+Cleanup also requires confirmed worker-session shutdown. A failed or timed-out tmux probe is
+unknown state, not evidence that the worker stopped. Startup recovery applies the same worker
+presence and ignored-file checks, so retained logs survive a restart even without a unique commit.
+
+Failures and requeues write a recovery pointer with the task, orchestrator run, worktree, branch,
+last verified checkpoint, and cleanup result to the runner log and best-effort task annotation.
+The log remains the fallback if the API cannot accept annotations or status changes. A worker's
+`DONE` report is identified as a report; it does not imply shipping or task completion succeeded.
+Inspect a preserved checkout and branch before retrying: this change does not automatically resume
+failed builds or remove the existing worktree to make a retry fit. Preserve or recover its files and
+commits first. No cleanup protocol can serialize arbitrary external Git/filesystem writers; worker
+shutdown is verified before failure cleanup, and failed removal retains the branch.
+
 Crash-recovery worktree pruning is fail-closed the same way. A worker commits before it reports, so
 a worktree holding never-published work is *clean* by `git status --porcelain`; cleanliness alone is
 therefore not licence to run `git worktree remove --force` and `git branch -D`. The runner prunes an
