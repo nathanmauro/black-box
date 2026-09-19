@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Local verification gate: the checks a green CI run would perform, runnable without CI.
 #
-#   ./scripts/verify.sh          # Lifecycle, Java, frontend type/unit checks, whitespace
+#   ./scripts/verify.sh          # Script checks, Java, frontend type/unit checks, whitespace
 #   ./scripts/verify.sh --e2e    # additionally runs the Playwright suite (packages a jar; see note)
 #
 # Note: --e2e packages target/*.jar. Never run it over a JAR used by a live service.
-# Use a separate checkout and output path for verification builds.
+# Use an isolated checkout and output path for verification builds.
 #
 # Install as a pre-push hook (runs the default set before every push):
 #   git config core.hooksPath scripts/git-hooks
