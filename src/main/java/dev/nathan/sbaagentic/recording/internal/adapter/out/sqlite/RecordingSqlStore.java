@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.EventFacetCounts;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
@@ -141,6 +142,43 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         AgentEvent event = saveEvent(request, session, observedAt);
         AgentSession updated = findSessionById(session.id()).orElse(session);
         return new RecordingStore.Persisted(updated, event);
+    }
+
+    @Transactional
+    @Override
+    public RecordingStore.IdempotentPersisted persistIdempotentEvent(
+            String captureId, String requestHash, EventIngestRequest request,
+            Instant observedAt, String title, int titleRank) {
+        // Reserve before any reads/session writes. Concurrent PostgreSQL inserts wait on this
+        // key; SQLite obtains its writer lock here, without a read-to-write snapshot upgrade.
+        int reserved = jdbcTemplate.update("""
+                INSERT INTO event_capture_receipts (source, client_session_id, capture_id, request_hash)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
+                """, request.source(), request.clientSessionId(), captureId, requestHash);
+        if (reserved == 0) {
+            return jdbcTemplate.queryForObject("""
+                    SELECT request_hash, event_id FROM event_capture_receipts
+                     WHERE source = ? AND client_session_id = ? AND capture_id = ?
+                    """, (row, rowNum) -> {
+                if (!requestHash.equals(row.getString("request_hash"))) {
+                    throw new CaptureIdConflictException();
+                }
+                AgentEvent event = findEventById(row.getString("event_id")).orElseThrow(
+                        () -> new IllegalStateException("Capture receipt has no canonical event."));
+                AgentSession session = findSessionById(event.sessionId()).orElseThrow();
+                return new RecordingStore.IdempotentPersisted(new RecordingStore.Persisted(session, event), true);
+            }, request.source(), request.clientSessionId(), captureId);
+        }
+        RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
+        int bound = jdbcTemplate.update("""
+                UPDATE event_capture_receipts SET event_id = ?
+                 WHERE source = ? AND client_session_id = ? AND capture_id = ?
+                """, persisted.event().id(), request.source(), request.clientSessionId(), captureId);
+        if (bound != 1) {
+            throw new IllegalStateException("Unable to bind capture receipt to its canonical event.");
+        }
+        return new RecordingStore.IdempotentPersisted(persisted, false);
     }
 
     public AgentSession findOrCreateSession(EventIngestRequest request, Instant observedAt, String title, int titleRank) {

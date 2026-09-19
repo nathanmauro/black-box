@@ -11,6 +11,8 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
+import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.Titles;
@@ -18,9 +20,13 @@ import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class EventIngestService implements EventRecorder {
+
+    private static final Logger log = LoggerFactory.getLogger(EventIngestService.class);
 
     private static final Set<String> FINAL_EVENT_TYPES = Set.of("sessionend", "stop", "subagentstop");
 
@@ -64,6 +70,37 @@ public class EventIngestService implements EventRecorder {
                 recorded.event().clientSessionId(),
                 recorded.event().eventType(),
                 recorded.indexed());
+    }
+
+    @Override
+    public IdempotentIngestResponse ingestIdempotent(IdempotentEventIngestRequest request) {
+        CaptureIdentity identity = CaptureIdentity.from(request);
+        EventIngestRequest normalized = normalize(request.event());
+        Instant observedAt = normalized.observedAt() == null ? Instant.now() : normalized.observedAt();
+        TitleCandidate title = titleFor(normalized);
+        RecordingStore.IdempotentPersisted result = repository.persistIdempotentEvent(
+                identity.captureId(), identity.requestHash(), normalized, observedAt, title.value(), title.rank());
+        var persisted = result.persisted();
+        if (!result.replayed()) {
+            // The receipt commits with the event. A replay must never restart optional work, even
+            // if an earlier delivery failed between canonical persistence and publication.
+            publishOptional(new EventRecorded(persisted.session(), persisted.event()), persisted.event().id());
+            if (isFinalEvent(persisted.event().eventType())) {
+                publishOptional(new SessionStopped(persisted.session(), persisted.event()), persisted.event().id());
+            }
+        }
+        return new IdempotentIngestResponse(identity.captureId(), persisted.event().id(),
+                persisted.event().sessionId(), result.replayed());
+    }
+
+    private void publishOptional(Object event, String eventId) {
+        try {
+            eventPublisher.publishEvent(event);
+        }
+        catch (RuntimeException ex) {
+            log.warn("Canonical capture {} persisted, but optional {} publication failed",
+                    eventId, event.getClass().getSimpleName(), ex);
+        }
     }
 
     private static boolean isFinalEvent(String eventType) {

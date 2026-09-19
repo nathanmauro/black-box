@@ -11,6 +11,15 @@ public interface RecordingStore {
 
     Persisted persistEvent(EventIngestRequest request, Instant observedAt, String title, int titleRank);
 
+    default IdempotentPersisted persistIdempotentEvent(
+            String captureId, String requestHash, EventIngestRequest request,
+            Instant observedAt, String title, int titleRank) {
+        throw new UnsupportedOperationException("Idempotent capture is not supported by this store.");
+    }
+
+    record IdempotentPersisted(Persisted persisted, boolean replayed) {
+    }
+
     record Persisted(AgentSession session, AgentEvent event) {
     }
 }
