@@ -17,11 +17,63 @@ JAR, database, log, and service-label settings. Then use:
 ./scripts/deploy-local.sh
 ```
 
-The script requires an installed plist, stops the service before rebuilding the frontend and JAR,
-restarts it, and waits for a healthy `/api/status`. Tests are skipped unless `--with-tests` is
-passed. `SBA_LAUNCHD_LABEL`, `SBA_LAUNCHD_DOMAIN`, and `SBA_LAUNCHD_PLIST` select the installation;
-`SBA_JAR_PATH` and `SBA_STATUS_URL` override the artifact and readiness target. The script's `--help`
-lists its defaults. Set these to match the installed service when using a custom label.
+The script requires Python 3.9+, an existing healthy installation, and an installed plist with an
+absolute `WorkingDirectory` and an explicit `java -jar /absolute/path/to/application.jar` command.
+`/usr/bin/env KEY=value ... java -jar ...` is also supported. Other wrappers, JVM/application
+arguments, path aliases, and hard-linked JARs are rejected. Add `WorkingDirectory` when installing
+the template; the deploy script preserves the installed plist bytes. It compares the loaded
+program, arguments, working directory, and environment with that plist before deployment and
+after restart, rejecting unpinned inherited application/JVM settings. External configuration
+files and external commands referenced by the installation are not fingerprinted or restored.
+
+For a reviewed build made in an isolated checkout, use its absolute canonical path:
+
+```bash
+./scripts/deploy-local.sh --prebuilt-jar /path/to/isolated-build/target/sba-agentic-0.1.0.jar
+```
+
+Prebuilt mode never runs Maven. Without `--prebuilt-jar`, deployment clean-builds the frontend and
+JAR in this checkout, which must exactly match the installed `WorkingDirectory` and Maven output.
+Tests are skipped unless `--with-tests` is passed. Build and review a candidate separately when the
+installed checkout has unrelated dirty work.
+
+`SBA_LAUNCHD_PLIST` selects an existing plist (default
+`~/Library/LaunchAgents/com.nathan.sba-agentic.plist`); `SBA_LAUNCHD_LABEL`, when supplied, must
+match its label. Only the current user's `gui/<uid>` domain is supported. `SBA_JAR_PATH` and
+`SBA_PORT` are optional assertions and must agree with the plist. `SBA_STATUS_URL` must address
+`/api/status` on that installed local port, with no credentials or redirects. The default is
+`http://127.0.0.1:<installed-port>/api/status`. The readiness port must belong to the exact new
+launchd PID; a healthy response from another process does not count.
+
+Before stopping, deployment validates the Boot archives, checks existing process health, stages
+a supplied prebuilt candidate, and saves a hashed copy of the previous JAR outside `target/`. It acquires an
+exclusive installation lock and refuses to build or replace a JAR while the previous PID or any
+other JAR consumer remains alive. Stop errors are fatal. Installation uses an atomic rename,
+then bootstraps the unchanged plist and verifies the new PID, HTTP 200, and the canonical
+`storage.events`/`storage.sessions` count fields. Optional model/index availability is not required.
+
+Build, installation, bootstrap, readiness, and handled interruption failures trigger binary
+rollback and a readiness check of the restored service. The command still returns failure after
+a successful rollback. `SBA_DEPLOY_STOP_TIMEOUT` defaults to 20 seconds and
+`SBA_DEPLOY_READY_TIMEOUT` to 60 seconds; each phase is bounded. Recovery files are retained in a
+private `.blackbox-deploy/<installation-id>/recovery-*` directory beside the installed checkout.
+The command prints its exact location; it includes `previous.jar`, the original plist bytes,
+checksums/identity in `recovery.json`, and a build log when applicable. These files can contain
+private installation configuration: keep them local and remove obsolete recovery directories
+only after verifying the deployment.
+
+If rollback is not verified, preserve that directory and inspect the reported service identity.
+Stop the service and confirm its PID and all JAR consumers are gone before restoring
+`previous.jar` to the recorded destination. Verify its SHA-256 against `recovery.json`, bootstrap
+the unchanged installed plist, and check the new PID, port ownership, and `/api/status`. The script
+does not kill unrelated consumers or rewrite a plist that changed during deployment. An
+uncatchable termination or machine crash requires this manual recovery procedure; the OS releases
+the advisory deployment lock automatically.
+
+Binary rollback does **not** reverse database migrations or writes made by the candidate. Deploy
+only backward-compatible schema changes when relying on binary rollback, and maintain a separate
+verified database backup/recovery procedure. Additive capture-receipt tables, for example, remain
+in the database after restoring an older binary. The script does not back up or restore databases.
 
 Do not replace the executable JAR underneath a running JVM. An ordinary `mvn package`, including
 packaging performed for E2E tests, can overwrite `target/` while a service is using it. Use the
@@ -32,7 +84,8 @@ not establish health: check `/api/status`, the UI, and a representative API rout
 
 [`scripts/deploy-runner-local.sh`](../scripts/deploy-runner-local.sh) deploys the **already-built**
 JAR as a separate macOS runner service. It does not build the artifact. If the server and runner
-share the JAR, stop the runner before rebuilding: the server deploy script stops only the server.
+share the JAR, stop the runner before rebuilding: the server deploy script stops only the server
+and rejects deployment while another JAR consumer remains.
 Deploy/restart the runner after the build, or supply an isolated artifact. The runner deploy script renders/installs
 [`scripts/blackbox-runner.plist.template`](../scripts/blackbox-runner.plist.template), starts or
 restarts the runner, and checks process/log activity.
