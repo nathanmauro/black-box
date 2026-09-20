@@ -584,7 +584,11 @@ class OutboxTest(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=5) as workers:
             results = list(workers.map(lambda index: self.cli("enqueue", event("quota-" + str(index))), range(5)))
         self.assertEqual(len(self.rows()), outbox.MAX_QUEUE_ROWS)
-        self.assertTrue(any(b"queue_full" in result.stderr for result in results))
+        # Contenders may hit the bounded SQLite busy timeout before observing the full queue.
+        # Verify the quota response after contention, independently of process scheduling.
+        self.assertTrue(all(result.returncode == 0 for result in results))
+        self.assertIn(b"queue_full", self.cli("enqueue", event("after contention")).stderr)
+        self.assertEqual(len(self.rows()), outbox.MAX_QUEUE_ROWS)
         with sqlite3.connect(str(self.directory / outbox.DB_NAME)) as database:
             database.execute("DELETE FROM captures WHERE id != (SELECT min(id) FROM captures)")
             database.execute("UPDATE captures SET logical_bytes=?", (outbox.MAX_QUEUE_BYTES - 1,))

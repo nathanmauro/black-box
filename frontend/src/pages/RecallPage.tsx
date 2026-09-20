@@ -1,6 +1,6 @@
 import HandoffContext from "../components/events/HandoffContext";
 import { A, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show, untrack, type JSX } from "solid-js";
 import KindBadge from "../components/KindBadge";
 import SourceDot from "../components/SourceDot";
 import { getRecall, type RecalledItem, type RecallResult } from "../lib/api";
@@ -12,6 +12,8 @@ const TIME_WINDOWS = [
   { label: "24h", value: 24 },
   { label: "1w", value: 168 },
   { label: "30d", value: 720 },
+  { label: "Three months · 90d", value: 2160 },
+  { label: "Six months · 180d", value: 4320 },
 ];
 
 export default function RecallPage() {
@@ -77,14 +79,27 @@ export default function RecallPage() {
           void runRecall();
         }}
       >
-        <label class="recall-field">
-          <span>Scope</span>
+        <div class="recall-field">
+          <div class="recall-control-heading">
+            <label for="recall-scope">Scope</label>
+            <RecallHelp label="Help with scope">
+              <p><strong>Start with a place or a subject.</strong></p>
+              <ul>
+                <li><code>/workspace/example-app</code> finds matching paths or captured text.</li>
+                <li><code>example-app</code> can match a repo name or a mention in the text.</li>
+                <li><code>recover after a failed deploy</code> tries a topic or paraphrase. Semantic matching needs an available model; otherwise use words from the captured text. Write topics without slashes.</li>
+              </ul>
+              <p>Leave Scope blank for recent intent across repos. A pasted event ID can match recorded intent too; the window and kinds still apply.</p>
+              <p>Use one scope at a time. A path is a text match, not an exact project filter; combining a repo with a separate topic is not supported.</p>
+            </RecallHelp>
+          </div>
           <input
+            id="recall-scope"
             value={scope()}
             onInput={(event) => setScope(event.currentTarget.value)}
             placeholder="/workspace/example-app or a topic"
           />
-        </label>
+        </div>
         <fieldset class="recall-window">
           <legend>Window</legend>
           <For each={TIME_WINDOWS}>
@@ -100,6 +115,11 @@ export default function RecallPage() {
               </label>
             )}
           </For>
+          <RecallHelp label="Help with time windows">
+            <p><strong>Look back from now.</strong> Windows use each capture's observed time.</p>
+            <p>Three months means <strong>90 days</strong>; six months means <strong>180 days</strong>, rather than calendar months.</p>
+            <p>For example, choose 90 days to revisit work from two months ago. Run recall after changing the window. A wider window still returns up to 10 results, not every capture.</p>
+          </RecallHelp>
         </fieldset>
         <fieldset class="recall-kinds">
           <legend>Kinds</legend>
@@ -111,6 +131,16 @@ export default function RecallPage() {
               </label>
             )}
           </For>
+          <RecallHelp label="Help with filters">
+            <p><strong>Choose the intent you need.</strong></p>
+            <ul>
+              <li><strong>Decision:</strong> choices and their reasoning.</li>
+              <li><strong>Handoff:</strong> where work stands and what comes next.</li>
+              <li><strong>Observation:</strong> recorded facts or notes.</li>
+            </ul>
+            <p>For example, add Observation when looking for a recorded failure. Keep at least one kind selected, then run recall.</p>
+            <p>The source filter in the top bar can hide returned items by client. Check it if the visible count is lower than the returned count.</p>
+          </RecallHelp>
         </fieldset>
         <button type="submit" class="primary-action" disabled={loading() || kinds().length === 0}>
           {loading() ? "Running..." : "Run recall"}
@@ -162,6 +192,24 @@ export default function RecallPage() {
         </Show>
       </section>
     </section>
+  );
+}
+
+function RecallHelp(props: { label: string; children: JSX.Element }) {
+  let trigger!: HTMLElement;
+  return (
+    <details
+      class="recall-help"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.currentTarget.open = false;
+        trigger.focus();
+        event.preventDefault();
+      }}
+    >
+      <summary ref={trigger} aria-label={props.label}>?</summary>
+      <div class="recall-help-body">{props.children}</div>
+    </details>
   );
 }
 
