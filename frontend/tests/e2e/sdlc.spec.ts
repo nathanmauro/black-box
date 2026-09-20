@@ -267,7 +267,7 @@ async function createSdlcStory(
 }
 
 function startRunner(harness: StoryHarness, baseURL: string): ChildProcess {
-  const child = spawn("java", ["-jar", "target/sba-agentic-0.1.0.jar", "runner"], {
+  const child = spawn("java", ["-jar", "target/sba-agentic-0.2.0.jar", "runner"], {
     cwd: REPO_ROOT,
     env: privateTmuxEnv({
       SBA_RUNNER_CONFIG: harness.runnerConfigPath,

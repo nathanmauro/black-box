@@ -8,7 +8,7 @@ spring:
     mcp:
       server:
         name: sba-agentic
-        version: 0.1.0
+        version: 0.2.0
         protocol: STREAMABLE
         streamable-http:
           mcp-endpoint: /mcp

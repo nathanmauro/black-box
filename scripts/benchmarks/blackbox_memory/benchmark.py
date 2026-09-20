@@ -150,11 +150,11 @@ def build_images(output, codex_version):
         with (output / "maven-build.log").open("w") as log:
             subprocess.run(["mvn", "-q", "-DskipTests", "package"], cwd=staging,
                            stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
-        jar = staging / "target/sba-agentic-0.1.0.jar"
+        jar = staging / "target/sba-agentic-0.2.0.jar"
         jar_sha = sha(jar)
         # No VOLUME directive: server database lives only in this disposable container.
         (staging / "Dockerfile").write_text(
-            'FROM eclipse-temurin:21-jre\nWORKDIR /app\nCOPY target/sba-agentic-0.1.0.jar /app/app.jar\n'
+            'FROM eclipse-temurin:21-jre\nWORKDIR /app\nCOPY target/sba-agentic-0.2.0.jar /app/app.jar\n'
             'ENTRYPOINT ["java","-jar","/app/app.jar"]\n')
         (staging / ".dockerignore").write_text("*\n!target/\n!target/*.jar\n")
         with (output / "server-build.log").open("w") as log:

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-20
+
 Everything since 0.1.0, grouped by the era it landed in (see [docs/evolution.md](docs/evolution.md)).
 
 - SolidJS UI rewrite with a global Activity stream as the front door: keyset-paged feed, faceted
@@ -21,11 +23,21 @@ Everything since 0.1.0, grouped by the era it landed in (see [docs/evolution.md]
 - Bounded `SessionStart` recall hook for Claude Code and Codex; complete session transcripts.
 - Catalog-bound open-in-editor and reveal-in-Finder actions with server-side path validation.
 - Optional PostgreSQL profile, optional authentication boundary, evidence-to-Linear prototype, and a
-  documented single-owner managed AWS prototype.
+  documented single-owner managed AWS prototype (retired; no hosted service is included).
 - Recall telemetry that separates semantic attempted, completed, contributed, and returned.
+- Recoverable, opt-in hook outbox with replay-safe capture; unfinished runner work is preserved,
+  and local deployment uses immutable artifacts with readiness checks and binary recovery.
+- Recall windows of 90 and 180 days, with accessible contextual help and practical search examples.
+- Offline lifecycle rehearsal and reproducible memory evaluation tools with published limits;
+  the measurements do not establish a general productivity benefit.
+- Opt-in Spotless/Palantir Java formatting setup; existing application sources are not reformatted.
 - Docs and tooling: README rewrite around the capture, handoff, recall loop; new agent integration,
   operations, runner, evolution, and futures guides; `scripts/verify.sh` with an optional pre-push
-  hook; CI reduced to manual dispatch and pushes to main.
+  hook; CI on pull requests, main pushes, and manual dispatch. Release artifacts include SHA-256
+  checksums and version-matched release notes.
+
+See [release notes and upgrade guidance](docs/releases/v0.2.0.md). This remains a pre-1.0 release;
+API and database compatibility are not covered by a long-term stability promise.
 
 ## [0.1.0] - 2026-06-10
 

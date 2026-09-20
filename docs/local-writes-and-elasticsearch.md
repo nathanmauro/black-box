@@ -126,7 +126,7 @@ curl -fsS -H 'Content-Type: application/json' \
 CLI write:
 
 ```bash
-java -jar target/sba-agentic-0.1.0.jar ingest \
+java -jar target/sba-agentic-0.2.0.jar ingest \
   --source=manual \
   --session=test \
   --type=ManualCapture \

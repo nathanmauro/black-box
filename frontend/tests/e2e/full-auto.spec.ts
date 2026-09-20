@@ -74,7 +74,7 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
     // jdbc:sqlite:sba-agentic.db relative to cwd — without an override it would
     // open the real production database at the repo root.
     const runnerDbPath = path.join(scratchDir, "runner-e2e.db");
-    runnerDaemon = spawn("java", ["-jar", "target/sba-agentic-0.1.0.jar", "runner"], {
+    runnerDaemon = spawn("java", ["-jar", "target/sba-agentic-0.2.0.jar", "runner"], {
       cwd: REPO_ROOT,
       env: privateTmuxEnv({
         SBA_RUNNER_CONFIG: runnerConfigPath,

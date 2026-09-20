@@ -21,7 +21,7 @@ await new Promise(resolve => portProbe.close(resolve));
 const password = randomBytes(48).toString('base64url');
 const apiToken = randomBytes(48).toString('base64url');
 const serverLog = await open(path.join(fixture, 'server.log'), 'w');
-const server = spawn('java', ['-jar', 'target/sba-agentic-0.1.0.jar'], {
+const server = spawn('java', ['-jar', 'target/sba-agentic-0.2.0.jar'], {
   cwd: root, stdio: ['ignore', serverLog.fd, serverLog.fd],
   env: { ...process.env, SBA_PORT: String(port), SBA_BIND_ADDRESS: '127.0.0.1',
     SBA_DATASOURCE_URL: `jdbc:sqlite:${path.join(fixture, 'fixture.db')}`,

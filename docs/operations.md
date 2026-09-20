@@ -30,7 +30,7 @@ files and external commands referenced by the installation are not fingerprinted
 For a reviewed build made in an isolated checkout, use its absolute canonical path:
 
 ```bash
-./scripts/deploy-local.sh --prebuilt-jar /path/to/isolated-build/target/sba-agentic-0.1.0.jar
+./scripts/deploy-local.sh --prebuilt-jar /path/to/isolated-build/target/sba-agentic-0.2.0.jar
 ```
 
 Prebuilt mode never runs Maven. Without `--prebuilt-jar`, deployment clean-builds the frontend and

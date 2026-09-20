@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build the reviewed packaged JAR first. The release script records JAR SHA and source revision.
 FROM eclipse-temurin:21-jre@sha256:7a65df4b22d2de92d4e04056e884f3b9122d70b21e2847fd66084278bd0ce037
-ARG JAR_FILE=target/sba-agentic-0.1.0.jar
+ARG JAR_FILE=target/sba-agentic-0.2.0.jar
 ARG SOURCE_REVISION=unverified
 ARG JAR_SHA256=unverified
 LABEL org.opencontainers.image.title="Black Box" \

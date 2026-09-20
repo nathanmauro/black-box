@@ -13,7 +13,7 @@ fi
 LABEL="${SBA_RUNNER_LAUNCHD_LABEL:-com.nathan.blackbox-runner}"
 DOMAIN="${SBA_RUNNER_LAUNCHD_DOMAIN:-gui/$(id -u)}"
 PLIST="${SBA_RUNNER_LAUNCHD_PLIST:-$HOME/Library/LaunchAgents/${LABEL}.plist}"
-JAR="${SBA_RUNNER_JAR:-$REPO_ROOT/target/sba-agentic-0.1.0.jar}"
+JAR="${SBA_RUNNER_JAR:-$REPO_ROOT/target/sba-agentic-0.2.0.jar}"
 RUNNER_LOG_PATH="${SBA_RUNNER_LOG_PATH:-$HOME/.blackbox/runner.log}"
 RUNNER_CONFIG_PATH="${SBA_RUNNER_CONFIG:-$HOME/.blackbox/runner.json}"
 BASE_URL="${SBA_BASE_URL:-http://localhost:8766}"
@@ -34,7 +34,7 @@ Environment overrides:
   SBA_RUNNER_LAUNCHD_LABEL   default: com.nathan.blackbox-runner
   SBA_RUNNER_LAUNCHD_DOMAIN  default: gui/\$(id -u)
   SBA_RUNNER_LAUNCHD_PLIST   default: \$HOME/Library/LaunchAgents/\$SBA_RUNNER_LAUNCHD_LABEL.plist
-  SBA_RUNNER_JAR             default: target/sba-agentic-0.1.0.jar
+  SBA_RUNNER_JAR             default: target/sba-agentic-0.2.0.jar
   SBA_RUNNER_LOG_PATH        default: \$HOME/.blackbox/runner.log
   SBA_RUNNER_CONFIG          default: \$HOME/.blackbox/runner.json
   SBA_BASE_URL               default: http://localhost:8766
