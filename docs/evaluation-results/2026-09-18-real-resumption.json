@@ -1,0 +1,83 @@
+{
+  "all_ten_graded": true,
+  "arms": {
+    "no_recall": {
+      "correct": 12,
+      "extra": 0,
+      "failed_or_unattempted": 0,
+      "graded": 5,
+      "incorrect": 5,
+      "infrastructure_errors": 0,
+      "invalid_outputs": 0,
+      "missing": 3,
+      "model_seconds": 11.95,
+      "not_attempted": 0,
+      "passed": 0,
+      "scheduled": 5,
+      "usage": {
+        "completion_tokens": 209,
+        "prompt_tokens": 12427,
+        "total_tokens": 12636
+      }
+    },
+    "recall": {
+      "correct": 17,
+      "extra": 0,
+      "failed_or_unattempted": 0,
+      "graded": 5,
+      "incorrect": 1,
+      "infrastructure_errors": 0,
+      "invalid_outputs": 0,
+      "missing": 2,
+      "model_seconds": 13.419,
+      "not_attempted": 0,
+      "passed": 3,
+      "scheduled": 5,
+      "usage": {
+        "completion_tokens": 213,
+        "prompt_tokens": 14924,
+        "total_tokens": 15137
+      }
+    }
+  },
+  "evaluation": "historical_checkpoint_reconstruction",
+  "objective_fact_count_per_arm": 20,
+  "pairs": [
+    {
+      "correct_fact_delta": 2,
+      "outcome": "recall_win",
+      "task": "task-01"
+    },
+    {
+      "correct_fact_delta": 1,
+      "outcome": "recall_win",
+      "task": "task-02"
+    },
+    {
+      "correct_fact_delta": 0,
+      "outcome": "tie",
+      "task": "task-03"
+    },
+    {
+      "correct_fact_delta": 1,
+      "outcome": "recall_win",
+      "task": "task-04"
+    },
+    {
+      "correct_fact_delta": 1,
+      "outcome": "recall_win",
+      "task": "task-05"
+    }
+  ],
+  "schema_version": 1,
+  "usefulness_gate": {
+    "missing_evidence": [
+      "ordinary_handoff_search_comparator_not_evaluated",
+      "twenty_historical_candidates_not_evaluated",
+      "suggestion_usefulness_and_staleness_not_adjudicated",
+      "three_accepted_baseline_missed_actions_not_established",
+      "checkpoint_reconstruction_is_not_full_task_execution"
+    ],
+    "status": "not_cleared"
+  }
+}

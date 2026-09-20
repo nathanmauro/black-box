@@ -252,6 +252,12 @@ a reconciling, explicitly triggered [prototype](docs/linear-integration.md).
 
 ## Develop
 
+To compare agent task outcomes with no history, a plain history file, and Black Box recall, see the
+[isolated memory benchmark](docs/memory-benchmark.md). The separate
+[local checkpoint evaluation](docs/real-resumption-evaluation.md) measures reconstruction of
+historical work. Both retain negative results and distinguish those measurements from demonstrated
+product usefulness.
+
 ```bash
 mvn test                       # Java suite
 cd frontend && npm test        # vitest

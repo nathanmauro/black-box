@@ -27,6 +27,10 @@ step() { printf '\n==> %s\n' "$*"; }
 step "Offline lifecycle rehearsal"
 python3 -B -m unittest discover -s scripts/lifecycle -p 'test_*.py'
 
+step "Evaluation harness contracts (no model calls)"
+python3 -B -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_*.py'
+python3 -B -m unittest discover -s scripts/evaluation -p 'test_*.py'
+
 step "git diff --check (whitespace errors in tracked changes)"
 git diff --check
 git diff --cached --check

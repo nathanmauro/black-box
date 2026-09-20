@@ -1,6 +1,6 @@
 # Shared managed-container prototype
 
-Black Box runs as one shared HTTPS application in Lightsail Containers, with canonical data in
+This deployment design runs Black Box as one shared HTTPS application in Lightsail Containers, with canonical data in
 managed PostgreSQL. Local and cloud agents call the same authenticated HTTP/MCP endpoint; they do
 not copy SQLite files or receive database credentials. SQLite remains available for local-only use.
 This replaces the temporary EC2 installation as the prototype target.
@@ -8,6 +8,122 @@ This replaces the temporary EC2 installation as the prototype target.
 The first deployment is one owner and one node. It establishes a shared service, not tenant
 isolation or a finished commercial authentication product. Cloud coding agents should run as
 separate bounded jobs and call this service; the web container is not a coding workstation.
+
+## Deployment status: retired
+
+On 2026-09-15 the owner explicitly authorized permanent disposal of the temporary cloud prototype,
+including its cloud-only data, without creating a backup. The CloudFormation stack reached
+`DELETE_COMPLETE`; the container and database are absent from the live Lightsail APIs. Its three
+dedicated credentials are marked for deletion with a seven-day, no-charge recovery window. No
+manual database snapshot remains. The database deletion operation reached terminal `Succeeded`;
+operator notes record the exact receipts.
+
+This supersedes the earlier offline pause. There is no remaining database to automatically restart
+after seven days. Local source, local Black Box data/service, networking, and dependent local client
+routes are preserved. Older separate cloud resources are outside this deployment's retirement.
+
+The architecture proposal and future lifecycle acceptance criteria are in the
+[cloud lifecycle and tenancy plan](superpowers/plans/2026-09-15-cloud-lifecycle-and-tenancy.md).
+The acceptance results and pause/resume procedure below are historical/reference material. The
+retired deployment cannot be resumed; a future deployment is new paid provisioning.
+
+## Offline pause and resume
+
+For an authorized temporary pause, first verify the AWS account, region, stack ownership, and exact
+container/database names. Disable the app, wait for `DISABLED` and HTTP 503, then stop its database:
+
+```bash
+aws --profile YOUR_PROFILE --region us-east-2 sts get-caller-identity
+aws --profile YOUR_PROFILE --region us-east-2 lightsail update-container-service \
+  --service-name YOUR_SERVICE --is-disabled \
+  --query 'containerService.{name:containerServiceName,state:state,isDisabled:isDisabled}'
+```
+
+Recheck until the container reports `DISABLED` and the verified service endpoint returns HTTP 503.
+Do not proceed to the database stop if either check has not passed:
+
+```bash
+aws --profile YOUR_PROFILE --region us-east-2 lightsail get-container-services \
+  --service-name YOUR_SERVICE \
+  --query 'containerServices[0].{name:containerServiceName,state:state,isDisabled:isDisabled}'
+curl --max-time 15 --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+  'https://YOUR_VERIFIED_SERVICE_ENDPOINT/actuator/health'
+```
+
+After those checks pass, request the database stop, then recheck until it reports `stopped`:
+
+```bash
+aws --profile YOUR_PROFILE --region us-east-2 lightsail stop-relational-database \
+  --relational-database-name YOUR_DATABASE \
+  --query 'operations[].{id:id,status:status,errorCode:errorCode}'
+aws --profile YOUR_PROFILE --region us-east-2 lightsail get-relational-database \
+  --relational-database-name YOUR_DATABASE \
+  --query 'relationalDatabase.{name:name,state:state,backupRetention:backupRetentionEnabled}'
+```
+
+A successful stop request is asynchronous; verify database state `stopped` before claiming the
+database has stopped. The restricted queries avoid printing resolved container environment secrets.
+Keep all database data, credentials, registered image identities, and restore metadata intact.
+
+**This does not stop hosting charges.** AWS bills disabled Lightsail containers and stopped managed
+databases. It automatically starts a stopped database after seven days. The app remains disabled,
+but this mechanism is unsuitable for indefinite, low-cost suspension. Retirement requires a
+separate reviewed operation that explicitly chooses data retention or authorized disposal: deleting
+a database deletes its automatic backups. Retained snapshots, secrets, and unrelated resources may
+continue to cost money.
+
+To resume, explicitly authorize startup, start the exact database with
+`lightsail start-relational-database`, wait for `available`, and re-enable the exact container with
+`lightsail update-container-service --no-is-disabled`. Then verify authentication, capture/recall,
+MCP, and expected persisted data. This resume sequence is documented, not exercised as part of the
+September 15 shutdown.
+
+The current CloudFormation template hardcodes `IsDisabled: false`. An operational disable creates
+an intentional configuration deviation; ordinary redeployment may re-enable the app. Record the
+pause and reconcile desired state before any stack update. Do not silently resume a paused service
+as a side effect of deploying a new image.
+
+Sources: [container billing](https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-container-services.html),
+[stopped database billing](https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-frequently-asked-questions-faq-billing-and-account-management.html),
+[seven-day database restart](https://docs.aws.amazon.com/cli/latest/reference/lightsail/stop-relational-database.html),
+[database backup/deletion semantics](https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-faq-databases.html).
+
+## Permanent retirement
+
+Retirement must separately account for CloudFormation resources marked `Retain`. Deleting this
+stack removes its container, deployments, and registered images, but retains the managed database
+and three generated Secrets Manager credentials. Stack deletion alone does not end their charges.
+
+Before teardown, verify the live account/region, exact stack ARN, resource IDs, deployed template
+policies, tags, exports, and external dependencies. Save a private metadata-only inventory. Identify
+whether the owner wants recoverable data or explicitly authorizes disposal of the cloud-only data.
+Do not create a paid backup when the owner has explicitly chosen disposal without a backup.
+
+For an authorized permanent disposal of this prototype:
+
+1. Delete the exact CloudFormation stack by ARN and verify `DELETE_COMPLETE`. Confirm the container
+   no longer exists. Do not use `lightsail_deploy.py` for teardown: it creates/updates resources.
+2. Delete the retained database by its previously verified physical name. Use
+   `lightsail delete-relational-database --skip-final-snapshot` only when cloud-data disposal without
+   a final backup is explicitly authorized. Verify the asynchronous operation succeeds and the
+   database is absent. Its automatic backups are deleted with it.
+3. Mark each of the three exact retained secret ARNs for deletion with a seven-day recovery window.
+   Verify `DeletedDate` on each. They become inaccessible and stop incurring secret storage charges
+   during that window; no forced immediate deletion is needed to end those charges.
+4. Inventory any existing manual snapshots, custom certificates, domains, logs, or other supporting
+   resources separately. Delete only individually verified, exclusively owned resources within the
+   authorized scope. Domain/certificate ownership does not follow from container deletion.
+5. Verify resource absence through AWS APIs and record deletion receipts. Check protected local
+   services and client routes. Do not infer that unrelated resources or the entire AWS bill are zero.
+
+The historical stack record can remain queryable by ARN after deletion; it is not a running
+deployment. Keep the source/template as a rebuild recipe. A future `--apply` is new provisioning,
+not a resume operation, and can create paid resources again. Do not change the template's default
+retention policies merely to dispose of one explicitly authorized temporary deployment.
+
+Sources: [container and image deletion](https://docs.aws.amazon.com/lightsail/latest/userguide/amazon-lightsail-deleting-container-services.html),
+[database deletion flags](https://docs.aws.amazon.com/cli/latest/reference/lightsail/delete-relational-database.html),
+[secret deletion and no-charge recovery window](https://docs.aws.amazon.com/secretsmanager/latest/userguide/manage_delete-secret.html).
 
 ## Capacity, price, and known tradeoffs
 

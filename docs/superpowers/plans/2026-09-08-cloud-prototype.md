@@ -1,7 +1,13 @@
 # Black Box cloud prototype and product reset
 
 Date: 2026-09-08
-Status: shared AWS prototype live; final release acceptance passed
+Status: final release acceptance passed on 2026-09-08; cloud prototype retired on 2026-09-15
+
+Operational update: the owner subsequently authorized permanent disposal of the cloud-only
+prototype without a backup. The stack is deleted, container/database are absent, and dedicated
+credentials are marked for deletion. See the [cloud lifecycle and tenancy plan](2026-09-15-cloud-lifecycle-and-tenancy.md) and
+[retirement runbook](../../lightsail-prototype.md#permanent-retirement). The outcome below records
+the original acceptance, not current service availability.
 
 ## Current outcome
 
