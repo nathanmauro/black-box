@@ -55,6 +55,34 @@ beforeEach(() => {
 });
 
 describe("RecallPage", () => {
+  it.each([
+    ["Three months · 90d", 2160],
+    ["Six months · 180d", 4320],
+  ])("submits the %s rolling window without changing the selected scope or kinds", async (label, hours) => {
+    render(() => <RecallPage />);
+    fireEvent.input(screen.getByLabelText("Scope"), { target: { value: "/workspace/example-app" } });
+    fireEvent.click(screen.getByRole("radio", { name: label }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Observation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+
+    expect(getRecall).toHaveBeenCalledWith("/workspace/example-app", hours, ["decision", "handoff", "observation"]);
+    expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
+  });
+
+  it("offers named help disclosures that close with Escape without submitting recall", () => {
+    render(() => <RecallPage />);
+    for (const label of ["Help with scope", "Help with time windows", "Help with filters"]) {
+      const trigger = screen.getByLabelText(label);
+      const disclosure = trigger.closest("details")!;
+      fireEvent.click(trigger);
+      expect(disclosure).toHaveAttribute("open");
+      fireEvent.keyDown(trigger, { key: "Escape" });
+      expect(disclosure).not.toHaveAttribute("open");
+      expect(trigger).toHaveFocus();
+    }
+    expect(getRecall).not.toHaveBeenCalled();
+  });
+
   it("submits the default structured recall query and renders projected cards", async () => {
     render(() => <RecallPage />);
 

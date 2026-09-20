@@ -2672,7 +2672,8 @@ a {
   border-radius: var(--radius);
 }
 .recall-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.recall-field span,
+.recall-control-heading { display: flex; align-items: center; gap: 8px; }
+.recall-control-heading > label,
 .recall-window legend,
 .recall-kinds legend {
   color: var(--text-dim);
@@ -2692,13 +2693,55 @@ a {
 }
 .recall-window,
 .recall-kinds {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   margin: 0;
   padding: 0;
   border: 0;
 }
+.recall-field { position: relative; }
+.recall-help { flex: 0 0 auto; }
+.recall-help summary {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  list-style: none;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.recall-help summary::-webkit-details-marker { display: none; }
+.recall-help summary:hover,
+.recall-help[open] summary { color: var(--text-bright); border-color: var(--accent); }
+.recall-help summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.recall-help-body {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 10px);
+  left: 0;
+  width: min(390px, calc(100vw - 64px));
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  box-shadow: 0 8px 24px #0006;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.recall-kinds .recall-help-body { left: auto; right: 0; }
+.recall-help-body p { margin: 0 0 10px; }
+.recall-help-body p:last-child { margin-bottom: 0; }
+.recall-help-body ul { margin: 0 0 10px; padding-left: 18px; }
+.recall-help-body li + li { margin-top: 6px; }
+.recall-help-body strong { color: var(--text-bright); }
+.recall-help-body code { color: var(--text-bright); overflow-wrap: anywhere; }
 .recall-window legend,
 .recall-kinds legend {
   margin-right: 4px;
@@ -4402,6 +4445,12 @@ a {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+}
+
+@media (max-width: 1200px) {
+  .recall-form { grid-template-columns: minmax(0, 1fr) auto; }
+  .recall-field,
+  .recall-window { grid-column: 1 / -1; }
 }
 
 @media (max-width: 880px) {

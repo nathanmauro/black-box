@@ -134,6 +134,17 @@ across repositories. A bare repo name follows topic rules unless its shape is re
 path or ID. A path match is a lexical anchor, not an authorization boundary or an exact project
 filter: matching can include IDs, working directories, repo metadata, and captured text.
 
+The Recall page offers 24 hours, one week, 30 days, **Three months (90 days)**, and
+**Six months (180 days)**. These are rolling windows measured from now against each event's
+`observedAt`, not calendar-month boundaries. The backend accepts up to 365 days. The page still
+returns up to 10 items; widening the window does not export all matching history.
+
+The **?** controls beside Scope, Window, and Kinds open practical examples and explain matching,
+kind selection, and the top-bar source filter. Open or close them by click, Enter, or Space; Escape
+closes the focused help and returns focus to its control. Run recall after changing its inputs.
+An event ID still obeys the time/kind filters and uses matching rather than bypassing them;
+use a result's Browse link to open its exact source event.
+
 | Layer | Defaults and bounds |
 | --- | --- |
 | Optional SessionStart hook | 720 hours (30 days), 3 Decisions/Handoffs, 4,000-character context block |
