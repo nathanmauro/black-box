@@ -48,3 +48,15 @@ CSS retains the existing palette/chips and wraps the larger control set at small
   scroll width equal to viewport width. Desktop width was restored after verification.
 - No backend code, production data, installed client configuration, or live deployment changed.
   The coordinator owns final review, Git, publication, and disposition of the isolated preview.
+
+## CI quota-test correction
+
+The first CI run passed frontend checks but exposed an existing scheduling assumption in the
+durable-hook quota test. Four contenders can legitimately reach the bounded SQLite busy timeout
+while the final enqueue fills the last available slot; no contender must report `queue_full` in
+that schedule. A real disposable CLI/SQLite reproduction reached exactly 10,000 rows with four
+`operation_deferred` responses and one successful enqueue, reproducing the old assertion failure.
+
+The test still exercises concurrent enqueue and verifies the exact capacity. It now checks the
+full-queue rejection after contention, also asserting the row count remains unchanged. Product
+code, queue limits and bounded timeout behavior are unchanged.
