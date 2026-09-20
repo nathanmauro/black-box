@@ -63,7 +63,7 @@ test("stream facet suggestions close after selection and dismissal", async ({ pa
 
   await input.fill("kind:Dec");
   await expect(page.getByRole("listbox")).toBeVisible();
-  await page.getByRole("listbox").getByRole("button", { name: "Decision" }).click();
+  await page.getByRole("listbox", { name: "Query suggestions" }).getByRole("option", { name: "Decision", exact: true }).click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await expect(input).toHaveValue("kind:Decision ");
 
@@ -90,7 +90,7 @@ test("session detail renders a structured decision card", async ({ page }) => {
   await page.goto("/?q=source%3Acodex");
   const row = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
   await row.click();
-  await page.getByRole("link", { name: "View session" }).click();
+  await page.locator(".stream-row-expanded").getByRole("link", { name: "Open at this event" }).click();
   await expect(page).toHaveURL(/view=browse/);
   await expect(page).toHaveURL(/event=/);
   await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
@@ -127,7 +127,7 @@ test("live feed receives a newly ingested event over SSE", async ({ page, reques
     },
   });
   expect(res.ok()).toBeTruthy();
-  await expect(page.getByText(marker)).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".stream-row").filter({ hasText: marker })).toBeVisible({ timeout: 10_000 });
 });
 
 test("graph shows the seeded recall constellation", async ({ page, request }) => {

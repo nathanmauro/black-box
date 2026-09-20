@@ -29,12 +29,13 @@ test("meaningful toggle widens the stream and a source facet narrows it", async 
   await expect(page.locator(".stream-row").first()).toBeVisible();
 
   // Full firehose: the claude user prompt appears once meaningful-only is off.
+  await page.getByRole("button", { name: "Options", exact: true }).click();
   await page.getByLabel(/meaningful events only/i).uncheck();
   await expect(page.getByText("Rewrite the UI to match agent-observatory").first()).toBeVisible();
 
   // Elasticsearch-style facet narrows to one agent.
   const query = page.getByLabel("Stream query");
-  await query.fill("source:claude");
+  await query.fill("source:claude is:all");
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await expect(page).toHaveURL(/q=source%3Aclaude/);
   await expect(page.getByText("Rewrite the UI to match agent-observatory").first()).toBeVisible();
@@ -53,7 +54,7 @@ test("clicking a stream row expands it inline with the full event card", async (
   await expect(decisionRow).toHaveAttribute("aria-expanded", "true");
   const expanded = page.locator(".stream-row-expanded");
   await expect(expanded).toBeVisible();
-  await expect(expanded.getByRole("link", { name: "View session" })).toHaveAttribute("href", /view=browse.*session=.*event=/);
+  await expect(expanded.getByRole("link", { name: "Open at this event" })).toHaveAttribute("href", /view=browse.*session=.*event=/);
   await expect(expanded.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
 
   await decisionRow.click();
@@ -64,7 +65,7 @@ test("the explicit Stream action opens the exact event in Browse", async ({ page
   await page.goto("/");
   const decisionRow = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
   await decisionRow.click();
-  await page.locator(".stream-row-expanded").getByRole("link", { name: "View session" }).click();
+  await page.locator(".stream-row-expanded").getByRole("link", { name: "Open at this event" }).click();
 
   await expect(page).toHaveURL(/view=browse/);
   await expect(page).toHaveURL(/session=/);
@@ -114,6 +115,7 @@ test("density toggle expands every row and survives a reload", async ({ page }) 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".stream-row").first()).toBeVisible();
 
+  await page.getByRole("button", { name: "Options", exact: true }).click();
   await page.getByRole("group", { name: "Stream density" }).getByRole("button", { name: "Expanded" }).click();
   const rows = page.locator(".stream-row");
   const rowCount = await rows.count();
@@ -145,6 +147,7 @@ test("an edit event renders a readable diff behind a lazy details block", async 
   expect(seeded.ok()).toBeTruthy();
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Options", exact: true }).click();
   await page.getByLabel(/meaningful events only/i).uncheck(); // PostToolUse is filtered by default
   const row = page.locator(".stream-row").filter({ hasText: "app.ts" }).first();
   await expect(row).toBeVisible();

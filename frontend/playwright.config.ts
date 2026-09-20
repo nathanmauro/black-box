@@ -45,7 +45,7 @@ const serverCommand = [
   "node frontend/src/e2e/e2ePreflight.mjs prepare; owned=1; ",
   "printf \"BLACK_BOX_E2E_DB=%s\\n\" \"$SBA_E2E_DB_PATH\"; ",
   "mvn -q -Pfrontend -DskipTests package; ",
-  "java -jar target/sba-agentic-0.1.0.jar & child=$!; wait \"$child\"",
+  "java -jar target/sba-agentic-0.2.0.jar & child=$!; wait \"$child\"",
   "'",
 ].join("");
 

@@ -18,8 +18,20 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - run: mvn -B -DskipTests package
+      - name: Match the release tag to the packaged version
+        run: |
+          version=$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout)
+          test "$GITHUB_REF_NAME" = "v$version"
+          test -f "docs/releases/$GITHUB_REF_NAME.md"
+      - run: mvn -B verify
+      - name: Checksum the release artifact
+        working-directory: target
+        run: sha256sum sba-agentic-*.jar > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
-          files: target/sba-agentic-*.jar
-          generate_release_notes: true
+          files: |
+            target/sba-agentic-*.jar
+            target/SHA256SUMS
+          body_path: docs/releases/${{ github.ref_name }}.md
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

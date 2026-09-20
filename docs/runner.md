@@ -163,7 +163,7 @@ After building in a checkout that is not serving a running JAR:
 
 ```bash
 SBA_RUNNER_CONFIG=/path/to/runner.json \
-  java -jar target/sba-agentic-0.1.0.jar runner
+  java -jar target/sba-agentic-0.2.0.jar runner
 ```
 
 Starting the runner starts orchestration. The macOS deploy script also starts or restarts it;

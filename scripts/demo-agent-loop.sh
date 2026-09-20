@@ -100,7 +100,7 @@ fi
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/${PREFIX}-demo.XXXXXX")"
 DEMO_DB="${TEMP_DIR}/${PREFIX}-demo.db"
 LOG_FILE="${TEMP_DIR}/${PREFIX}-demo.log"
-JAR="${PROJECT_DIR}/target/sba-agentic-0.1.0.jar"
+JAR="${PROJECT_DIR}/target/sba-agentic-0.2.0.jar"
 
 printf 'BUILD: (cd %s && mvn -q -Pfrontend -DskipTests package)\n' "$PROJECT_DIR"
 (cd "$PROJECT_DIR" && mvn -q -Pfrontend -DskipTests package)

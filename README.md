@@ -67,6 +67,10 @@ and saved views.
 
 ## Try it
 
+The current release is [v0.2.0](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0).
+Download the runnable JAR and checksum there, or build from source below. Read the
+[upgrade guidance and release boundaries](docs/releases/v0.2.0.md) before replacing an existing installation.
+
 Requirements: Java 21+, Maven 3.9+, `curl`, and `jq`.
 
 ```bash
