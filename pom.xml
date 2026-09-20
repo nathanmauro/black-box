@@ -124,6 +124,43 @@
     </build>
 
     <profiles>
+        <!-- Explicit goals only: no new formatting gate in the normal build lifecycle. -->
+        <profile>
+            <id>java-format</id>
+            <properties>
+                <java.format.includes>src/**/*.java</java.format.includes>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.diffplug.spotless</groupId>
+                        <artifactId>spotless-maven-plugin</artifactId>
+                        <version>3.10.2</version>
+                        <configuration>
+                            <!-- Re-read the native source helper even when Java inputs are unchanged. -->
+                            <upToDateChecking><enabled>false</enabled></upToDateChecking>
+                            <java>
+                                <includes>
+                                    <include>${java.format.includes}</include>
+                                </includes>
+                                <palantirJavaFormat>
+                                    <version>2.98.0</version>
+                                    <style>PALANTIR</style>
+                                    <formatJavadoc>false</formatJavadoc>
+                                </palantirJavaFormat>
+                                <nativeCmd>
+                                    <name>Blank line before return</name>
+                                    <pathToExe>${java.home}/bin/java</pathToExe>
+                                    <arguments>
+                                        <argument>${project.basedir}/scripts/format/BlankBeforeReturn.java</argument>
+                                    </arguments>
+                                </nativeCmd>
+                            </java>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!--
           Reproducible UI build. The shipped jar always serves the committed bundle under
           src/main/resources/static (so `mvn package` needs no Node toolchain — stranger-friendly).

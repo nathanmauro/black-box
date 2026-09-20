@@ -125,6 +125,13 @@ or trusting live client wiring.
 For demo or showcase work, run `./scripts/demo.sh` and verify the visible recall loop before updating
 README claims or assets.
 
+Java formatting is opt-in through `mvn -Pjava-format spotless:check` / `spotless:apply`.
+Use the pinned Palantir formatter and the AST-based blank-before-return step; do not substitute
+Eclipse or regex rewrites over Java source. Scope routine formatting with `spotlessFiles` (an
+absolute-path regex), preserve unrelated dirty work, and reserve a whole-project apply for an
+explicit formatting pass. See [Java formatting](docs/java-formatting.md) for exact commands and
+disposable verification. Normal Maven builds intentionally have no formatting gate.
+
 ## Docs routing
 
 When Nathan says "update my docs", default to the Obsidian vault at `~/Notes/obsidian`. Still update
