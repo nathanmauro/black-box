@@ -68,6 +68,7 @@ import dev.nathan.sbaagentic.project.TrajectoryTask;
 import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.CompactSearchResult;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
@@ -168,6 +169,10 @@ class WireContractFixtureTest {
 
     private static Map<String, Class<?>> recordClasses() {
         return new LinkedHashMap<>(Map.ofEntries(
+                entry("CompactSearchResult", CompactSearchResult.class),
+                entry("CompactSearchResult.Hit", CompactSearchResult.Hit.class),
+                entry("CompactSearchResult.SourceReference", CompactSearchResult.SourceReference.class),
+                entry("CompactSearchResult.Coverage", CompactSearchResult.Coverage.class),
                 entry("AgentEvent", AgentEvent.class),
                 entry("AgentSession", AgentSession.class),
                 entry("TaskController.AnnotationBody", TaskController.AnnotationBody.class),

@@ -98,8 +98,8 @@ codex mcp add sba-agentic --url http://localhost:8766/mcp
 claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
 ```
 
-Fifteen tools: eight for memory and status (`captureDecision`, `captureHandoff`, `captureObservation`,
-`captureProjection`, `recallContext`, `searchSessions`, `recentSessions`, `localModelStatus`) and
+Sixteen tools: nine for memory and status (`captureDecision`, `captureHandoff`, `captureObservation`,
+`captureProjection`, `recallContext`, `searchContext`, `searchSessions`, `recentSessions`, `localModelStatus`) and
 seven for coordination (`createSpec`, `enqueueTask`, `claimNextTask`, `updateTaskStatus`,
 `completeTask`, `listTasks`, `getSpec`). REST mirrors the seven coordination operations with the
 same field names on success and typed error envelopes on both surfaces. Opt-in hooks stream raw

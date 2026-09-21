@@ -255,6 +255,59 @@ class ElasticIndexClientTest {
         }
     }
 
+    @Test
+    void compactSearchProjectsFieldsAndDistinguishesUnavailableIndex() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/sba-agentic-events/_search", exchange -> {
+            body.set(readBody(exchange));
+            respondJson(exchange, """
+                    {"hits":{"hits":[{"_id":"event-1","_source":{"sessionId":"session-1","source":"manual"},
+                    "highlight":{"text":["bounded excerpt"]}}]}}
+                    """);
+        });
+        server.start();
+        ElasticIndexClient client = client(server, true);
+        try {
+            var result = client.searchCompact("fixture", 200);
+            assertThat(result.status()).isEqualTo("searched");
+            assertThat(result.items().getFirst().text()).isEqualTo("bounded excerpt");
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body.get());
+            assertThat(json.path("_source").toString()).doesNotContain("text", "metadata", "toolOutput");
+            assertThat(json.path("highlight").path("pre_tags").get(0).asText()).isEmpty();
+            assertThat(json.path("query").path("bool").path("should")).hasSize(2);
+        } finally { server.stop(0); }
+        assertThat(client.searchCompact("fixture", 200).status()).isEqualTo("unavailable");
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "SBA_COMPACT_ELASTIC_TEST_URL", matches = "http://127\\.0\\.0\\.1:[0-9]+")
+    void compactSearchWorksAgainstDisposableElasticsearch() throws Exception {
+        String origin = System.getenv("SBA_COMPACT_ELASTIC_TEST_URL");
+        String indexName = "bb-compact-test-" + java.util.UUID.randomUUID();
+        ElasticsearchProperties properties = new ElasticsearchProperties();
+        properties.setEnabled(true);
+        properties.setBaseUrl(origin);
+        properties.setIndexName(indexName);
+        properties.setTimeout(Duration.ofSeconds(10));
+        ElasticIndexClient client = new ElasticIndexClient(properties);
+        var http = java.net.http.HttpClient.newHttpClient();
+        try {
+            assertThat(client.index(session(), event())).isTrue();
+            var refresh = java.net.http.HttpRequest.newBuilder(java.net.URI.create(origin + "/" + indexName + "/_refresh"))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.noBody()).build();
+            assertThat(http.send(refresh, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(200);
+            var found = client.searchCompact("elastic smoke", 200);
+            assertThat(found.status()).isEqualTo("searched");
+            assertThat(found.items()).hasSize(1);
+            assertThat(found.items().getFirst().text()).contains("elastic smoke").doesNotContain("<mark>");
+            assertThat(found.items().getFirst().eventId()).isEqualTo("event-1");
+        } finally {
+            var remove = java.net.http.HttpRequest.newBuilder(java.net.URI.create(origin + "/" + indexName)).DELETE().build();
+            http.send(remove, java.net.http.HttpResponse.BodyHandlers.discarding());
+        }
+    }
+
     private static ElasticIndexClient client(HttpServer server, boolean enabled) {
         ElasticsearchProperties properties = new ElasticsearchProperties();
         properties.setEnabled(enabled);

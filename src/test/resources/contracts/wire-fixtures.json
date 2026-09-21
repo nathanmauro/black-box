@@ -1,5 +1,9 @@
 {
   "records": {
+    "CompactSearchResult": {"status":"ok","query":"fixture","count":0,"items":[],"appliedFilters":{},"coverage":{},"truncated":false,"omittedItems":0,"maxBytes":24000,"diagnostics":[]},
+    "CompactSearchResult.Hit": {"eventId":"event-1","sessionId":"session-1","clientSessionId":"client-1","source":"manual","eventType":"Observation","role":"assistant","observedAt":"2026-08-17T00:00:00Z","excerpt":"fixture","excerptTruncated":false,"backends":["local"],"provenance":"recorded_assistant_content","sourceReference":null,"similarEventIds":[],"similarCount":1,"similarMembersTruncated":false},
+    "CompactSearchResult.SourceReference": {"status":"unresolved","eventPath":null,"browsePath":null,"externalProvider":null,"externalTaskId":null,"externalStatus":"unavailable"},
+    "CompactSearchResult.Coverage": {"status":"searched","candidates":0,"candidateLimitReached":false},
     "AgentEvent": {"id":"event-1","sessionId":"session-1","source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","toolName":null,"toolInputJson":null,"toolOutputJson":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z"},
     "AgentSession": {"id":"session-1","source":"codex","clientSessionId":"client-1","title":"Refactor","cwd":"/repo","summary":"summary","startedAt":"2026-07-20T11:00:00Z","lastSeenAt":"2026-07-20T12:00:00Z","eventCount":1,"spawnedBy":null},
     "TaskController.AnnotationBody": {"actor":"worker","kind":"progress","text":"halfway","dataJson":{}},

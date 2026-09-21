@@ -32,7 +32,8 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureObservation` | Record a concise fact or note |
 | `captureProjection` | Capture one to five plausible future paths for the project graph |
 | `recallContext` | Recall Decisions, Handoffs, and Observations lexically or semantically; Projections are lexical-only |
-| `searchSessions` | Search captured events and sessions |
+| `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
+| `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size |
 | `recentSessions` | List recent agent sessions |
 | `localModelStatus` | Inspect the optional local model backend |
 
@@ -41,6 +42,71 @@ Handoffs require `contextSummary`, Observations require `text`, and Projections 
 path with a title. Missing, null, or blank required fields return an MCP tool error naming the field
 and do not write an event. Correct the named field before retrying. Optional handoff fields such as
 recipient, open loops, and next action retain their existing behavior.
+
+### Bounded evidence discovery
+
+Use `recallContext` first to recover structured prior intent. For broader discovery, prefer
+`searchContext` (HTTP: `GET /api/search/compact?q=...`) to raw `searchSessions`. Both compact
+surfaces return the same JSON shape; they leave existing raw search, event reads and recall intact.
+
+```json
+{"query":"backend kind:Handoff until:2026-08-18","limit":10,"maxBytes":24000}
+```
+
+The global result limit defaults to 10 and clamps to 1–50. `maxBytes` defaults to 24,000 and must
+be 2,048–64,000. It bounds the complete serialized application JSON in UTF-8, including escaped
+strings and metadata; HTTP headers and MCP framing add bytes. This differs from recall's text-field
+`maxChars`. A response can contain fewer hits to fit the budget; the first excerpt is shortened
+before its source reference is dropped. Invalid requests return compact diagnostics (HTTP 400;
+MCP callers inspect `status`, which is not `ok`).
+
+Each hit has the same fields for canonical and indexed results: `eventId`, `sessionId`,
+`clientSessionId`, `source`, `eventType`, `role`, `observedAt`, `excerpt`, `excerptTruncated`,
+`backends`, `provenance`, `sourceReference`, and observer-similarity fields. Excerpts contain at
+most 600 Unicode code points. They are captured text, not generated summaries; a match may be in
+metadata absent from the excerpt. Full metadata, tool JSON and raw hooks are not returned.
+The local projection does not fetch/decode those payload fields. Searching metadata can still
+scan large stored values, so a smaller response is not a database latency guarantee.
+
+Check `coverage` for each backend: `searched`, `disabled`, `unavailable`, or `skipped_filters`.
+Candidate counts describe only the bounded pool, not all matches. Each backend reads at most
+200 candidates; `candidateLimitReached=true` means coverage may be incomplete. Results alternate
+between backend orders without treating scores as comparable. The same canonical event appearing
+in both arms is listed once, using canonical fields. Indexed-only hits remain unresolved and are
+never presented as verified canonical sources. `truncated` and `omittedItems` report presentation
+limits separately from candidate exhaustion.
+
+Supported query operators include `source:`, `kind:`, `tool:`, `project:`, `session:`, `since:`,
+`until:` and `last:`. The compact response exposes `appliedFilters`, one request time and the server
+clock timezone. All recognized filters use canonical storage only until equivalent index filtering
+exists. Legacy raw search retains its older behavior, including fuzzy index treatment of some
+positive facets. `until:2026-08-18` includes all of that day in the server timezone; strictly before
+that date uses `until:2026-08-17`. An exact `until:` timestamp is inclusive. Compact comparisons
+normalize fractional precision. `before:` and malformed/negated time operators are diagnosed
+before searching. Quote the entire token, such as `"before:2026-08-18"`, to search it literally.
+URLs and ordinary colon-containing text remain searchable.
+
+`excludeSession` excludes one exact internal or client session identity **before** candidate limits.
+Default `groupSimilar=true` groups identical complete text from recognized tool events only.
+These are explicitly **similar observer text with unknown origin**, not proven copies. Decisions
+and user messages are not grouped. `similarCount` counts members in the candidate pool;
+`similarEventIds` previews up to five additional member IDs and `similarMembersTruncated` indicates
+more. Set `groupSimilar=false`, increase `limit`, or narrow by time/session to inspect members;
+a group is not an exhaustive corpus inventory. Long excerpts and indexed-only excerpts are not
+grouped because their completeness is unknown. A source outside the 200-candidate pool may still
+be missing: narrow the query instead of inferring that no source exists.
+
+Follow `sourceReference.eventPath` for the canonical recorded event or `browsePath` for its owning
+session. Exact reads can be large: project required fields before printing. A recognized Codex
+client or composite voice-session identifier provides an `externalTaskId` **candidate requiring
+verification** through the external app. It is not the internal Black Box session ID. Unknown or
+oversized identities remain unresolved; no file scan, credential access or external app read is
+performed. Neither a capture type, matching phrase, summary, nor source candidate proves origin,
+user agreement or causation. Verify original statements and label remaining inference.
+
+For external source readers, inspect the current tool schema, follow returned pagination cursors,
+check errors before parsing JSON, and bound the whole displayed response. Black Box does not
+control those tools' page sizes or promise that every external task has a local transcript.
 
 ### Coordination tools
 
