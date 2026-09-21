@@ -91,14 +91,45 @@ public class ElasticIndexClient implements SearchIndex {
         }
     }
 
-    public List<Map<String, Object>> search(String query, int limit) {
-        if (!properties.isEnabled() || query == null || query.isBlank()) {
-            return List.of();
-        }
+    @Override
+    public CompactResults searchCompact(String query, int limit) {
+        if (!properties.isEnabled()) return new CompactResults("disabled", List.of());
         try {
             Map<String, Object> body = Map.of(
                     "size", limit,
-                    "query", Map.of(
+                    "_source", List.of("sessionId", "clientSessionId", "source", "eventType", "role", "observedAt"),
+                    "query", relevanceQuery(query),
+                    "highlight", Map.of("pre_tags", List.of(""), "post_tags", List.of(""),
+                            "fields", Map.of("text", Map.of("fragment_size", 600, "number_of_fragments", 1,
+                                    "no_match_size", 600))));
+            Map<?, ?> response = restClient.post().uri("/{index}/_search", properties.getIndexName())
+                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(Map.class);
+            if (response == null || !(response.get("hits") instanceof Map<?, ?> hits)
+                    || !(hits.get("hits") instanceof List<?> entries)) {
+                return new CompactResults("unavailable", List.of());
+            }
+            var candidates = new java.util.ArrayList<dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate>();
+            for (Object entry : entries.stream().limit(limit).toList()) {
+                if (!(entry instanceof Map<?, ?> hit) || !(hit.get("_source") instanceof Map<?, ?> source)) continue;
+                String text = null;
+                if (hit.get("highlight") instanceof Map<?, ?> highlights
+                        && highlights.get("text") instanceof List<?> fragments && !fragments.isEmpty()) {
+                    text = compactString(fragments.get(0), 601);
+                }
+                candidates.add(new dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate(
+                        compactString(hit.get("_id"), 257), compactString(source.get("sessionId"), 257),
+                        compactString(source.get("clientSessionId"), 257), compactString(source.get("source"), 257),
+                        compactString(source.get("eventType"), 257), compactString(source.get("role"), 257),
+                        compactString(source.get("observedAt"), 64), text));
+            }
+            return new CompactResults("searched", List.copyOf(candidates));
+        } catch (RestClientException ex) {
+            return new CompactResults("unavailable", List.of());
+        }
+    }
+
+    private static Map<String, Object> relevanceQuery(String query) {
+        return Map.of(
                             "bool", Map.of(
                                     "minimum_should_match", 1,
                                     "should", List.of(
@@ -114,7 +145,22 @@ public class ElasticIndexClient implements SearchIndex {
                                                     "operator", "or",
                                                     "fuzziness", "AUTO",
                                                     "prefix_length", 1,
-                                                    "max_expansions", 50))))),
+                                                    "max_expansions", 50)))));
+    }
+
+    private static String compactString(Object value, int max) {
+        if (!(value instanceof String text)) return null;
+        return text.codePointCount(0, text.length()) <= max ? text : text.substring(0, text.offsetByCodePoints(0, max));
+    }
+
+    public List<Map<String, Object>> search(String query, int limit) {
+        if (!properties.isEnabled() || query == null || query.isBlank()) {
+            return List.of();
+        }
+        try {
+            Map<String, Object> body = Map.of(
+                    "size", limit,
+                    "query", relevanceQuery(query),
                     "highlight", Map.of(
                             "pre_tags", List.of("<mark>"),
                             "post_tags", List.of("</mark>"),

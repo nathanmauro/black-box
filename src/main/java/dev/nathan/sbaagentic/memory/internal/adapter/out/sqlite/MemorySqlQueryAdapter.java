@@ -18,11 +18,13 @@ import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader;
 import org.springframework.stereotype.Repository;
 
 /** Read-only SQLite projections over the recording-owned event tables. */
 @Repository
-public class MemorySqlQueryAdapter implements MemoryEventReader {
+public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventReader {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -34,6 +36,15 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
               ELSE rtrim(trim(s.cwd), '/')
             END
             """;
+
+    // Canonical timestamps are UTC ISO strings with variable fractional precision. Padding avoids
+    // ordering a later fractional instant before its whole-second boundary ('.' sorts before 'Z').
+    private static final String COMPACT_TIME_SQL = "(substr(e.observed_at,1,19) || '.' || CASE "
+            + "WHEN substr(e.observed_at,20,1) = '.' THEN "
+            + "substr(substr(e.observed_at,21,length(e.observed_at)-21) || '000000000',1,9) "
+            + "ELSE '000000000' END || 'Z')";
+    private static final java.time.format.DateTimeFormatter COMPACT_TIME =
+            new java.time.format.DateTimeFormatterBuilder().appendInstant(9).toFormatter();
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -47,15 +58,35 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
 
     @Override
     public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
-        EventQuery facets = EventQuery.parse(query);
+        return searchProjection(EventQuery.parse(query), projectScopes, limit, clock, null, false, this::mapEvent);
+    }
+
+    @Override
+    public List<Candidate> searchCompact(EventQuery query, List<String> projectScopes, int limit,
+            Clock requestClock, String excludeSession) {
+        return searchProjection(query, projectScopes, limit, requestClock, excludeSession, true,
+                (rs, row) -> new Candidate(rs.getString("id"), rs.getString("session_id"),
+                        rs.getString("client_session_id"), rs.getString("source"), rs.getString("event_type"),
+                        rs.getString("role"), rs.getString("observed_at"), rs.getString("text")));
+    }
+
+    private <T> List<T> searchProjection(EventQuery facets, List<String> projectScopes, int limit,
+            Clock requestClock, String excludeSession, boolean compact, RowMapper<T> mapper) {
+        String projection = compact
+                ? "SELECT substr(e.id,1,257) AS id, substr(e.session_id,1,257) AS session_id, "
+                    + "substr(e.source,1,257) AS source, substr(e.client_session_id,1,257) AS client_session_id, "
+                    + "substr(e.event_type,1,257) AS event_type, substr(e.role,1,257) AS role, "
+                    + "substr(e.observed_at,1,64) AS observed_at, substr(e.text,1,601) AS text\n"
+                : "SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, "
+                    + "e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, "
+                    + "e.observed_at\n";
         if (!facets.hasAnyFacet()) {
             // Facetless legacy path: free text still sweeps the wider column set (event_type and
             // source included), but terms now AND per-term instead of matching one joined phrase.
             List<Object> args = new ArrayList<>();
             StringBuilder sql = new StringBuilder()
-                    .append("SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,\n")
-                    .append("       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at\n")
-                    .append("  FROM agent_events\n")
+                    .append(projection)
+                    .append("  FROM agent_events e\n")
                     .append(" WHERE 1=1\n");
             for (String term : facets.freeTerms()) {
                 String like = "%" + term.toLowerCase() + "%";
@@ -68,16 +99,15 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
                     args.add(like);
                 }
             }
-            sql.append(" ORDER BY observed_at DESC\n LIMIT ?");
+            appendExcludedSession(sql, args, excludeSession);
+            sql.append(compact ? " ORDER BY " + COMPACT_TIME_SQL + " DESC, e.id DESC\n LIMIT ?" : " ORDER BY observed_at DESC\n LIMIT ?");
             args.add(limit);
-            return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
+            return jdbcTemplate.query(sql.toString(), mapper, args.toArray());
         }
 
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder()
-                .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
-                .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
-                .append("e.observed_at\n")
+                .append(projection)
                 .append("  FROM agent_events e\n");
         boolean joinSessions = !facets.values(Field.PROJECT).isEmpty()
                 || !facets.excluded(Field.PROJECT).isEmpty()
@@ -129,12 +159,13 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
             args.add(ref);
         });
         facets.sinceSpec().ifPresent(spec -> {
-            sql.append("   AND e.observed_at >= ?\n");
-            args.add(spec.resolve(clock).toString());
+            sql.append("   AND ").append(compact ? COMPACT_TIME_SQL : "e.observed_at").append(" >= ?\n");
+            args.add(compact ? COMPACT_TIME.format(spec.resolve(requestClock)) : spec.resolve(requestClock).toString());
         });
         facets.untilSpec().ifPresent(spec -> {
-            sql.append(spec.exclusiveEnd() ? "   AND e.observed_at < ?\n" : "   AND e.observed_at <= ?\n");
-            args.add(spec.resolve(clock).toString());
+            sql.append("   AND ").append(compact ? COMPACT_TIME_SQL : "e.observed_at")
+                    .append(spec.exclusiveEnd() ? " < ?\n" : " <= ?\n");
+            args.add(compact ? COMPACT_TIME.format(spec.resolve(requestClock)) : spec.resolve(requestClock).toString());
         });
         // is:all is deliberately a no-op here: search has no meaningful filter to disable.
         for (String term : facets.freeTerms()) {
@@ -146,9 +177,18 @@ public class MemorySqlQueryAdapter implements MemoryEventReader {
             args.add(like);
             args.add(like);
         }
-        sql.append(" ORDER BY e.observed_at DESC\n LIMIT ?");
+        appendExcludedSession(sql, args, excludeSession);
+        sql.append(compact ? " ORDER BY " + COMPACT_TIME_SQL + " DESC, e.id DESC\n LIMIT ?" : " ORDER BY e.observed_at DESC\n LIMIT ?");
         args.add(limit);
-        return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
+        return jdbcTemplate.query(sql.toString(), mapper, args.toArray());
+    }
+
+    private static void appendExcludedSession(StringBuilder sql, List<Object> args, String excludeSession) {
+        if (excludeSession != null) {
+            sql.append(" AND e.session_id NOT IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+            args.add(excludeSession);
+            args.add(excludeSession);
+        }
     }
 
     @Override

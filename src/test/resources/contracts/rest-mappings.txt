@@ -17,6 +17,7 @@ GET /api/projects/{projectKey}/sessions
 GET /api/projects/{projectKey}/timeline
 GET /api/recall
 GET /api/search
+GET /api/search/compact
 GET /api/search/fields
 GET /api/search/values
 GET /api/session-links/child-counts

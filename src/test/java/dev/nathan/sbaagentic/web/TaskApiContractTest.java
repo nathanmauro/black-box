@@ -765,11 +765,11 @@ class TaskApiContractTest {
     }
 
     @Test
-    void featureOwnedAdaptersRegisterTheSameFifteenTools() throws Exception {
+    void featureOwnedAdaptersPreserveExistingToolsAndAddCompactSearch() throws Exception {
         Set<String> registered = Arrays.stream(toolCallbackProvider.getToolCallbacks())
                 .map(callback -> callback.getToolDefinition().name())
                 .collect(Collectors.toSet());
-        assertThat(registered).hasSize(15).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS);
+        assertThat(registered).hasSize(16).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS).contains("searchContext");
 
         Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
         Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);

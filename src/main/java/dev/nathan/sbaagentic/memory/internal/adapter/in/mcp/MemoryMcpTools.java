@@ -93,7 +93,7 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
         return recordingCatalog.recentSessions(clampLimit(limit));
     }
 
-    @Tool(description = "Search captured local agent events and sessions by free text.")
+    @Tool(description = "Raw diagnostic search of captured events. Results include full tool/metadata payloads; limit bounds rows only. Prefer searchContext for bounded discovery, recallContext for structured intent.")
     public SearchResponse searchSessions(
             @ToolParam(description = "Search query text.") String query,
             @ToolParam(required = false,

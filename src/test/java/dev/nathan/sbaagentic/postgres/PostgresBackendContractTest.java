@@ -101,6 +101,19 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void compactSearchKeepsFractionalBoundariesAndSourceLinks() {
+        String marker = "compact-pg-" + UUID.randomUUID();
+        JsonNode equal = post("/api/events", Map.of("source", "manual", "clientSessionId", marker,
+                "eventType", "Observation", "text", marker, "observedAt", "2026-08-18T00:00:00Z"));
+        post("/api/events", Map.of("source", "manual", "clientSessionId", marker,
+                "eventType", "Observation", "text", marker, "observedAt", "2026-08-18T00:00:00.100Z"));
+        JsonNode found = get("/api/search/compact?q=" + marker + " until:2026-08-18T00:00:00Z");
+        assertThat(found.path("items")).hasSize(1);
+        assertThat(found.path("items").get(0).path("eventId").asText()).isEqualTo(equal.path("eventId").asText());
+        assertThat(found.path("items").get(0).path("sourceReference").path("eventPath").asText()).isEqualTo("/api/events/" + equal.path("eventId").asText());
+    }
+
+    @Test
     void delayedEventsKeepLatestSessionActivity() {
         dev.nathan.sbaagentic.recording.SessionChronologyContract.delayedEvents(http, base, jdbc);
     }

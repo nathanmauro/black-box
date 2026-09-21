@@ -12,6 +12,10 @@ public interface SearchIndex {
 
     List<Map<String, Object>> search(String query, int limit);
 
+    CompactResults searchCompact(String query, int limit);
+
+    record CompactResults(String status, List<CompactEventReader.Candidate> items) { }
+
     List<String> termsEnum(String field, String prefix, int limit);
 
     List<Map<String, Object>> fieldCaps();
