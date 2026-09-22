@@ -1,28 +1,28 @@
 package dev.nathan.sbaagentic.web;
 
-import org.junit.jupiter.api.Test;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-summary-failure-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false",
-        "sba.summary.backend=external",
-        "sba.summary.external-command=exit 42"
-})
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-summary-failure-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false",
+            "sba.summary.backend=external",
+            "sba.summary.external-command=exit 42"
+        })
 @AutoConfigureMockMvc
 class AgenticControllerSummaryFailureTest {
 

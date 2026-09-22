@@ -8,6 +8,7 @@ public class MemoryRecallProperties {
     private double relevanceFloor = 0.61;
 
     public double getRelevanceFloor() {
+
         return relevanceFloor;
     }
 

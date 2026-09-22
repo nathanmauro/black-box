@@ -3,13 +3,7 @@ package dev.nathan.sbaagentic.runner;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public record EngineConfig(
-        String id,
-        String model,
-        String effort,
-        String sandbox,
-        String provider,
-        boolean enabled) {
+public record EngineConfig(String id, String model, String effort, String sandbox, String provider, boolean enabled) {
 
     // A missing or null JSON value keeps engines enabled by default.
     @JsonCreator

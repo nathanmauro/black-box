@@ -1,12 +1,10 @@
 package dev.nathan.sbaagentic.runner.gate;
 
-import java.util.Optional;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser.ParsedStory;
-
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class StoryFrontmatterParserTest {
 
@@ -30,8 +28,8 @@ class StoryFrontmatterParserTest {
                 """);
 
         assertThat(parsed).isPresent();
-        assertThat(parsed.orElseThrow().frontmatter()).isEqualTo(new StoryFrontmatter(
-                "v1", "/tmp/example", "full_auto", "mvn test", true, 10));
+        assertThat(parsed.orElseThrow().frontmatter())
+                .isEqualTo(new StoryFrontmatter("v1", "/tmp/example", "full_auto", "mvn test", true, 10));
     }
 
     @Test
@@ -58,20 +56,14 @@ class StoryFrontmatterParserTest {
                 # Example
                 """).orElseThrow();
 
-        assertThat(parsed.frontmatter()).isEqualTo(new StoryFrontmatter(
-                "v1", null, null, null, null, null));
+        assertThat(parsed.frontmatter()).isEqualTo(new StoryFrontmatter("v1", null, null, null, null, null));
     }
 
     @Test
     void bodyMarkdownExcludesFrontmatterAndLeadingBlankLines() {
-        ParsedStory parsed = parser.parse("  ---  \n"
-                + "story: v1\n"
-                + "---\n"
-                + "\n"
-                + "\n"
-                + "# Example\n"
-                + "\n"
-                + "Story body.\n").orElseThrow();
+        ParsedStory parsed = parser.parse(
+                        "  ---  \n" + "story: v1\n" + "---\n" + "\n" + "\n" + "# Example\n" + "\n" + "Story body.\n")
+                .orElseThrow();
 
         assertThat(parsed.bodyMarkdown()).startsWith("# Example");
         assertThat(parsed.bodyMarkdown()).contains("Story body.");

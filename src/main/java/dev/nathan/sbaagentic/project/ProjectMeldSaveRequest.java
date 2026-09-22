@@ -13,5 +13,4 @@ public record ProjectMeldSaveRequest(
         String executionMode,
         Boolean savedFromPreview,
         List<String> sessionIds,
-        Map<String, Object> metadata) {
-}
+        Map<String, Object> metadata) {}

@@ -14,10 +14,10 @@ import java.util.Locale;
  */
 public final class EventTypes {
 
-    private EventTypes() {
-    }
+    private EventTypes() {}
 
     public static String normalize(String eventType) {
+
         return eventType == null ? "" : eventType.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 }

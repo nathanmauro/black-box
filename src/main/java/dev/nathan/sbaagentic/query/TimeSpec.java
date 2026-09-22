@@ -25,9 +25,16 @@ import java.util.regex.Pattern;
  */
 public record TimeSpec(Kind kind, String value, Edge edge) {
 
-    public enum Kind { ABSOLUTE, DURATION, KEYWORD }
+    public enum Kind {
+        ABSOLUTE,
+        DURATION,
+        KEYWORD
+    }
 
-    public enum Edge { START, END }
+    public enum Edge {
+        START,
+        END
+    }
 
     private static final Pattern DURATION_PATTERN = Pattern.compile("^(\\d{1,9})([mhdw])$");
     private static final Pattern DATE_PATTERN = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
@@ -37,33 +44,42 @@ public record TimeSpec(Kind kind, String value, Edge edge) {
     public static TimeSpec parse(String value, Edge edge) {
         String v = value.trim();
         if (v.isEmpty()) {
+
             return null;
         }
         String lower = v.toLowerCase(Locale.ROOT);
         if (DURATION_PATTERN.matcher(lower).matches()) {
+
             return new TimeSpec(Kind.DURATION, lower, edge);
         }
         if ("today".equals(lower) || "yesterday".equals(lower)) {
+
             return new TimeSpec(Kind.KEYWORD, lower, edge);
         }
         if (parsesAsAbsolute(v)) {
+
             return new TimeSpec(Kind.ABSOLUTE, v, edge);
         }
+
         return null;
     }
 
     /** Duration-only variant used by {@code last:}, which never accepts dates or keywords. */
     public static TimeSpec parseDurationOnly(String value, Edge edge) {
         String lower = value.trim().toLowerCase(Locale.ROOT);
+
         return DURATION_PATTERN.matcher(lower).matches() ? new TimeSpec(Kind.DURATION, lower, edge) : null;
     }
 
     public Instant resolve(Clock clock) {
         ZoneId zone = clock.getZone();
+
         return switch (kind) {
             case DURATION -> clock.instant().minus(toDuration(value));
             case KEYWORD -> {
-                LocalDate day = "today".equals(value) ? LocalDate.now(clock) : LocalDate.now(clock).minusDays(1);
+                LocalDate day = "today".equals(value)
+                        ? LocalDate.now(clock)
+                        : LocalDate.now(clock).minusDays(1);
                 yield edgeOf(day, zone);
             }
             case ABSOLUTE -> {
@@ -76,11 +92,14 @@ public record TimeSpec(Kind kind, String value, Edge edge) {
     /** True when the resolved instant is a strict upper bound ({@code <}): an until-side named
      * period resolves to the next period's start rather than an inclusive last instant. */
     public boolean exclusiveEnd() {
+
         return edge == Edge.END
-                && (kind == Kind.KEYWORD || (kind == Kind.ABSOLUTE && DATE_PATTERN.matcher(value).matches()));
+                && (kind == Kind.KEYWORD
+                        || (kind == Kind.ABSOLUTE && DATE_PATTERN.matcher(value).matches()));
     }
 
     private Instant edgeOf(LocalDate day, ZoneId zone) {
+
         return edge == Edge.START
                 ? day.atStartOfDay(zone).toInstant()
                 : day.plusDays(1).atStartOfDay(zone).toInstant();
@@ -90,32 +109,35 @@ public record TimeSpec(Kind kind, String value, Edge edge) {
         if (DATE_PATTERN.matcher(value).matches()) {
             try {
                 LocalDate.parse(value);
+
                 return true;
-            }
-            catch (DateTimeParseException ex) {
+            } catch (DateTimeParseException ex) {
+
                 return false;
             }
         }
+
         return tryExactInstant(value, ZoneId.of("UTC")) != null;
     }
 
     private static Instant tryExactInstant(String value, ZoneId zone) {
         try {
+
             return Instant.parse(value);
-        }
-        catch (DateTimeParseException ignored) {
+        } catch (DateTimeParseException ignored) {
             // Not a zoned instant; try the offset and local forms below.
         }
         try {
+
             return OffsetDateTime.parse(value).toInstant();
-        }
-        catch (DateTimeParseException ignored) {
+        } catch (DateTimeParseException ignored) {
             // Fall through to the zone-less local form.
         }
         try {
+
             return LocalDateTime.parse(value).atZone(zone).toInstant();
-        }
-        catch (DateTimeParseException ignored) {
+        } catch (DateTimeParseException ignored) {
+
             return null;
         }
     }
@@ -126,6 +148,7 @@ public record TimeSpec(Kind kind, String value, Edge edge) {
             throw new IllegalStateException("Not a duration: " + value);
         }
         long amount = Long.parseLong(m.group(1));
+
         return switch (m.group(2)) {
             case "m" -> Duration.ofMinutes(amount);
             case "h" -> Duration.ofHours(amount);

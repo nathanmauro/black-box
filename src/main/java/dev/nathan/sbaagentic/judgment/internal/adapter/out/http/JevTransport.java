@@ -5,6 +5,5 @@ import java.time.Duration;
 
 public interface JevTransport {
 
-    String post(String endpoint, String apiKey, String body, Duration timeout)
-            throws IOException, InterruptedException;
+    String post(String endpoint, String apiKey, String body, Duration timeout) throws IOException, InterruptedException;
 }

@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ApiExceptionHandlerTest {
 

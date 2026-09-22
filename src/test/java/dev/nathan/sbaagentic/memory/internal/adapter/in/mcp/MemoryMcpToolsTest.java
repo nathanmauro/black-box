@@ -1,10 +1,13 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.in.mcp;
 
-import java.time.Instant;
-import java.util.List;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
@@ -15,22 +18,15 @@ import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
-
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import org.springframework.ai.tool.ToolCallback;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * MCP clients routinely omit parameters they consider optional, so every tool argument must
@@ -139,8 +135,9 @@ class MemoryMcpToolsTest {
         assertThat(result.truncated()).isFalse();
         assertThat(result.count()).isEqualTo(items.size());
         assertThat(result.items()).containsExactlyElementsOf(items);
-        assertThat(RecallResultClamp.cost(result)).isEqualTo(RecallResultClamp.cost(
-                new RecallResult("sba-agentic", 168, List.of("decision"), items.size(), items, "hybrid")));
+        assertThat(RecallResultClamp.cost(result))
+                .isEqualTo(RecallResultClamp.cost(
+                        new RecallResult("sba-agentic", 168, List.of("decision"), items.size(), items, "hybrid")));
     }
 
     @Test
@@ -248,6 +245,7 @@ class MemoryMcpToolsTest {
     private ToolCallback callback(String name) {
         for (ToolCallback callback : tools.get()) {
             if (callback.getToolDefinition().name().equals(name)) {
+
                 return callback;
             }
         }
@@ -255,10 +253,12 @@ class MemoryMcpToolsTest {
     }
 
     private RecallResult recallResult(String result) throws Exception {
+
         return objectMapper.readValue(result, RecallResult.class);
     }
 
     private static RecalledItem item(String id, String headline, String rationale) {
+
         return new RecalledItem(
                 id,
                 "session-" + id,

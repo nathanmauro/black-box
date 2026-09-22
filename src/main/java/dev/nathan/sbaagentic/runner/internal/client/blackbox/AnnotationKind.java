@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
-import java.util.Locale;
-
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum AnnotationKind {
     NOTE("note"),
@@ -22,6 +21,7 @@ public enum AnnotationKind {
 
     @JsonValue
     public String value() {
+
         return value;
     }
 
@@ -32,6 +32,7 @@ public enum AnnotationKind {
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         for (AnnotationKind kind : values()) {
             if (kind.value.equals(normalized)) {
+
                 return kind;
             }
         }

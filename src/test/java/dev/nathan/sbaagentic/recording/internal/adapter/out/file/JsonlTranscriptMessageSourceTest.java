@@ -1,23 +1,20 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.file;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.time.Instant;
-import java.util.List;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.TranscriptProperties;
 import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptRead;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class JsonlTranscriptMessageSourceTest {
 
@@ -46,7 +43,8 @@ class JsonlTranscriptMessageSourceTest {
         assertThat(first.available()).isTrue();
         assertThat(first.complete()).isFalse();
         assertThat(first.reason()).contains("1 malformed");
-        assertThat(first.messages()).extracting(event -> event.role() + ":" + event.text())
+        assertThat(first.messages())
+                .extracting(event -> event.role() + ":" + event.text())
                 .containsExactly("user:Show every response", "assistant:Complete answer");
         assertThat(first.messages()).allSatisfy(event -> {
             assertThat(event.id()).startsWith("tx:codex:");
@@ -58,7 +56,8 @@ class JsonlTranscriptMessageSourceTest {
                 """, StandardOpenOption.APPEND);
 
         TranscriptRead refreshed = source.read(session, List.of(transcript.toString()));
-        assertThat(refreshed.messages()).extracting(event -> event.text())
+        assertThat(refreshed.messages())
+                .extracting(event -> event.text())
                 .containsExactly("Show every response", "Complete answer", "Appended answer");
     }
 
@@ -77,7 +76,8 @@ class JsonlTranscriptMessageSourceTest {
 
         assertThat(result.available()).isTrue();
         assertThat(result.complete()).isTrue();
-        assertThat(result.messages()).extracting(event -> event.role() + ":" + event.text())
+        assertThat(result.messages())
+                .extracting(event -> event.role() + ":" + event.text())
                 .containsExactly("user:Inspect the session", "assistant:api_key=[REDACTED]");
     }
 
@@ -96,12 +96,13 @@ class JsonlTranscriptMessageSourceTest {
         Files.createSymbolicLink(symlink, outside);
         JsonlTranscriptMessageSource source = source(root);
 
-        assertThat(source.read(session("codex", "outside-session"), List.of(outside.toString())).available())
+        assertThat(source.read(session("codex", "outside-session"), List.of(outside.toString()))
+                        .available())
                 .isFalse();
-        assertThat(source.read(session("codex", "outside-session"), List.of(symlink.toString())).available())
+        assertThat(source.read(session("codex", "outside-session"), List.of(symlink.toString()))
+                        .available())
                 .isFalse();
-        TranscriptRead mismatchResult = source.read(
-                session("codex", "expected-session"), List.of(mismatch.toString()));
+        TranscriptRead mismatchResult = source.read(session("codex", "expected-session"), List.of(mismatch.toString()));
         assertThat(mismatchResult.available()).isFalse();
         assertThat(mismatchResult.reason()).isEqualTo("identity-mismatch");
         assertThat(source.read(session("shadow-codex", "different-session"), List.of(mismatch.toString())))
@@ -125,11 +126,16 @@ class JsonlTranscriptMessageSourceTest {
         JsonlTranscriptMessageSource source = source(root);
 
         assertThat(source.read(session("claude", "parent-session:agent-one"), List.of(claudeChild.toString()))
-                .messages()).extracting(event -> event.text()).containsExactly("Child answer");
+                        .messages())
+                .extracting(event -> event.text())
+                .containsExactly("Child answer");
         assertThat(source.read(session("claude", "parent-session:agent-two"), List.of(claudeChild.toString()))
-                .available()).isFalse();
+                        .available())
+                .isFalse();
         assertThat(source.read(session("codex", "child-session"), List.of(codexChild.toString()))
-                .messages()).extracting(event -> event.text()).containsExactly("Codex child answer");
+                        .messages())
+                .extracting(event -> event.text())
+                .containsExactly("Codex child answer");
     }
 
     @Test
@@ -164,10 +170,14 @@ class JsonlTranscriptMessageSourceTest {
                 """);
         JsonlTranscriptMessageSource source = source(root);
 
-        assertThat(source.read(session("codex", "shared-session"), List.of(transcript.toString())).messages())
-                .extracting(event -> event.text()).containsExactly("Codex answer");
-        assertThat(source.read(session("claude", "shared-session"), List.of(transcript.toString())).messages())
-                .extracting(event -> event.text()).containsExactly("Claude answer");
+        assertThat(source.read(session("codex", "shared-session"), List.of(transcript.toString()))
+                        .messages())
+                .extracting(event -> event.text())
+                .containsExactly("Codex answer");
+        assertThat(source.read(session("claude", "shared-session"), List.of(transcript.toString()))
+                        .messages())
+                .extracting(event -> event.text())
+                .containsExactly("Claude answer");
     }
 
     private JsonlTranscriptMessageSource source(Path root) {
@@ -176,13 +186,23 @@ class JsonlTranscriptMessageSourceTest {
         transcriptProperties.setClaudeRoots(List.of(root.toString()));
         transcriptProperties.setCacheEntries(2);
         IngestionProperties ingestion = new IngestionProperties();
+
         return new JsonlTranscriptMessageSource(
                 new ObjectMapper(), new RedactionService(ingestion), transcriptProperties);
     }
 
     private static AgentSession session(String source, String clientSessionId) {
+
         return new AgentSession(
-                "server-session", source, clientSessionId, "Session", "/tmp/project", null,
-                Instant.parse("2026-08-30T12:00:00Z"), Instant.parse("2026-08-30T13:00:00Z"), 1, null);
+                "server-session",
+                source,
+                clientSessionId,
+                "Session",
+                "/tmp/project",
+                null,
+                Instant.parse("2026-08-30T12:00:00Z"),
+                Instant.parse("2026-08-30T13:00:00Z"),
+                1,
+                null);
     }
 }

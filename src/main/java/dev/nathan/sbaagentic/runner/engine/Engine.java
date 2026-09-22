@@ -1,9 +1,8 @@
 package dev.nathan.sbaagentic.runner.engine;
 
+import dev.nathan.sbaagentic.runner.EngineConfig;
 import java.io.File;
 import java.util.List;
-
-import dev.nathan.sbaagentic.runner.EngineConfig;
 
 public interface Engine {
 

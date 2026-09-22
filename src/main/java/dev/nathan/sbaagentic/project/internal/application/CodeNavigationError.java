@@ -15,6 +15,7 @@ public enum CodeNavigationError {
     }
 
     public String type() {
+
         return type;
     }
 }

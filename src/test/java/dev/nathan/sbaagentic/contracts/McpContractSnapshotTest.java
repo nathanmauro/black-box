@@ -1,25 +1,23 @@
 package dev.nathan.sbaagentic.contracts;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.CompactSearchMcpTools;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
+import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.RestJsonToolCallResultConverter;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
-import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.CompactSearchMcpTools;
-import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.RestJsonToolCallResultConverter;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.annotation.Tool;
@@ -29,26 +27,19 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.io.ClassPathResource;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-mcp-contract-snapshot-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-mcp-contract-snapshot-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class McpContractSnapshotTest {
 
     private static final Set<String> REST_JSON_TOOLS = Set.of(
-            "createSpec",
-            "enqueueTask",
-            "claimNextTask",
-            "updateTaskStatus",
-            "completeTask",
-            "listTasks",
-            "getSpec");
+            "createSpec", "enqueueTask", "claimNextTask", "updateTaskStatus", "completeTask", "listTasks", "getSpec");
 
     @Autowired
     ApplicationContext applicationContext;
@@ -73,7 +64,8 @@ class McpContractSnapshotTest {
                 .isSameAs(callbackProvider);
 
         List<String> annotatedNames = new ArrayList<>();
-        for (Class<?> toolGroup : List.of(CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class, WorkflowMcpTools.class)) {
+        for (Class<?> toolGroup : List.of(
+                CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class, WorkflowMcpTools.class)) {
             for (Method method : toolGroup.getDeclaredMethods()) {
                 Tool tool = method.getAnnotation(Tool.class);
                 if (tool == null) {
@@ -90,8 +82,9 @@ class McpContractSnapshotTest {
 
     @Test
     void recallContextOutputContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
-        JsonNode records = objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json")
-                .getInputStream()).path("records");
+        JsonNode records = objectMapper
+                .readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream())
+                .path("records");
         assertRecallResultShape(records.path("RecallResult"));
         assertRecalledItemShape(records.path("RecalledItem"));
     }
@@ -99,7 +92,8 @@ class McpContractSnapshotTest {
     private ArrayNode normalizedDefinitions() throws IOException {
         ArrayNode definitions = objectMapper.createArrayNode();
         List<ToolCallback> callbacks = List.of(callbackProvider.getToolCallbacks()).stream()
-                .sorted(Comparator.comparing(callback -> callback.getToolDefinition().name()))
+                .sorted(Comparator.comparing(
+                        callback -> callback.getToolDefinition().name()))
                 .toList();
         for (ToolCallback callback : callbacks) {
             JsonNode schema = objectMapper.readTree(callback.getToolDefinition().inputSchema());
@@ -128,18 +122,19 @@ class McpContractSnapshotTest {
                 }
             }
         }
+
         return definitions;
     }
 
     private static Set<String> fieldNames(JsonNode node) {
         Set<String> names = new java.util.TreeSet<>();
         node.fieldNames().forEachRemaining(names::add);
+
         return names;
     }
 
     private static void assertRecallResultShape(JsonNode result) {
-        assertThat(fieldNames(result)).contains("scope", "withinHours", "kinds", "count", "items", "mode",
-                "truncated");
+        assertThat(fieldNames(result)).contains("scope", "withinHours", "kinds", "count", "items", "mode", "truncated");
         assertThat(result.path("scope").isTextual()).isTrue();
         assertThat(result.path("withinHours").isInt()).isTrue();
         assertThat(result.path("kinds").isArray()).isTrue();
@@ -150,9 +145,23 @@ class McpContractSnapshotTest {
     }
 
     private static void assertRecalledItemShape(JsonNode item) {
-        assertThat(fieldNames(item)).contains(
-                "eventId", "sessionId", "kind", "source", "clientSessionId", "repo", "observedAt", "headline",
-                "rationale", "alternatives", "confidence", "openLoops", "nextAction", "toAgent", "score");
+        assertThat(fieldNames(item))
+                .contains(
+                        "eventId",
+                        "sessionId",
+                        "kind",
+                        "source",
+                        "clientSessionId",
+                        "repo",
+                        "observedAt",
+                        "headline",
+                        "rationale",
+                        "alternatives",
+                        "confidence",
+                        "openLoops",
+                        "nextAction",
+                        "toAgent",
+                        "score");
         assertThat(item.path("eventId").isTextual()).isTrue();
         assertThat(item.path("sessionId").isTextual()).isTrue();
         assertThat(item.path("kind").isTextual()).isTrue();

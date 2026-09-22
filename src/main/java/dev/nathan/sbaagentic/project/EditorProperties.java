@@ -3,7 +3,6 @@ package dev.nathan.sbaagentic.project;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "sba.editor")
@@ -20,6 +19,7 @@ public class EditorProperties {
     private Duration timeout = Duration.ofSeconds(5);
 
     public boolean isEnabled() {
+
         return enabled;
     }
 
@@ -28,6 +28,7 @@ public class EditorProperties {
     }
 
     public String getCommand() {
+
         return command;
     }
 
@@ -36,6 +37,7 @@ public class EditorProperties {
     }
 
     public List<String> getAllowlist() {
+
         return allowlist;
     }
 
@@ -44,6 +46,7 @@ public class EditorProperties {
     }
 
     public Duration getTimeout() {
+
         return timeout;
     }
 

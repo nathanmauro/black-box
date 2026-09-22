@@ -1,19 +1,17 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.query.EventQuery;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import dev.nathan.sbaagentic.memory.MemoryEventReader;
-import dev.nathan.sbaagentic.memory.ElasticHealth;
-import dev.nathan.sbaagentic.memory.MemorySearchOperations;
-import dev.nathan.sbaagentic.memory.SearchResponse;
-import dev.nathan.sbaagentic.query.EventQuery;
-import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
-import dev.nathan.sbaagentic.project.ProjectScopeOperations;
-
 import org.springframework.stereotype.Service;
 
 @Service
@@ -66,12 +64,11 @@ public class SearchService implements MemorySearchOperations {
      * never stampede Elasticsearch.
      */
     private volatile CacheEntry holder;
+
     private final AtomicBoolean refreshing = new AtomicBoolean();
 
     public SearchService(
-            MemoryEventReader repository,
-            SearchIndex elasticIndexClient,
-            ProjectScopeOperations projectScopes) {
+            MemoryEventReader repository, SearchIndex elasticIndexClient, ProjectScopeOperations projectScopes) {
         this.repository = repository;
         this.elasticIndexClient = elasticIndexClient;
         this.projectScopes = projectScopes;
@@ -84,6 +81,7 @@ public class SearchService implements MemorySearchOperations {
                 .flatMap(group -> projectScopes.scopesFor(group).stream())
                 .distinct()
                 .toList();
+
         return new SearchResponse(
                 query,
                 repository.searchEvents(query, scopes, safeLimit),
@@ -93,6 +91,7 @@ public class SearchService implements MemorySearchOperations {
 
     @Override
     public ElasticHealth elasticHealth() {
+
         return elasticIndexClient.health();
     }
 
@@ -109,13 +108,16 @@ public class SearchService implements MemorySearchOperations {
                 || facets.sinceSpec().isPresent()
                 || facets.untilSpec().isPresent()
                 || facets.includeAll()) {
+
             return false;
         }
         for (EventQuery.Field field : EventQuery.Field.values()) {
             if (!facets.excluded(field).isEmpty()) {
+
                 return false;
             }
         }
+
         return true;
     }
 
@@ -131,6 +133,7 @@ public class SearchService implements MemorySearchOperations {
         for (FieldInfo info : infos) {
             result.add(info.toMap());
         }
+
         return result;
     }
 
@@ -146,6 +149,7 @@ public class SearchService implements MemorySearchOperations {
         long now = System.currentTimeMillis();
 
         if (current == null || now - current.loadedAt >= HARD_TTL_MILLIS) {
+
             // Cold start or hard-expired: block and reload (single-flight; losers fall through and
             // serve whatever is published, or compute once more rather than returning null).
             return loadBlocking(current);
@@ -154,6 +158,7 @@ public class SearchService implements MemorySearchOperations {
             // Soft-expired: kick a single async reload and serve the stale value immediately.
             triggerAsyncRefresh();
         }
+
         return current.fields;
     }
 
@@ -166,12 +171,15 @@ public class SearchService implements MemorySearchOperations {
     public List<String> fieldValues(String field, String prefix, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 50));
         if (field == null || field.isBlank()) {
+
             return List.of();
         }
         List<String> fromElastic = elasticIndexClient.termsEnum(field, prefix, safeLimit);
         if (!fromElastic.isEmpty()) {
+
             return fromElastic;
         }
+
         // The repository accepts the UI (camelCase) field name and returns empty for text/unknown.
         return repository.distinctFieldValues(field, prefix, safeLimit);
     }
@@ -181,6 +189,7 @@ public class SearchService implements MemorySearchOperations {
      * callers (the {@code /search/values} endpoint and CLI).
      */
     public List<String> values(String field, String prefix, int limit) {
+
         return fieldValues(field, prefix, limit);
     }
 
@@ -190,9 +199,9 @@ public class SearchService implements MemorySearchOperations {
             try {
                 List<FieldInfo> loaded = loadFields();
                 holder = new CacheEntry(loaded, System.currentTimeMillis());
+
                 return loaded;
-            }
-            finally {
+            } finally {
                 refreshing.set(false);
             }
         }
@@ -200,22 +209,24 @@ public class SearchService implements MemorySearchOperations {
         // cold start under a race), return the curated list so callers never see null/empty.
         CacheEntry published = holder;
         if (published != null) {
+
             return published.fields;
         }
+
         return stale != null ? stale.fields : CURATED_FIELDS;
     }
 
     /** Soft-refresh: one async, single-flighted reload; the stale value keeps being served. */
     private void triggerAsyncRefresh() {
         if (!refreshing.compareAndSet(false, true)) {
+
             return;
         }
         Runnable reload = () -> {
             try {
                 List<FieldInfo> loaded = loadFields();
                 holder = new CacheEntry(loaded, System.currentTimeMillis());
-            }
-            finally {
+            } finally {
                 refreshing.set(false);
             }
         };
@@ -223,8 +234,7 @@ public class SearchService implements MemorySearchOperations {
             // Use the common pool to avoid blocking the calling (request) thread, mirroring
             // Caffeine's refreshAfterWrite, which reloads on the ForkJoinPool.
             java.util.concurrent.ForkJoinPool.commonPool().execute(reload);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             // If the pool rejects the task, reset the latch so a later caller can retry.
             refreshing.set(false);
         }
@@ -234,26 +244,29 @@ public class SearchService implements MemorySearchOperations {
     private List<FieldInfo> loadFields() {
         List<Map<String, Object>> live = elasticIndexClient.fieldCaps();
         if (live == null || live.isEmpty()) {
+
             return CURATED_FIELDS;
         }
         List<FieldInfo> result = new ArrayList<>(live.size());
         for (Map<String, Object> entry : live) {
             result.add(FieldInfo.fromMap(entry));
         }
+
         return result;
     }
 
     private static FieldInfo keyword(String name) {
+
         return new FieldInfo(name, "keyword", true, true);
     }
 
     private static FieldInfo text(String name) {
+
         return new FieldInfo(name, "text", true, false);
     }
 
     /** One cached snapshot of the field list plus the wall-clock time it was loaded. */
-    private record CacheEntry(List<FieldInfo> fields, long loadedAt) {
-    }
+    private record CacheEntry(List<FieldInfo> fields, long loadedAt) {}
 
     /**
      * One query-bar field: its UI {@code name}, ES {@code type}, and whether it is {@code searchable}
@@ -268,12 +281,14 @@ public class SearchService implements MemorySearchOperations {
             map.put("type", type);
             map.put("searchable", searchable);
             map.put("aggregatable", aggregatable);
+
             return map;
         }
 
         public static FieldInfo fromMap(Map<String, Object> map) {
             Object name = map.get("name");
             Object type = map.get("type");
+
             return new FieldInfo(
                     name == null ? "" : String.valueOf(name),
                     type == null ? "text" : String.valueOf(type),

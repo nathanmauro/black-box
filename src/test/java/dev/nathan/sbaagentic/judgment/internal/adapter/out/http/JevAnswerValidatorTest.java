@@ -1,21 +1,17 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
-
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JevAnswerValidatorTest {
 
@@ -25,8 +21,11 @@ class JevAnswerValidatorTest {
     void validatesCompleteAnswerSet() throws Exception {
         JevAnswerValidator validator = validator();
 
-        var judgment = validator.validate(objectMapper.readTree(response("building", true)), state(true),
-                Instant.parse("2026-09-21T12:00:01Z"), 12L);
+        var judgment = validator.validate(
+                objectMapper.readTree(response("building", true)),
+                state(true),
+                Instant.parse("2026-09-21T12:00:01Z"),
+                12L);
 
         assertThat(judgment.phase()).isEqualTo("building");
         assertThat(judgment.human()).isEqualTo(0.8);
@@ -37,11 +36,11 @@ class JevAnswerValidatorTest {
     void rejectsUnknownPhaseAndMissingKinWhole() throws Exception {
         JevAnswerValidator validator = validator();
 
-        assertThatThrownBy(() -> validator.validate(objectMapper.readTree(response("shipping", true)), state(true),
-                Instant.now(), 1L))
+        assertThatThrownBy(() -> validator.validate(
+                        objectMapper.readTree(response("shipping", true)), state(true), Instant.now(), 1L))
                 .isInstanceOf(MalformedJudgmentException.class);
-        assertThatThrownBy(() -> validator.validate(objectMapper.readTree(response("building", false)), state(true),
-                Instant.now(), 1L))
+        assertThatThrownBy(() -> validator.validate(
+                        objectMapper.readTree(response("building", false)), state(true), Instant.now(), 1L))
                 .isInstanceOf(MalformedJudgmentException.class);
     }
 
@@ -49,17 +48,20 @@ class JevAnswerValidatorTest {
     void usesRuleHumanWhenHumanWasNotAsked() throws Exception {
         JevAnswerValidator validator = validator();
 
-        var judgment = validator.validate(objectMapper.readTree(response("verifying", true)), state(false),
-                Instant.now(), 1L);
+        var judgment =
+                validator.validate(objectMapper.readTree(response("verifying", true)), state(false), Instant.now(), 1L);
 
         assertThat(judgment.human()).isZero();
     }
 
     private JevAnswerValidator validator() throws Exception {
-        return new JevAnswerValidator(JudgeQuestionSet.load(objectMapper, new ClassPathResource("judge/questions.json")));
+
+        return new JevAnswerValidator(
+                JudgeQuestionSet.load(objectMapper, new ClassPathResource("judge/questions.json")));
     }
 
     private static String response(String phase, boolean includeKin) {
+
         return """
                 {
                   "model": "jev-latest",
@@ -79,10 +81,20 @@ class JevAnswerValidatorTest {
                 "s1",
                 Instant.parse("2026-09-21T12:00:00Z"),
                 Instant.parse("2026-09-21T12:00:00Z"),
-                List.of(new BeatEvent("e1", "s1", "UserPromptSubmit", "user", "build it", null, null, null, Map.of(),
+                List.of(new BeatEvent(
+                        "e1",
+                        "s1",
+                        "UserPromptSubmit",
+                        "user",
+                        "build it",
+                        null,
+                        null,
+                        null,
+                        Map.of(),
                         Instant.parse("2026-09-21T12:00:00Z"))),
                 List.of("Nathan: build it"),
                 "Nathan: build it");
+
         return new BeatState(
                 beat,
                 new BeatState.SessionState("codex", "/repo", "Orbit"),

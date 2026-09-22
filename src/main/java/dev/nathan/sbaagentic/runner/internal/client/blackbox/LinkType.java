@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
-import java.util.Locale;
-
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum LinkType {
     SPAWNED("spawned"),
@@ -17,6 +16,7 @@ public enum LinkType {
 
     @JsonValue
     public String value() {
+
         return value;
     }
 
@@ -27,6 +27,7 @@ public enum LinkType {
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         for (LinkType type : values()) {
             if (type.value.equals(normalized)) {
+
                 return type;
             }
         }

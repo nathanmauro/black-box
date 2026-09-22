@@ -46,9 +46,11 @@ public final class EventQuery {
         static Field byAlias(String name) {
             for (Field field : values()) {
                 if (field.aliases.contains(name)) {
+
                     return field;
                 }
             }
+
             return null;
         }
     }
@@ -123,8 +125,7 @@ public final class EventQuery {
                         negateNext = false;
                         continue;
                     }
-                }
-                else if (!negated) {
+                } else if (!negated) {
                     String value = stripQuotes(rawValue).trim();
                     if (!value.isEmpty()) {
                         switch (name) {
@@ -159,7 +160,9 @@ public final class EventQuery {
                                     continue;
                                 }
                             }
-                            default -> { /* unknown prefix: plain free text below */ }
+                            default -> {
+                                /* unknown prefix: plain free text below */
+                            }
                         }
                     }
                 }
@@ -177,46 +180,55 @@ public final class EventQuery {
         if (negateNext) {
             free.add("NOT");
         }
+
         return new EventQuery(values, excluded, sessionRef, sinceSpec, untilSpec, includeAll, free);
     }
 
     /** Included values for one facet field, in query order; empty when the facet is unset. */
     public List<String> values(Field field) {
+
         return List.copyOf(values.get(field));
     }
 
     /** Excluded ({@code -}/{@code NOT}-negated) values for one facet field. */
     public List<String> excluded(Field field) {
+
         return List.copyOf(excluded.get(field));
     }
 
     /** The {@code session:} reference (session id or client session id); last one wins. */
     public Optional<String> sessionRef() {
+
         return Optional.ofNullable(sessionRef);
     }
 
     /** The lower time bound from {@code since:}/{@code last:}; last one wins. */
     public Optional<TimeSpec> sinceSpec() {
+
         return Optional.ofNullable(sinceSpec);
     }
 
     /** The upper time bound from {@code until:}; last one wins. */
     public Optional<TimeSpec> untilSpec() {
+
         return Optional.ofNullable(untilSpec);
     }
 
     /** True when {@code is:all} is present; overrides the wire {@code meaningful=true} param. */
     public boolean includeAll() {
+
         return includeAll;
     }
 
     /** Free-text terms; each is an independent AND-ed match (quoted phrases stay one term). */
     public List<String> freeTerms() {
+
         return freeTerms;
     }
 
     /** Hidden logical-project scopes ({@code project_group:}); alias for that field's values. */
     public List<String> projectGroups() {
+
         return values(Field.PROJECT_GROUP);
     }
 
@@ -224,9 +236,11 @@ public final class EventQuery {
     public boolean hasAnyFacet() {
         for (Field field : Field.values()) {
             if (!values.get(field).isEmpty() || !excluded.get(field).isEmpty()) {
+
                 return true;
             }
         }
+
         return sessionRef != null || sinceSpec != null || untilSpec != null || includeAll;
     }
 
@@ -240,20 +254,19 @@ public final class EventQuery {
             if (c == '"') {
                 inQuotes = !inQuotes;
                 current.append(c);
-            }
-            else if (Character.isWhitespace(c) && !inQuotes) {
+            } else if (Character.isWhitespace(c) && !inQuotes) {
                 if (current.length() > 0) {
                     tokens.add(current.toString());
                     current.setLength(0);
                 }
-            }
-            else {
+            } else {
                 current.append(c);
             }
         }
         if (current.length() > 0) {
             tokens.add(current.toString());
         }
+
         return tokens;
     }
 
@@ -271,16 +284,15 @@ public final class EventQuery {
             if (c == '"') {
                 inQuotes = !inQuotes;
                 current.append(c);
-            }
-            else if (c == ',' && !inQuotes) {
+            } else if (c == ',' && !inQuotes) {
                 addPiece(pieces, current.toString());
                 current.setLength(0);
-            }
-            else {
+            } else {
                 current.append(c);
             }
         }
         addPiece(pieces, current.toString());
+
         return pieces;
     }
 
@@ -293,8 +305,10 @@ public final class EventQuery {
 
     private static String stripQuotes(String value) {
         if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+
             return value.substring(1, value.length() - 1);
         }
+
         return value;
     }
 }

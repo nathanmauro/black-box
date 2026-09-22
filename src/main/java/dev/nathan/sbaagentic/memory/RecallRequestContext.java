@@ -29,18 +29,44 @@ public final class RecallRequestContext implements AutoCloseable {
     }
 
     public static RecallRequestContext open(String transport, String client, String purpose, String project) {
+
         return new RecallRequestContext(transport, client, purpose, project);
     }
 
-    public static RecallRequestContext current() { return CURRENT.get(); }
-    public String requestId() { return requestId; }
-    public String transport() { return transport; }
-    public String client() { return client; }
-    public String purpose() { return purpose; }
-    public String project() { return project; }
+    public static RecallRequestContext current() {
+
+        return CURRENT.get();
+    }
+
+    public String requestId() {
+
+        return requestId;
+    }
+
+    public String transport() {
+
+        return transport;
+    }
+
+    public String client() {
+
+        return client;
+    }
+
+    public String purpose() {
+
+        return purpose;
+    }
+
+    public String project() {
+
+        return project;
+    }
 
     private static String bounded(String value, Set<String> allowed) {
-        String normalized = value == null || value.length() > 32 ? "" : value.strip().toLowerCase(Locale.ROOT);
+        String normalized =
+                value == null || value.length() > 32 ? "" : value.strip().toLowerCase(Locale.ROOT);
+
         return allowed.contains(normalized) ? normalized : "unknown";
     }
 

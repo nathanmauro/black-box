@@ -4,11 +4,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
+import org.springframework.stereotype.Component;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.error.YAMLException;
-
-import org.springframework.stereotype.Component;
 
 @Component
 public class StoryFrontmatterParser {
@@ -17,15 +15,18 @@ public class StoryFrontmatterParser {
 
     public Optional<ParsedStory> parse(String specBody) {
         if (specBody == null) {
+
             return Optional.empty();
         }
 
         Matcher delimiter = DELIMITER.matcher(specBody);
         if (!delimiter.find() || delimiter.start() != 0) {
+
             return Optional.empty();
         }
         int yamlStart = skipLineBreak(specBody, delimiter.end());
         if (!delimiter.find()) {
+
             return Optional.empty();
         }
 
@@ -36,11 +37,10 @@ public class StoryFrontmatterParser {
             Map<?, ?> values;
             if (loaded == null) {
                 values = Map.of();
-            }
-            else if (loaded instanceof Map<?, ?> map) {
+            } else if (loaded instanceof Map<?, ?> map) {
                 values = map;
-            }
-            else {
+            } else {
+
                 return Optional.empty();
             }
 
@@ -51,11 +51,10 @@ public class StoryFrontmatterParser {
                     stringValue(values.get("verify")),
                     booleanValue(values.get("push")),
                     integerValue(values.get("priority")));
-            return Optional.of(new ParsedStory(
-                    frontmatter,
-                    trimLeadingBlankLines(specBody.substring(bodyStart))));
-        }
-        catch (YAMLException | ClassCastException ex) {
+
+            return Optional.of(new ParsedStory(frontmatter, trimLeadingBlankLines(specBody.substring(bodyStart))));
+        } catch (YAMLException | ClassCastException ex) {
+
             return Optional.empty();
         }
     }
@@ -67,6 +66,7 @@ public class StoryFrontmatterParser {
         if (offset < value.length() && value.charAt(offset) == '\n') {
             offset++;
         }
+
         return offset;
     }
 
@@ -82,47 +82,56 @@ public class StoryFrontmatterParser {
                 break;
             }
             if (lineEnd < 0) {
+
                 return "";
             }
             offset = lineEnd + 1;
         }
+
         return value.substring(offset);
     }
 
     private static String stringValue(Object value) {
+
         return value == null ? null : value.toString();
     }
 
     private static Boolean booleanValue(Object value) {
         if (value instanceof Boolean booleanValue) {
+
             return booleanValue;
         }
         if (value instanceof String stringValue) {
             if ("true".equalsIgnoreCase(stringValue.strip())) {
+
                 return true;
             }
             if ("false".equalsIgnoreCase(stringValue.strip())) {
+
                 return false;
             }
         }
+
         return null;
     }
 
     private static Integer integerValue(Object value) {
         if (value instanceof Number numberValue) {
+
             return numberValue.intValue();
         }
         if (value instanceof String stringValue) {
             try {
+
                 return Integer.valueOf(stringValue.strip());
-            }
-            catch (NumberFormatException ex) {
+            } catch (NumberFormatException ex) {
+
                 return null;
             }
         }
+
         return null;
     }
 
-    public record ParsedStory(StoryFrontmatter frontmatter, String bodyMarkdown) {
-    }
+    public record ParsedStory(StoryFrontmatter frontmatter, String bodyMarkdown) {}
 }

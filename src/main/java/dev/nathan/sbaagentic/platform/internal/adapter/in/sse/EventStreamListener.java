@@ -3,10 +3,8 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventRecorded;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -32,8 +30,7 @@ class EventStreamListener {
         try {
             broadcaster.publishEventAppended(payloadFactory.eventAppended(session, event));
             broadcaster.publishSessionUpdated(payloadFactory.sessionUpdated(session));
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             // Broadcasting is best-effort; never let it break ingest.
             log.warn("Failed to broadcast recorded event {}", event == null ? null : event.id(), ex);
         }

@@ -4,7 +4,6 @@ import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.runner.RunnerConfigException;
 import dev.nathan.sbaagentic.runner.RunnerConfigLoader;
 import dev.nathan.sbaagentic.runner.RunnerDaemon;
-
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
@@ -23,10 +22,10 @@ public class RunnerCli {
         RunnerConfig config;
         try {
             config = configLoader.load();
-        }
-        catch (RunnerConfigException ex) {
+        } catch (RunnerConfigException ex) {
             System.err.println("blackbox-runner: " + ex.getMessage());
             System.exit(1);
+
             return;
         }
         daemon.run(config);

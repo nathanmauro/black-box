@@ -9,5 +9,4 @@ public record CompleteTaskRequest(
         String clientSessionId,
         String summary,
         List<String> openLoops,
-        String nextAction) {
-}
+        String nextAction) {}

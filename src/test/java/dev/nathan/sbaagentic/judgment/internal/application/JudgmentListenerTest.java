@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.judgment.internal.application;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import dev.nathan.sbaagentic.memory.internal.application.EmbeddingIndexer;
 import dev.nathan.sbaagentic.recording.EventRecorded;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.annotation.Order;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class JudgmentListenerTest {
 

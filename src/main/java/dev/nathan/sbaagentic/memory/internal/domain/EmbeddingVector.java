@@ -19,6 +19,7 @@ public record EmbeddingVector(String model, float[] values) {
 
     @Override
     public float[] values() {
+
         return values.clone();
     }
 
@@ -32,6 +33,7 @@ public record EmbeddingVector(String model, float[] values) {
             blob[offset + 2] = (byte) (bits >>> 16);
             blob[offset + 3] = (byte) (bits >>> 24);
         }
+
         return blob;
     }
 
@@ -49,6 +51,7 @@ public record EmbeddingVector(String model, float[] values) {
                     | ((blob[offset + 3] & 0xff) << 24);
             values[index] = Float.intBitsToFloat(bits);
         }
+
         return new EmbeddingVector(model, values);
     }
 
@@ -58,6 +61,7 @@ public record EmbeddingVector(String model, float[] values) {
             magnitudeSquared += (double) value * value;
         }
         if (magnitudeSquared == 0.0) {
+
             return this;
         }
         double magnitude = Math.sqrt(magnitudeSquared);
@@ -65,6 +69,7 @@ public record EmbeddingVector(String model, float[] values) {
         for (int index = 0; index < values.length; index++) {
             normalized[index] = (float) (values[index] / magnitude);
         }
+
         return new EmbeddingVector(model, normalized);
     }
 
@@ -82,8 +87,10 @@ public record EmbeddingVector(String model, float[] values) {
             rightMagnitude += (double) other.values[index] * other.values[index];
         }
         if (leftMagnitude == 0.0 || rightMagnitude == 0.0) {
+
             return 0.0;
         }
+
         return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
     }
 
@@ -92,9 +99,9 @@ public record EmbeddingVector(String model, float[] values) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             digest.update(text.getBytes(StandardCharsets.UTF_8));
+
             return HexFormat.of().formatHex(digest.digest());
-        }
-        catch (NoSuchAlgorithmException ex) {
+        } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
         }
     }
@@ -102,16 +109,20 @@ public record EmbeddingVector(String model, float[] values) {
     @Override
     public boolean equals(Object other) {
         if (this == other) {
+
             return true;
         }
         if (!(other instanceof EmbeddingVector that)) {
+
             return false;
         }
+
         return model.equals(that.model) && Arrays.equals(values, that.values);
     }
 
     @Override
     public int hashCode() {
+
         return 31 * model.hashCode() + Arrays.hashCode(values);
     }
 }

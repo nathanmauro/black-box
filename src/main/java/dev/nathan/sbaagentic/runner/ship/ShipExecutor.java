@@ -1,5 +1,13 @@
 package dev.nathan.sbaagentic.runner.ship;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.RepoConfig;
+import dev.nathan.sbaagentic.runner.RunnerNaming;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
@@ -7,19 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-import dev.nathan.sbaagentic.runner.RepoConfig;
-import dev.nathan.sbaagentic.runner.RunnerNaming;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -42,17 +39,8 @@ public class ShipExecutor {
 
     @Autowired
     public ShipExecutor(
-            BlackBoxApiClient apiClient,
-            ProcessRunner processRunner,
-            TmuxController tmux,
-            ObjectMapper objectMapper) {
-        this(
-                apiClient,
-                processRunner,
-                tmux,
-                objectMapper,
-                DEFAULT_REPAIR_WAIT,
-                DEFAULT_REPAIR_POLL);
+            BlackBoxApiClient apiClient, ProcessRunner processRunner, TmuxController tmux, ObjectMapper objectMapper) {
+        this(apiClient, processRunner, tmux, objectMapper, DEFAULT_REPAIR_WAIT, DEFAULT_REPAIR_POLL);
     }
 
     ShipExecutor(
@@ -79,17 +67,9 @@ public class ShipExecutor {
             String title,
             String summary,
             String tmuxSessionNameForRepair) {
+
         return ship(
-                taskId,
-                actorId,
-                repoConfig,
-                branch,
-                worktreeDir,
-                title,
-                summary,
-                tmuxSessionNameForRepair,
-                true,
-                null);
+                taskId, actorId, repoConfig, branch, worktreeDir, title, summary, tmuxSessionNameForRepair, true, null);
     }
 
     public ShipResult shipForSdlc(
@@ -104,17 +84,8 @@ public class ShipExecutor {
         if (approvalId == null || approvalId.isBlank()) {
             throw new IllegalArgumentException("SDLC approval id is required");
         }
-        return ship(
-                taskId,
-                actorId,
-                repoConfig,
-                branch,
-                worktreeDir,
-                title,
-                summary,
-                null,
-                false,
-                approvalId);
+
+        return ship(taskId, actorId, repoConfig, branch, worktreeDir, title, summary, null, false, approvalId);
     }
 
     private ShipResult ship(
@@ -128,8 +99,7 @@ public class ShipExecutor {
             String tmuxSessionNameForRepair,
             boolean allowRepair,
             String sdlcApprovalId) {
-        List<String> command = shipCommand(
-                taskId, repoConfig, branch, worktreeDir, title, summary);
+        List<String> command = shipCommand(taskId, repoConfig, branch, worktreeDir, title, summary);
         ShipResult result = invokeShip(command, new File(repoConfig.path()));
 
         if (allowRepair && "blocked".equals(result.status())) {
@@ -140,15 +110,10 @@ public class ShipExecutor {
             }
         }
 
-        Map<String, Object> annotationData = sdlcApprovalId == null
-                ? null
-                : sdlcShipData(result, sdlcApprovalId, branch, worktreeDir);
-        apiClient.annotate(
-                taskId,
-                actorId,
-                "progress",
-                describe(result),
-                annotationData);
+        Map<String, Object> annotationData =
+                sdlcApprovalId == null ? null : sdlcShipData(result, sdlcApprovalId, branch, worktreeDir);
+        apiClient.annotate(taskId, actorId, "progress", describe(result), annotationData);
+
         return result;
     }
 
@@ -164,6 +129,7 @@ public class ShipExecutor {
         data.put("manualCommands", result.manualCommands());
         data.put("branch", branch);
         data.put("worktree", worktreeDir.getAbsolutePath());
+
         return data;
     }
 
@@ -171,8 +137,8 @@ public class ShipExecutor {
         ProcessResult processResult;
         try {
             processResult = processRunner.run(command, repoDir, SHIP_TIMEOUT);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
+
             return localOnly("ship.sh failed to run: " + message(ex));
         }
 
@@ -181,13 +147,14 @@ public class ShipExecutor {
             try {
                 ShipResult parsed = objectMapper.readValue(json, ShipResult.class);
                 if (isKnownStatus(parsed.status())) {
+
                     return parsed;
                 }
-            }
-            catch (JsonProcessingException ex) {
+            } catch (JsonProcessingException ex) {
                 log.warn("Unable to parse ship.sh result: {}", ex.getOriginalMessage());
             }
         }
+
         return localOnly("ship.sh produced unparseable output: " + outputDetail(processResult));
     }
 
@@ -195,14 +162,13 @@ public class ShipExecutor {
         try {
             if (tmuxSessionName == null || !tmux.hasSession(tmuxSessionName)) {
                 log.warn("Worker tmux session {} is unavailable for ship repair", tmuxSessionName);
+
                 return;
             }
             tmux.sendKeys(
                     tmuxSessionName,
-                    "The PR checks failed:\n" + safe(reason)
-                            + "\nPlease fix and I will re-run verify + push.");
-        }
-        catch (RuntimeException ex) {
+                    "The PR checks failed:\n" + safe(reason) + "\nPlease fix and I will re-run verify + push.");
+        } catch (RuntimeException ex) {
             log.warn("Unable to steer worker tmux session {} for ship repair", tmuxSessionName, ex);
         }
     }
@@ -211,27 +177,32 @@ public class ShipExecutor {
         Instant deadline = Instant.now().plus(repairWait);
         while (Instant.now().isBefore(deadline)) {
             if (!sleepUntilNextPoll(deadline)) {
+
                 return false;
             }
             String currentCommit = currentCommit(worktreeDir);
             if (!originalCommit.isBlank()
                     && !currentCommit.isBlank()
                     && !Objects.equals(currentCommit, originalCommit)) {
+
                 return true;
             }
         }
+
         return false;
     }
 
     private boolean sleepUntilNextPoll(Instant deadline) {
-        long remainingMillis = Math.max(1, Duration.between(Instant.now(), deadline).toMillis());
+        long remainingMillis =
+                Math.max(1, Duration.between(Instant.now(), deadline).toMillis());
         long sleepMillis = Math.min(repairPoll.toMillis(), remainingMillis);
         try {
             Thread.sleep(Math.max(1, sleepMillis));
+
             return true;
-        }
-        catch (InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+
             return false;
         }
     }
@@ -239,32 +210,23 @@ public class ShipExecutor {
     private String currentCommit(File worktreeDir) {
         try {
             ProcessResult result = processRunner.run(
-                    List.of(
-                            "git",
-                            "-C",
-                            worktreeDir.getAbsolutePath(),
-                            "log",
-                            "-1",
-                            "--format=%H"),
+                    List.of("git", "-C", worktreeDir.getAbsolutePath(), "log", "-1", "--format=%H"),
                     worktreeDir,
                     GIT_TIMEOUT);
             if (!result.timedOut() && result.exitCode() == 0) {
+
                 return safe(result.stdout()).strip();
             }
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Unable to read current commit in {}", worktreeDir, ex);
         }
+
         return "";
     }
 
     private static List<String> shipCommand(
-            String taskId,
-            RepoConfig repoConfig,
-            String branch,
-            File worktreeDir,
-            String title,
-            String summary) {
+            String taskId, RepoConfig repoConfig, String branch, File worktreeDir, String title, String summary) {
+
         return List.of(
                 RunnerNaming.scriptPath("scripts/runner/ship.sh"),
                 safe(taskId),
@@ -279,6 +241,7 @@ public class ShipExecutor {
     }
 
     private static String describe(ShipResult result) {
+
         return "Ship result: status=" + result.status()
                 + ", reason=" + display(result.reason())
                 + ", prUrl=" + display(result.prUrl())
@@ -286,6 +249,7 @@ public class ShipExecutor {
     }
 
     private static ShipResult localOnly(String reason) {
+
         return new ShipResult("local-only", reason, null, null, List.of());
     }
 
@@ -294,14 +258,15 @@ public class ShipExecutor {
         String stderr = safe(result.stderr());
         String combined = stdout + (stdout.isBlank() || stderr.isBlank() ? "" : "\n") + stderr;
         if (combined.isBlank()) {
-            combined = "<no output; exit " + result.exitCode()
-                    + (result.timedOut() ? ", timed out" : "") + ">";
+            combined = "<no output; exit " + result.exitCode() + (result.timedOut() ? ", timed out" : "") + ">";
         }
+
         return combined.substring(0, Math.min(MAX_UNPARSEABLE_DETAIL, combined.length()));
     }
 
     private static String lastNonBlankLine(String output) {
         if (output == null || output.isBlank()) {
+
             return null;
         }
         String last = null;
@@ -310,10 +275,12 @@ public class ShipExecutor {
                 last = line;
             }
         }
+
         return last;
     }
 
     private static boolean isKnownStatus(String status) {
+
         return "local-only".equals(status)
                 || "pr-open".equals(status)
                 || "merged".equals(status)
@@ -324,29 +291,29 @@ public class ShipExecutor {
         if (value == null || value.isZero() || value.isNegative()) {
             throw new IllegalArgumentException(name + " must be positive");
         }
+
         return value;
     }
 
     private static String display(String value) {
+
         return value == null || value.isBlank() ? "none" : value;
     }
 
     private static String safe(String value) {
+
         return value == null ? "" : value;
     }
 
     private static String message(Throwable error) {
+
         return error.getMessage() == null || error.getMessage().isBlank()
                 ? error.getClass().getSimpleName()
                 : error.getMessage();
     }
 
     public record ShipResult(
-            String status,
-            String reason,
-            String prUrl,
-            String mergeStatus,
-            List<String> manualCommands) {
+            String status, String reason, String prUrl, String mergeStatus, List<String> manualCommands) {
 
         public ShipResult {
             manualCommands = manualCommands == null ? List.of() : List.copyOf(manualCommands);

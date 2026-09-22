@@ -1,9 +1,8 @@
 package dev.nathan.sbaagentic.judgment.internal.application;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.JsonNode;
 
 public record Judgment(
         String phase,
@@ -16,5 +15,4 @@ public record Judgment(
         String version,
         JsonNode answers,
         Instant judgedAt,
-        Long latencyMs) {
-}
+        Long latencyMs) {}

@@ -10,5 +10,4 @@ public record ProjectTrajectoryResponse(
         Instant generatedAt,
         long totalCaptures,
         List<TrajectoryCapture> captures,
-        List<TrajectoryTask> tasks) {
-}
+        List<TrajectoryTask> tasks) {}

@@ -2,7 +2,6 @@ package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 
 import dev.nathan.sbaagentic.recording.SessionTranscriptOperations;
 import dev.nathan.sbaagentic.recording.SessionTranscriptResponse;
-
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,6 +24,7 @@ public class SessionTranscriptController {
             @RequestParam(required = false, name = "q") String query,
             @RequestParam(required = false) String before,
             @RequestParam(defaultValue = "100") int limit) {
+
         return transcripts.transcript(sessionId, query, before, Math.max(1, Math.min(limit, 250)));
     }
 }

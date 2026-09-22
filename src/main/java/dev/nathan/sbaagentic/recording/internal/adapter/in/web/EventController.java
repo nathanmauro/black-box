@@ -1,22 +1,19 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.in.web;
 
-import java.util.List;
-
+import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventFacetCounts;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
-import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
-import dev.nathan.sbaagentic.query.EventQuery;
-
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import jakarta.validation.Valid;
-
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,9 +32,7 @@ public class EventController {
     private final ProjectScopeResolver projectScopes;
 
     public EventController(
-            EventRecorder ingestService,
-            RecordingCatalog repository,
-            ProjectScopeResolver projectScopes) {
+            EventRecorder ingestService, RecordingCatalog repository, ProjectScopeResolver projectScopes) {
         this.ingestService = ingestService;
         this.repository = repository;
         this.projectScopes = projectScopes;
@@ -45,11 +40,13 @@ public class EventController {
 
     @PostMapping("/events")
     public IngestResponse ingest(@Valid @RequestBody EventIngestRequest request) {
+
         return ingestService.ingest(request);
     }
 
     @PostMapping("/events/idempotent")
     public IdempotentIngestResponse ingestIdempotent(@Valid @RequestBody IdempotentEventIngestRequest request) {
+
         return ingestService.ingestIdempotent(request);
     }
 
@@ -64,6 +61,7 @@ public class EventController {
                 .flatMap(group -> projectScopes.scopesFor(group).stream())
                 .distinct()
                 .toList();
+
         return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
     }
 
@@ -74,17 +72,18 @@ public class EventController {
      */
     @GetMapping("/events/facets")
     public EventFacetCounts eventFacets(
-            @RequestParam(required = false) String q,
-            @RequestParam(defaultValue = "false") boolean meaningful) {
+            @RequestParam(required = false) String q, @RequestParam(defaultValue = "false") boolean meaningful) {
         List<String> scopes = EventQuery.parse(q).projectGroups().stream()
                 .flatMap(group -> projectScopes.scopesFor(group).stream())
                 .distinct()
                 .toList();
+
         return repository.facetCounts(q, meaningful, scopes);
     }
 
     @GetMapping("/events/{id}")
     public ResponseEntity<AgentEvent> event(@PathVariable String id) {
+
         return ResponseEntity.of(repository.findEventById(id));
     }
 
@@ -92,26 +91,29 @@ public class EventController {
     public List<AgentSession> sessions(
             @RequestParam(defaultValue = "25") int limit,
             @RequestParam(defaultValue = "false") boolean includeChildren) {
+
         return repository.recentSessions(safeLimit(limit), includeChildren);
     }
 
     @GetMapping("/sessions/{sessionId}")
     public ResponseEntity<AgentSession> session(@PathVariable String sessionId) {
+
         return ResponseEntity.of(repository.findSessionById(sessionId));
     }
 
     @GetMapping("/sessions/{sessionId}/events")
-    public List<AgentEvent> events(
-            @PathVariable String sessionId,
-            @RequestParam(defaultValue = "100") int limit) {
+    public List<AgentEvent> events(@PathVariable String sessionId, @RequestParam(defaultValue = "100") int limit) {
+
         return repository.eventsForSession(sessionId, safeEventLimit(limit));
     }
 
     private static int safeLimit(int limit) {
+
         return Math.max(1, Math.min(limit, 250));
     }
 
     private static int safeEventLimit(int limit) {
+
         return Math.max(1, Math.min(limit, 2_000));
     }
 }

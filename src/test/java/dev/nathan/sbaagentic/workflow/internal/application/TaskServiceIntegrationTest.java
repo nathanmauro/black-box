@@ -1,18 +1,19 @@
 package dev.nathan.sbaagentic.workflow.internal.application;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Stream;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
 import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
-import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
 import dev.nathan.sbaagentic.workflow.CreateSpecRequest;
 import dev.nathan.sbaagentic.workflow.EnqueueTaskRequest;
 import dev.nathan.sbaagentic.workflow.Task;
@@ -28,7 +29,10 @@ import dev.nathan.sbaagentic.workflow.UpdateTaskStatusRequest;
 import dev.nathan.sbaagentic.workflow.WorkflowPublication;
 import dev.nathan.sbaagentic.workflow.WorkflowTaskChanged;
 import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
-
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,27 +40,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-service-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-service-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class TaskServiceIntegrationTest {
 
     private static final String PROJECT = "/repos/task-service-test";
@@ -98,33 +94,34 @@ class TaskServiceIntegrationTest {
     @Test
     void allAllowedLifecycleTransitionsPreserveInvariantsAndPublishOnce() {
         TaskSpec spec = createSpec();
-        TaskChange firstCreated = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "first", "codex", 3, "planner"));
-        TaskChange firstClaimed = service.claimNextTask(new ClaimTaskRequest("codex", "agent-a")).orElseThrow();
+        TaskChange firstCreated =
+                service.enqueueTask(new EnqueueTaskRequest(spec.id(), "first", "codex", 3, "planner"));
+        TaskChange firstClaimed =
+                service.claimNextTask(new ClaimTaskRequest("codex", "agent-a")).orElseThrow();
         TaskChange blocked = service.updateTaskStatus(new UpdateTaskStatusRequest(
                 firstCreated.snapshot().task().id(), "agent-a", TaskStatus.BLOCKED, "waiting for review"));
         assertThat(blocked.snapshot().task().claimedBy()).isEqualTo("agent-a");
         assertThat(blocked.snapshot().task().blockedReason()).isEqualTo("waiting for review");
 
-        TaskChange resetBlocked = service.updateTaskStatus(new UpdateTaskStatusRequest(
-                firstCreated.snapshot().task().id(), "operator", TaskStatus.OPEN, null));
+        TaskChange resetBlocked = service.updateTaskStatus(
+                new UpdateTaskStatusRequest(firstCreated.snapshot().task().id(), "operator", TaskStatus.OPEN, null));
         assertThat(resetBlocked.snapshot().task().claimedBy()).isNull();
         assertThat(resetBlocked.snapshot().task().blockedReason()).isNull();
         service.claimNextTask(new ClaimTaskRequest("codex", "agent-b")).orElseThrow();
-        TaskChange resetInProgress = service.updateTaskStatus(new UpdateTaskStatusRequest(
-                firstCreated.snapshot().task().id(), "operator", TaskStatus.OPEN, null));
+        TaskChange resetInProgress = service.updateTaskStatus(
+                new UpdateTaskStatusRequest(firstCreated.snapshot().task().id(), "operator", TaskStatus.OPEN, null));
         assertThat(resetInProgress.snapshot().task().claimedBy()).isNull();
         TaskChange cancelledOpen = service.updateTaskStatus(new UpdateTaskStatusRequest(
                 firstCreated.snapshot().task().id(), "operator", TaskStatus.CANCELLED, null));
 
-        TaskChange secondCreated = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "second", "codex", 2, "planner"));
+        TaskChange secondCreated =
+                service.enqueueTask(new EnqueueTaskRequest(spec.id(), "second", "codex", 2, "planner"));
         service.claimNextTask(new ClaimTaskRequest("codex", "agent-c")).orElseThrow();
         TaskChange cancelledInProgress = service.updateTaskStatus(new UpdateTaskStatusRequest(
                 secondCreated.snapshot().task().id(), "operator", TaskStatus.CANCELLED, null));
 
-        TaskChange thirdCreated = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "third", "codex", 1, "planner"));
+        TaskChange thirdCreated =
+                service.enqueueTask(new EnqueueTaskRequest(spec.id(), "third", "codex", 1, "planner"));
         service.claimNextTask(new ClaimTaskRequest("codex", "agent-d")).orElseThrow();
         service.updateTaskStatus(new UpdateTaskStatusRequest(
                 thirdCreated.snapshot().task().id(), "agent-d", TaskStatus.BLOCKED, "dependency unavailable"));
@@ -138,26 +135,37 @@ class TaskServiceIntegrationTest {
         assertThat(cancelledBlocked.snapshot().task().status()).isEqualTo(TaskStatus.CANCELLED);
         assertThat(cancelledBlocked.snapshot().task().claimedBy()).isEqualTo("agent-d");
         assertThat(cancelledBlocked.snapshot().task().blockedReason()).isEqualTo("dependency unavailable");
-        assertThat(service.listTasks(new TaskQuery(PROJECT, "codex", TaskStatus.CANCELLED))).hasSize(3);
+        assertThat(service.listTasks(new TaskQuery(PROJECT, "codex", TaskStatus.CANCELLED)))
+                .hasSize(3);
         assertThat(service.getTask(firstCreated.snapshot().task().id()).task().status())
                 .isEqualTo(TaskStatus.CANCELLED);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
 
         ArgumentCaptor<WorkflowTaskChanged> frames = ArgumentCaptor.forClass(WorkflowTaskChanged.class);
         verify(publication, org.mockito.Mockito.times(14)).taskChanged(frames.capture());
         assertThat(frames.getAllValues())
                 .extracting(WorkflowTaskChanged::transitionType)
                 .containsExactly(
-                        "task.created", "task.claimed", "task.blocked", "task.reset",
-                        "task.claimed", "task.reset", "task.cancelled",
-                        "task.created", "task.claimed", "task.cancelled",
-                        "task.created", "task.claimed", "task.blocked", "task.cancelled");
-        assertThat(frames.getAllValues())
-                .allSatisfy(frame -> {
-                    assertThat(frame.transitionId()).isNotBlank();
-                    assertThat(frame.observedAt()).isNotBlank();
-                    assertThat(frame.task().id()).isNotBlank();
-                });
+                        "task.created",
+                        "task.claimed",
+                        "task.blocked",
+                        "task.reset",
+                        "task.claimed",
+                        "task.reset",
+                        "task.cancelled",
+                        "task.created",
+                        "task.claimed",
+                        "task.cancelled",
+                        "task.created",
+                        "task.claimed",
+                        "task.blocked",
+                        "task.cancelled");
+        assertThat(frames.getAllValues()).allSatisfy(frame -> {
+            assertThat(frame.transitionId()).isNotBlank();
+            assertThat(frame.observedAt()).isNotBlank();
+            assertThat(frame.task().id()).isNotBlank();
+        });
     }
 
     @ParameterizedTest(name = "rejects {0} -> {1}")
@@ -168,10 +176,7 @@ class TaskServiceIntegrationTest {
 
         TaskDomainException error = catchThrowableOfType(
                 () -> service.updateTaskStatus(new UpdateTaskStatusRequest(
-                        before.id(),
-                        "agent-a",
-                        targetStatus,
-                        targetStatus == TaskStatus.BLOCKED ? "reason" : null)),
+                        before.id(), "agent-a", targetStatus, targetStatus == TaskStatus.BLOCKED ? "reason" : null)),
                 TaskDomainException.class);
 
         assertThat(error.code()).isEqualTo(TaskErrorCode.INVALID_TRANSITION);
@@ -179,7 +184,8 @@ class TaskServiceIntegrationTest {
         assertThat(error.targetStatus()).isEqualTo(targetStatus);
         assertThat(service.getTask(before.id()).task()).isEqualTo(before);
         assertThat(repository.eventsForTask(before.id())).hasSize(eventsBefore);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
         verifyNoInteractions(publication);
     }
 
@@ -189,8 +195,8 @@ class TaskServiceIntegrationTest {
         int eventsBefore = repository.eventsForTask(before.id()).size();
 
         TaskDomainException error = catchThrowableOfType(
-                () -> service.updateTaskStatus(new UpdateTaskStatusRequest(
-                        before.id(), "agent-a", TaskStatus.BLOCKED, " \n ")),
+                () -> service.updateTaskStatus(
+                        new UpdateTaskStatusRequest(before.id(), "agent-a", TaskStatus.BLOCKED, " \n ")),
                 TaskDomainException.class);
 
         assertThat(error.code()).isEqualTo(TaskErrorCode.VALIDATION_FAILED);
@@ -202,11 +208,13 @@ class TaskServiceIntegrationTest {
     @Test
     void completionCapturesOneRecallableHandoffLinksItAndPublishesCompletedFrame() throws Exception {
         TaskSpec spec = createSpec();
-        Task task = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "complete me", "codex", 1, "planner")).snapshot().task();
+        Task task = service.enqueueTask(new EnqueueTaskRequest(spec.id(), "complete me", "codex", 1, "planner"))
+                .snapshot()
+                .task();
         service.claimNextTask(new ClaimTaskRequest("codex", "worker-17")).orElseThrow();
         clearInvocations(publication);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
 
         TaskChange completed = service.completeTask(new CompleteTaskRequest(
                 task.id(),
@@ -222,18 +230,19 @@ class TaskServiceIntegrationTest {
         assertThat(completedTask.claimedBy()).isEqualTo("worker-17");
         assertThat(completedTask.resultHandoffId()).isNotBlank();
         assertThat(completed.event().type()).isEqualTo(TaskEventType.COMPLETED);
-        assertThat(completed.event().detail())
-                .containsEntry("handoffId", completedTask.resultHandoffId());
+        assertThat(completed.event().detail()).containsEntry("handoffId", completedTask.resultHandoffId());
         assertThat(repository.eventsForTask(task.id()))
                 .filteredOn(event -> event.type() == TaskEventType.COMPLETED)
                 .singleElement()
                 .extracting(TaskEvent::id)
                 .isEqualTo(completed.event().id());
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM agent_events WHERE event_type = 'Handoff'", Integer.class)).isEqualTo(1);
+                        "SELECT COUNT(*) FROM agent_events WHERE event_type = 'Handoff'", Integer.class))
+                .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT id FROM agent_events WHERE event_type = 'Handoff'", String.class))
+                        "SELECT id FROM agent_events WHERE event_type = 'Handoff'", String.class))
                 .isEqualTo(completedTask.resultHandoffId());
 
         RecallResult recall = contextService.recall(PROJECT, 168, List.of("handoff"));
@@ -260,19 +269,20 @@ class TaskServiceIntegrationTest {
     @Test
     void completionRejectsWrongClaimantAndNonInProgressStateWithoutHandoff() {
         TaskSpec spec = createSpec();
-        Task task = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "owned task", "codex", 1, "planner")).snapshot().task();
+        Task task = service.enqueueTask(new EnqueueTaskRequest(spec.id(), "owned task", "codex", 1, "planner"))
+                .snapshot()
+                .task();
         service.claimNextTask(new ClaimTaskRequest("codex", "owner")).orElseThrow();
         clearInvocations(publication);
         int eventsBefore = repository.eventsForTask(task.id()).size();
 
         TaskDomainException wrongOwner = catchThrowableOfType(
-                () -> service.completeTask(completionRequest(task.id(), "intruder")),
-                TaskDomainException.class);
+                () -> service.completeTask(completionRequest(task.id(), "intruder")), TaskDomainException.class);
         assertThat(wrongOwner.code()).isEqualTo(TaskErrorCode.CLAIMANT_MISMATCH);
         assertThat(service.getTask(task.id()).task().status()).isEqualTo(TaskStatus.IN_PROGRESS);
         assertThat(repository.eventsForTask(task.id())).hasSize(eventsBefore);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
 
         jdbcTemplate.update("""
                 UPDATE tasks
@@ -280,19 +290,20 @@ class TaskServiceIntegrationTest {
                  WHERE id = ?
                 """, task.id());
         TaskDomainException wrongState = catchThrowableOfType(
-                () -> service.completeTask(completionRequest(task.id(), "owner")),
-                TaskDomainException.class);
+                () -> service.completeTask(completionRequest(task.id(), "owner")), TaskDomainException.class);
         assertThat(wrongState.code()).isEqualTo(TaskErrorCode.INVALID_TRANSITION);
         assertThat(repository.eventsForTask(task.id())).hasSize(eventsBefore);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
         verifyNoInteractions(publication);
     }
 
     @Test
     void handoffFailureRollsBackSessionAndLeavesTaskInProgressWithoutCompletionEvent() {
         TaskSpec spec = createSpec();
-        Task task = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "failure task", "codex", 1, "planner")).snapshot().task();
+        Task task = service.enqueueTask(new EnqueueTaskRequest(spec.id(), "failure task", "codex", 1, "planner"))
+                .snapshot()
+                .task();
         service.claimNextTask(new ClaimTaskRequest("codex", "owner")).orElseThrow();
         clearInvocations(publication);
         int eventsBefore = repository.eventsForTask(task.id()).size();
@@ -306,8 +317,7 @@ class TaskServiceIntegrationTest {
                 """);
 
         TaskDomainException error = catchThrowableOfType(
-                () -> service.completeTask(completionRequest(task.id(), "owner")),
-                TaskDomainException.class);
+                () -> service.completeTask(completionRequest(task.id(), "owner")), TaskDomainException.class);
 
         assertThat(error.code()).isEqualTo(TaskErrorCode.HANDOFF_FAILED);
         Task afterFailure = service.getTask(task.id()).task();
@@ -315,8 +325,10 @@ class TaskServiceIntegrationTest {
         assertThat(afterFailure.claimedBy()).isEqualTo("owner");
         assertThat(afterFailure.resultHandoffId()).isNull();
         assertThat(repository.eventsForTask(task.id())).hasSize(eventsBefore);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_events", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_events", Integer.class))
+                .isZero();
         verifyNoInteractions(publication);
     }
 
@@ -327,10 +339,11 @@ class TaskServiceIntegrationTest {
                 .when(publication)
                 .taskChanged(any(WorkflowTaskChanged.class));
 
-        TaskChange created = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "durable task", "codex", 1, "planner"));
+        TaskChange created =
+                service.enqueueTask(new EnqueueTaskRequest(spec.id(), "durable task", "codex", 1, "planner"));
 
-        assertThat(service.getTask(created.snapshot().task().id()).task().status()).isEqualTo(TaskStatus.OPEN);
+        assertThat(service.getTask(created.snapshot().task().id()).task().status())
+                .isEqualTo(TaskStatus.OPEN);
         assertThat(repository.eventsForTask(created.snapshot().task().id()))
                 .extracting(TaskEvent::type)
                 .containsExactly(TaskEventType.CREATED);
@@ -338,6 +351,7 @@ class TaskServiceIntegrationTest {
     }
 
     private TaskSpec createSpec() {
+
         return service.createSpec(new CreateSpecRequest(
                 PROJECT,
                 "Queue lifecycle",
@@ -348,12 +362,14 @@ class TaskServiceIntegrationTest {
 
     private Task seedTaskAt(TaskStatus status) {
         TaskSpec spec = createSpec();
-        Task task = service.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "matrix task", "codex", 1, "planner")).snapshot().task();
-        String claimedBy = switch (status) {
-            case CLAIMED, IN_PROGRESS, BLOCKED, DONE -> "agent-a";
-            default -> null;
-        };
+        Task task = service.enqueueTask(new EnqueueTaskRequest(spec.id(), "matrix task", "codex", 1, "planner"))
+                .snapshot()
+                .task();
+        String claimedBy =
+                switch (status) {
+                    case CLAIMED, IN_PROGRESS, BLOCKED, DONE -> "agent-a";
+                    default -> null;
+                };
         String blockedReason = status == TaskStatus.BLOCKED ? "waiting" : null;
         jdbcTemplate.update("""
                 UPDATE tasks
@@ -362,10 +378,12 @@ class TaskServiceIntegrationTest {
                 """, status.value(), claimedBy, blockedReason, task.id());
         Task seeded = service.getTask(task.id()).task();
         clearInvocations(publication);
+
         return seeded;
     }
 
     private static CompleteTaskRequest completionRequest(String taskId, String actor) {
+
         return new CompleteTaskRequest(
                 taskId,
                 actor,
@@ -385,16 +403,15 @@ class TaskServiceIntegrationTest {
                 }
             }
         }
+
         return transitions.stream();
     }
 
     private static boolean isAllowedStatusUpdate(TaskStatus current, TaskStatus target) {
+
         return (current == TaskStatus.IN_PROGRESS && target == TaskStatus.BLOCKED)
-                || ((current == TaskStatus.IN_PROGRESS || current == TaskStatus.BLOCKED)
-                        && target == TaskStatus.OPEN)
-                || ((current == TaskStatus.OPEN
-                        || current == TaskStatus.IN_PROGRESS
-                        || current == TaskStatus.BLOCKED)
+                || ((current == TaskStatus.IN_PROGRESS || current == TaskStatus.BLOCKED) && target == TaskStatus.OPEN)
+                || ((current == TaskStatus.OPEN || current == TaskStatus.IN_PROGRESS || current == TaskStatus.BLOCKED)
                         && target == TaskStatus.CANCELLED);
     }
 }

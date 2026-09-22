@@ -1,9 +1,8 @@
 package dev.nathan.sbaagentic.memory;
 
+import dev.nathan.sbaagentic.recording.AgentEvent;
 import java.time.Instant;
 import java.util.List;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
 
 /** Read-only event projections owned by memory rather than canonical recording persistence. */
 public interface MemoryEventReader {
@@ -11,6 +10,7 @@ public interface MemoryEventReader {
     List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit);
 
     default List<AgentEvent> searchEvents(String query, int limit) {
+
         return searchEvents(query, List.of(), limit);
     }
 
@@ -20,6 +20,5 @@ public interface MemoryEventReader {
 
     List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since);
 
-    record RecallCandidate(AgentEvent event, String cwd) {
-    }
+    record RecallCandidate(AgentEvent event, String cwd) {}
 }

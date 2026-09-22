@@ -1,10 +1,5 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.in.web;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
 import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
 import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
@@ -16,12 +11,15 @@ import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import dev.nathan.sbaagentic.workflow.TaskErrorCode;
 import dev.nathan.sbaagentic.workflow.TaskEvent;
 import dev.nathan.sbaagentic.workflow.TaskQuery;
-import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
 import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 import dev.nathan.sbaagentic.workflow.TaskSpec;
 import dev.nathan.sbaagentic.workflow.TaskStatus;
 import dev.nathan.sbaagentic.workflow.UpdateTaskStatusRequest;
-
+import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -44,16 +42,19 @@ public class TaskController {
 
     @PostMapping("/specs")
     public TaskSpec createSpec(@RequestBody CreateSpecRequest request) {
+
         return taskService.createSpec(request);
     }
 
     @GetMapping("/specs/{specId}")
     public TaskSpec getSpec(@PathVariable String specId) {
+
         return taskService.getSpec(requireUuid(specId, "Spec id"));
     }
 
     @PostMapping("/tasks")
     public TaskChange enqueueTask(@RequestBody EnqueueTaskRequest request) {
+
         return taskService.enqueueTask(new EnqueueTaskRequest(
                 requireUuid(request.specId(), "Spec id"),
                 request.title(),
@@ -70,6 +71,7 @@ public class TaskController {
             @RequestParam(required = false) List<String> excludeStatus,
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(defaultValue = "0") int offset) {
+
         return taskService.listTasks(new TaskQuery(
                 optionalFilter(projectKey),
                 optionalFilter(lane),
@@ -81,15 +83,16 @@ public class TaskController {
 
     @PostMapping("/tasks/claim")
     public ResponseEntity<TaskChange> claimNextTask(@RequestBody ClaimTaskRequest request) {
-        return taskService.claimNextTask(request)
+
+        return taskService
+                .claimNextTask(request)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PatchMapping("/tasks/{taskId}")
-    public TaskChange updateTaskStatus(
-            @PathVariable String taskId,
-            @RequestBody TaskStatusBody request) {
+    public TaskChange updateTaskStatus(@PathVariable String taskId, @RequestBody TaskStatusBody request) {
+
         return taskService.updateTaskStatus(new UpdateTaskStatusRequest(
                 requireUuid(taskId, "Task id"),
                 request.actor(),
@@ -98,9 +101,8 @@ public class TaskController {
     }
 
     @PostMapping("/tasks/{taskId}/complete")
-    public TaskChange completeTask(
-            @PathVariable String taskId,
-            @RequestBody CompleteTaskBody request) {
+    public TaskChange completeTask(@PathVariable String taskId, @RequestBody CompleteTaskBody request) {
+
         return taskService.completeTask(new CompleteTaskRequest(
                 requireUuid(taskId, "Task id"),
                 request.actor(),
@@ -112,27 +114,21 @@ public class TaskController {
     }
 
     @PostMapping("/tasks/{taskId}/annotations")
-    public TaskAnnotation createAnnotation(
-            @PathVariable String taskId,
-            @RequestBody AnnotationBody request) {
+    public TaskAnnotation createAnnotation(@PathVariable String taskId, @RequestBody AnnotationBody request) {
+
         return taskService.createAnnotation(new CreateAnnotationRequest(
-                requireUuid(taskId, "Task id"),
-                request.actor(),
-                request.kind(),
-                request.text(),
-                request.dataJson()));
+                requireUuid(taskId, "Task id"), request.actor(), request.kind(), request.text(), request.dataJson()));
     }
 
     @GetMapping("/tasks/{taskId}/events")
     public List<TaskEvent> taskEvents(@PathVariable String taskId) {
+
         return taskService.getTaskEvents(requireUuid(taskId, "Task id"));
     }
 
-    public record TaskStatusBody(String actor, String status, String blockedReason) {
-    }
+    public record TaskStatusBody(String actor, String status, String blockedReason) {}
 
-    public record AnnotationBody(String actor, String kind, String text, Map<String, Object> dataJson) {
-    }
+    public record AnnotationBody(String actor, String kind, String text, Map<String, Object> dataJson) {}
 
     public record CompleteTaskBody(
             String actor,
@@ -140,25 +136,29 @@ public class TaskController {
             String clientSessionId,
             String summary,
             List<String> openLoops,
-            String nextAction) {
-    }
+            String nextAction) {}
 
     private static int safeTaskLimit(int limit) {
+
         return Math.max(1, Math.min(limit, 250));
     }
 
     private static String optionalFilter(String value) {
+
         return value == null || value.isBlank() ? null : value;
     }
 
     private static TaskStatus optionalStatus(String value) {
+
         return value == null || value.isBlank() ? null : parseStatus(value);
     }
 
     private static List<TaskStatus> optionalStatuses(List<String> values) {
         if (values == null || values.isEmpty()) {
+
             return List.of();
         }
+
         return values.stream()
                 .flatMap(value -> Arrays.stream(value.split(",")))
                 .map(String::strip)
@@ -172,14 +172,15 @@ public class TaskController {
         if (value == null || value.isBlank()) {
             throw validation("Task status is required");
         }
+
         return parseStatus(value);
     }
 
     private static TaskStatus parseStatus(String value) {
         try {
+
             return TaskStatus.fromValue(value);
-        }
-        catch (IllegalArgumentException ex) {
+        } catch (IllegalArgumentException ex) {
             throw validation("Unknown task status: " + value);
         }
     }
@@ -194,14 +195,15 @@ public class TaskController {
             if (!parsed.toString().equalsIgnoreCase(normalized)) {
                 throw new IllegalArgumentException("Noncanonical UUID");
             }
+
             return parsed.toString();
-        }
-        catch (IllegalArgumentException ex) {
+        } catch (IllegalArgumentException ex) {
             throw validation(label + " must be a UUID");
         }
     }
 
     private static TaskDomainException validation(String message) {
+
         return new TaskDomainException(TaskErrorCode.VALIDATION_FAILED, message, null, null, null);
     }
 }

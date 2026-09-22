@@ -15,5 +15,4 @@ public record Task(
         String blockedReason,
         String resultHandoffId,
         Instant createdAt,
-        Instant updatedAt) {
-}
+        Instant updatedAt) {}

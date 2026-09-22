@@ -1,18 +1,16 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import dev.nathan.sbaagentic.platform.internal.application.StreamEventSnapshot;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
+import dev.nathan.sbaagentic.workflow.SessionLink;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.platform.internal.application.StreamEventSnapshot;
-import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -29,6 +27,7 @@ public class StreamPayloadFactory {
     }
 
     public StreamEvents.EventAppended eventAppended(AgentSession session, AgentEvent event) {
+
         return new StreamEvents.EventAppended(
                 event.sessionId(),
                 event.source(),
@@ -44,6 +43,7 @@ public class StreamPayloadFactory {
     }
 
     public StreamEvents.EventAppended eventAppended(StreamEventSnapshot snapshot) {
+
         return new StreamEvents.EventAppended(
                 snapshot.sessionId(),
                 snapshot.source(),
@@ -59,6 +59,7 @@ public class StreamPayloadFactory {
     }
 
     public StreamEvents.SessionUpdated sessionUpdated(AgentSession session) {
+
         return new StreamEvents.SessionUpdated(
                 session.id(),
                 session.source(),
@@ -71,14 +72,17 @@ public class StreamPayloadFactory {
     }
 
     private String parentSessionId(AgentSession session) {
+
         return parentSessionId(session.id(), session.source(), session.spawnedBy());
     }
 
     private String parentSessionId(String sessionId, String source, String spawnedBy) {
         String parentFromSpawnedBy = parentSessionIdFromSpawnedBy(source, spawnedBy);
         if (parentFromSpawnedBy != null) {
+
             return parentFromSpawnedBy;
         }
+
         return safeLinksWhereChild(sessionId).stream()
                 .findFirst()
                 .map(SessionLink::parentSessionId)
@@ -89,9 +93,11 @@ public class StreamPayloadFactory {
         if (spawnedBy != null && !spawnedBy.isBlank()) {
             Optional<AgentSession> parent = recording.findSession(source, spawnedBy);
             if (parent.isPresent()) {
+
                 return parent.get().id();
             }
         }
+
         return null;
     }
 
@@ -100,24 +106,27 @@ public class StreamPayloadFactory {
         for (SessionLink link : safeLinksWhereChild(sessionId)) {
             types.add(link.linkType().value());
         }
+
         return List.copyOf(types);
     }
 
     private List<SessionLink> safeLinksWhereChild(String sessionId) {
         try {
+
             return lineage.linksWhereChild(sessionId);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
+
             return List.of();
         }
     }
 
     private static String preview(String text) {
         if (text == null || text.isBlank()) {
+
             return null;
         }
         String collapsed = WHITESPACE.matcher(text.trim()).replaceAll(" ");
+
         return collapsed.length() <= 240 ? collapsed : collapsed.substring(0, 240);
     }
-
 }

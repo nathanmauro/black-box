@@ -1,14 +1,12 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.internal.application.TextEmbeddingUnavailable;
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -35,16 +33,19 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
 
     @Override
     public EmbeddingVector embedDocument(String text) {
+
         return embed(withPrefix(properties.getDocumentPrefix(), text));
     }
 
     @Override
     public EmbeddingVector embedQuery(String text) {
+
         return embed(withPrefix(properties.getQueryPrefix(), text));
     }
 
     @Override
     public String documentContentHash(String text) {
+
         return EmbeddingVector.contentHash(withPrefix(properties.getDocumentPrefix(), text));
     }
 
@@ -53,7 +54,8 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
             throw new TextEmbeddingUnavailable("memory embeddings disabled");
         }
         try {
-            Map<?, ?> response = restClient.post()
+            Map<?, ?> response = restClient
+                    .post()
                     .uri(properties.getPath())
                     .headers(OllamaTextEmbedderClient::recallCorrelation)
                     .contentType(MediaType.APPLICATION_JSON)
@@ -65,9 +67,9 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
                 throw new TextEmbeddingUnavailable("embedding dimensions " + embedding.length
                         + " did not match expected " + properties.getDimensions());
             }
+
             return new EmbeddingVector(properties.getModel(), embedding);
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
             throw new TextEmbeddingUnavailable(ex.getMessage(), ex);
         }
     }
@@ -75,24 +77,33 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
     @Override
     public boolean available() {
         if (!properties.isEnabled()) {
+
             return false;
         }
         try {
-            restClient.get().uri("/").headers(OllamaTextEmbedderClient::recallCorrelation).retrieve().toBodilessEntity();
+            restClient
+                    .get()
+                    .uri("/")
+                    .headers(OllamaTextEmbedderClient::recallCorrelation)
+                    .retrieve()
+                    .toBodilessEntity();
+
             return true;
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return false;
         }
     }
 
     @Override
     public String model() {
+
         return properties.getModel();
     }
 
     @Override
     public int dimensions() {
+
         return properties.getDimensions();
     }
 
@@ -105,6 +116,7 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(properties.getTimeout());
         requestFactory.setReadTimeout(properties.getTimeout());
+
         return RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
                 .requestFactory(requestFactory)
@@ -114,16 +126,19 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
     private static String withPrefix(String prefix, String text) {
         String safePrefix = prefix == null ? "" : prefix;
         String safeText = text == null ? "" : text;
+
         return safePrefix + safeText;
     }
 
     private static float[] extractEmbedding(Map<?, ?> response) {
         Object embedding = response == null ? null : response.get("embedding");
         if (embedding instanceof List<?> list) {
+
             return toFloatArray(list);
         }
         Object embeddings = response == null ? null : response.get("embeddings");
         if (embeddings instanceof List<?> outer && !outer.isEmpty() && outer.getFirst() instanceof List<?> first) {
+
             return toFloatArray(first);
         }
         throw new TextEmbeddingUnavailable("embedding response did not include a vector");
@@ -138,6 +153,7 @@ public class OllamaTextEmbedderClient implements TextEmbedder {
             }
             values[i] = number.floatValue();
         }
+
         return values;
     }
 }

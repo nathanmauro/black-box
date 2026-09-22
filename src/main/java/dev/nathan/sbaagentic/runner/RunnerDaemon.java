@@ -1,7 +1,13 @@
 package dev.nathan.sbaagentic.runner;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -16,18 +22,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -82,18 +78,15 @@ public class RunnerDaemon {
         Optional<RunnerInstanceLock> acquiredLock;
         try {
             acquiredLock = RunnerInstanceLock.tryAcquire(lockFile);
-        }
-        catch (IOException ex) {
-            log.error(
-                    "Unable to acquire the blackbox-runner instance lock at {}; refusing to start",
-                    lockFile,
-                    ex);
+        } catch (IOException ex) {
+            log.error("Unable to acquire the blackbox-runner instance lock at {}; refusing to start", lockFile, ex);
+
             return;
         }
         if (acquiredLock.isEmpty()) {
-            log.error(
-                    "Another blackbox-runner instance appears to already be running; refusing to "
-                            + "start this instance so crash recovery cannot corrupt its in-flight claims.");
+            log.error("Another blackbox-runner instance appears to already be running; refusing to "
+                    + "start this instance so crash recovery cannot corrupt its in-flight claims.");
+
             return;
         }
         RunnerInstanceLock instanceLock = acquiredLock.orElseThrow();
@@ -112,10 +105,7 @@ public class RunnerDaemon {
             crashRecovery.reconcile(config, actorId);
             approvals.execute(() -> reconcileApprovalsBestEffort(config, actorId));
             approvals.scheduleWithFixedDelay(
-                    () -> reconcileApprovalsBestEffort(config, actorId),
-                    60,
-                    60,
-                    TimeUnit.SECONDS);
+                    () -> reconcileApprovalsBestEffort(config, actorId), 60, 60, TimeUnit.SECONDS);
 
             String startupUuid = UUID.randomUUID().toString();
             String clientSessionId = "blackbox-runner-" + startupUuid;
@@ -153,8 +143,7 @@ public class RunnerDaemon {
                             submitWorker(
                                     workerPool,
                                     activeWorkerRuns,
-                                    () -> autoCycle.execute(
-                                            autoTask.get(), config, actorId, orchestratorSessionId));
+                                    () -> autoCycle.execute(autoTask.get(), config, actorId, orchestratorSessionId));
                             continue;
                         }
 
@@ -182,16 +171,14 @@ public class RunnerDaemon {
                     if (!sleep(1_000 + ThreadLocalRandom.current().nextInt(1_500))) {
                         break;
                     }
-                }
-                catch (RuntimeException ex) {
+                } catch (RuntimeException ex) {
                     log.warn("Black Box runner cycle failed; retrying", ex);
                     if (!sleep(FAILURE_BACKOFF_MILLIS)) {
                         break;
                     }
                 }
             }
-        }
-        finally {
+        } finally {
             running.set(false);
             if (reader != null) {
                 reader.stop();
@@ -203,8 +190,7 @@ public class RunnerDaemon {
             sseReader = null;
             try {
                 instanceLock.close();
-            }
-            catch (IOException ex) {
+            } catch (IOException ex) {
                 log.warn("Unable to release the blackbox-runner instance lock at {}", lockFile, ex);
             }
         }
@@ -222,13 +208,10 @@ public class RunnerDaemon {
         onSseFrame(eventName, jsonData, activeConfig, approvalExecutor);
     }
 
-    void onSseFrame(
-            String eventName,
-            String jsonData,
-            RunnerConfig config,
-            Executor approvalWakeExecutor) {
+    void onSseFrame(String eventName, String jsonData, RunnerConfig config, Executor approvalWakeExecutor) {
         lastWakeAtMillis = System.currentTimeMillis();
         if (!"task.note".equals(eventName)) {
+
             return;
         }
         try {
@@ -238,33 +221,28 @@ public class RunnerDaemon {
             String taskId = task.path("id").asText();
             if ("approval".equals(annotation.path("kind").asText())) {
                 if (!taskId.isBlank() && approvalWakeExecutor != null && config != null) {
-                    approvalWakeExecutor.execute(() -> reconcileApprovalTaskBestEffort(
-                            taskId, config, ACTOR_ID));
+                    approvalWakeExecutor.execute(() -> reconcileApprovalTaskBestEffort(taskId, config, ACTOR_ID));
                 }
+
                 return;
             }
             if (!"steer".equals(annotation.path("kind").asText())
                     || !ACTOR_ID.equals(task.path("claimedBy").asText())) {
+
                 return;
             }
             String steerText = annotation.path("text").asText();
             if (taskId.isBlank() || steerText.isBlank()) {
+
                 return;
             }
             activeRunRegistry.tmuxSessionFor(taskId).ifPresent(tmuxSessionName -> {
                 tmux.sendKeys(tmuxSessionName, steerText);
-                apiClient.annotate(
-                        taskId,
-                        ACTOR_ID,
-                        "progress",
-                        "Steering injected into active run.",
-                        null);
+                apiClient.annotate(taskId, ACTOR_ID, "progress", "Steering injected into active run.", null);
             });
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             log.warn("Unable to parse task.note SSE frame for runner", ex);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Unable to handle task.note SSE frame", ex);
         }
     }
@@ -272,38 +250,30 @@ public class RunnerDaemon {
     private void reconcileApprovalsBestEffort(RunnerConfig config, String actorId) {
         try {
             approvalReconciler.reconcile(config, actorId);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Unable to reconcile SDLC approvals; the runner will retry", ex);
         }
     }
 
-    private void reconcileApprovalTaskBestEffort(
-            String taskId, RunnerConfig config, String actorId) {
+    private void reconcileApprovalTaskBestEffort(String taskId, RunnerConfig config, String actorId) {
         try {
             approvalReconciler.reconcileTask(taskId, config, actorId);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Unable to reconcile SDLC approval for task {}; the poll will retry", taskId, ex);
         }
     }
 
-    private static void submitWorker(
-            ExecutorService workerPool,
-            AtomicInteger activeWorkerRuns,
-            Runnable worker) {
+    private static void submitWorker(ExecutorService workerPool, AtomicInteger activeWorkerRuns, Runnable worker) {
         activeWorkerRuns.incrementAndGet();
         try {
             workerPool.submit(() -> {
                 try {
                     worker.run();
-                }
-                finally {
+                } finally {
                     activeWorkerRuns.decrementAndGet();
                 }
             });
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             activeWorkerRuns.decrementAndGet();
             throw ex;
         }
@@ -312,10 +282,11 @@ public class RunnerDaemon {
     private static boolean sleep(long millis) {
         try {
             Thread.sleep(millis);
+
             return true;
-        }
-        catch (InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+
             return false;
         }
     }

@@ -16,5 +16,4 @@ public record ProjectMeldPreviewResponse(
         int sessionCount,
         int evidenceCount,
         int bundleChars,
-        List<String> degradationNotes) {
-}
+        List<String> degradationNotes) {}

@@ -1,5 +1,26 @@
 package dev.nathan.sbaagentic.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskDomainException;
+import dev.nathan.sbaagentic.workflow.TaskErrorCode;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskSnapshot;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
+import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,23 +31,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskDomainException;
-import dev.nathan.sbaagentic.workflow.TaskErrorCode;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
@@ -40,25 +46,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import io.modelcontextprotocol.server.McpSyncServerExchange;
-import io.modelcontextprotocol.spec.McpSchema;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowableOfType;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-api-contract-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-api-contract-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 @AutoConfigureMockMvc
 class TaskApiContractTest {
 
@@ -73,13 +69,7 @@ class TaskApiContractTest {
             "captureObservation",
             "localModelStatus");
     private static final Set<String> TASK_TOOLS = Set.of(
-            "createSpec",
-            "enqueueTask",
-            "claimNextTask",
-            "updateTaskStatus",
-            "completeTask",
-            "listTasks",
-            "getSpec");
+            "createSpec", "enqueueTask", "claimNextTask", "updateTaskStatus", "completeTask", "listTasks", "getSpec");
 
     @Autowired
     MockMvc mockMvc;
@@ -186,14 +176,15 @@ class TaskApiContractTest {
         JsonNode completed = json(complete);
         String handoffId = completed.at("/snapshot/task/resultHandoffId").asText();
 
-        MvcResult recall = mockMvc.perform(get("/api/recall")
-                        .param("scope", handoffId)
-                        .param("kinds", "handoff"))
+        MvcResult recall = mockMvc.perform(
+                        get("/api/recall").param("scope", handoffId).param("kinds", "handoff"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].eventId").value(handoffId))
                 .andExpect(jsonPath("$.items[0].clientSessionId").value("rest-transcript-session"))
                 .andReturn();
-        assertThat(memoryTools.recallContext(handoffId, 168, List.of("handoff"), null, null).items())
+        assertThat(memoryTools
+                        .recallContext(handoffId, 168, List.of("handoff"), null, null)
+                        .items())
                 .singleElement()
                 .extracting(item -> item.eventId())
                 .isEqualTo(handoffId);
@@ -208,12 +199,16 @@ class TaskApiContractTest {
                 .andExpect(status().isNoContent())
                 .andExpect(jsonPath("$").doesNotExist());
 
-        System.out.println("REST_TRANSCRIPT POST /api/specs 200 " + create.getResponse().getContentAsString());
-        System.out.println("REST_TRANSCRIPT POST /api/tasks 200 " + enqueue.getResponse().getContentAsString());
-        System.out.println("REST_TRANSCRIPT POST /api/tasks/claim 200 " + claim.getResponse().getContentAsString());
+        System.out.println(
+                "REST_TRANSCRIPT POST /api/specs 200 " + create.getResponse().getContentAsString());
+        System.out.println(
+                "REST_TRANSCRIPT POST /api/tasks 200 " + enqueue.getResponse().getContentAsString());
+        System.out.println("REST_TRANSCRIPT POST /api/tasks/claim 200 "
+                + claim.getResponse().getContentAsString());
         System.out.println("REST_TRANSCRIPT POST /api/tasks/{id}/complete 200 "
                 + complete.getResponse().getContentAsString());
-        System.out.println("REST_TRANSCRIPT GET /api/recall 200 " + recall.getResponse().getContentAsString());
+        System.out.println(
+                "REST_TRANSCRIPT GET /api/recall 200 " + recall.getResponse().getContentAsString());
         System.out.println("MCP_TRANSCRIPT recallContext " + mcpRecall);
 
         assertThat(enqueued.at("/snapshot/task/id").asText())
@@ -227,15 +222,12 @@ class TaskApiContractTest {
                         .content(specJson(PROJECT, "REST spec", "REST frozen body")))
                 .andExpect(status().isOk())
                 .andReturn());
-        assertThat(objectMapper.<JsonNode>valueToTree(workflowTools.getSpec(restSpec.get("id").asText())))
+        assertThat(objectMapper.<JsonNode>valueToTree(
+                        workflowTools.getSpec(restSpec.get("id").asText())))
                 .isEqualTo(restSpec);
 
         TaskSpec mcpSpec = workflowTools.createSpec(
-                PROJECT + "/mcp",
-                "MCP spec",
-                "MCP frozen body",
-                Map.of("repo", "black-box"),
-                "planner");
+                PROJECT + "/mcp", "MCP spec", "MCP frozen body", Map.of("repo", "black-box"), "planner");
         assertThat(json(mockMvc.perform(get("/api/specs/{id}", mcpSpec.id()))
                         .andExpect(status().isOk())
                         .andReturn()))
@@ -248,8 +240,7 @@ class TaskApiContractTest {
                 .andReturn());
         List<TaskSnapshot> mcpOpen = workflowTools.listTasks(PROJECT, "codex", "open", 50);
         assertThat(mcpOpen).singleElement();
-        assertThat(objectMapper.<JsonNode>valueToTree(mcpOpen.getFirst()))
-                .isEqualTo(restCreated.get("snapshot"));
+        assertThat(objectMapper.<JsonNode>valueToTree(mcpOpen.getFirst())).isEqualTo(restCreated.get("snapshot"));
 
         TaskChange mcpClaimed = workflowTools.claimNextTask("codex", "worker");
         assertThat(mcpClaimed.snapshot().spec().body()).isEqualTo("REST frozen body");
@@ -260,27 +251,25 @@ class TaskApiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].spec.body").value("REST frozen body"))
                 .andReturn());
-        assertThat(restInProgress.get(0))
-                .isEqualTo(objectMapper.valueToTree(mcpClaimed.snapshot()));
+        assertThat(restInProgress.get(0)).isEqualTo(objectMapper.valueToTree(mcpClaimed.snapshot()));
 
-        JsonNode restBlocked = json(mockMvc.perform(patch(
-                                "/api/tasks/{id}", mcpClaimed.snapshot().task().id())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actor\":\"worker\",\"status\":\"blocked\",\"blockedReason\":\"waiting\"}"))
+        JsonNode restBlocked = json(mockMvc.perform(
+                        patch("/api/tasks/{id}", mcpClaimed.snapshot().task().id())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"actor\":\"worker\",\"status\":\"blocked\",\"blockedReason\":\"waiting\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.event.type").value("task.blocked"))
                 .andReturn());
         assertThat(objectMapper.<JsonNode>valueToTree(
-                workflowTools.listTasks(PROJECT, "codex", "blocked", 50).getFirst()))
+                        workflowTools.listTasks(PROJECT, "codex", "blocked", 50).getFirst()))
                 .isEqualTo(restBlocked.get("snapshot"));
 
-        TaskChange mcpReset = workflowTools.updateTaskStatus(
-                mcpClaimed.snapshot().task().id(), "operator", "open", null);
-        JsonNode restOpen = json(mockMvc.perform(get("/api/tasks")
-                        .param("projectKey", PROJECT)
-                        .param("status", "open"))
-                .andExpect(status().isOk())
-                .andReturn());
+        TaskChange mcpReset =
+                workflowTools.updateTaskStatus(mcpClaimed.snapshot().task().id(), "operator", "open", null);
+        JsonNode restOpen = json(
+                mockMvc.perform(get("/api/tasks").param("projectKey", PROJECT).param("status", "open"))
+                        .andExpect(status().isOk())
+                        .andReturn());
         assertThat(restOpen.get(0)).isEqualTo(objectMapper.valueToTree(mcpReset.snapshot()));
 
         JsonNode restClaimed = json(mockMvc.perform(post("/api/tasks/claim")
@@ -296,19 +285,16 @@ class TaskApiContractTest {
                 "Completed through MCP.",
                 List.of("none"),
                 "Inspect the linked Handoff.");
-        JsonNode restDone = json(mockMvc.perform(get("/api/tasks")
-                        .param("projectKey", PROJECT)
-                        .param("status", "done"))
-                .andExpect(status().isOk())
-                .andReturn());
+        JsonNode restDone = json(
+                mockMvc.perform(get("/api/tasks").param("projectKey", PROJECT).param("status", "done"))
+                        .andExpect(status().isOk())
+                        .andReturn());
         assertThat(restDone.get(0)).isEqualTo(objectMapper.valueToTree(mcpCompleted.snapshot()));
         assertThat(mcpCompleted.snapshot().task().resultHandoffId()).isNotBlank();
 
-        TaskChange mcpCreated = workflowTools.enqueueTask(
-                mcpSpec.id(), "MCP-created task", "claude", 2, "planner");
-        JsonNode restMcpCreated = json(mockMvc.perform(get("/api/tasks")
-                        .param("projectKey", PROJECT + "/mcp")
-                        .param("lane", "claude"))
+        TaskChange mcpCreated = workflowTools.enqueueTask(mcpSpec.id(), "MCP-created task", "claude", 2, "planner");
+        JsonNode restMcpCreated = json(mockMvc.perform(
+                        get("/api/tasks").param("projectKey", PROJECT + "/mcp").param("lane", "claude"))
                 .andExpect(status().isOk())
                 .andReturn());
         assertThat(restMcpCreated.get(0)).isEqualTo(objectMapper.valueToTree(mcpCreated.snapshot()));
@@ -348,8 +334,7 @@ class TaskApiContractTest {
                 .andExpect(jsonPath("$[0].type").value("task.created"))
                 .andExpect(jsonPath("$[1].type").value("task.note"))
                 .andExpect(jsonPath("$[1].detail.kind").value("progress"))
-                .andExpect(jsonPath("$[1].detail.text")
-                        .value("Implemented the persistence slice."))
+                .andExpect(jsonPath("$[1].detail.text").value("Implemented the persistence slice."))
                 .andExpect(jsonPath("$[1].detail.dataJson.percent").value(60));
 
         workflowTools.claimNextTask("codex", "worker");
@@ -380,8 +365,11 @@ class TaskApiContractTest {
     @Test
     void annotationEndpointsReturnStableValidationAndNotFoundErrors() throws Exception {
         TaskSpec spec = workflowTools.createSpec(PROJECT, "annotation errors", "body", null, "planner");
-        String taskId = workflowTools.enqueueTask(spec.id(), "annotation errors", "codex", 1, "planner")
-                .snapshot().task().id();
+        String taskId = workflowTools
+                .enqueueTask(spec.id(), "annotation errors", "codex", 1, "planner")
+                .snapshot()
+                .task()
+                .id();
 
         mockMvc.perform(post("/api/tasks/{taskId}/annotations", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -469,8 +457,7 @@ class TaskApiContractTest {
         assertThat(listed).isEqualTo(restList);
         assertSnapshotTimestampStrings(listed.get(0));
 
-        JsonNode claimed = json(callback("claimNextTask").call(
-                "{\"lane\":\"codex\",\"agent\":\"worker\"}"));
+        JsonNode claimed = json(callback("claimNextTask").call("{\"lane\":\"codex\",\"agent\":\"worker\"}"));
         assertThat(claimed.at("/snapshot/task/id").asText()).isEqualTo(taskId);
         assertTaskChangeMatchesRest(claimed);
 
@@ -501,7 +488,8 @@ class TaskApiContractTest {
 
         assertThat(callback("claimNextTask").call("{\"lane\":\"codex\",\"agent\":\"nobody\"}"))
                 .isEqualTo("null");
-        System.out.println("MCP_SUCCESS_TIMESTAMP_SAMPLE=" + completed.at("/event/observedAt").asText());
+        System.out.println("MCP_SUCCESS_TIMESTAMP_SAMPLE="
+                + completed.at("/event/observedAt").asText());
         System.out.println("MCP_SUCCESS_COMPLETED=" + completed);
     }
 
@@ -511,8 +499,7 @@ class TaskApiContractTest {
         for (int i = 0; i < 251; i++) {
             workflowTools.enqueueTask(bulkSpec.id(), "bulk-" + i, "codex", 0, "planner");
         }
-        TaskChange cancelled = workflowTools.enqueueTask(
-                bulkSpec.id(), "cancelled", "codex", 20_000, "planner");
+        TaskChange cancelled = workflowTools.enqueueTask(bulkSpec.id(), "cancelled", "codex", 20_000, "planner");
         workflowTools.updateTaskStatus(cancelled.snapshot().task().id(), "operator", "cancelled", null);
         TaskSpec otherSpec = workflowTools.createSpec(PROJECT + "/other", "other", "body", null, "planner");
         TaskChange other = workflowTools.enqueueTask(otherSpec.id(), "other", "claude", 10_000, "planner");
@@ -569,7 +556,8 @@ class TaskApiContractTest {
                 .andExpect(status().isOk())
                 .andReturn());
         assertThat(commaSeparatedExclusions).isEqualTo(repeatedExclusions);
-        assertThat(taskIds(repeatedExclusions)).doesNotContain(cancelled.snapshot().task().id());
+        assertThat(taskIds(repeatedExclusions))
+                .doesNotContain(cancelled.snapshot().task().id());
 
         JsonNode unfiltered = json(mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
@@ -581,11 +569,10 @@ class TaskApiContractTest {
         assertThat(callbackDefault).hasSize(100);
         assertThat(ids(callbackDefault)).isEqualTo(ids(unfiltered));
 
-        JsonNode filtered = json(mockMvc.perform(get("/api/tasks")
-                        .param("projectKey", PROJECT)
-                        .param("limit", "250"))
-                .andExpect(status().isOk())
-                .andReturn());
+        JsonNode filtered = json(
+                mockMvc.perform(get("/api/tasks").param("projectKey", PROJECT).param("limit", "250"))
+                        .andExpect(status().isOk())
+                        .andReturn());
         assertThat(ids(filtered)).doesNotContain(other.snapshot().task().id());
 
         mockMvc.perform(get("/api/tasks").param("limit", "0"))
@@ -601,7 +588,8 @@ class TaskApiContractTest {
                         .content(specJson(PROJECT, "bad", " ")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.type").value("validation_failed"));
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM specs", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM specs", Integer.class))
+                .isZero();
 
         mockMvc.perform(get("/api/specs/not-a-uuid"))
                 .andExpect(status().isBadRequest())
@@ -656,7 +644,7 @@ class TaskApiContractTest {
                 TaskDomainException.class);
         assertThat(mcpTransition.code()).isEqualTo(TaskErrorCode.INVALID_TRANSITION);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM task_events WHERE task_id = ?", Integer.class, taskId))
+                        "SELECT COUNT(*) FROM task_events WHERE task_id = ?", Integer.class, taskId))
                 .isEqualTo(eventsBefore);
 
         mockMvc.perform(patch("/api/tasks/{id}", taskId)
@@ -686,13 +674,13 @@ class TaskApiContractTest {
         assertThat(ownership.getResponse().getContentAsString())
                 .doesNotContain("TaskDomainException", "java.", "\tat ");
         TaskDomainException mcpOwnership = catchThrowableOfType(
-                () -> workflowTools.completeTask(
-                        taskId, "intruder", "codex", "intruder-session", "No", null, "No"),
+                () -> workflowTools.completeTask(taskId, "intruder", "codex", "intruder-session", "No", null, "No"),
                 TaskDomainException.class);
         assertThat(mcpOwnership.code()).isEqualTo(TaskErrorCode.CLAIMANT_MISMATCH);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject(
-                "SELECT status FROM tasks WHERE id = ?", String.class, taskId)).isEqualTo("in_progress");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM tasks WHERE id = ?", String.class, taskId))
+                .isEqualTo("in_progress");
 
         String missingTask = UUID.randomUUID().toString();
         mockMvc.perform(patch("/api/tasks/{id}", missingTask)
@@ -706,8 +694,8 @@ class TaskApiContractTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.type").value("malformed_json"));
 
-        TaskDomainException malformedMcpId = catchThrowableOfType(
-                () -> workflowTools.getSpec("not-a-uuid"), TaskDomainException.class);
+        TaskDomainException malformedMcpId =
+                catchThrowableOfType(() -> workflowTools.getSpec("not-a-uuid"), TaskDomainException.class);
         assertThat(malformedMcpId.code()).isEqualTo(TaskErrorCode.VALIDATION_FAILED);
     }
 
@@ -721,8 +709,8 @@ class TaskApiContractTest {
         assertTaskError(notFound, "spec_not_found", "SPEC_NOT_FOUND");
 
         TaskSpec spec = workflowTools.createSpec(PROJECT, "callback errors", "frozen", null, "planner");
-        JsonNode uppercaseSpec = json(callback("getSpec").call(
-                "{\"specId\":\"%s\"}".formatted(spec.id().toUpperCase(Locale.ROOT))));
+        JsonNode uppercaseSpec = json(callback("getSpec")
+                .call("{\"specId\":\"%s\"}".formatted(spec.id().toUpperCase(Locale.ROOT))));
         assertThat(uppercaseSpec.get("id").asText()).isEqualTo(spec.id());
 
         TaskChange created = workflowTools.enqueueTask(spec.id(), "callback task", "codex", 1, "planner");
@@ -733,16 +721,18 @@ class TaskApiContractTest {
         JsonNode transition = callbackError("updateTaskStatus", invalidInput);
         assertTaskError(transition, "invalid_transition", "INVALID_TRANSITION");
 
-        McpSchema.CallToolResult transportError = McpToolUtils
-                .toSyncToolSpecification(callback("updateTaskStatus"))
+        McpSchema.CallToolResult transportError = McpToolUtils.toSyncToolSpecification(callback("updateTaskStatus"))
                 .call()
-                .apply(org.mockito.Mockito.mock(McpSyncServerExchange.class), Map.of(
-                        "taskId", taskId,
-                        "actor", "worker",
-                        "status", "blocked",
-                        "blockedReason", "waiting"));
+                .apply(
+                        org.mockito.Mockito.mock(McpSyncServerExchange.class),
+                        Map.of(
+                                "taskId", taskId,
+                                "actor", "worker",
+                                "status", "blocked",
+                                "blockedReason", "waiting"));
         assertThat(transportError.isError()).isTrue();
-        McpSchema.TextContent errorContent = (McpSchema.TextContent) transportError.content().getFirst();
+        McpSchema.TextContent errorContent =
+                (McpSchema.TextContent) transportError.content().getFirst();
         assertTaskError(json(errorContent.text()), "invalid_transition", "INVALID_TRANSITION");
 
         workflowTools.claimNextTask("codex", "owner");
@@ -758,7 +748,8 @@ class TaskApiContractTest {
                 """.formatted(taskId);
         JsonNode ownership = callbackError("completeTask", ownershipInput);
         assertTaskError(ownership, "claimant_mismatch", "CLAIMANT_MISMATCH");
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isZero();
 
         System.out.println("MCP_STRUCTURED_ERROR=" + abbreviated);
         System.out.println("MCP_IS_ERROR_RESULT=" + errorContent.text());
@@ -769,13 +760,25 @@ class TaskApiContractTest {
         Set<String> registered = Arrays.stream(toolCallbackProvider.getToolCallbacks())
                 .map(callback -> callback.getToolDefinition().name())
                 .collect(Collectors.toSet());
-        assertThat(registered).hasSize(16).containsAll(EXISTING_TOOLS).containsAll(TASK_TOOLS).contains("searchContext");
+        assertThat(registered)
+                .hasSize(16)
+                .containsAll(EXISTING_TOOLS)
+                .containsAll(TASK_TOOLS)
+                .contains("searchContext");
 
         Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
         Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);
         Method recall = MemoryMcpTools.class.getMethod(
-                "recallContext", String.class, Integer.class, List.class, Integer.class, Integer.class,
-                String.class, String.class, String.class, org.springframework.ai.chat.model.ToolContext.class);
+                "recallContext",
+                String.class,
+                Integer.class,
+                List.class,
+                Integer.class,
+                Integer.class,
+                String.class,
+                String.class,
+                String.class,
+                org.springframework.ai.chat.model.ToolContext.class);
         Method decision = MemoryMcpTools.class.getMethod(
                 "captureDecision",
                 String.class,
@@ -796,19 +799,15 @@ class TaskApiContractTest {
                 List.class,
                 String.class);
         Method projection = MemoryMcpTools.class.getMethod(
-                "captureProjection",
-                String.class,
-                String.class,
-                String.class,
-                String.class,
-                List.class);
+                "captureProjection", String.class, String.class, String.class, String.class, List.class);
         Method observation = MemoryMcpTools.class.getMethod(
                 "captureObservation", String.class, String.class, String.class, String.class);
-        Method modelStatus = dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools.class
-                .getMethod("localModelStatus");
+        Method modelStatus = dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools.class.getMethod(
+                "localModelStatus");
         assertThat(List.of(recent, search, recall, decision, handoff, projection, observation, modelStatus))
-                .allSatisfy(method -> assertThat(method.getAnnotation(org.springframework.ai.tool.annotation.Tool.class))
-                        .isNotNull());
+                .allSatisfy(
+                        method -> assertThat(method.getAnnotation(org.springframework.ai.tool.annotation.Tool.class))
+                                .isNotNull());
 
         ToolCallback claim = Arrays.stream(toolCallbackProvider.getToolCallbacks())
                 .filter(callback -> callback.getToolDefinition().name().equals("claimNextTask"))
@@ -823,19 +822,24 @@ class TaskApiContractTest {
                 .findFirst()
                 .orElseThrow();
         JsonNode listSchema = objectMapper.readTree(list.getToolDefinition().inputSchema());
-        assertThat(listSchema.path("required").isMissingNode() || listSchema.path("required").isEmpty()).isTrue();
+        assertThat(listSchema.path("required").isMissingNode()
+                        || listSchema.path("required").isEmpty())
+                .isTrue();
         assertThat(list.call("{}")).isEqualTo("[]");
     }
 
     private JsonNode json(MvcResult result) throws Exception {
+
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private JsonNode json(String value) throws Exception {
+
         return objectMapper.readTree(value);
     }
 
     private ToolCallback callback(String name) {
+
         return Arrays.stream(toolCallbackProvider.getToolCallbacks())
                 .filter(candidate -> candidate.getToolDefinition().name().equals(name))
                 .findFirst()
@@ -843,20 +847,20 @@ class TaskApiContractTest {
     }
 
     private JsonNode callbackError(String toolName, String input) throws Exception {
-        ToolExecutionException failure = catchThrowableOfType(
-                () -> callback(toolName).call(input), ToolExecutionException.class);
+        ToolExecutionException failure =
+                catchThrowableOfType(() -> callback(toolName).call(input), ToolExecutionException.class);
         assertThat(failure).isNotNull();
         assertThat(failure.getMessage()).doesNotContain("TaskDomainException", "java.", "\tat ");
+
         return json(failure.getMessage());
     }
 
     private void assertTaskChangeMatchesRest(JsonNode change) throws Exception {
         String taskId = change.at("/snapshot/task/id").asText();
-        JsonNode restTasks = json(mockMvc.perform(get("/api/tasks")
-                        .param("projectKey", PROJECT)
-                        .param("limit", "250"))
-                .andExpect(status().isOk())
-                .andReturn());
+        JsonNode restTasks = json(
+                mockMvc.perform(get("/api/tasks").param("projectKey", PROJECT).param("limit", "250"))
+                        .andExpect(status().isOk())
+                        .andReturn());
         JsonNode restSnapshot = null;
         for (JsonNode candidate : restTasks) {
             if (taskId.equals(candidate.at("/task/id").asText())) {
@@ -897,16 +901,19 @@ class TaskApiContractTest {
     }
 
     private static Set<String> ids(JsonNode array) {
+
         return array.findValuesAsText("id").stream().collect(Collectors.toSet());
     }
 
     private static List<String> taskIds(JsonNode array) {
         List<String> ids = new ArrayList<>();
         array.forEach(snapshot -> ids.add(snapshot.at("/task/id").asText()));
+
         return ids;
     }
 
     private static String specJson(String projectKey, String title, String body) {
+
         return """
                 {
                   "projectKey":"%s",
@@ -918,6 +925,7 @@ class TaskApiContractTest {
     }
 
     private static String enqueueJson(String specId, String title, String lane, int priority) {
+
         return """
                 {
                   "specId":"%s",

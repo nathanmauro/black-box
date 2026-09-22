@@ -3,7 +3,6 @@ package dev.nathan.sbaagentic.memory.internal.adapter.in.web;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
-
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,6 +23,7 @@ public class MemoryEmbeddingController {
             @RequestParam(defaultValue = "false") boolean apply,
             @RequestParam(defaultValue = "100") int batchSize,
             @RequestParam(defaultValue = "250") int progressEvery) {
+
         return memoryEmbeddingOperations.backfillEmbeddings(
                 new MemoryEmbeddingBackfillRequest(apply, batchSize, progressEvery));
     }

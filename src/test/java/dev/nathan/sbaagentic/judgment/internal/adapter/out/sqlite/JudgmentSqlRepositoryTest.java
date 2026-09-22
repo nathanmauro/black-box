@@ -1,26 +1,22 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.sqlite;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
+import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-
-import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
-import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class JudgmentSqlRepositoryTest {
 
@@ -33,9 +29,7 @@ class JudgmentSqlRepositoryTest {
                 "session-1",
                 Instant.parse("2026-09-21T12:00:00Z"),
                 Instant.parse("2026-09-21T12:00:01Z"),
-                List.of(
-                        event("event-1", "Decision"),
-                        event("event-2", "PostToolUse")),
+                List.of(event("event-1", "Decision"), event("event-2", "PostToolUse")),
                 List.of("Decision: choose", "exec(mvn test) → passed"),
                 "Decision: choose\nexec(mvn test) → passed");
         Judgment judgment = new Judgment(
@@ -53,29 +47,27 @@ class JudgmentSqlRepositoryTest {
 
         fixture.repository().saveForBeat(beat, judgment);
 
-        assertThat(fixture.repository().findByEventId("event-1"))
-                .get()
-                .satisfies(row -> {
-                    assertThat(row.beatId()).isEqualTo("beat-1");
-                    assertThat(row.version()).isEqualTo("orbit-jev-v1");
-                    assertThat(row.answers().path("phase").asText()).isEqualTo("building");
-                    assertThat(row.answers().path("human").asDouble(-1)).isZero();
-                    assertThat(row.answers().path("kin").path("session-2").asDouble()).isEqualTo(0.7);
-                    assertThat(row.answers().path("raw").path("phase").asText()).isEqualTo("building");
-                });
+        assertThat(fixture.repository().findByEventId("event-1")).get().satisfies(row -> {
+            assertThat(row.beatId()).isEqualTo("beat-1");
+            assertThat(row.version()).isEqualTo("orbit-jev-v1");
+            assertThat(row.answers().path("phase").asText()).isEqualTo("building");
+            assertThat(row.answers().path("human").asDouble(-1)).isZero();
+            assertThat(row.answers().path("kin").path("session-2").asDouble()).isEqualTo(0.7);
+            assertThat(row.answers().path("raw").path("phase").asText()).isEqualTo("building");
+        });
         assertThat(fixture.repository().findForSession("session-1", 10))
                 .extracting(row -> row.eventId())
                 .containsExactly("event-2", "event-1");
     }
 
     private static Fixture fixture() {
-        Path database = Path.of(
-                System.getProperty("java.io.tmpdir"),
-                "bb-judgment-sql-test-" + UUID.randomUUID() + ".db");
+        Path database =
+                Path.of(System.getProperty("java.io.tmpdir"), "bb-judgment-sql-test-" + UUID.randomUUID() + ".db");
         DriverManagerDataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + database);
         dataSource.setDriverClassName("org.sqlite.JDBC");
         new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
         return new Fixture(jdbc, new JudgmentSqlRepository(jdbc, new ObjectMapper()));
     }
 
@@ -99,6 +91,7 @@ class JudgmentSqlRepositoryTest {
     }
 
     private static BeatEvent event(String id, String type) {
+
         return new BeatEvent(
                 id,
                 "session-1",
@@ -112,6 +105,5 @@ class JudgmentSqlRepositoryTest {
                 Instant.parse("2026-09-21T12:00:00Z"));
     }
 
-    private record Fixture(JdbcTemplate jdbc, JudgmentSqlRepository repository) {
-    }
+    private record Fixture(JdbcTemplate jdbc, JudgmentSqlRepository repository) {}
 }

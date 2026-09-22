@@ -1,20 +1,8 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.SpecStatus;
 import dev.nathan.sbaagentic.workflow.Task;
@@ -30,10 +18,18 @@ import dev.nathan.sbaagentic.workflow.internal.application.port.SpecStore;
 import dev.nathan.sbaagentic.workflow.internal.application.port.TaskHistoryStore;
 import dev.nathan.sbaagentic.workflow.internal.application.port.TaskLifecycleStore;
 import dev.nathan.sbaagentic.workflow.internal.domain.TaskUpdate;
-
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,8 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistoryStore {
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private static final String TASK_COLUMNS = """
             t.id, t.spec_id, t.project_key, t.title, t.lane, t.status, t.priority,
@@ -67,7 +62,9 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
     }
 
     @Autowired
-    public TaskRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+    public TaskRepository(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
             @Value("${sba.storage.backend:sqlite}") String backend) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -75,11 +72,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
     }
 
     public TaskSpec createSpec(
-            String projectKey,
-            String title,
-            String body,
-            Map<String, Object> specRef,
-            String createdBy) {
+            String projectKey, String title, String body, Map<String, Object> specRef, String createdBy) {
         requireText(projectKey, "Project key");
         requireText(title, "Spec title");
         requireText(body, "Spec body");
@@ -87,16 +80,9 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
 
         Instant now = Instant.now();
         TaskSpec spec = new TaskSpec(
-                UUID.randomUUID().toString(),
-                projectKey,
-                title,
-                body,
-                specRef,
-                SpecStatus.ACTIVE,
-                createdBy,
-                now,
-                now);
-        jdbcTemplate.update("""
+                UUID.randomUUID().toString(), projectKey, title, body, specRef, SpecStatus.ACTIVE, createdBy, now, now);
+        jdbcTemplate.update(
+                """
                 INSERT INTO specs (
                     id, project_key, title, body, spec_ref, status, created_by, created_at, updated_at
                 )
@@ -111,11 +97,13 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 spec.createdBy(),
                 spec.createdAt().toString(),
                 spec.updatedAt().toString());
+
         return spec;
     }
 
     public Optional<TaskSpec> findSpec(String specId) {
         requireText(specId, "Spec id");
+
         return jdbcTemplate.query("""
                 SELECT id, project_key, title, body, spec_ref, status, created_by, created_at, updated_at
                   FROM specs
@@ -130,8 +118,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         requireText(lane, "Task lane");
         requireText(createdBy, "Task creator");
 
-        TaskSpec spec = findSpec(specId)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown spec id: " + specId));
+        TaskSpec spec = findSpec(specId).orElseThrow(() -> new IllegalArgumentException("Unknown spec id: " + specId));
         Instant now = Instant.now();
         Task task = new Task(
                 UUID.randomUUID().toString(),
@@ -147,7 +134,8 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 null,
                 now,
                 now);
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO tasks (
                     id, spec_id, project_key, title, lane, status, priority, created_by,
                     claimed_by, blocked_reason, result_handoff_id, created_at, updated_at
@@ -167,19 +155,21 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 task.resultHandoffId(),
                 task.createdAt().toString(),
                 task.updatedAt().toString());
-        TaskEvent event = appendEvent(
-                task.id(), TaskEventType.CREATED, createdBy, null, TaskStatus.OPEN, null, now);
+        TaskEvent event = appendEvent(task.id(), TaskEventType.CREATED, createdBy, null, TaskStatus.OPEN, null, now);
+
         return new TaskChange(new TaskSnapshot(task, spec), event);
     }
 
     public Optional<TaskSnapshot> findTask(String taskId) {
         requireText(taskId, "Task id");
+
         return jdbcTemplate.query("""
                 SELECT %s
                   FROM tasks t
                   JOIN specs s ON s.id = t.spec_id
                  WHERE t.id = ?
-                """.formatted(SNAPSHOT_COLUMNS), this::mapSnapshot, taskId).stream().findFirst();
+                """.formatted(SNAPSHOT_COLUMNS), this::mapSnapshot, taskId).stream()
+                .findFirst();
     }
 
     public List<TaskSnapshot> listTasks(TaskQuery query) {
@@ -209,12 +199,11 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         }
         if (!normalized.excludeStatuses().isEmpty()) {
             sql.append(" AND t.status NOT IN (")
-                    .append(String.join(", ", Collections.nCopies(
-                            normalized.excludeStatuses().size(), "?")))
+                    .append(String.join(
+                            ", ",
+                            Collections.nCopies(normalized.excludeStatuses().size(), "?")))
                     .append(")");
-            normalized.excludeStatuses().stream()
-                    .map(TaskStatus::value)
-                    .forEach(args::add);
+            normalized.excludeStatuses().stream().map(TaskStatus::value).forEach(args::add);
         }
         sql.append(" ORDER BY t.priority DESC, ")
                 .append(dialect.sortableInstant("t.created_at"))
@@ -223,11 +212,11 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
             sql.append(" LIMIT ? OFFSET ?");
             args.add(normalized.limit());
             args.add(Math.max(0, normalized.offset()));
-        }
-        else if (normalized.offset() > 0) {
+        } else if (normalized.offset() > 0) {
             sql.append(dialect.unlimitedOffset());
             args.add(normalized.offset());
         }
+
         return jdbcTemplate.query(sql.toString(), this::mapSnapshot, args.toArray());
     }
 
@@ -242,7 +231,8 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         requireText(agent, "Claiming agent");
 
         Instant now = Instant.now();
-        List<Task> claimed = jdbcTemplate.query("""
+        List<Task> claimed = jdbcTemplate.query(
+                """
                 UPDATE tasks
                    SET status = 'in_progress',
                        claimed_by = ?,
@@ -261,21 +251,20 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                           created_by, claimed_by, blocked_reason, result_handoff_id,
                           created_at, updated_at
                 """.formatted(dialect.sortableInstant("created_at"), dialect.claimLock()),
-                this::mapTask, agent, now.toString(), lane);
+                this::mapTask,
+                agent,
+                now.toString(),
+                lane);
         if (claimed.isEmpty()) {
+
             return Optional.empty();
         }
 
         Task task = claimed.getFirst();
         TaskEvent event = appendEvent(
-                task.id(),
-                TaskEventType.CLAIMED,
-                agent,
-                TaskStatus.OPEN,
-                TaskStatus.IN_PROGRESS,
-                null,
-                now);
+                task.id(), TaskEventType.CLAIMED, agent, TaskStatus.OPEN, TaskStatus.IN_PROGRESS, null, now);
         TaskSpec spec = findSpec(task.specId()).orElseThrow();
+
         return Optional.of(new TaskChange(new TaskSnapshot(task, spec), event));
     }
 
@@ -297,7 +286,8 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         }
 
         Instant now = Instant.now();
-        List<Task> updated = jdbcTemplate.query("""
+        List<Task> updated = jdbcTemplate.query(
+                """
                 UPDATE tasks
                    SET status = ?,
                        claimed_by = ?,
@@ -319,6 +309,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 update.taskId(),
                 update.expectedStatus().value());
         if (updated.isEmpty()) {
+
             return Optional.empty();
         }
 
@@ -332,11 +323,13 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 update.detail(),
                 now);
         TaskSpec spec = findSpec(task.specId()).orElseThrow();
+
         return Optional.of(new TaskChange(new TaskSnapshot(task, spec), event));
     }
 
     public List<TaskEvent> eventsForTask(String taskId) {
         requireText(taskId, "Task id");
+
         return jdbcTemplate.query("""
                 SELECT id, task_id, type, actor, from_status, to_status, detail_json, observed_at
                   FROM task_events
@@ -347,6 +340,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
 
     public List<Task> listTasksBySpec(String specId) {
         requireText(specId, "Spec id");
+
         return jdbcTemplate.query("""
                 SELECT id, spec_id, project_key, title, lane, status, priority,
                        created_by, claimed_by, blocked_reason, result_handoff_id,
@@ -361,6 +355,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         if (type == null) {
             throw new IllegalArgumentException("Task event type is required");
         }
+
         return jdbcTemplate.query("""
                 SELECT id, task_id, type, actor, from_status, to_status, detail_json, observed_at
                   FROM task_events
@@ -370,11 +365,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
     }
 
     public TaskAnnotation appendAnnotation(
-            String taskId,
-            AnnotationKind kind,
-            String actor,
-            String text,
-            Map<String, Object> dataJson) {
+            String taskId, AnnotationKind kind, String actor, String text, Map<String, Object> dataJson) {
         requireText(taskId, "Task id");
         requireText(actor, "Task actor");
         requireText(text, "Annotation text");
@@ -382,19 +373,17 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
         Map<String, Object> detail;
         if (dataJson == null) {
             detail = Map.of("kind", kind.value(), "text", text);
-        }
-        else {
+        } else {
             detail = new LinkedHashMap<>();
             detail.put("kind", kind.value());
             detail.put("text", text);
             detail.put("dataJson", dataJson);
         }
-        TaskEvent event = appendEvent(
-                taskId, TaskEventType.NOTE, actor, null, null, detail, Instant.now());
+        TaskEvent event = appendEvent(taskId, TaskEventType.NOTE, actor, null, null, detail, Instant.now());
         Map<String, Object> persistedDetail = event.detail();
         @SuppressWarnings("unchecked")
-        Map<String, Object> persistedDataJson =
-                (Map<String, Object>) persistedDetail.get("dataJson");
+        Map<String, Object> persistedDataJson = (Map<String, Object>) persistedDetail.get("dataJson");
+
         return new TaskAnnotation(
                 event.id(),
                 event.taskId(),
@@ -415,15 +404,9 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
             Instant observedAt) {
         requireText(actor, "Task actor");
         TaskEvent event = new TaskEvent(
-                UUID.randomUUID().toString(),
-                taskId,
-                type,
-                actor,
-                fromStatus,
-                toStatus,
-                detail,
-                observedAt);
-        jdbcTemplate.update("""
+                UUID.randomUUID().toString(), taskId, type, actor, fromStatus, toStatus, detail, observedAt);
+        jdbcTemplate.update(
+                """
                 INSERT INTO task_events (
                     id, task_id, type, actor, from_status, to_status, detail_json, observed_at
                 )
@@ -437,10 +420,12 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 event.toStatus() == null ? null : event.toStatus().value(),
                 toJson(event.detail()),
                 event.observedAt().toString());
+
         return event;
     }
 
     private TaskSpec mapSpec(ResultSet rs, int rowNum) throws SQLException {
+
         return new TaskSpec(
                 rs.getString("id"),
                 rs.getString("project_key"),
@@ -454,6 +439,7 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
     }
 
     private Task mapTask(ResultSet rs, int rowNum) throws SQLException {
+
         return new Task(
                 rs.getString("id"),
                 rs.getString("spec_id"),
@@ -482,12 +468,14 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
                 rs.getString("snapshot_spec_created_by"),
                 Instant.parse(rs.getString("snapshot_spec_created_at")),
                 Instant.parse(rs.getString("snapshot_spec_updated_at")));
+
         return new TaskSnapshot(task, spec);
     }
 
     private TaskEvent mapEvent(ResultSet rs, int rowNum) throws SQLException {
         String fromStatus = rs.getString("from_status");
         String toStatus = rs.getString("to_status");
+
         return new TaskEvent(
                 rs.getString("id"),
                 rs.getString("task_id"),
@@ -501,24 +489,26 @@ public class TaskRepository implements SpecStore, TaskLifecycleStore, TaskHistor
 
     private String toJson(Map<String, Object> value) {
         if (value == null) {
+
             return null;
         }
         try {
+
             return objectMapper.writeValueAsString(value);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             throw new IllegalArgumentException("Unable to serialize task metadata", ex);
         }
     }
 
     private Map<String, Object> fromJson(String json) {
         if (json == null || json.isBlank()) {
+
             return null;
         }
         try {
+
             return objectMapper.readValue(json, MAP_TYPE);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             throw new IllegalStateException("Unable to parse stored task metadata", ex);
         }
     }

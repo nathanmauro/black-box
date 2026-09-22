@@ -1,20 +1,18 @@
 package dev.nathan.sbaagentic.runner.run;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SessionLink;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.SessionLink;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 
 final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 
@@ -22,8 +20,8 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
     java.util.function.Supplier<List<TaskEvent>> taskEventsSupplier = () -> taskEvents;
     final Map<String, List<TaskEvent>> taskEventsByTask = new HashMap<>();
     List<TaskSnapshot> taskSnapshots = List.of();
-    IngestResponse ingestResponse = new IngestResponse(
-            "event-1", "session-1", "codex", "client-1", "session_meta", false);
+    IngestResponse ingestResponse =
+            new IngestResponse("event-1", "session-1", "codex", "client-1", "session_meta", false);
     final List<PostEventCall> postEventCalls = new ArrayList<>();
     final List<AnnotationCall> annotationCalls = new ArrayList<>();
     final List<SessionLinkCall> sessionLinkCalls = new ArrayList<>();
@@ -38,8 +36,10 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
     @Override
     public List<TaskEvent> taskEvents(String taskId) {
         if (taskEventsByTask.containsKey(taskId)) {
+
             return taskEventsByTask.get(taskId);
         }
+
         return taskEventsSupplier.get();
     }
 
@@ -49,22 +49,24 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
 
     @Override
     public List<TaskSnapshot> listTasks(String status) {
+
         return taskSnapshots;
     }
 
     @Override
     public List<TaskSnapshot> listTasks(String status, String lane) {
+
         return taskSnapshots.stream()
-                .filter(snapshot -> status == null
-                        || status.equals(snapshot.task().status().value()))
+                .filter(snapshot ->
+                        status == null || status.equals(snapshot.task().status().value()))
                 .filter(snapshot -> lane == null || lane.equals(snapshot.task().lane()))
                 .toList();
     }
 
     @Override
-    public TaskChange enqueueTask(
-            String specId, String title, String lane, int priority, String actor) {
+    public TaskChange enqueueTask(String specId, String title, String lane, int priority, String actor) {
         enqueueCalls.add(new EnqueueCall(specId, title, lane, priority, actor));
+
         return null;
     }
 
@@ -95,25 +97,23 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
                 toolOutput,
                 metadata,
                 observedAt));
+
         return ingestResponse;
     }
 
     @Override
     public SessionLink createSessionLink(
             String parentSessionId, String childSessionId, String linkType, String taskId) {
-        sessionLinkCalls.add(new SessionLinkCall(
-                parentSessionId, childSessionId, linkType, taskId));
+        sessionLinkCalls.add(new SessionLinkCall(parentSessionId, childSessionId, linkType, taskId));
+
         return null;
     }
 
     @Override
     public TaskAnnotation annotate(
-            String taskId,
-            String actor,
-            String kind,
-            String text,
-            Map<String, Object> dataJson) {
+            String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {
         annotationCalls.add(new AnnotationCall(taskId, actor, kind, text, dataJson));
+
         return null;
     }
 
@@ -126,15 +126,15 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
             String summary,
             List<String> openLoops,
             String nextAction) {
-        completeCalls.add(new CompleteCall(
-                taskId, actor, source, clientSessionId, summary, openLoops, nextAction));
+        completeCalls.add(new CompleteCall(taskId, actor, source, clientSessionId, summary, openLoops, nextAction));
+
         return null;
     }
 
     @Override
-    public TaskChange updateTaskStatus(
-            String taskId, String actor, String status, String blockedReason) {
+    public TaskChange updateTaskStatus(String taskId, String actor, String status, String blockedReason) {
         statusCalls.add(new StatusCall(taskId, actor, status, blockedReason));
+
         return null;
     }
 
@@ -150,20 +150,11 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
             Object toolInput,
             Object toolOutput,
             Map<String, Object> metadata,
-            Instant observedAt) {
-    }
+            Instant observedAt) {}
 
-    record AnnotationCall(
-            String taskId,
-            String actor,
-            String kind,
-            String text,
-            Map<String, Object> dataJson) {
-    }
+    record AnnotationCall(String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {}
 
-    record SessionLinkCall(
-            String parentSessionId, String childSessionId, String linkType, String taskId) {
-    }
+    record SessionLinkCall(String parentSessionId, String childSessionId, String linkType, String taskId) {}
 
     record CompleteCall(
             String taskId,
@@ -172,12 +163,9 @@ final class FakeBlackBoxApiClient extends BlackBoxApiClient {
             String clientSessionId,
             String summary,
             List<String> openLoops,
-            String nextAction) {
-    }
+            String nextAction) {}
 
-    record StatusCall(String taskId, String actor, String status, String blockedReason) {
-    }
+    record StatusCall(String taskId, String actor, String status, String blockedReason) {}
 
-    record EnqueueCall(String specId, String title, String lane, int priority, String actor) {
-    }
+    record EnqueueCall(String specId, String title, String lane, int priority, String actor) {}
 }

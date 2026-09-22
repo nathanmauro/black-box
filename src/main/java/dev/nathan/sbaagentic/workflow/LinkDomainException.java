@@ -10,6 +10,7 @@ public class LinkDomainException extends RuntimeException {
     }
 
     public LinkErrorCode code() {
+
         return code;
     }
 }

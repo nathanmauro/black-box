@@ -2,7 +2,6 @@ package dev.nathan.sbaagentic.runner.run;
 
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -15,6 +14,7 @@ public class ActiveRunRegistry {
     }
 
     public Optional<String> tmuxSessionFor(String taskId) {
+
         return Optional.ofNullable(activeTaskToTmuxSession.get(taskId));
     }
 

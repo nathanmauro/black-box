@@ -1,21 +1,18 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.sqlite;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Instant;
-import java.util.List;
-import java.util.Optional;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
 import dev.nathan.sbaagentic.judgment.EventJudgment;
 import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
 import dev.nathan.sbaagentic.judgment.internal.application.port.JudgmentRepository;
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
-
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -45,7 +42,8 @@ public class JudgmentSqlRepository implements JudgmentRepository {
         answers.set("raw", judgment.answers());
         String answersJson = toJson(answers);
         for (BeatEvent event : beat.events()) {
-            jdbcTemplate.update("""
+            jdbcTemplate.update(
+                    """
                     INSERT INTO event_judgments (
                         event_id, session_id, beat_id, judge, model, version, answers_json, judged_at
                     )
@@ -73,19 +71,21 @@ public class JudgmentSqlRepository implements JudgmentRepository {
     @Override
     public Optional<EventJudgment> findByEventId(String eventId) {
         try {
+
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
                     SELECT event_id, session_id, beat_id, judge, model, version, answers_json, judged_at
                       FROM event_judgments
                      WHERE event_id = ?
                     """, this::mapJudgment, eventId));
-        }
-        catch (EmptyResultDataAccessException ex) {
+        } catch (EmptyResultDataAccessException ex) {
+
             return Optional.empty();
         }
     }
 
     @Override
     public List<EventJudgment> findForSession(String sessionId, int limit) {
+
         return jdbcTemplate.query("""
                 SELECT event_id, session_id, beat_id, judge, model, version, answers_json, judged_at
                   FROM event_judgments
@@ -96,6 +96,7 @@ public class JudgmentSqlRepository implements JudgmentRepository {
     }
 
     private EventJudgment mapJudgment(ResultSet rs, int rowNum) throws SQLException {
+
         return new EventJudgment(
                 rs.getString("event_id"),
                 rs.getString("session_id"),
@@ -109,18 +110,18 @@ public class JudgmentSqlRepository implements JudgmentRepository {
 
     private String toJson(JsonNode answers) {
         try {
+
             return objectMapper.writeValueAsString(answers);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             throw new IllegalArgumentException("Invalid judgment answers", ex);
         }
     }
 
     private JsonNode fromJson(String value) {
         try {
+
             return objectMapper.readTree(value);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             throw new IllegalArgumentException("Invalid persisted judgment answers", ex);
         }
     }

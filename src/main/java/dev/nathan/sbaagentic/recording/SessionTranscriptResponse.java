@@ -11,5 +11,4 @@ public record SessionTranscriptResponse(
         int limit,
         long count,
         List<AgentEvent> events,
-        String nextBefore) {
-}
+        String nextBefore) {}

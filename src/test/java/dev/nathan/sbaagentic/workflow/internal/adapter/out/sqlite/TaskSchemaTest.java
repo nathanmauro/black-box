@@ -1,18 +1,16 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class TaskSchemaTest {
 
@@ -38,18 +36,16 @@ class TaskSchemaTest {
                    AND name IN ('idx_tasks_claimable', 'idx_task_events_task')
                  ORDER BY name
                 """, String.class)).containsExactly("idx_task_events_task", "idx_tasks_claimable");
-        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(tasks)"))
-                .anySatisfy(row -> {
-                    assertThat(row.get("table")).isEqualTo("specs");
-                    assertThat(row.get("from")).isEqualTo("spec_id");
-                    assertThat(row.get("to")).isEqualTo("id");
-                });
-        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(task_events)"))
-                .anySatisfy(row -> {
-                    assertThat(row.get("table")).isEqualTo("tasks");
-                    assertThat(row.get("from")).isEqualTo("task_id");
-                    assertThat(row.get("to")).isEqualTo("id");
-                });
+        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(tasks)")).anySatisfy(row -> {
+            assertThat(row.get("table")).isEqualTo("specs");
+            assertThat(row.get("from")).isEqualTo("spec_id");
+            assertThat(row.get("to")).isEqualTo("id");
+        });
+        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(task_events)")).anySatisfy(row -> {
+            assertThat(row.get("table")).isEqualTo("tasks");
+            assertThat(row.get("from")).isEqualTo("task_id");
+            assertThat(row.get("to")).isEqualTo("id");
+        });
     }
 
     @Test
@@ -79,8 +75,10 @@ class TaskSchemaTest {
 
         runSchema(dataSource);
 
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_events", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_sessions", Integer.class))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM agent_events", Integer.class))
+                .isEqualTo(1);
         assertThat(jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = 'session-1'"))
                 .containsEntry("source", "codex")
                 .containsEntry("client_session_id", "client-1")
@@ -98,17 +96,17 @@ class TaskSchemaTest {
                 .filteredOn(column -> List.of("source", "client_session_id", "title", "started_at", "last_seen_at")
                         .contains(column.get("name")))
                 .allSatisfy(column -> assertThat(column.get("notnull")).isEqualTo(1));
-        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(agent_events)"))
-                .anySatisfy(row -> {
-                    assertThat(row.get("table")).isEqualTo("agent_sessions");
-                    assertThat(row.get("from")).isEqualTo("session_id");
-                    assertThat(row.get("to")).isEqualTo("id");
-                });
+        assertThat(jdbc.queryForList("PRAGMA foreign_key_list(agent_events)")).anySatisfy(row -> {
+            assertThat(row.get("table")).isEqualTo("agent_sessions");
+            assertThat(row.get("from")).isEqualTo("session_id");
+            assertThat(row.get("to")).isEqualTo("id");
+        });
     }
 
     private static DriverManagerDataSource sqliteDataSource(Path database) {
         DriverManagerDataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + database);
         dataSource.setDriverClassName("org.sqlite.JDBC");
+
         return dataSource;
     }
 
@@ -117,9 +115,8 @@ class TaskSchemaTest {
     }
 
     private static String tableDefinition(JdbcTemplate jdbc, String table) {
+
         return jdbc.queryForObject(
-                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
-                String.class,
-                table);
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", String.class, table);
     }
 }

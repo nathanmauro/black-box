@@ -1,16 +1,13 @@
 package dev.nathan.sbaagentic.judgment.internal.application;
 
-import java.time.Instant;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.recording.AgentEvent;
-
+import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class BeatFolderTest {
 
@@ -18,8 +15,10 @@ class BeatFolderTest {
 
     @Test
     void foldsEventsWhileWithinGapAndFlushesAfterQuietWindow() {
-        assertThat(folder.fold(event("e1", "PostToolUse", "tool", "one", 0)).closed()).isEmpty();
-        assertThat(folder.fold(event("e2", "PostToolUse", "tool", "two", 4_000)).closed()).isEmpty();
+        assertThat(folder.fold(event("e1", "PostToolUse", "tool", "one", 0)).closed())
+                .isEmpty();
+        assertThat(folder.fold(event("e2", "PostToolUse", "tool", "two", 4_000)).closed())
+                .isEmpty();
 
         assertThat(folder.flushQuiet(Instant.parse("2026-09-21T12:00:08.001Z")))
                 .singleElement()
@@ -40,12 +39,18 @@ class BeatFolderTest {
     void closesBeforeThirteenthEvent() {
         BeatFolder sizeFolder = new BeatFolder(new ObjectMapper(), 4_000, 12, 1_500);
         for (int i = 0; i < 12; i++) {
-            assertThat(sizeFolder.fold(event("e" + i, "PostToolUse", "tool", "line", i)).closed()).isEmpty();
+            assertThat(sizeFolder
+                            .fold(event("e" + i, "PostToolUse", "tool", "line", i))
+                            .closed())
+                    .isEmpty();
         }
 
         BeatFolder.FoldResult result = sizeFolder.fold(event("e12", "PostToolUse", "tool", "line", 12));
 
-        assertThat(result.closed()).get().extracting(beat -> beat.events().size()).isEqualTo(12);
+        assertThat(result.closed())
+                .get()
+                .extracting(beat -> beat.events().size())
+                .isEqualTo(12);
     }
 
     @Test
@@ -84,6 +89,7 @@ class BeatFolderTest {
     }
 
     private static AgentEvent event(String id, String type, String role, String text, long millis) {
+
         return new AgentEvent(
                 id,
                 "s1",

@@ -1,7 +1,6 @@
 package dev.nathan.sbaagentic.runner;
 
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +35,7 @@ public class SseStreamReader {
 
     public void start() {
         if (!running.compareAndSet(false, true)) {
+
             return;
         }
         Thread readerThread = new Thread(this::readLoop, "blackbox-runner-sse");
@@ -57,17 +56,14 @@ public class SseStreamReader {
     private void readLoop() {
         while (running.get()) {
             try (InputStream input = streamSupplier.get();
-                    BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
                 currentStream = input;
                 readFrames(reader);
-            }
-            catch (IOException | RuntimeException ex) {
+            } catch (IOException | RuntimeException ex) {
                 if (running.get()) {
                     log.debug("Black Box SSE stream disconnected; reconnecting", ex);
                 }
-            }
-            finally {
+            } finally {
                 currentStream = null;
             }
             backoff();
@@ -83,11 +79,9 @@ public class SseStreamReader {
                 dispatch(eventName, data);
                 eventName = null;
                 data.setLength(0);
-            }
-            else if (line.startsWith("event:")) {
+            } else if (line.startsWith("event:")) {
                 eventName = fieldValue(line, "event:");
-            }
-            else if (line.startsWith("data:")) {
+            } else if (line.startsWith("data:")) {
                 if (!data.isEmpty()) {
                     data.append('\n');
                 }
@@ -99,24 +93,24 @@ public class SseStreamReader {
 
     private void dispatch(String eventName, StringBuilder data) {
         if (eventName == null && data.isEmpty()) {
+
             return;
         }
         try {
             callback.accept(eventName == null ? "message" : eventName, data.toString());
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Black Box SSE callback failed for event {}", eventName, ex);
         }
     }
 
     private void backoff() {
         if (!running.get()) {
+
             return;
         }
         try {
             Thread.sleep(RECONNECT_BACKOFF_MILLIS);
-        }
-        catch (InterruptedException ex) {
+        } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
     }
@@ -124,18 +118,19 @@ public class SseStreamReader {
     private void closeCurrentStream() {
         InputStream input = currentStream;
         if (input == null) {
+
             return;
         }
         try {
             input.close();
-        }
-        catch (IOException ignored) {
+        } catch (IOException ignored) {
             // Closing is only used to unblock the daemon reader during shutdown.
         }
     }
 
     private static String fieldValue(String line, String prefix) {
         String value = line.substring(prefix.length());
+
         return value.startsWith(" ") ? value.substring(1) : value;
     }
 }

@@ -22,5 +22,4 @@ public record ProjectTimelineBlock(
         String toolOutputJson,
         Map<String, Object> metadata,
         Instant observedAt,
-        List<ProjectMeldSessionRef> sourceSessions) {
-}
+        List<ProjectMeldSessionRef> sourceSessions) {}

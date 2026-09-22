@@ -1,16 +1,12 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
-import java.util.Locale;
-import java.util.stream.Collectors;
-
 import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
 import dev.nathan.sbaagentic.workflow.LinkDomainException;
 import dev.nathan.sbaagentic.workflow.TaskDomainException;
-import dev.nathan.sbaagentic.workflow.TaskErrorCode;
-
+import java.util.Locale;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -22,8 +18,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Turns every API failure into a small, typed JSON envelope instead of a raw stack trace. This
@@ -38,16 +34,17 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(CaptureIdConflictException.class)
     public ResponseEntity<ApiError> handleCaptureIdConflict(CaptureIdConflictException ex) {
+
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of(HttpStatus.CONFLICT, "capture_id_conflict", ex.getMessage()));
     }
 
     /** A typed API error. {@code error} is always present so callers can branch on it unambiguously. */
     public record ApiError(ErrorBody error) {
-        public record ErrorBody(int status, String type, String message) {
-        }
+        public record ErrorBody(int status, String type, String message) {}
 
         static ApiError of(HttpStatus status, String type, String message) {
+
             return new ApiError(new ErrorBody(status.value(), type, message));
         }
     }
@@ -60,6 +57,7 @@ public class ApiExceptionHandler {
             status = HttpStatus.INTERNAL_SERVER_ERROR;
         }
         String message = ex.getReason() == null ? status.getReasonPhrase() : ex.getReason();
+
         return ResponseEntity.status(status).body(ApiError.of(status, "request_failed", message));
     }
 
@@ -71,66 +69,82 @@ public class ApiExceptionHandler {
         if (message.isBlank()) {
             message = "Request validation failed.";
         }
+
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "validation_failed", message));
     }
 
     @ExceptionHandler(TaskDomainException.class)
     public ResponseEntity<ApiError> handleTaskDomain(TaskDomainException ex) {
-        HttpStatus status = switch (ex.code()) {
-            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
-            case SPEC_NOT_FOUND, TASK_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case INVALID_TRANSITION, CLAIMANT_MISMATCH, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
-            case HANDOFF_FAILED -> HttpStatus.BAD_GATEWAY;
-        };
+        HttpStatus status =
+                switch (ex.code()) {
+                    case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+                    case SPEC_NOT_FOUND, TASK_NOT_FOUND -> HttpStatus.NOT_FOUND;
+                    case INVALID_TRANSITION, CLAIMANT_MISMATCH, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
+                    case HANDOFF_FAILED -> HttpStatus.BAD_GATEWAY;
+                };
         String type = ex.code().name().toLowerCase(Locale.ROOT);
+
         return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));
     }
 
     @ExceptionHandler(LinkDomainException.class)
     public ResponseEntity<ApiError> handleLinkDomain(LinkDomainException ex) {
-        HttpStatus status = switch (ex.code()) {
-            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
-            case DUPLICATE_LINK -> HttpStatus.CONFLICT;
-        };
+        HttpStatus status =
+                switch (ex.code()) {
+                    case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+                    case DUPLICATE_LINK -> HttpStatus.CONFLICT;
+                };
         String type = ex.code().name().toLowerCase(Locale.ROOT);
+
         return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiError> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
         String method = ex.getMethod() == null ? "The requested method" : "Method " + ex.getMethod();
+
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-                .body(ApiError.of(HttpStatus.METHOD_NOT_ALLOWED, "method_not_allowed",
+                .body(ApiError.of(
+                        HttpStatus.METHOD_NOT_ALLOWED,
+                        "method_not_allowed",
                         method + " is not supported for this endpoint."));
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiError> handleMissingParameter(MissingServletRequestParameterException ex) {
-        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "missing_parameter",
-                "Missing required query parameter: " + ex.getParameterName()));
+
+        return ResponseEntity.badRequest()
+                .body(ApiError.of(
+                        HttpStatus.BAD_REQUEST,
+                        "missing_parameter",
+                        "Missing required query parameter: " + ex.getParameterName()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiError> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         String name = ex.getName() == null ? "request value" : ex.getName();
-        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "invalid_argument",
-                "Invalid value for " + name + "."));
+
+        return ResponseEntity.badRequest()
+                .body(ApiError.of(HttpStatus.BAD_REQUEST, "invalid_argument", "Invalid value for " + name + "."));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleUnreadableMessage(HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "malformed_json",
-                "Malformed JSON request body."));
+
+        return ResponseEntity.badRequest()
+                .body(ApiError.of(HttpStatus.BAD_REQUEST, "malformed_json", "Malformed JSON request body."));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         String message = ex.getMessage() == null ? "Invalid request." : ex.getMessage();
+
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "invalid_argument", message));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleMissingResource(NoResourceFoundException ex) {
+
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of(HttpStatus.NOT_FOUND, "not_found", "Resource not found."));
     }
@@ -141,6 +155,7 @@ public class ApiExceptionHandler {
         // point the response is already an event stream, so returning the JSON error envelope would
         // trigger a secondary 500 while trying to write the handler response.
         log.debug("Streaming client disconnected before the response completed.", ex);
+
         return ResponseEntity.noContent().build();
     }
 
@@ -148,8 +163,11 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
         // Deliberately generic: the detail is logged server-side, never returned to the caller.
         log.error("Unhandled API exception", ex);
+
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiError.of(HttpStatus.INTERNAL_SERVER_ERROR, "internal_error",
+                .body(ApiError.of(
+                        HttpStatus.INTERNAL_SERVER_ERROR,
+                        "internal_error",
                         "The recorder hit an unexpected error handling this request."));
     }
 }

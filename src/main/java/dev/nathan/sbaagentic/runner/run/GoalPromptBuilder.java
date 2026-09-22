@@ -1,9 +1,7 @@
 package dev.nathan.sbaagentic.runner.run;
 
-import java.util.Objects;
-
 import dev.nathan.sbaagentic.runner.RunnerNaming;
-
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -87,6 +85,7 @@ public class GoalPromptBuilder {
         // Absolute path: the worker's cwd is the target repo's worktree, not the sba-agentic
         // checkout this script lives in (see RunnerNaming.scriptPath).
         String reportScript = RunnerNaming.scriptPath("scripts/runner/report.sh");
+
         return storyBody
                 + "\n\n"
                 + "## Verify\n\n"
@@ -103,6 +102,7 @@ public class GoalPromptBuilder {
         Objects.requireNonNull(storyBody, "storyBody");
         Objects.requireNonNull(resolvedVerify, "resolvedVerify");
         String reportScript = RunnerNaming.scriptPath("scripts/runner/report.sh");
+
         return storyBody
                 + "\n\n"
                 + PLAN_STAGE
@@ -116,16 +116,13 @@ public class GoalPromptBuilder {
                 + renderProtocol(PLAN_COMPLETION_PROTOCOL, taskId, reportScript);
     }
 
-    public String buildReview(
-            String taskId,
-            String storyBody,
-            String resolvedVerify,
-            String approvedPlan) {
+    public String buildReview(String taskId, String storyBody, String resolvedVerify, String approvedPlan) {
         Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(storyBody, "storyBody");
         Objects.requireNonNull(resolvedVerify, "resolvedVerify");
         Objects.requireNonNull(approvedPlan, "approvedPlan");
         String reportScript = RunnerNaming.scriptPath("scripts/runner/report.sh");
+
         return storyBody
                 + "\n\n"
                 + "## Approved plan\n\n"
@@ -143,6 +140,7 @@ public class GoalPromptBuilder {
     }
 
     private static String renderProtocol(String protocol, String taskId, String reportScript) {
+
         return protocol.replace("<taskId>", taskId).replace("<reportScript>", reportScript);
     }
 }

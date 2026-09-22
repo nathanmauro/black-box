@@ -1,10 +1,8 @@
 package dev.nathan.sbaagentic.recording;
 
-import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 
 /**
  * A handoff an agent leaves for whoever picks the work up next — another agent, another tool, or a
@@ -19,5 +17,4 @@ public record CaptureHandoffRequest(
         String toAgent,
         @NotBlank String contextSummary,
         List<String> openLoops,
-        String nextAction) {
-}
+        String nextAction) {}

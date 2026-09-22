@@ -1,27 +1,24 @@
 package dev.nathan.sbaagentic.search;
 
-import dev.nathan.sbaagentic.memory.internal.adapter.out.http.ElasticIndexClient;
-import dev.nathan.sbaagentic.memory.internal.application.SearchService;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.Duration;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
+import dev.nathan.sbaagentic.memory.internal.adapter.out.http.ElasticIndexClient;
+import dev.nathan.sbaagentic.memory.internal.application.SearchService;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
-
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ElasticIndexClientTest {
 
@@ -33,11 +30,13 @@ class ElasticIndexClientTest {
         server.createContext("/sba-agentic-events", exchange -> {
             if ("HEAD".equals(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(404, -1);
+
                 return;
             }
             if ("PUT".equals(exchange.getRequestMethod())) {
                 createBody.set(readBody(exchange));
                 respondJson(exchange, "{\"acknowledged\":true}");
+
                 return;
             }
             exchange.sendResponseHeaders(405, -1);
@@ -53,12 +52,9 @@ class ElasticIndexClientTest {
             boolean indexed = client.index(session(), event());
 
             assertThat(indexed).isTrue();
-            assertThat(createBody.get())
-                    .contains("\"settings\"")
-                    .contains("\"number_of_replicas\":0");
+            assertThat(createBody.get()).contains("\"settings\"").contains("\"number_of_replicas\":0");
             assertThat(documentBody.get()).contains("\"text\":\"elastic smoke test note\"");
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -104,8 +100,7 @@ class ElasticIndexClientTest {
                     .doesNotContain("\"sort\"");
             assertThat(hits).hasSize(1);
             assertThat(hits.getFirst().get("score")).isEqualTo(7.25);
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -120,8 +115,7 @@ class ElasticIndexClientTest {
     @Test
     void fieldCapsParsesNameTypeSearchableAggregatable() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/sba-agentic-events/_field_caps", exchange ->
-                respondJson(exchange, """
+        server.createContext("/sba-agentic-events/_field_caps", exchange -> respondJson(exchange, """
                         {
                           "indices": ["sba-agentic-events"],
                           "fields": {
@@ -160,8 +154,7 @@ class ElasticIndexClientTest {
             assertThat(info.type()).isEqualTo("keyword");
             assertThat(info.searchable()).isTrue();
             assertThat(info.aggregatable()).isTrue();
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -195,8 +188,7 @@ class ElasticIndexClientTest {
                     .contains("\"size\":10")
                     .contains("\"case_insensitive\":false");
             assertThat(terms).containsExactly("kibana");
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -223,8 +215,7 @@ class ElasticIndexClientTest {
             assertThat(client.termsEnum("title", "El", 10)).isEmpty();
             assertThat(client.termsEnum("text", "sm", 10)).isEmpty();
             assertThat(called.get()).isFalse();
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -249,8 +240,7 @@ class ElasticIndexClientTest {
 
             assertThat(client.termsEnum("source", "cl", 10)).isEmpty();
             assertThat(called.get()).isFalse();
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -276,12 +266,16 @@ class ElasticIndexClientTest {
             assertThat(json.path("_source").toString()).doesNotContain("text", "metadata", "toolOutput");
             assertThat(json.path("highlight").path("pre_tags").get(0).asText()).isEmpty();
             assertThat(json.path("query").path("bool").path("should")).hasSize(2);
-        } finally { server.stop(0); }
+        } finally {
+            server.stop(0);
+        }
         assertThat(client.searchCompact("fixture", 200).status()).isEqualTo("unavailable");
     }
 
     @Test
-    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "SBA_COMPACT_ELASTIC_TEST_URL", matches = "http://127\\.0\\.0\\.1:[0-9]+")
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(
+            named = "SBA_COMPACT_ELASTIC_TEST_URL",
+            matches = "http://127\\.0\\.0\\.1:[0-9]+")
     void compactSearchWorksAgainstDisposableElasticsearch() throws Exception {
         String origin = System.getenv("SBA_COMPACT_ELASTIC_TEST_URL");
         String indexName = "bb-compact-test-" + java.util.UUID.randomUUID();
@@ -294,16 +288,24 @@ class ElasticIndexClientTest {
         var http = java.net.http.HttpClient.newHttpClient();
         try {
             assertThat(client.index(session(), event())).isTrue();
-            var refresh = java.net.http.HttpRequest.newBuilder(java.net.URI.create(origin + "/" + indexName + "/_refresh"))
-                    .POST(java.net.http.HttpRequest.BodyPublishers.noBody()).build();
-            assertThat(http.send(refresh, java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(200);
+            var refresh = java.net.http.HttpRequest.newBuilder(
+                            java.net.URI.create(origin + "/" + indexName + "/_refresh"))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.noBody())
+                    .build();
+            assertThat(http.send(refresh, java.net.http.HttpResponse.BodyHandlers.discarding())
+                            .statusCode())
+                    .isEqualTo(200);
             var found = client.searchCompact("elastic smoke", 200);
             assertThat(found.status()).isEqualTo("searched");
             assertThat(found.items()).hasSize(1);
-            assertThat(found.items().getFirst().text()).contains("elastic smoke").doesNotContain("<mark>");
+            assertThat(found.items().getFirst().text())
+                    .contains("elastic smoke")
+                    .doesNotContain("<mark>");
             assertThat(found.items().getFirst().eventId()).isEqualTo("event-1");
         } finally {
-            var remove = java.net.http.HttpRequest.newBuilder(java.net.URI.create(origin + "/" + indexName)).DELETE().build();
+            var remove = java.net.http.HttpRequest.newBuilder(java.net.URI.create(origin + "/" + indexName))
+                    .DELETE()
+                    .build();
             http.send(remove, java.net.http.HttpResponse.BodyHandlers.discarding());
         }
     }
@@ -313,10 +315,12 @@ class ElasticIndexClientTest {
         properties.setEnabled(enabled);
         properties.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.setTimeout(Duration.ofSeconds(2));
+
         return new ElasticIndexClient(properties);
     }
 
     private static Map<String, Object> capFor(List<Map<String, Object>> caps, String name) {
+
         return caps.stream()
                 .filter(cap -> name.equals(cap.get("name")))
                 .findFirst()
@@ -325,6 +329,7 @@ class ElasticIndexClientTest {
 
     private static AgentSession session() {
         Instant observedAt = Instant.parse("2026-06-07T19:00:00Z");
+
         return new AgentSession(
                 "session-1",
                 "manual",
@@ -339,6 +344,7 @@ class ElasticIndexClientTest {
     }
 
     private static AgentEvent event() {
+
         return new AgentEvent(
                 "event-1",
                 "session-1",
@@ -356,6 +362,7 @@ class ElasticIndexClientTest {
     }
 
     private static String readBody(HttpExchange exchange) throws IOException {
+
         return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     }
 

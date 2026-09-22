@@ -1,29 +1,25 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.in.web;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
-
-import org.junit.jupiter.api.Test;
-
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
 class MemoryEmbeddingControllerTest {
 
     private final RecordingMemoryEmbeddingOperations operations = new RecordingMemoryEmbeddingOperations();
-    private final MockMvc mockMvc = MockMvcBuilders
-            .standaloneSetup(new MemoryEmbeddingController(operations))
+    private final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new MemoryEmbeddingController(operations))
             .build();
 
     @Test
@@ -46,9 +42,10 @@ class MemoryEmbeddingControllerTest {
                 .andExpect(jsonPath("$.batchSize").value(5))
                 .andExpect(jsonPath("$.embedded").value(2));
 
-        assertThat(operations.requests()).containsExactly(
-                new MemoryEmbeddingBackfillRequest(false, 100, 250),
-                new MemoryEmbeddingBackfillRequest(true, 5, 2));
+        assertThat(operations.requests())
+                .containsExactly(
+                        new MemoryEmbeddingBackfillRequest(false, 100, 250),
+                        new MemoryEmbeddingBackfillRequest(true, 5, 2));
     }
 
     private static final class RecordingMemoryEmbeddingOperations implements MemoryEmbeddingOperations {
@@ -58,18 +55,13 @@ class MemoryEmbeddingControllerTest {
         @Override
         public MemoryEmbeddingBackfillResult backfillEmbeddings(MemoryEmbeddingBackfillRequest request) {
             requests.add(request);
+
             return new MemoryEmbeddingBackfillResult(
-                    request.apply(),
-                    request.batchSize(),
-                    3,
-                    2,
-                    1,
-                    request.apply() ? 2 : 0,
-                    0,
-                    false);
+                    request.apply(), request.batchSize(), 3, 2, 1, request.apply() ? 2 : 0, 0, false);
         }
 
         List<MemoryEmbeddingBackfillRequest> requests() {
+
             return List.copyOf(requests);
         }
     }

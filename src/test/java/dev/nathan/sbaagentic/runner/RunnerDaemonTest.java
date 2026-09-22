@@ -1,22 +1,19 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
-import java.util.List;
-import java.util.concurrent.Executor;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
 import dev.nathan.sbaagentic.runner.run.ActiveRunRegistry;
-
+import java.util.List;
+import java.util.concurrent.Executor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class RunnerDaemonTest {
@@ -70,9 +67,7 @@ class RunnerDaemonTest {
     void approvalSseWakeReconcilesAuthoritativelyWithoutClaimOwnership() {
         Executor directExecutor = Runnable::run;
 
-        daemon.onSseFrame(
-                "task.note",
-                """
+        daemon.onSseFrame("task.note", """
                         {
                           "task": {"id":"plan-1","lane":"sdlc:plan","status":"done"},
                           "annotation": {
@@ -80,9 +75,7 @@ class RunnerDaemonTest {
                             "dataJson":{"decision":"approve","stage":"plan"}
                           }
                         }
-                        """,
-                CONFIG,
-                directExecutor);
+                        """, CONFIG, directExecutor);
 
         verify(approvalReconciler).reconcileTask("plan-1", CONFIG, "blackbox-runner");
     }
@@ -91,23 +84,15 @@ class RunnerDaemonTest {
     void steeringStillRequiresRunnerClaimAndAnActiveRun() {
         activeRunRegistry.register("task-1", "bb-run-task-1");
 
-        daemon.onSseFrame(
-                "task.note",
-                """
+        daemon.onSseFrame("task.note", """
                         {
                           "task": {"id":"task-1","claimedBy":"someone-else"},
                           "annotation": {"kind":"steer","text":"Please check the edge case."}
                         }
-                        """,
-                CONFIG,
-                Runnable::run);
+                        """, CONFIG, Runnable::run);
 
         verify(tmux, never()).sendKeys("bb-run-task-1", "Please check the edge case.");
-        verify(apiClient, never()).annotate(
-                "task-1",
-                "blackbox-runner",
-                "progress",
-                "Steering injected into active run.",
-                null);
+        verify(apiClient, never())
+                .annotate("task-1", "blackbox-runner", "progress", "Steering injected into active run.", null);
     }
 }

@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.memory;
 
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 class ReciprocalRankFusionTest {
 
@@ -15,10 +14,7 @@ class ReciprocalRankFusionTest {
         MemoryHit vectorC = hit("c", 0.92);
         MemoryHit vectorA = hit("a", 0.72);
 
-        List<MemoryHit> fused = ReciprocalRankFusion.fuse(
-                List.of(lexicalA, lexicalB),
-                List.of(vectorC, vectorA),
-                10);
+        List<MemoryHit> fused = ReciprocalRankFusion.fuse(List.of(lexicalA, lexicalB), List.of(vectorC, vectorA), 10);
 
         assertThat(fused).extracting(MemoryHit::id).containsExactly("a", "c", "b");
         assertThat(fused.getFirst().score()).isGreaterThan(fused.get(1).score());
@@ -37,10 +33,12 @@ class ReciprocalRankFusionTest {
     }
 
     private static MemoryHit hit(String id, double score) {
+
         return hit(id, score, "Title " + id, "/memory/" + id + ".md");
     }
 
     private static MemoryHit hit(String id, double score, String title, String sourcePath) {
+
         return new MemoryHit(
                 id,
                 score,

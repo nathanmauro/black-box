@@ -1,16 +1,15 @@
 package dev.nathan.sbaagentic.contracts;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,16 +17,15 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-rest-contract-snapshot-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-rest-contract-snapshot-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class RestContractSnapshotTest {
 
     @Autowired
@@ -44,43 +42,53 @@ class RestContractSnapshotTest {
 
     @Test
     void everyApiMappingHasACompleteContractMatrixRow() throws IOException {
-        JsonNode matrix = objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
+        JsonNode matrix =
+                objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
         assertThat(matrix.isArray()).isTrue();
 
         Set<String> rows = new TreeSet<>();
         for (JsonNode row : matrix) {
-            assertThat(row.fieldNames()).toIterable().containsExactlyInAnyOrder(
-                    "method",
-                    "path",
-                    "requiredInputs",
-                    "optionalInputs",
-                    "defaults",
-                    "clamps",
-                    "successStatus",
-                    "errorStatus",
-                    "contentType",
-                    "requestFields",
-                    "responseFields",
-                    "characterizationTest");
-            row.fields().forEachRemaining(field -> assertThat(field.getValue().isNull()).isFalse());
+            assertThat(row.fieldNames())
+                    .toIterable()
+                    .containsExactlyInAnyOrder(
+                            "method",
+                            "path",
+                            "requiredInputs",
+                            "optionalInputs",
+                            "defaults",
+                            "clamps",
+                            "successStatus",
+                            "errorStatus",
+                            "contentType",
+                            "requestFields",
+                            "responseFields",
+                            "characterizationTest");
+            row.fields()
+                    .forEachRemaining(
+                            field -> assertThat(field.getValue().isNull()).isFalse());
             assertThat(row.path("characterizationTest").asText()).isNotBlank();
-            assertThat(rows.add(row.path("method").asText() + " " + row.path("path").asText())).isTrue();
+            assertThat(rows.add(
+                            row.path("method").asText() + " " + row.path("path").asText()))
+                    .isTrue();
         }
 
-        assertThat(rows).containsExactlyElementsOf(applicationMappings().stream()
-                .filter(mapping -> mapping.contains(" /api/"))
-                .collect(java.util.stream.Collectors.toCollection(TreeSet::new)));
+        assertThat(rows)
+                .containsExactlyElementsOf(applicationMappings().stream()
+                        .filter(mapping -> mapping.contains(" /api/"))
+                        .collect(java.util.stream.Collectors.toCollection(TreeSet::new)));
     }
 
     @Test
     void recallResponseContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
-        JsonNode matrix = objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
+        JsonNode matrix =
+                objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
         JsonNode recallRow = findContractRow(matrix, "GET", "/api/recall");
         assertThat(textValues(recallRow.path("responseFields")))
                 .contains("scope", "withinHours", "kinds", "count", "items", "mode");
 
-        JsonNode records = objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json")
-                .getInputStream()).path("records");
+        JsonNode records = objectMapper
+                .readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream())
+                .path("records");
         assertRecallResultShape(records.path("RecallResult"));
         assertRecalledItemShape(records.path("RecalledItem"));
     }
@@ -89,6 +97,7 @@ class RestContractSnapshotTest {
         Set<String> mappings = new TreeSet<>();
         handlerMapping.getHandlerMethods().forEach((mapping, handler) -> {
             if (!handler.getBeanType().getPackageName().startsWith("dev.nathan.sbaagentic")) {
+
                 return;
             }
             Set<RequestMethod> methods = mapping.getMethodsCondition().getMethods();
@@ -101,17 +110,24 @@ class RestContractSnapshotTest {
                 }
             }
         });
+
         return mappings;
     }
 
     private static List<String> resourceLines(String path) throws IOException {
         String text = new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
-        return text.lines().filter(line -> !line.isBlank() && !line.startsWith("#")).sorted().toList();
+
+        return text.lines()
+                .filter(line -> !line.isBlank() && !line.startsWith("#"))
+                .sorted()
+                .toList();
     }
 
     private static JsonNode findContractRow(JsonNode matrix, String method, String path) {
         for (JsonNode row : matrix) {
-            if (method.equals(row.path("method").asText()) && path.equals(row.path("path").asText())) {
+            if (method.equals(row.path("method").asText())
+                    && path.equals(row.path("path").asText())) {
+
                 return row;
             }
         }
@@ -121,12 +137,14 @@ class RestContractSnapshotTest {
     private static List<String> textValues(JsonNode array) {
         List<String> values = new java.util.ArrayList<>();
         array.forEach(node -> values.add(node.asText()));
+
         return values;
     }
 
     private static Set<String> fieldNames(JsonNode node) {
         Set<String> names = new TreeSet<>();
         node.fieldNames().forEachRemaining(names::add);
+
         return names;
     }
 
@@ -141,9 +159,23 @@ class RestContractSnapshotTest {
     }
 
     private static void assertRecalledItemShape(JsonNode item) {
-        assertThat(fieldNames(item)).contains(
-                "eventId", "sessionId", "kind", "source", "clientSessionId", "repo", "observedAt", "headline",
-                "rationale", "alternatives", "confidence", "openLoops", "nextAction", "toAgent", "score");
+        assertThat(fieldNames(item))
+                .contains(
+                        "eventId",
+                        "sessionId",
+                        "kind",
+                        "source",
+                        "clientSessionId",
+                        "repo",
+                        "observedAt",
+                        "headline",
+                        "rationale",
+                        "alternatives",
+                        "confidence",
+                        "openLoops",
+                        "nextAction",
+                        "toAgent",
+                        "score");
         assertThat(item.path("eventId").isTextual()).isTrue();
         assertThat(item.path("sessionId").isTextual()).isTrue();
         assertThat(item.path("kind").isTextual()).isTrue();

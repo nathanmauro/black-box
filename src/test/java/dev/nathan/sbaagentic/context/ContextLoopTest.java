@@ -1,53 +1,50 @@
 package dev.nathan.sbaagentic.context;
 
-import java.util.List;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
-import dev.nathan.sbaagentic.project.ProjectGraphOperations;
-import dev.nathan.sbaagentic.project.ProjectKey;
-import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
-import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
-import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
-import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
-import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
-import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
-
+import dev.nathan.sbaagentic.project.ProjectGraphOperations;
+import dev.nathan.sbaagentic.project.ProjectKey;
+import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
+import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 /**
  * Exercises the write+query loop end to end: an agent commits structured intent, and a later recall
  * — scoped by repo or topic — reads that intent back as typed fields, not raw text. This is the
  * behavior that distinguishes Black Box from a read-only timeline, so it earns direct coverage.
  */
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-context-loop-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-context-loop-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 @AutoConfigureMockMvc
 class ContextLoopTest {
 
@@ -72,7 +69,9 @@ class ContextLoopTest {
     @Test
     void decisionRoundTripsAsStructuredIntentRecallableByRepo() {
         captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex", "codex-1", "/tmp/acme-roundtrip",
+                "codex",
+                "codex-1",
+                "/tmp/acme-roundtrip",
                 "Use JWT refresh-rotation for auth",
                 "Stateless and horizontally scalable",
                 List.of("Server-side sessions in Redis"),
@@ -97,9 +96,14 @@ class ContextLoopTest {
     @Test
     void recallMatchesByTopicInTextNotJustRepo() {
         captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex", "codex-topic", "/tmp/other-repo",
+                "codex",
+                "codex-topic",
+                "/tmp/other-repo",
                 "Adopt structured logging with correlation ids",
-                "Traceability across services", List.of(), 0.6, List.of()));
+                "Traceability across services",
+                List.of(),
+                0.6,
+                List.of()));
 
         // The repo does not match, but the topic appears in the decision text.
         RecallResult byTopic = contextService.recall("correlation", 168, List.of("decision"));
@@ -110,7 +114,9 @@ class ContextLoopTest {
     @Test
     void handoffIsRecalledByDefaultAndCarriesOpenLoops() {
         captureOperations.captureHandoff(new CaptureHandoffRequest(
-                "claude", "claude-7", "/tmp/checkout",
+                "claude",
+                "claude-7",
+                "/tmp/checkout",
                 "next-session",
                 "Wired the payment intent flow",
                 List.of("webhook signature check missing"),
@@ -130,7 +136,9 @@ class ContextLoopTest {
     @Test
     void handoffEventIdIsADirectRecallKey() {
         IngestResponse captured = captureOperations.captureHandoff(new CaptureHandoffRequest(
-                "codex", "codex-id-recall", "/tmp/id-recall",
+                "codex",
+                "codex-id-recall",
+                "/tmp/id-recall",
                 "next-agent",
                 "Completed the queue adapter contract",
                 List.of("Board client remains"),
@@ -155,9 +163,7 @@ class ContextLoopTest {
                 "Current graph feed can already render projection ghost nodes",
                 List.of(
                         new ProjectionPath(
-                                "Ship projection capture",
-                                "Add MCP and REST capture surfaces for future paths.",
-                                0.78),
+                                "Ship projection capture", "Add MCP and REST capture surfaces for future paths.", 0.78),
                         new ProjectionPath(
                                 "Tune trajectory ranking",
                                 "Let the frontend pick the latest set and rank ghost futures.",
@@ -171,8 +177,7 @@ class ContextLoopTest {
             assertThat(item.eventId()).isEqualTo(captured.eventId());
             assertThat(item.kind()).isEqualTo("projection");
             assertThat(item.headline()).isEqualTo("Ship projection capture");
-            assertThat(item.rationale()).isEqualTo(
-                    "Current graph feed can already render projection ghost nodes");
+            assertThat(item.rationale()).isEqualTo("Current graph feed can already render projection ghost nodes");
             assertThat(item.confidence()).isEqualTo(0.78);
             assertThat(item.repo()).isEqualTo(repo);
         });
@@ -241,7 +246,8 @@ class ContextLoopTest {
                 .getResponse()
                 .getContentAsString();
         JsonNode body = objectMapper.readTree(response);
-        AgentEvent stored = repository.findEventById(body.path("eventId").asText()).orElseThrow();
+        AgentEvent stored =
+                repository.findEventById(body.path("eventId").asText()).orElseThrow();
 
         assertThat(stored.eventType()).isEqualTo("Projection");
         assertThat(stored.text())
@@ -299,8 +305,14 @@ class ContextLoopTest {
     @Test
     void capturedIntentAlsoLandsAsAnEventOnTheTimeline() {
         captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex", "codex-timeline", "/tmp/acme-timeline",
-                "Pin the SQLite driver version", "Reproducible builds", List.of(), 0.9, List.of()));
+                "codex",
+                "codex-timeline",
+                "/tmp/acme-timeline",
+                "Pin the SQLite driver version",
+                "Reproducible builds",
+                List.of(),
+                0.9,
+                List.of()));
 
         AgentSession session = repository.findSession("codex", "codex-timeline").orElseThrow();
         List<AgentEvent> events = repository.eventsForSession(session.id(), 10);

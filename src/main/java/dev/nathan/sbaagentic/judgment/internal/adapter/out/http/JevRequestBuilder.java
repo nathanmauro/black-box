@@ -1,11 +1,9 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
-import java.util.regex.Pattern;
-
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
+import java.util.regex.Pattern;
 
 public class JevRequestBuilder {
 
@@ -29,6 +27,7 @@ public class JevRequestBuilder {
             requested.set("kin_" + other.k(), questions.kinQuestionFor(other.k()));
         }
         body.set("questions", requested);
+
         return body;
     }
 
@@ -68,26 +67,29 @@ public class JevRequestBuilder {
             others.add(node);
         }
         root.set("others", others);
+
         return root;
     }
 
     private static void putNullable(ObjectNode node, String field, String value) {
         if (value == null) {
             node.putNull(field);
-        }
-        else {
+        } else {
             node.put(field, value);
         }
     }
 
     private static String shortRepo(String repo) {
+
         return repo == null ? null : HOME_PREFIX.matcher(repo).replaceFirst("~/");
     }
 
     private static String clip(String value, int max) {
         if (value == null) {
+
             return "";
         }
+
         return value.length() <= max ? value : value.substring(0, Math.max(0, max - 3)) + "...";
     }
 }

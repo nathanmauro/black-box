@@ -1,5 +1,11 @@
 package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -9,14 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class BlackBoxApiClientTest {
 
@@ -74,11 +73,9 @@ class BlackBoxApiClientTest {
             Optional<TaskChange> claimed = client.claimTask("auto", "blackbox-runner");
 
             assertThat(claimed).isPresent();
-            assertThat(claimed.orElseThrow().snapshot().task().id())
-                    .isEqualTo("12345678-abcd-4abc-8abc-1234567890ab");
+            assertThat(claimed.orElseThrow().snapshot().task().id()).isEqualTo("12345678-abcd-4abc-8abc-1234567890ab");
             assertThat(claimed.orElseThrow().snapshot().task().status()).isEqualTo(TaskStatus.IN_PROGRESS);
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -90,8 +87,7 @@ class BlackBoxApiClientTest {
         server.start();
         try {
             assertThat(client(server).claimTask("gate", "blackbox-runner")).isEmpty();
-        }
-        finally {
+        } finally {
             server.stop(0);
         }
     }
@@ -107,10 +103,8 @@ class BlackBoxApiClientTest {
         server.start();
         try {
             assertThat(client(server).listTasks("done", "sdlc:review")).isEmpty();
-            assertThat(query.get())
-                    .isEqualTo("status=done&lane=sdlc%3Areview&limit=250&offset=0");
-        }
-        finally {
+            assertThat(query.get()).isEqualTo("status=done&lane=sdlc%3Areview&limit=250&offset=0");
+        } finally {
             server.stop(0);
         }
     }
@@ -128,12 +122,10 @@ class BlackBoxApiClientTest {
         try {
             assertThat(client(server).listTasks("done"))
                     .extracting(snapshot -> snapshot.task().id())
-                    .containsExactlyElementsOf(tasks.stream().map(snapshot -> snapshot.task().id()).toList());
-            assertThat(queries).containsExactly(
-                    "status=done&limit=250&offset=0",
-                    "status=done&limit=250&offset=250");
-        }
-        finally {
+                    .containsExactlyElementsOf(
+                            tasks.stream().map(snapshot -> snapshot.task().id()).toList());
+            assertThat(queries).containsExactly("status=done&limit=250&offset=0", "status=done&limit=250&offset=250");
+        } finally {
             server.stop(0);
         }
     }
@@ -150,16 +142,17 @@ class BlackBoxApiClientTest {
         server.start();
         try {
             assertThat(client(server).listTasks(null, "auto")).hasSize(251);
-            assertThat(queries).containsExactly(
-                    "lane=auto&excludeStatus=cancelled&limit=250&offset=0",
-                    "lane=auto&excludeStatus=cancelled&limit=250&offset=250");
-        }
-        finally {
+            assertThat(queries)
+                    .containsExactly(
+                            "lane=auto&excludeStatus=cancelled&limit=250&offset=0",
+                            "lane=auto&excludeStatus=cancelled&limit=250&offset=250");
+        } finally {
             server.stop(0);
         }
     }
 
     private static BlackBoxApiClient client(HttpServer server) {
+
         return new BlackBoxApiClient(
                 OBJECT_MAPPER, "http://127.0.0.1:" + server.getAddress().getPort());
     }
@@ -178,21 +171,24 @@ class BlackBoxApiClientTest {
                 createdAt);
         List<TaskSnapshot> tasks = new ArrayList<>();
         for (int index = 0; index < count; index++) {
-            tasks.add(new TaskSnapshot(new Task(
-                    "task-" + index,
-                    spec.id(),
-                    spec.projectKey(),
-                    "Runner task " + index,
-                    "auto",
-                    status,
-                    0,
-                    "test",
-                    null,
-                    null,
-                    null,
-                    createdAt,
-                    createdAt), spec));
+            tasks.add(new TaskSnapshot(
+                    new Task(
+                            "task-" + index,
+                            spec.id(),
+                            spec.projectKey(),
+                            "Runner task " + index,
+                            "auto",
+                            status,
+                            0,
+                            "test",
+                            null,
+                            null,
+                            null,
+                            createdAt,
+                            createdAt),
+                    spec));
         }
+
         return tasks;
     }
 
@@ -207,6 +203,7 @@ class BlackBoxApiClientTest {
         for (String parameter : exchange.getRequestURI().getRawQuery().split("&")) {
             String prefix = name + "=";
             if (parameter.startsWith(prefix)) {
+
                 return Integer.parseInt(parameter.substring(prefix.length()));
             }
         }

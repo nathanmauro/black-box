@@ -1,6 +1,14 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
+import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
+import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
+import dev.nathan.sbaagentic.workflow.CreateSpecRequest;
+import dev.nathan.sbaagentic.workflow.EnqueueTaskRequest;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -16,33 +24,23 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
-
-import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
-import dev.nathan.sbaagentic.workflow.CreateAnnotationRequest;
-import dev.nathan.sbaagentic.workflow.CreateSpecRequest;
-import dev.nathan.sbaagentic.workflow.EnqueueTaskRequest;
-import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-stream-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false",
-        "server.shutdown=immediate"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-stream-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false",
+            "server.shutdown=immediate"
+        })
 class TaskStreamTest {
 
     @LocalServerPort
@@ -66,12 +64,13 @@ class TaskStreamTest {
 
     @Test
     void committedTaskChangesUseNamedSseFramesWithCurrentTaskAndTransition() {
-        TaskSpec spec = taskService.createSpec(new CreateSpecRequest(
-                "/repos/task-stream-test", "SSE", "Verify task frames.", Map.of(), "planner"));
+        TaskSpec spec = taskService.createSpec(
+                new CreateSpecRequest("/repos/task-stream-test", "SSE", "Verify task frames.", Map.of(), "planner"));
         BlockingQueue<String> lines = new LinkedBlockingQueue<>();
         ExecutorService reader = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "task-sse-test-reader");
             thread.setDaemon(true);
+
             return thread;
         });
         HttpClient client = HttpClient.newHttpClient();
@@ -83,8 +82,8 @@ class TaskStreamTest {
         Future<?> pump = reader.submit(() -> {
             try {
                 HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-                try (BufferedReader in = new BufferedReader(
-                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                try (BufferedReader in =
+                        new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = in.readLine()) != null) {
                         lines.add(line);
@@ -98,8 +97,11 @@ class TaskStreamTest {
         try {
             await().atMost(Duration.ofSeconds(5)).until(() -> broadcaster.subscriberCount() >= 1);
 
-            String taskId = taskService.enqueueTask(new EnqueueTaskRequest(
-                    spec.id(), "streamed task", "codex", 4, "planner")).snapshot().task().id();
+            String taskId = taskService
+                    .enqueueTask(new EnqueueTaskRequest(spec.id(), "streamed task", "codex", 4, "planner"))
+                    .snapshot()
+                    .task()
+                    .id();
             taskService.claimNextTask(new ClaimTaskRequest("codex", "agent-a")).orElseThrow();
 
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
@@ -125,12 +127,16 @@ class TaskStreamTest {
     void committedTaskAnnotationsUseNamedSseFramesWithCurrentTaskAndAnnotation() {
         TaskSpec spec = taskService.createSpec(new CreateSpecRequest(
                 "/repos/task-stream-test", "SSE notes", "Verify task note frames.", Map.of(), "planner"));
-        String taskId = taskService.enqueueTask(new EnqueueTaskRequest(
-                spec.id(), "annotated streamed task", "codex", 4, "planner")).snapshot().task().id();
+        String taskId = taskService
+                .enqueueTask(new EnqueueTaskRequest(spec.id(), "annotated streamed task", "codex", 4, "planner"))
+                .snapshot()
+                .task()
+                .id();
         BlockingQueue<String> lines = new LinkedBlockingQueue<>();
         ExecutorService reader = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "task-note-sse-test-reader");
             thread.setDaemon(true);
+
             return thread;
         });
         HttpClient client = HttpClient.newHttpClient();
@@ -142,8 +148,8 @@ class TaskStreamTest {
         Future<?> pump = reader.submit(() -> {
             try {
                 HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-                try (BufferedReader in = new BufferedReader(
-                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                try (BufferedReader in =
+                        new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = in.readLine()) != null) {
                         lines.add(line);
@@ -158,11 +164,7 @@ class TaskStreamTest {
             await().atMost(Duration.ofSeconds(5)).until(() -> broadcaster.subscriberCount() >= 1);
 
             taskService.createAnnotation(new CreateAnnotationRequest(
-                    taskId,
-                    "agent-a",
-                    "progress",
-                    "Persistence is complete.",
-                    Map.of("percent", 60)));
+                    taskId, "agent-a", "progress", "Persistence is complete.", Map.of("percent", 60)));
 
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
                 String stream = String.join("\n", lines);

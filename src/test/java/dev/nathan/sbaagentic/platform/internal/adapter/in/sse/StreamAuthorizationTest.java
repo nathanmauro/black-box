@@ -1,5 +1,9 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -8,9 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 
 class StreamAuthorizationTest {
     @Test
@@ -51,6 +52,7 @@ class StreamAuthorizationTest {
         new StreamController(broadcaster, clock).stream(request);
         var captor = ArgumentCaptor.forClass(BooleanSupplier.class);
         verify(broadcaster).register(captor.capture());
+
         return captor.getValue();
     }
 }

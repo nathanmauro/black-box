@@ -1,14 +1,5 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
-import java.util.HexFormat;
-import java.util.Locale;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.UUID;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +9,14 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
 
 /** Stable namespace and digest before content normalization, redaction, or server defaults. */
 record CaptureIdentity(String source, String clientSessionId, String captureId, String requestHash) {
@@ -35,22 +34,37 @@ record CaptureIdentity(String source, String clientSessionId, String captureId, 
             throw new IllegalArgumentException("captureId must be a UUID in canonical hyphenated form.");
         }
         var event = request.event();
-        if (event.source() == null || event.source().isBlank()
-                || event.clientSessionId() == null || event.clientSessionId().isBlank()
-                || event.eventType() == null || event.eventType().isBlank()) {
+        if (event.source() == null
+                || event.source().isBlank()
+                || event.clientSessionId() == null
+                || event.clientSessionId().isBlank()
+                || event.eventType() == null
+                || event.eventType().isBlank()) {
             throw new IllegalArgumentException("Event source, clientSessionId, and eventType are required.");
         }
         try {
             String source = event.source().trim().toLowerCase(Locale.ROOT);
             String clientSessionId = event.clientSessionId().trim();
-            DigestV1 fingerprinted = new DigestV1(source, clientSessionId,
-                    event.turnId(), event.eventType(), event.role(), event.text(), event.cwd(), event.toolName(),
-                    event.toolInput(), event.toolOutput(), event.metadata(), event.observedAt());
+            DigestV1 fingerprinted = new DigestV1(
+                    source,
+                    clientSessionId,
+                    event.turnId(),
+                    event.eventType(),
+                    event.role(),
+                    event.text(),
+                    event.cwd(),
+                    event.toolName(),
+                    event.toolInput(),
+                    event.toolOutput(),
+                    event.metadata(),
+                    event.observedAt());
             byte[] canonical = JSON.writeValueAsBytes(sorted(JSON.valueToTree(fingerprinted)));
-            String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical));
-            return new CaptureIdentity(source, clientSessionId, UUID.fromString(id).toString(), hash);
-        }
-        catch (JsonProcessingException | NoSuchAlgorithmException ex) {
+            String hash = HexFormat.of()
+                    .formatHex(MessageDigest.getInstance("SHA-256").digest(canonical));
+
+            return new CaptureIdentity(
+                    source, clientSessionId, UUID.fromString(id).toString(), hash);
+        } catch (JsonProcessingException | NoSuchAlgorithmException ex) {
             throw new IllegalStateException("Unable to fingerprint event payload.", ex);
         }
     }
@@ -69,8 +83,7 @@ record CaptureIdentity(String source, String clientSessionId, String captureId, 
             Object toolInput,
             Object toolOutput,
             Map<String, Object> metadata,
-            Instant observedAt) {
-    }
+            Instant observedAt) {}
 
     private static JsonNode sorted(JsonNode value) {
         if (value.isObject()) {
@@ -78,13 +91,16 @@ record CaptureIdentity(String source, String clientSessionId, String captureId, 
             value.fields().forEachRemaining(field -> fields.put(field.getKey(), sorted(field.getValue())));
             ObjectNode result = JSON.createObjectNode();
             fields.forEach(result::set);
+
             return result;
         }
         if (value.isArray()) {
             ArrayNode result = JSON.createArrayNode();
             value.forEach(item -> result.add(sorted(item)));
+
             return result;
         }
+
         return value;
     }
 }

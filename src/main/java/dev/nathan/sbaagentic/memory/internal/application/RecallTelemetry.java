@@ -1,5 +1,10 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.memory.RecallRequestContext;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -8,12 +13,6 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.memory.RecallRequestContext;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Tags;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,48 +26,79 @@ public class RecallTelemetry {
     private final Set<String> projects;
 
     @Autowired
-    public RecallTelemetry(MeterRegistry registry, ObjectMapper mapper,
+    public RecallTelemetry(
+            MeterRegistry registry,
+            ObjectMapper mapper,
             @Value("${sba.memory.recall.telemetry.project-aliases:}") String aliases) {
-        this(registry, fields -> {
-            try {
-                LoggerFactory.getLogger(RecallTelemetry.class).info("{}", mapper.writeValueAsString(fields));
-            } catch (JsonProcessingException ignored) {
-                // Telemetry must never turn a successful recall into an error.
-            }
-        }, aliases);
+        this(
+                registry,
+                fields -> {
+                    try {
+                        LoggerFactory.getLogger(RecallTelemetry.class).info("{}", mapper.writeValueAsString(fields));
+                    } catch (JsonProcessingException ignored) {
+                        // Telemetry must never turn a successful recall into an error.
+                    }
+                },
+                aliases);
     }
 
     RecallTelemetry(MeterRegistry registry, Consumer<Map<String, Object>> sink, String aliases) {
         this.registry = registry;
         this.sink = sink;
-        this.projects = Arrays.stream(aliases.split(",")).map(String::strip)
+        this.projects = Arrays.stream(aliases.split(","))
+                .map(String::strip)
                 .filter(alias -> alias.matches("[a-z][a-z0-9_-]{0,31}"))
-                .limit(100).collect(Collectors.toUnmodifiableSet());
+                .limit(100)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
-    static RecallTelemetry noop() { return new RecallTelemetry(null, fields -> {}, ""); }
+    static RecallTelemetry noop() {
+
+        return new RecallTelemetry(null, fields -> {}, "");
+    }
 
     void complete(Sample sample) {
         // Independent guards: a metrics exporter failure must not discard the log, or vice versa.
-        try { recordMetrics(sample); } catch (RuntimeException ignored) { }
-        try { sink.accept(fields(sample)); } catch (RuntimeException ignored) { }
+        try {
+            recordMetrics(sample);
+        } catch (RuntimeException ignored) {
+        }
+        try {
+            sink.accept(fields(sample));
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private void recordMetrics(Sample s) {
-        if (registry == null) return;
-        Tags tags = Tags.of("transport", s.context.transport(), "client", s.context.client(),
-                "purpose", s.context.purpose(), "mode", s.mode, "outcome", s.outcome);
+        if (registry == null)
+
+            return;
+
+        Tags tags = Tags.of(
+                "transport",
+                s.context.transport(),
+                "client",
+                s.context.client(),
+                "purpose",
+                s.context.purpose(),
+                "mode",
+                s.mode,
+                "outcome",
+                s.outcome);
         registry.counter("blackbox.recall.requests", tags).increment();
         registry.timer("blackbox.recall.duration", tags).record(s.durationNanos, TimeUnit.NANOSECONDS);
         if (s.outcome.equals("success")) {
             registry.summary("blackbox.recall.results", "mode", s.mode).record(s.resultCount);
-            if (s.resultCount == 0) registry.counter("blackbox.recall.empty", "mode", s.mode).increment();
+            if (s.resultCount == 0)
+                registry.counter("blackbox.recall.empty", "mode", s.mode).increment();
         }
-        String semantic = s.semanticCompleted ? (s.semanticContributed ? "contributed" : "completed_empty")
-                : s.fallbackReason;
+        String semantic =
+                s.semanticCompleted ? (s.semanticContributed ? "contributed" : "completed_empty") : s.fallbackReason;
         registry.counter("blackbox.recall.semantic", "outcome", semantic).increment();
-        registry.counter("blackbox.recall.gate.candidates", "disposition", "admitted").increment(s.gateAdmitted);
-        registry.counter("blackbox.recall.gate.candidates", "disposition", "rejected").increment(s.gateRejected);
+        registry.counter("blackbox.recall.gate.candidates", "disposition", "admitted")
+                .increment(s.gateAdmitted);
+        registry.counter("blackbox.recall.gate.candidates", "disposition", "rejected")
+                .increment(s.gateRejected);
     }
 
     private Map<String, Object> fields(Sample s) {
@@ -109,17 +139,27 @@ public class RecallTelemetry {
         f.put("result_scope", "service");
         f.put("no_results", s.outcome.equals("success") && s.resultCount == 0);
         f.put("error_category", s.errorCategory);
+
         return f;
     }
 
-    private static double millis(long nanos) { return nanos / 1_000_000.0; }
+    private static double millis(long nanos) {
+
+        return nanos / 1_000_000.0;
+    }
 
     static final class Sample {
         final RecallRequestContext context;
         final String scopeCategory;
         final long started = System.nanoTime();
         long durationNanos, lexicalNanos, embeddingProbeNanos, embeddingNanos, vectorNanos, vectorFetchNanos;
-        int lexicalCandidates, semanticCandidates, gateAdmitted, gateRejected, semanticHits, semanticReturned, resultCount;
+        int lexicalCandidates,
+                semanticCandidates,
+                gateAdmitted,
+                gateRejected,
+                semanticHits,
+                semanticReturned,
+                resultCount;
         double relevanceFloor;
         boolean semanticAttempted, semanticCompleted, semanticContributed;
         String outcome = "error", mode = "lexical", fallbackReason = "none", errorCategory = "none";

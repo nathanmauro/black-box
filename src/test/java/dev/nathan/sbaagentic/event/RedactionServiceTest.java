@@ -1,17 +1,13 @@
 package dev.nathan.sbaagentic.recording;
 
-import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
+import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-
-import dev.nathan.sbaagentic.recording.IngestionProperties;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 class RedactionServiceTest {
 
@@ -46,10 +42,8 @@ class RedactionServiceTest {
     void redactsPrefixedAndHyphenatedKeyNames() {
         RedactionService redactionService = redactionService();
 
-        assertThat(redactionService.redact("MY_SECRET_KEY=abcd1234efgh"))
-                .isEqualTo("MY_SECRET_KEY=[REDACTED]");
-        assertThat(redactionService.redact("DB-ACCESS-TOKEN: hunter22hunter"))
-                .isEqualTo("DB-ACCESS-TOKEN: [REDACTED]");
+        assertThat(redactionService.redact("MY_SECRET_KEY=abcd1234efgh")).isEqualTo("MY_SECRET_KEY=[REDACTED]");
+        assertThat(redactionService.redact("DB-ACCESS-TOKEN: hunter22hunter")).isEqualTo("DB-ACCESS-TOKEN: [REDACTED]");
     }
 
     @Test
@@ -60,8 +54,7 @@ class RedactionServiceTest {
         // shape plus the scan clip must stay comfortably under the timeout.
         String hostile = "token ".repeat(17_000);
 
-        String redacted = assertTimeoutPreemptively(Duration.ofSeconds(2),
-                () -> redactionService.redact(hostile));
+        String redacted = assertTimeoutPreemptively(Duration.ofSeconds(2), () -> redactionService.redact(hostile));
 
         assertThat(redacted).contains("token");
     }
@@ -92,8 +85,10 @@ class RedactionServiceTest {
     void redactsDeepStringValuesAndPreservesStructure() {
         RedactionService redactionService = redactionService();
         Map<String, Object> input = Map.of(
-                "stdout", "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB",
-                "nested", Map.of("list", List.of("xoxb-1234567890-abcdefghij")));
+                "stdout",
+                "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB",
+                "nested",
+                Map.of("list", List.of("xoxb-1234567890-abcdefghij")));
 
         Object redacted = redactionService.redactDeep(input);
 
@@ -101,8 +96,7 @@ class RedactionServiceTest {
         Map<String, Object> redactedMap = (Map<String, Object>) redacted;
         assertThat(redactedMap).containsEntry("stdout", "[REDACTED]");
         assertThat(redactedMap.get("nested")).isInstanceOf(Map.class);
-        assertThat((Map<String, Object>) redactedMap.get("nested"))
-                .containsEntry("list", List.of("[REDACTED]"));
+        assertThat((Map<String, Object>) redactedMap.get("nested")).containsEntry("list", List.of("[REDACTED]"));
     }
 
     @Test
@@ -121,8 +115,7 @@ class RedactionServiceTest {
     void leavesBenignTextUntouched() {
         RedactionService redactionService = redactionService();
 
-        assertThat(redactionService.redact("the token bucket algorithm"))
-                .isEqualTo("the token bucket algorithm");
+        assertThat(redactionService.redact("the token bucket algorithm")).isEqualTo("the token bucket algorithm");
         assertThat(redactionService.redact("password requirements documented"))
                 .isEqualTo("password requirements documented");
     }
@@ -138,6 +131,7 @@ class RedactionServiceTest {
     }
 
     private static RedactionService redactionService() {
+
         return new RedactionService(new IngestionProperties());
     }
 }

@@ -1,5 +1,13 @@
 package dev.nathan.sbaagentic.memory;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddableText;
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -8,36 +16,22 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
-import dev.nathan.sbaagentic.memory.internal.domain.EmbeddableText;
-import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "SBA_EVAL_LIVE_MODEL", matches = "true")
 class RecallCosineDistributionEvaluationTest {
 
     private static final int PRINT_TOP_K = 50;
-    private static final TypeReference<List<EvalQuery>> QUERY_LIST = new TypeReference<>() {
-    };
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
+    private static final TypeReference<List<EvalQuery>> QUERY_LIST = new TypeReference<>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private static final List<JunkQuery> JUNK_QUERIES = List.of(
             new JunkQuery("junk-cooking-01", "how long should sourdough focaccia proof before baking"),
             new JunkQuery("junk-cooking-02", "what spices belong in a slow cooker chicken tikka masala"),
@@ -63,9 +57,8 @@ class RecallCosineDistributionEvaluationTest {
     void printsCosineDistributionForEvalTargetsAndJunkQueries() throws IOException {
         Assumptions.assumeTrue(embedder.available(), "live memory embedding model is not reachable");
 
-        List<EvalQuery> evalQueries = objectMapper.readValue(
-                new ClassPathResource("eval/recall-queries.json").getInputStream(),
-                QUERY_LIST);
+        List<EvalQuery> evalQueries =
+                objectMapper.readValue(new ClassPathResource("eval/recall-queries.json").getInputStream(), QUERY_LIST);
         assertThat(evalQueries).hasSize(6);
 
         List<Candidate> corpus = embedCorpus(loadCorpus());
@@ -104,6 +97,7 @@ class RecallCosineDistributionEvaluationTest {
 
     private List<Candidate> loadCorpus() {
         try {
+
             return jdbcTemplate.query("""
                     SELECT id, event_type, text, metadata_json
                       FROM agent_events
@@ -111,65 +105,59 @@ class RecallCosineDistributionEvaluationTest {
                            IN ('decision', 'handoff', 'observation')
                        AND trim(coalesce(text, '')) <> ''
                      ORDER BY observed_at DESC, id DESC
-                    """,
-                    (rs, rowNum) -> {
-                        String text = rs.getString("text");
-                        String metadataJson = rs.getString("metadata_json");
-                        String document = EmbeddableText.forEvent(
-                                rs.getString("event_type"),
-                                text,
-                                fromJsonMap(metadataJson));
-                        return new Candidate(
-                                rs.getString("id"),
-                                rs.getString("event_type"),
-                                text == null ? "" : text,
-                                document,
-                                null);
-                    });
-        }
-        catch (DataAccessException ex) {
+                    """, (rs, rowNum) -> {
+                String text = rs.getString("text");
+                String metadataJson = rs.getString("metadata_json");
+                String document = EmbeddableText.forEvent(rs.getString("event_type"), text, fromJsonMap(metadataJson));
+
+                return new Candidate(
+                        rs.getString("id"), rs.getString("event_type"), text == null ? "" : text, document, null);
+            });
+        } catch (DataAccessException ex) {
             Assumptions.assumeTrue(false, () -> "configured datasource unavailable: " + ex.getMessage());
+
             return List.of();
         }
     }
 
     private List<Candidate> embedCorpus(List<Candidate> corpus) {
         try {
+
             return corpus.stream()
                     .filter(candidate -> !candidate.documentText().isBlank())
                     .map(candidate -> candidate.withVector(embedder.embedDocument(candidate.documentText())))
                     .toList();
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             Assumptions.assumeTrue(false, () -> "live memory embedding model unavailable: " + ex.getMessage());
+
             return List.of();
         }
     }
 
     private QueryMeasurement measure(
-            String queryId,
-            String queryType,
-            String query,
-            Pattern targetPattern,
-            List<Candidate> corpus) {
+            String queryId, String queryType, String query, Pattern targetPattern, List<Candidate> corpus) {
         try {
             EmbeddingVector queryVector = embedder.embedQuery(query);
             List<ScoredCandidate> ranked = corpus.stream()
                     .map(candidate -> new ScoredCandidate(candidate, queryVector.cosineSimilarity(candidate.vector())))
-                    .sorted(Comparator.comparingDouble(ScoredCandidate::score).reversed()
+                    .sorted(Comparator.comparingDouble(ScoredCandidate::score)
+                            .reversed()
                             .thenComparing(scored -> scored.candidate().id()))
                     .toList();
             ScoredCandidate targetMatch = null;
             if (targetPattern != null) {
                 targetMatch = ranked.stream()
-                        .filter(scored -> targetPattern.matcher(scored.candidate().eventText()).find())
+                        .filter(scored -> targetPattern
+                                .matcher(scored.candidate().eventText())
+                                .find())
                         .findFirst()
                         .orElse(null);
             }
+
             return new QueryMeasurement(queryId, queryType, query, targetPattern, ranked, targetMatch);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             Assumptions.assumeTrue(false, () -> "live memory embedding model unavailable: " + ex.getMessage());
+
             return new QueryMeasurement(queryId, queryType, query, targetPattern, List.of(), null);
         }
     }
@@ -179,8 +167,12 @@ class RecallCosineDistributionEvaluationTest {
         for (int index = 0; index < rows; index++) {
             ScoredCandidate scored = measurement.ranked().get(index);
             boolean target = measurement.targetPattern() != null
-                    && measurement.targetPattern().matcher(scored.candidate().eventText()).find();
-            System.out.printf(Locale.ROOT,
+                    && measurement
+                            .targetPattern()
+                            .matcher(scored.candidate().eventText())
+                            .find();
+            System.out.printf(
+                    Locale.ROOT,
                     "COSINE_RANK queryId=%s queryType=%s rank=%d cosine=%s eventId=%s target=%s%n",
                     measurement.queryId(),
                     measurement.queryType(),
@@ -192,33 +184,46 @@ class RecallCosineDistributionEvaluationTest {
     }
 
     private static void printMax(QueryMeasurement measurement) {
-        ScoredCandidate max = measurement.ranked().isEmpty() ? null : measurement.ranked().getFirst();
+        ScoredCandidate max =
+                measurement.ranked().isEmpty() ? null : measurement.ranked().getFirst();
         int targetRank = targetRank(measurement);
-        System.out.printf(Locale.ROOT,
+        System.out.printf(
+                Locale.ROOT,
                 "COSINE_MAX queryId=%s queryType=%s maxCosine=%s eventId=%s targetRank=%d targetCosine=%s%n",
                 measurement.queryId(),
                 measurement.queryType(),
                 max == null ? "null" : format(max.score()),
                 max == null ? "none" : max.candidate().id(),
                 targetRank,
-                measurement.targetMatch() == null ? "null" : format(measurement.targetMatch().score()));
+                measurement.targetMatch() == null
+                        ? "null"
+                        : format(measurement.targetMatch().score()));
     }
 
     private static int targetRank(QueryMeasurement measurement) {
         if (measurement.targetMatch() == null) {
+
             return 0;
         }
         for (int index = 0; index < measurement.ranked().size(); index++) {
-            if (measurement.ranked().get(index).candidate().id().equals(measurement.targetMatch().candidate().id())) {
+            if (measurement
+                    .ranked()
+                    .get(index)
+                    .candidate()
+                    .id()
+                    .equals(measurement.targetMatch().candidate().id())) {
+
                 return index + 1;
             }
         }
+
         return 0;
     }
 
     private static void printSummary(String group, List<Double> values) {
         List<Double> sorted = values.stream().sorted().toList();
-        System.out.printf(Locale.ROOT,
+        System.out.printf(
+                Locale.ROOT,
                 "COSINE_SUMMARY group=%s count=%d min=%s p50=%s p90=%s max=%s values=%s%n",
                 group,
                 sorted.size(),
@@ -226,54 +231,55 @@ class RecallCosineDistributionEvaluationTest {
                 percentile(sorted, 0.5),
                 percentile(sorted, 0.9),
                 percentile(sorted, 1.0),
-                sorted.stream().map(RecallCosineDistributionEvaluationTest::format).collect(Collectors.joining(",")));
+                sorted.stream()
+                        .map(RecallCosineDistributionEvaluationTest::format)
+                        .collect(Collectors.joining(",")));
     }
 
     private static String percentile(List<Double> sorted, double percentile) {
         if (sorted.isEmpty()) {
+
             return "null";
         }
         int index = (int) Math.ceil(percentile * sorted.size()) - 1;
         index = Math.max(0, Math.min(sorted.size() - 1, index));
+
         return format(sorted.get(index));
     }
 
     private static String format(double value) {
+
         return String.format(Locale.ROOT, "%.6f", value);
     }
 
     private Map<String, Object> fromJsonMap(String json) {
         if (json == null || json.isBlank()) {
+
             return Map.of();
         }
         try {
+
             return objectMapper.readValue(json, MAP_TYPE);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
+
             return Map.of();
         }
     }
 
-    private record EvalQuery(String query, String expect) {
-    }
+    private record EvalQuery(String query, String expect) {}
 
-    private record JunkQuery(String id, String query) {
-    }
+    private record JunkQuery(String id, String query) {}
 
     private record Candidate(
-            String id,
-            String eventType,
-            String eventText,
-            String documentText,
-            EmbeddingVector vector) {
+            String id, String eventType, String eventText, String documentText, EmbeddingVector vector) {
 
         private Candidate withVector(EmbeddingVector nextVector) {
+
             return new Candidate(id, eventType, eventText, documentText, nextVector);
         }
     }
 
-    private record ScoredCandidate(Candidate candidate, double score) {
-    }
+    private record ScoredCandidate(Candidate candidate, double score) {}
 
     private record QueryMeasurement(
             String queryId,
@@ -281,6 +287,5 @@ class RecallCosineDistributionEvaluationTest {
             String query,
             Pattern targetPattern,
             List<ScoredCandidate> ranked,
-            ScoredCandidate targetMatch) {
-    }
+            ScoredCandidate targetMatch) {}
 }

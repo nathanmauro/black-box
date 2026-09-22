@@ -31,25 +31,24 @@ public final class RunnerInstanceLock implements AutoCloseable {
             Files.createDirectories(parent);
         }
 
-        FileChannel channel = FileChannel.open(
-                lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
         try {
             FileLock lock = channel.tryLock();
             if (lock == null) {
                 closeQuietly(channel);
+
                 return Optional.empty();
             }
+
             return Optional.of(new RunnerInstanceLock(channel, lock));
-        }
-        catch (OverlappingFileLockException ex) {
+        } catch (OverlappingFileLockException ex) {
             closeQuietly(channel);
+
             return Optional.empty();
-        }
-        catch (IOException | RuntimeException ex) {
+        } catch (IOException | RuntimeException ex) {
             try {
                 channel.close();
-            }
-            catch (IOException closeFailure) {
+            } catch (IOException closeFailure) {
                 ex.addSuppressed(closeFailure);
             }
             throw ex;
@@ -61,19 +60,16 @@ public final class RunnerInstanceLock implements AutoCloseable {
         IOException failure = null;
         try {
             lock.release();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             failure = ex;
         }
 
         try {
             channel.close();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             if (failure == null) {
                 failure = ex;
-            }
-            else {
+            } else {
                 failure.addSuppressed(ex);
             }
         }
@@ -86,8 +82,7 @@ public final class RunnerInstanceLock implements AutoCloseable {
     private static void closeQuietly(FileChannel channel) {
         try {
             channel.close();
-        }
-        catch (IOException ignored) {
+        } catch (IOException ignored) {
             // The lock was not acquired, so there is no owned lock to release.
         }
     }

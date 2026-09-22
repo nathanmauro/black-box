@@ -1,18 +1,5 @@
 package dev.nathan.sbaagentic.search;
 
-import java.util.List;
-import java.util.Map;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.memory.MemoryEventReader;
-import dev.nathan.sbaagentic.memory.ElasticHealth;
-import dev.nathan.sbaagentic.memory.SearchResponse;
-import dev.nathan.sbaagentic.memory.internal.application.SearchService;
-import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
-import dev.nathan.sbaagentic.project.ProjectScopeOperations;
-
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -22,6 +9,17 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.SearchService;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
 
 class SearchServiceTest {
 
@@ -35,7 +33,8 @@ class SearchServiceTest {
         when(elastic.health()).thenReturn(new ElasticHealth(true, true, "sba-agentic-events", "reachable"));
         SearchService service = new SearchService(repository, elastic, projectScopes);
 
-        SearchResponse exact = service.search("kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
+        SearchResponse exact =
+                service.search("kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         SearchResponse grouped = service.search("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", 25);
         SearchResponse negative = service.search("NOT kind:PostToolUse project:sba-agentic", 25);
         SearchResponse session = service.search("session:abc failing", 25);
@@ -46,10 +45,11 @@ class SearchServiceTest {
         assertThat(negative.elastic()).isEmpty();
         assertThat(session.elastic()).isEmpty();
         assertThat(timed.elastic()).isEmpty();
-        verify(repository).searchEvents(
-                "kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of(), 25);
-        verify(repository).searchEvents(
-                "project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of("/project"), 25);
+        verify(repository)
+                .searchEvents(
+                        "kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of(), 25);
+        verify(repository)
+                .searchEvents("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of("/project"), 25);
         verify(repository).searchEvents("NOT kind:PostToolUse project:sba-agentic", List.of(), 25);
         verify(repository).searchEvents("session:abc failing", List.of(), 25);
         verify(repository).searchEvents("since:2026-08-01 deploy", List.of(), 25);

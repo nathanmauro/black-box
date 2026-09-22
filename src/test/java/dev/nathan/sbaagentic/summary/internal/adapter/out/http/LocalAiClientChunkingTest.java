@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.summary.internal.adapter.out.http;
 
-import java.util.List;
-
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import org.junit.jupiter.api.Test;
 
 /**
  * The map-reduce safety net: {@link LocalAiClient#splitIntoChunks} and {@link LocalAiClient#clampToBudget}
@@ -21,8 +20,8 @@ class LocalAiClientChunkingTest {
 
     @Test
     void clampKeepsHeadAndTailWithinBudgetAndMarksTheElision() {
-        String head = "HEAD".repeat(200);   // 800 chars
-        String tail = "TAIL".repeat(200);   // 800 chars
+        String head = "HEAD".repeat(200); // 800 chars
+        String tail = "TAIL".repeat(200); // 800 chars
         String text = head + "x".repeat(50_000) + tail;
 
         String clamped = LocalAiClient.clampToBudget(text, 4_000);

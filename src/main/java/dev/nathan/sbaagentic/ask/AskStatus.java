@@ -9,5 +9,4 @@ public record AskStatus(
         int embeddingDimensions,
         int defaultAskCitations,
         int defaultRetrieveResults,
-        String retrievalMode) {
-}
+        String retrievalMode) {}

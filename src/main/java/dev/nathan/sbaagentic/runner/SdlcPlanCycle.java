@@ -1,7 +1,6 @@
 package dev.nathan.sbaagentic.runner;
 
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -13,11 +12,7 @@ public class SdlcPlanCycle {
         this.runExecutor = runExecutor;
     }
 
-    public void execute(
-            TaskChange claimedPlanTask,
-            RunnerConfig config,
-            String actorId,
-            String orchestratorSessionId) {
+    public void execute(TaskChange claimedPlanTask, RunnerConfig config, String actorId, String orchestratorSessionId) {
         runExecutor.executePlan(claimedPlanTask, config, actorId, orchestratorSessionId);
     }
 }

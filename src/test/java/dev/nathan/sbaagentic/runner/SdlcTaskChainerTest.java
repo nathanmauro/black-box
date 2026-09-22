@@ -1,7 +1,15 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,18 +17,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class SdlcTaskChainerTest {
 
@@ -37,13 +34,10 @@ class SdlcTaskChainerTest {
             try {
                 ready.countDown();
                 start.await();
-                chainer.ensureTask(
-                        "spec-1", "Story task", "sdlc:review", 10, "blackbox-runner");
-            }
-            catch (Throwable ex) {
+                chainer.ensureTask("spec-1", "Story task", "sdlc:review", 10, "blackbox-runner");
+            } catch (Throwable ex) {
                 failure.compareAndSet(null, ex);
-            }
-            finally {
+            } finally {
                 finished.countDown();
             }
         };
@@ -90,16 +84,17 @@ class SdlcTaskChainerTest {
 
         @Override
         public List<TaskSnapshot> listTasks(String status, String lane) {
+
             return tasks.stream()
                     .filter(snapshot -> status == null
                             || status.equals(snapshot.task().status().value()))
-                    .filter(snapshot -> lane == null || lane.equals(snapshot.task().lane()))
+                    .filter(snapshot ->
+                            lane == null || lane.equals(snapshot.task().lane()))
                     .toList();
         }
 
         @Override
-        public TaskChange enqueueTask(
-                String specId, String title, String lane, int priority, String actor) {
+        public TaskChange enqueueTask(String specId, String title, String lane, int priority, String actor) {
             int sequence = enqueueCount.incrementAndGet();
             Task task = new Task(
                     "successor-" + sequence,
@@ -116,6 +111,7 @@ class SdlcTaskChainerTest {
                     NOW,
                     NOW);
             tasks.add(new TaskSnapshot(task, spec));
+
             return null;
         }
     }

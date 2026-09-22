@@ -1,5 +1,10 @@
 package dev.nathan.sbaagentic.project.internal.adapter.out.process;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
+
+import dev.nathan.sbaagentic.project.internal.application.port.CommandLaunchException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -8,15 +13,8 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
-
-import dev.nathan.sbaagentic.project.internal.application.port.CommandLaunchException;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.awaitility.Awaitility.await;
 
 class ProcessBuilderCommandLauncherTest {
 
@@ -34,11 +32,13 @@ class ProcessBuilderCommandLauncherTest {
         String shellLooking = "safe; touch " + sentinel;
         String substitution = "$(touch " + sentinel + ")";
 
-        new ProcessBuilderCommandLauncher().launch(
-                List.of(script.toString(), "space name", shellLooking, substitution, "line\nbreak"),
-                Duration.ofSeconds(2));
+        new ProcessBuilderCommandLauncher()
+                .launch(
+                        List.of(script.toString(), "space name", shellLooking, substitution, "line\nbreak"),
+                        Duration.ofSeconds(2));
 
-        List<String> argv = Arrays.stream(Files.readString(log, StandardCharsets.UTF_8).split("\\x00", -1))
+        List<String> argv = Arrays.stream(
+                        Files.readString(log, StandardCharsets.UTF_8).split("\\x00", -1))
                 .filter(value -> !value.isEmpty())
                 .toList();
         assertThat(argv).containsExactly("space name", shellLooking, substitution, "line\nbreak");
@@ -49,8 +49,8 @@ class ProcessBuilderCommandLauncherTest {
     void reportsImmediateNonZeroExit() throws Exception {
         Path script = executable("fail.sh", "#!/bin/sh\nexit 7\n");
 
-        assertThatThrownBy(() -> new ProcessBuilderCommandLauncher()
-                .launch(List.of(script.toString()), Duration.ofSeconds(2)))
+        assertThatThrownBy(() ->
+                        new ProcessBuilderCommandLauncher().launch(List.of(script.toString()), Duration.ofSeconds(2)))
                 .isInstanceOf(CommandLaunchException.class)
                 .hasMessageContaining("7");
     }
@@ -60,8 +60,8 @@ class ProcessBuilderCommandLauncherTest {
         Path pids = tempDir.resolve("timeout-pids");
         Path script = hangingScript("timeout.sh", pids);
 
-        assertThatThrownBy(() -> new ProcessBuilderCommandLauncher()
-                .launch(List.of(script.toString()), Duration.ofMillis(200)))
+        assertThatThrownBy(() ->
+                        new ProcessBuilderCommandLauncher().launch(List.of(script.toString()), Duration.ofMillis(200)))
                 .isInstanceOf(CommandLaunchException.class)
                 .hasMessageContaining("timed out");
 
@@ -75,10 +75,8 @@ class ProcessBuilderCommandLauncherTest {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread launcherThread = new Thread(() -> {
             try {
-                new ProcessBuilderCommandLauncher()
-                        .launch(List.of(script.toString()), Duration.ofSeconds(30));
-            }
-            catch (Throwable throwable) {
+                new ProcessBuilderCommandLauncher().launch(List.of(script.toString()), Duration.ofSeconds(30));
+            } catch (Throwable throwable) {
                 failure.set(throwable);
             }
         });
@@ -88,9 +86,7 @@ class ProcessBuilderCommandLauncherTest {
         launcherThread.interrupt();
         await().atMost(Duration.ofSeconds(2)).until(() -> !launcherThread.isAlive());
 
-        assertThat(failure.get())
-                .isInstanceOf(CommandLaunchException.class)
-                .hasMessageContaining("Interrupted");
+        assertThat(failure.get()).isInstanceOf(CommandLaunchException.class).hasMessageContaining("Interrupted");
         assertThat(launcherThread.isInterrupted()).isTrue();
         assertStopped(pids);
     }
@@ -99,10 +95,12 @@ class ProcessBuilderCommandLauncherTest {
         Path script = tempDir.resolve(name);
         Files.writeString(script, body);
         Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"));
+
         return script;
     }
 
     private Path hangingScript(String name, Path pids) throws Exception {
+
         return executable(name, """
                 #!/bin/sh
                 sleep 30 &

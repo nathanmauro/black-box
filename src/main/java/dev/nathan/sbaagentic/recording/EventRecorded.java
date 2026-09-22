@@ -13,14 +13,17 @@ public final class EventRecorded {
     }
 
     public AgentSession session() {
+
         return session;
     }
 
     public AgentEvent event() {
+
         return event;
     }
 
     public boolean indexed() {
+
         return indexed;
     }
 

@@ -1,58 +1,31 @@
 package dev.nathan.sbaagentic.contracts;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import static java.util.Map.entry;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.summary.AiHealth;
-import dev.nathan.sbaagentic.summary.ExportTarget;
-import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
-import dev.nathan.sbaagentic.summary.SummaryExport;
 import dev.nathan.sbaagentic.ask.AskCitation;
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
 import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
-import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
-import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
-import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
+import dev.nathan.sbaagentic.judgment.EventJudgment;
+import dev.nathan.sbaagentic.memory.CompactSearchResult;
+import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
-import dev.nathan.sbaagentic.workflow.DagEdge;
-import dev.nathan.sbaagentic.workflow.DagNode;
-import dev.nathan.sbaagentic.workflow.DagResponse;
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.DashboardStats;
-import dev.nathan.sbaagentic.recording.EventFeedItem;
-import dev.nathan.sbaagentic.recording.EventFeedResponse;
-import dev.nathan.sbaagentic.recording.EventIngestRequest;
-import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
-import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
-import dev.nathan.sbaagentic.judgment.EventJudgment;
-import dev.nathan.sbaagentic.recording.ProjectionPath;
-import dev.nathan.sbaagentic.recording.StorageStats;
-import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
-import dev.nathan.sbaagentic.workflow.LinkErrorCode;
-import dev.nathan.sbaagentic.workflow.LinkType;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
-import dev.nathan.sbaagentic.workflow.SessionLinkView;
-import dev.nathan.sbaagentic.workflow.SessionRef;
-import dev.nathan.sbaagentic.project.ProjectAlias;
-import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
+import dev.nathan.sbaagentic.platform.internal.adapter.in.web.ApiExceptionHandler;
 import dev.nathan.sbaagentic.project.CodeNavigationResult;
 import dev.nathan.sbaagentic.project.CodeProjectScope;
 import dev.nathan.sbaagentic.project.CodeReference;
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
@@ -66,14 +39,37 @@ import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
 import dev.nathan.sbaagentic.project.TrajectoryCapture;
 import dev.nathan.sbaagentic.project.TrajectoryPath;
 import dev.nathan.sbaagentic.project.TrajectoryTask;
-import dev.nathan.sbaagentic.runner.RunnerConfig;
-import dev.nathan.sbaagentic.memory.ElasticHealth;
-import dev.nathan.sbaagentic.memory.SearchResponse;
-import dev.nathan.sbaagentic.memory.CompactSearchResult;
+import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
+import dev.nathan.sbaagentic.recording.DashboardStats;
+import dev.nathan.sbaagentic.recording.EventFeedItem;
+import dev.nathan.sbaagentic.recording.EventFeedResponse;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
+import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
+import dev.nathan.sbaagentic.recording.StorageStats;
+import dev.nathan.sbaagentic.runner.RunnerConfig;
+import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.ExportTarget;
+import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
+import dev.nathan.sbaagentic.summary.SummaryExport;
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
+import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.workflow.DagEdge;
+import dev.nathan.sbaagentic.workflow.DagNode;
+import dev.nathan.sbaagentic.workflow.DagResponse;
+import dev.nathan.sbaagentic.workflow.LinkErrorCode;
+import dev.nathan.sbaagentic.workflow.LinkType;
+import dev.nathan.sbaagentic.workflow.SessionLink;
+import dev.nathan.sbaagentic.workflow.SessionLinkView;
+import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
+import dev.nathan.sbaagentic.workflow.SessionRef;
 import dev.nathan.sbaagentic.workflow.SpecStatus;
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
@@ -84,15 +80,15 @@ import dev.nathan.sbaagentic.workflow.TaskEventType;
 import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 import dev.nathan.sbaagentic.workflow.TaskSpec;
 import dev.nathan.sbaagentic.workflow.TaskStatus;
-import dev.nathan.sbaagentic.platform.internal.adapter.in.web.ApiExceptionHandler;
 import dev.nathan.sbaagentic.workflow.internal.adapter.in.web.TaskController;
-
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
-
-import static java.util.Map.entry;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class WireContractFixtureTest {
 
@@ -103,9 +99,10 @@ class WireContractFixtureTest {
         JsonNode records = fixture().path("records");
         assertThat(toSet(records.fieldNames())).isEqualTo(recordClasses().keySet());
 
-        recordClasses().forEach((name, type) -> assertThat(toSet(records.path(name).fieldNames()))
-                .as(name)
-                .isEqualTo(serializedProperties(type)));
+        recordClasses()
+                .forEach((name, type) -> assertThat(toSet(records.path(name).fieldNames()))
+                        .as(name)
+                        .isEqualTo(serializedProperties(type)));
     }
 
     @Test
@@ -136,40 +133,44 @@ class WireContractFixtureTest {
                 entry("task.note", StreamEvents.TaskNoted.class));
         JsonNode sseFrames = fixture.path("sseFrames");
         assertThat(toSet(sseFrames.fieldNames())).isEqualTo(frames.keySet());
-        frames.forEach((name, type) -> assertThat(toSet(sseFrames.path(name).fieldNames()))
-                .as(name)
-                .isEqualTo(serializedProperties(type)));
+        frames.forEach((name, type) ->
+                assertThat(toSet(sseFrames.path(name).fieldNames())).as(name).isEqualTo(serializedProperties(type)));
 
         JsonNode runnerFixture = fixture.path("runnerConfig");
         RunnerConfig config = objectMapper.treeToValue(runnerFixture, RunnerConfig.class);
-        assertThat(toSet(runnerFixture.fieldNames())).containsExactlyInAnyOrder(
-                "concurrency", "engines", "notify", "repos");
-        assertThat(toSet(runnerFixture.path("repos").get(0).fieldNames())).containsExactlyInAnyOrder(
-                "path", "push", "auto_merge", "verify", "danger");
+        assertThat(toSet(runnerFixture.fieldNames()))
+                .containsExactlyInAnyOrder("concurrency", "engines", "notify", "repos");
+        assertThat(toSet(runnerFixture.path("repos").get(0).fieldNames()))
+                .containsExactlyInAnyOrder("path", "push", "auto_merge", "verify", "danger");
         assertThat(config.notifyCommand()).isEqualTo("notify-send refactor-complete");
         assertThat(config.repos().get(0).autoMerge()).isTrue();
     }
 
     private JsonNode fixture() throws IOException {
+
         return objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream());
     }
 
     private Set<String> serializedProperties(Class<?> type) {
         Set<String> properties = new TreeSet<>();
-        objectMapper.getSerializationConfig()
+        objectMapper
+                .getSerializationConfig()
                 .introspect(objectMapper.constructType(type))
                 .findProperties()
                 .forEach(property -> properties.add(property.getName()));
+
         return properties;
     }
 
     private static Set<String> toSet(java.util.Iterator<String> names) {
         Set<String> values = new TreeSet<>();
         names.forEachRemaining(values::add);
+
         return values;
     }
 
     private static Map<String, Class<?>> recordClasses() {
+
         return new LinkedHashMap<>(Map.ofEntries(
                 entry("CompactSearchResult", CompactSearchResult.class),
                 entry("CompactSearchResult.Hit", CompactSearchResult.Hit.class),

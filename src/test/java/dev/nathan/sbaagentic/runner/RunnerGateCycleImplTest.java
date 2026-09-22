@@ -1,26 +1,5 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-
-import dev.nathan.sbaagentic.runner.gate.GateEvaluator;
-import dev.nathan.sbaagentic.runner.gate.GateResult;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -28,6 +7,24 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import dev.nathan.sbaagentic.runner.gate.GateEvaluator;
+import dev.nathan.sbaagentic.runner.gate.GateResult;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class RunnerGateCycleImplTest {
@@ -58,22 +55,23 @@ class RunnerGateCycleImplTest {
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
+        verify(apiClient, times(1)).enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
         verify(apiClient, times(1))
-                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
-        verify(apiClient, times(1)).annotate(
-                TASK_ID,
-                ACTOR_ID,
-                "progress",
-                "Gate passed: all checks green | resolved verify: mvn test",
-                Map.of("resolvedVerify", "mvn test"));
-        verify(apiClient, times(1)).completeTask(
-                TASK_ID,
-                ACTOR_ID,
-                "cli",
-                "blackbox-runner-gate-" + TASK_ID,
-                "Gate passed; auto task enqueued.",
-                List.of(),
-                "Auto-lane execution will pick this up next.");
+                .annotate(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "progress",
+                        "Gate passed: all checks green | resolved verify: mvn test",
+                        Map.of("resolvedVerify", "mvn test"));
+        verify(apiClient, times(1))
+                .completeTask(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "cli",
+                        "blackbox-runner-gate-" + TASK_ID,
+                        "Gate passed; auto task enqueued.",
+                        List.of(),
+                        "Auto-lane execution will pick this up next.");
         verify(apiClient, never()).updateTaskStatus(any(), any(), any(), any());
     }
 
@@ -85,18 +83,17 @@ class RunnerGateCycleImplTest {
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
+        verify(apiClient, times(1)).enqueueTask(SPEC_ID, "Implement story", "sdlc:plan", 10, ACTOR_ID);
+        verify(apiClient, never()).enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
         verify(apiClient, times(1))
-                .enqueueTask(SPEC_ID, "Implement story", "sdlc:plan", 10, ACTOR_ID);
-        verify(apiClient, never())
-                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
-        verify(apiClient, times(1)).completeTask(
-                TASK_ID,
-                ACTOR_ID,
-                "cli",
-                "blackbox-runner-gate-" + TASK_ID,
-                "Gate passed; SDLC plan task enqueued.",
-                List.of(),
-                "SDLC plan-lane execution will pick this up next.");
+                .completeTask(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "cli",
+                        "blackbox-runner-gate-" + TASK_ID,
+                        "Gate passed; SDLC plan task enqueued.",
+                        List.of(),
+                        "SDLC plan-lane execution will pick this up next.");
     }
 
     @Test
@@ -104,27 +101,28 @@ class RunnerGateCycleImplTest {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
                 .thenReturn(new GateResult(true, List.of(), "mvn test", null, "sdlc"));
-        when(apiClient.listTasks(null, "sdlc:plan")).thenReturn(List.of(
-                existingTask("auto-task-1", "auto"),
-                existingTask("plan-task-1", "sdlc:plan")));
+        when(apiClient.listTasks(null, "sdlc:plan"))
+                .thenReturn(List.of(existingTask("auto-task-1", "auto"), existingTask("plan-task-1", "sdlc:plan")));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
         verify(apiClient, never()).enqueueTask(any(), any(), any(), anyInt(), any());
-        verify(apiClient).annotate(
-                TASK_ID,
-                ACTOR_ID,
-                "progress",
-                "Gate passed; existing SDLC plan task plan-task-1 reused.",
-                Map.of("planTaskId", "plan-task-1"));
-        verify(apiClient).completeTask(
-                TASK_ID,
-                ACTOR_ID,
-                "cli",
-                "blackbox-runner-gate-" + TASK_ID,
-                "Gate passed; existing SDLC plan task reused.",
-                List.of(),
-                "SDLC plan-lane execution will pick this up next.");
+        verify(apiClient)
+                .annotate(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "progress",
+                        "Gate passed; existing SDLC plan task plan-task-1 reused.",
+                        Map.of("planTaskId", "plan-task-1"));
+        verify(apiClient)
+                .completeTask(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "cli",
+                        "blackbox-runner-gate-" + TASK_ID,
+                        "Gate passed; existing SDLC plan task reused.",
+                        List.of(),
+                        "SDLC plan-lane execution will pick this up next.");
     }
 
     @Test
@@ -133,17 +131,12 @@ class RunnerGateCycleImplTest {
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
                 .thenReturn(new GateResult(true, List.of(), "mvn test", null, "full_auto"));
         when(apiClient.annotate(
-                eq(TASK_ID),
-                eq(ACTOR_ID),
-                eq("progress"),
-                any(),
-                eq(Map.of("resolvedVerify", "mvn test"))))
+                        eq(TASK_ID), eq(ACTOR_ID), eq("progress"), any(), eq(Map.of("resolvedVerify", "mvn test"))))
                 .thenThrow(new RuntimeException("annotation unavailable"));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
-        verify(apiClient, times(1))
-                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
+        verify(apiClient, times(1)).enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
         verify(apiClient, never()).updateTaskStatus(any(), any(), any(), any());
         verify(apiClient, never()).completeTask(any(), any(), any(), any(), any(), any(), any());
     }
@@ -153,47 +146,46 @@ class RunnerGateCycleImplTest {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
                 .thenReturn(new GateResult(true, List.of(), "mvn test", null, "full_auto"));
-        when(apiClient.listTasks(null, "auto"))
-                .thenReturn(List.of(), List.of(existingTask("auto-task-1", "auto")));
+        when(apiClient.listTasks(null, "auto")).thenReturn(List.of(), List.of(existingTask("auto-task-1", "auto")));
         when(apiClient.completeTask(
-                TASK_ID,
-                ACTOR_ID,
-                "cli",
-                "blackbox-runner-gate-" + TASK_ID,
-                "Gate passed; auto task enqueued.",
-                List.of(),
-                "Auto-lane execution will pick this up next."))
+                        TASK_ID,
+                        ACTOR_ID,
+                        "cli",
+                        "blackbox-runner-gate-" + TASK_ID,
+                        "Gate passed; auto task enqueued.",
+                        List.of(),
+                        "Auto-lane execution will pick this up next."))
                 .thenThrow(new RuntimeException("completion unavailable"));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
-        verify(apiClient, times(1))
-                .enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
-        verify(apiClient).annotate(
-                TASK_ID,
-                ACTOR_ID,
-                "progress",
-                "Gate passed; existing auto task auto-task-1 reused.",
-                Map.of("autoTaskId", "auto-task-1"));
+        verify(apiClient, times(1)).enqueueTask(SPEC_ID, "Implement story", "auto", 10, ACTOR_ID);
+        verify(apiClient)
+                .annotate(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "progress",
+                        "Gate passed; existing auto task auto-task-1 reused.",
+                        Map.of("autoTaskId", "auto-task-1"));
     }
 
     @Test
     void blockedGateMarksTaskBlockedWithoutEnqueuing() {
         TaskChange claimedTask = claimedGateTask();
         when(gateEvaluator.evaluate(claimedTask.snapshot().spec(), CONFIG))
-                .thenReturn(new GateResult(
-                        false, List.of("some finding"), null, null, "full_auto"));
+                .thenReturn(new GateResult(false, List.of("some finding"), null, null, "full_auto"));
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
         verify(apiClient).updateTaskStatus(TASK_ID, ACTOR_ID, "blocked", "some finding");
-        verify(apiClient).annotate(
-                TASK_ID,
-                ACTOR_ID,
-                "progress",
-                "Gate blocked: 1 issue(s) found.",
-                Map.of("findings", List.of("some finding")));
+        verify(apiClient)
+                .annotate(
+                        TASK_ID,
+                        ACTOR_ID,
+                        "progress",
+                        "Gate blocked: 1 issue(s) found.",
+                        Map.of("findings", List.of("some finding")));
         verify(apiClient, never()).enqueueTask(any(), any(), any(), anyInt(), any());
     }
 
@@ -205,8 +197,7 @@ class RunnerGateCycleImplTest {
 
         gateCycle.evaluate(claimedTask, CONFIG, ACTOR_ID);
 
-        verify(apiClient).updateTaskStatus(
-                TASK_ID, ACTOR_ID, "open", "Gate evaluation crashed: evaluation failed");
+        verify(apiClient).updateTaskStatus(TASK_ID, ACTOR_ID, "open", "Gate evaluation crashed: evaluation failed");
         verify(apiClient, never()).enqueueTask(any(), any(), any(), anyInt(), any());
     }
 
@@ -226,16 +217,9 @@ class RunnerGateCycleImplTest {
                 null,
                 now,
                 now);
-        TaskSpec spec = new TaskSpec(
-                SPEC_ID,
-                "/tmp/project",
-                "Story",
-                "# Story",
-                null,
-                SpecStatus.ACTIVE,
-                "test",
-                now,
-                now);
+        TaskSpec spec =
+                new TaskSpec(SPEC_ID, "/tmp/project", "Story", "# Story", null, SpecStatus.ACTIVE, "test", now, now);
+
         return new TaskChange(new TaskSnapshot(task, spec), null);
     }
 
@@ -255,6 +239,7 @@ class RunnerGateCycleImplTest {
                 null,
                 now,
                 now);
+
         return new TaskSnapshot(task, null);
     }
 }

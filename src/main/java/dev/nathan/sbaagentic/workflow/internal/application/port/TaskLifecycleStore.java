@@ -1,12 +1,11 @@
 package dev.nathan.sbaagentic.workflow.internal.application.port;
 
-import java.util.List;
-import java.util.Optional;
-
 import dev.nathan.sbaagentic.workflow.TaskChange;
 import dev.nathan.sbaagentic.workflow.TaskQuery;
 import dev.nathan.sbaagentic.workflow.TaskSnapshot;
 import dev.nathan.sbaagentic.workflow.internal.domain.TaskUpdate;
+import java.util.List;
+import java.util.Optional;
 
 public interface TaskLifecycleStore {
 

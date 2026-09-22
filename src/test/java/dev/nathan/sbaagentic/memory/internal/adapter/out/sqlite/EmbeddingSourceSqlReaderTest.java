@@ -1,23 +1,19 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
-import java.nio.file.Path;
-import java.util.Map;
-import java.util.UUID;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingSourceReader.EmbeddingSource;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddableText;
-
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class EmbeddingSourceSqlReaderTest {
 
@@ -41,7 +37,11 @@ class EmbeddingSourceSqlReaderTest {
     void includesMetadataOnlyStructuredEvents() {
         Fixture fixture = fixture();
         fixture.insertSession("session-1");
-        fixture.insertEvent("event-1", "session-1", "Decision", "  ",
+        fixture.insertEvent(
+                "event-1",
+                "session-1",
+                "Decision",
+                "  ",
                 Map.of("decision", "Use metadata text", "rationale", "raw text is empty"));
 
         EmbeddingSource source = fixture.reader().nextBatch(null, null, 10).getFirst();
@@ -53,13 +53,13 @@ class EmbeddingSourceSqlReaderTest {
 
     private static Fixture fixture() {
         Path database = Path.of(
-                System.getProperty("java.io.tmpdir"),
-                "bb-embedding-source-reader-test-" + UUID.randomUUID() + ".db");
+                System.getProperty("java.io.tmpdir"), "bb-embedding-source-reader-test-" + UUID.randomUUID() + ".db");
         database.toFile().deleteOnExit();
         DriverManagerDataSource dataSource = new DriverManagerDataSource("jdbc:sqlite:" + database);
         dataSource.setDriverClassName("org.sqlite.JDBC");
         new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
         return new Fixture(jdbcTemplate, new EmbeddingSourceSqlReader(jdbcTemplate, OBJECT_MAPPER));
     }
 
@@ -77,8 +77,7 @@ class EmbeddingSourceSqlReaderTest {
                     """, id, id, id);
         }
 
-        void insertEvent(
-                String id, String sessionId, String eventType, String text, Map<String, Object> metadata) {
+        void insertEvent(String id, String sessionId, String eventType, String text, Map<String, Object> metadata) {
             jdbcTemplate.update("""
                     INSERT INTO agent_events (
                         id, session_id, source, client_session_id, event_type, role, text, metadata_json, observed_at
@@ -90,9 +89,9 @@ class EmbeddingSourceSqlReaderTest {
 
     private static String json(Map<String, Object> metadata) {
         try {
+
             return OBJECT_MAPPER.writeValueAsString(metadata);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             throw new IllegalArgumentException(ex);
         }
     }

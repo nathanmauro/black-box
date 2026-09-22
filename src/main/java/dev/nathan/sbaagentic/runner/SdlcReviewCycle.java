@@ -1,7 +1,6 @@
 package dev.nathan.sbaagentic.runner;
 
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,10 +13,7 @@ public class SdlcReviewCycle {
     }
 
     public void execute(
-            TaskChange claimedReviewTask,
-            RunnerConfig config,
-            String actorId,
-            String orchestratorSessionId) {
+            TaskChange claimedReviewTask, RunnerConfig config, String actorId, String orchestratorSessionId) {
         runExecutor.executeReview(claimedReviewTask, config, actorId, orchestratorSessionId);
     }
 }

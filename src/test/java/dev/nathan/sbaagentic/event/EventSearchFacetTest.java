@@ -1,36 +1,32 @@
 package dev.nathan.sbaagentic.recording;
 
-import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
-import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.nathan.sbaagentic.memory.MemoryEventReader;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import dev.nathan.sbaagentic.project.ProjectAliasRequest;
-import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Proves the SQLite search path honours {@code field:value} facets without Elasticsearch, while
  * leaving plain free-text search behaviour unchanged.
  */
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-facet-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-facet-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class EventSearchFacetTest {
 
     @Autowired
@@ -43,19 +39,41 @@ class EventSearchFacetTest {
     ProjectAliasService projectAliasService;
 
     private String seedDecisionFromCodex() {
-        return ingestService.ingest(new EventIngestRequest(
-                "codex", "facet-codex", "turn-1", "Decision", "assistant",
-                "Use SolidJS for the UI rewrite.", "/tmp/sba-agentic", null, null, null,
-                Map.of("title", "Stack decision"),
-                Instant.parse("2026-06-16T12:00:00Z"))).eventId();
+
+        return ingestService
+                .ingest(new EventIngestRequest(
+                        "codex",
+                        "facet-codex",
+                        "turn-1",
+                        "Decision",
+                        "assistant",
+                        "Use SolidJS for the UI rewrite.",
+                        "/tmp/sba-agentic",
+                        null,
+                        null,
+                        null,
+                        Map.of("title", "Stack decision"),
+                        Instant.parse("2026-06-16T12:00:00Z")))
+                .eventId();
     }
 
     private String seedToolFromClaude() {
-        return ingestService.ingest(new EventIngestRequest(
-                "claude", "facet-claude", "turn-1", "PostToolUse", "assistant",
-                "Edited app.js for the UI rewrite.", "/tmp/sba-agentic", "Edit", null, null,
-                Map.of("title", "Edit app.js"),
-                Instant.parse("2026-06-16T12:01:00Z"))).eventId();
+
+        return ingestService
+                .ingest(new EventIngestRequest(
+                        "claude",
+                        "facet-claude",
+                        "turn-1",
+                        "PostToolUse",
+                        "assistant",
+                        "Edited app.js for the UI rewrite.",
+                        "/tmp/sba-agentic",
+                        "Edit",
+                        null,
+                        null,
+                        Map.of("title", "Edit app.js"),
+                        Instant.parse("2026-06-16T12:01:00Z")))
+                .eventId();
     }
 
     @Test
@@ -63,7 +81,9 @@ class EventSearchFacetTest {
         String codexId = seedDecisionFromCodex();
         String claudeId = seedToolFromClaude();
 
-        List<String> ids = repository.searchEvents("source:codex", 50).stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("source:codex", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(ids).contains(codexId).doesNotContain(claudeId);
     }
 
@@ -72,7 +92,9 @@ class EventSearchFacetTest {
         String codexId = seedDecisionFromCodex();
         String claudeId = seedToolFromClaude();
 
-        List<String> ids = repository.searchEvents("kind:Decision", 50).stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("kind:Decision", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(ids).contains(codexId).doesNotContain(claudeId);
     }
 
@@ -82,7 +104,9 @@ class EventSearchFacetTest {
         String claudeId = seedToolFromClaude();
 
         // tool:Edit narrows to the PostToolUse event; "rewrite" free text still matches its text.
-        List<String> ids = repository.searchEvents("tool:Edit rewrite", 50).stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("tool:Edit rewrite", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(ids).containsExactly(claudeId);
     }
 
@@ -91,12 +115,14 @@ class EventSearchFacetTest {
         String codexId = seedDecisionFromCodex();
         String claudeId = seedToolFromClaude();
 
-        List<String> noToolNoise = repository.searchEvents("NOT kind:PostToolUse UI rewrite", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> noToolNoise = repository.searchEvents("NOT kind:PostToolUse UI rewrite", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(noToolNoise).contains(codexId).doesNotContain(claudeId);
 
-        List<String> noCodex = repository.searchEvents("-source:codex rewrite", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> noCodex = repository.searchEvents("-source:codex rewrite", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(noCodex).contains(claudeId).doesNotContain(codexId);
     }
 
@@ -105,16 +131,20 @@ class EventSearchFacetTest {
         String key = "exact-" + UUID.randomUUID().toString().replace("-", "");
         String source = "codex-" + key;
         String appId = seed(source, key + "-app", "Decision", "Exact search app " + key, "/tmp/" + key + "/app");
-        String appOtherId = seed(source, key + "-app-other", "Decision", "Exact search app other " + key, "/tmp/" + key + "/app-other");
+        String appOtherId = seed(
+                source, key + "-app-other", "Decision", "Exact search app other " + key, "/tmp/" + key + "/app-other");
 
-        List<String> ids = repository.searchEvents("source:" + source + " project_exact:/tmp/" + key + "/app", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> ids =
+                repository.searchEvents("source:" + source + " project_exact:/tmp/" + key + "/app", 50).stream()
+                        .map(AgentEvent::id)
+                        .toList();
 
         assertThat(ids).containsExactly(appId).doesNotContain(appOtherId);
 
-        List<String> negated = repository.searchEvents(
-                        "source:" + source + " -project_exact:/tmp/" + key + "/app", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> negated =
+                repository.searchEvents("source:" + source + " -project_exact:/tmp/" + key + "/app", 50).stream()
+                        .map(AgentEvent::id)
+                        .toList();
         assertThat(negated).containsExactly(appOtherId).doesNotContain(appId);
     }
 
@@ -125,8 +155,9 @@ class EventSearchFacetTest {
         String mineId = seed(source, key + "-mine", "Decision", "Session search mine " + key, "/tmp/" + key);
         String otherId = seed(source, key + "-other", "Decision", "Session search other " + key, "/tmp/" + key);
 
-        List<String> ids = repository.searchEvents("session:" + key + "-mine", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("session:" + key + "-mine", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
 
         assertThat(ids).containsExactly(mineId).doesNotContain(otherId);
     }
@@ -138,8 +169,9 @@ class EventSearchFacetTest {
         String claudeId = seed("claude-" + key, key + "-claude", "Decision", "Comma claude " + key, "/tmp/" + key);
         String geminiId = seed("gemini-" + key, key + "-gemini", "Decision", "Comma gemini " + key, "/tmp/" + key);
 
-        List<String> ids = repository.searchEvents("source:codex-" + key + ",claude-" + key, 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("source:codex-" + key + ",claude-" + key, 50).stream()
+                .map(AgentEvent::id)
+                .toList();
 
         assertThat(ids).containsExactlyInAnyOrder(codexId, claudeId).doesNotContain(geminiId);
     }
@@ -150,13 +182,13 @@ class EventSearchFacetTest {
         String alpha = "alphaterm" + key;
         String bravo = "bravoterm" + key;
         String source = "codex-" + key;
-        String bothId = seed(source, key + "-both", "Decision",
-                "Has " + alpha + " and " + bravo + " together", "/tmp/" + key);
-        String alphaOnlyId = seed(source, key + "-alpha", "Decision",
-                "Has only " + alpha + " here", "/tmp/" + key);
+        String bothId =
+                seed(source, key + "-both", "Decision", "Has " + alpha + " and " + bravo + " together", "/tmp/" + key);
+        String alphaOnlyId = seed(source, key + "-alpha", "Decision", "Has only " + alpha + " here", "/tmp/" + key);
 
-        List<String> ids = repository.searchEvents("source:" + source + " " + alpha + " " + bravo, 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("source:" + source + " " + alpha + " " + bravo, 50).stream()
+                .map(AgentEvent::id)
+                .toList();
 
         assertThat(ids).containsExactly(bothId).doesNotContain(alphaOnlyId);
     }
@@ -165,19 +197,40 @@ class EventSearchFacetTest {
     void sinceTokenBoundsSearchResults() {
         String key = "since-" + UUID.randomUUID().toString().replace("-", "");
         String source = "codex-" + key;
-        String olderId = ingestService.ingest(new EventIngestRequest(
-                source, key + "-older", "turn-1", "Decision", "assistant",
-                "Older event " + key, "/tmp/" + key, null, null, null,
-                Map.of("title", "Older"),
-                Instant.parse("2026-06-16T12:00:00Z"))).eventId();
-        String newerId = ingestService.ingest(new EventIngestRequest(
-                source, key + "-newer", "turn-1", "Decision", "assistant",
-                "Newer event " + key, "/tmp/" + key, null, null, null,
-                Map.of("title", "Newer"),
-                Instant.parse("2026-06-18T12:00:00Z"))).eventId();
+        String olderId = ingestService
+                .ingest(new EventIngestRequest(
+                        source,
+                        key + "-older",
+                        "turn-1",
+                        "Decision",
+                        "assistant",
+                        "Older event " + key,
+                        "/tmp/" + key,
+                        null,
+                        null,
+                        null,
+                        Map.of("title", "Older"),
+                        Instant.parse("2026-06-16T12:00:00Z")))
+                .eventId();
+        String newerId = ingestService
+                .ingest(new EventIngestRequest(
+                        source,
+                        key + "-newer",
+                        "turn-1",
+                        "Decision",
+                        "assistant",
+                        "Newer event " + key,
+                        "/tmp/" + key,
+                        null,
+                        null,
+                        null,
+                        Map.of("title", "Newer"),
+                        Instant.parse("2026-06-18T12:00:00Z")))
+                .eventId();
 
-        List<String> ids = repository.searchEvents("source:" + source + " since:2026-06-17T00:00:00Z", 50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("source:" + source + " since:2026-06-17T00:00:00Z", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
 
         assertThat(ids).containsExactly(newerId).doesNotContain(olderId);
     }
@@ -192,14 +245,15 @@ class EventSearchFacetTest {
         String aliasId = seed(source, key + "-alias", "Decision", "Alias search event " + key, alias);
         projectAliasService.put(new ProjectAliasRequest(alias, primary));
 
-        List<String> exactIds = repository.searchEvents(
-                        "source:" + source + " project_exact:" + primary, 50)
-                .stream().map(AgentEvent::id).toList();
-        List<String> groupedIds = repository.searchEvents(
-                        "source:" + source + " project_group:" + primary,
-                        projectAliasService.scopesFor(primary),
-                        50)
-                .stream().map(AgentEvent::id).toList();
+        List<String> exactIds = repository.searchEvents("source:" + source + " project_exact:" + primary, 50).stream()
+                .map(AgentEvent::id)
+                .toList();
+        List<String> groupedIds = repository
+                .searchEvents(
+                        "source:" + source + " project_group:" + primary, projectAliasService.scopesFor(primary), 50)
+                .stream()
+                .map(AgentEvent::id)
+                .toList();
 
         assertThat(exactIds).containsExactly(primaryId).doesNotContain(aliasId);
         assertThat(groupedIds).containsExactlyInAnyOrder(aliasId, primaryId);
@@ -212,15 +266,28 @@ class EventSearchFacetTest {
         String claudeId = seedToolFromClaude();
 
         // No facet token: legacy substring behaviour across columns matches both by shared text.
-        List<String> ids = repository.searchEvents("UI rewrite", 50).stream().map(AgentEvent::id).toList();
+        List<String> ids = repository.searchEvents("UI rewrite", 50).stream()
+                .map(AgentEvent::id)
+                .toList();
         assertThat(ids).contains(codexId, claudeId);
     }
 
     private String seed(String source, String clientSessionId, String eventType, String text, String cwd) {
-        return ingestService.ingest(new EventIngestRequest(
-                source, clientSessionId, "turn-" + clientSessionId, eventType, "assistant",
-                text, cwd, null, null, null,
-                Map.of("title", "Exact project " + clientSessionId),
-                Instant.parse("2026-06-16T12:02:00Z"))).eventId();
+
+        return ingestService
+                .ingest(new EventIngestRequest(
+                        source,
+                        clientSessionId,
+                        "turn-" + clientSessionId,
+                        eventType,
+                        "assistant",
+                        text,
+                        cwd,
+                        null,
+                        null,
+                        null,
+                        Map.of("title", "Exact project " + clientSessionId),
+                        Instant.parse("2026-06-16T12:02:00Z")))
+                .eventId();
     }
 }

@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.memory.internal.application.port;
 
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-
-import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 
 public interface EmbeddingStore {
 
@@ -21,10 +20,5 @@ public interface EmbeddingStore {
     long count();
 
     record StoredEmbedding(
-            String targetKind,
-            String targetId,
-            EmbeddingVector vector,
-            String contentHash,
-            Instant embeddedAt) {
-    }
+            String targetKind, String targetId, EmbeddingVector vector, String contentHash, Instant embeddedAt) {}
 }

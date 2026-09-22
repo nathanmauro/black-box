@@ -16,5 +16,4 @@ public record AgentEvent(
         String toolInputJson,
         String toolOutputJson,
         Map<String, Object> metadata,
-        Instant observedAt) {
-}
+        Instant observedAt) {}

@@ -13,5 +13,4 @@ public record StreamEventSnapshot(
         String title,
         Instant observedAt,
         String cwd,
-        String spawnedBy) {
-}
+        String spawnedBy) {}

@@ -1,18 +1,16 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
+import dev.nathan.sbaagentic.memory.ElasticHealth;
+import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
+import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.EventRecorded;
-import dev.nathan.sbaagentic.memory.ElasticHealth;
-import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
-
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
@@ -33,8 +31,8 @@ public class ElasticIndexClient implements SearchIndex {
      * {@code text}) are excluded because {@code _terms_enum} silently returns an empty array on a
      * text field (it supports only keyword/constant_keyword/flattened/version/ip).
      */
-    private static final Set<String> TERMS_ENUM_FIELDS = Set.of(
-            "sessionId", "source", "clientSessionId", "eventType", "turnId", "cwd", "toolName");
+    private static final Set<String> TERMS_ENUM_FIELDS =
+            Set.of("sessionId", "source", "clientSessionId", "eventType", "turnId", "cwd", "toolName");
 
     private final ElasticsearchProperties properties;
     private final RestClient restClient;
@@ -53,19 +51,22 @@ public class ElasticIndexClient implements SearchIndex {
 
     public boolean index(AgentSession session, AgentEvent event) {
         if (!properties.isEnabled()) {
+
             return false;
         }
         try {
             ensureIndex();
-            restClient.put()
+            restClient
+                    .put()
                     .uri("/{index}/_doc/{id}", properties.getIndexName(), event.id())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(document(session, event))
                     .retrieve()
                     .toBodilessEntity();
+
             return true;
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return false;
         }
     }
@@ -80,40 +81,67 @@ public class ElasticIndexClient implements SearchIndex {
 
     public ElasticHealth health() {
         if (!properties.isEnabled()) {
+
             return new ElasticHealth(false, false, properties.getIndexName(), "disabled");
         }
         try {
             restClient.get().uri("/").retrieve().toBodilessEntity();
+
             return new ElasticHealth(true, true, properties.getIndexName(), "reachable");
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return new ElasticHealth(true, false, properties.getIndexName(), ex.getMessage());
         }
     }
 
     @Override
     public CompactResults searchCompact(String query, int limit) {
-        if (!properties.isEnabled()) return new CompactResults("disabled", List.of());
+        if (!properties.isEnabled())
+
+            return new CompactResults("disabled", List.of());
+
         try {
             Map<String, Object> body = Map.of(
                     "size", limit,
                     "_source", List.of("sessionId", "clientSessionId", "source", "eventType", "role", "observedAt"),
                     "query", relevanceQuery(query),
-                    "highlight", Map.of("pre_tags", List.of(""), "post_tags", List.of(""),
-                            "fields", Map.of("text", Map.of("fragment_size", 600, "number_of_fragments", 1,
-                                    "no_match_size", 600))));
-            Map<?, ?> response = restClient.post().uri("/{index}/_search", properties.getIndexName())
-                    .contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(Map.class);
-            if (response == null || !(response.get("hits") instanceof Map<?, ?> hits)
+                    "highlight",
+                            Map.of(
+                                    "pre_tags",
+                                    List.of(""),
+                                    "post_tags",
+                                    List.of(""),
+                                    "fields",
+                                    Map.of(
+                                            "text",
+                                            Map.of(
+                                                    "fragment_size",
+                                                    600,
+                                                    "number_of_fragments",
+                                                    1,
+                                                    "no_match_size",
+                                                    600))));
+            Map<?, ?> response = restClient
+                    .post()
+                    .uri("/{index}/_search", properties.getIndexName())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(Map.class);
+            if (response == null
+                    || !(response.get("hits") instanceof Map<?, ?> hits)
                     || !(hits.get("hits") instanceof List<?> entries)) {
+
                 return new CompactResults("unavailable", List.of());
             }
-            var candidates = new java.util.ArrayList<dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate>();
+            var candidates = new java.util.ArrayList<
+                    dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate>();
             for (Object entry : entries.stream().limit(limit).toList()) {
                 if (!(entry instanceof Map<?, ?> hit) || !(hit.get("_source") instanceof Map<?, ?> source)) continue;
                 String text = null;
                 if (hit.get("highlight") instanceof Map<?, ?> highlights
-                        && highlights.get("text") instanceof List<?> fragments && !fragments.isEmpty()) {
+                        && highlights.get("text") instanceof List<?> fragments
+                        && !fragments.isEmpty()) {
                     text = compactString(fragments.get(0), 601);
                 }
                 candidates.add(new dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate(
@@ -122,53 +150,81 @@ public class ElasticIndexClient implements SearchIndex {
                         compactString(source.get("eventType"), 257), compactString(source.get("role"), 257),
                         compactString(source.get("observedAt"), 64), text));
             }
+
             return new CompactResults("searched", List.copyOf(candidates));
         } catch (RestClientException ex) {
+
             return new CompactResults("unavailable", List.of());
         }
     }
 
     private static Map<String, Object> relevanceQuery(String query) {
+
         return Map.of(
-                            "bool", Map.of(
-                                    "minimum_should_match", 1,
-                                    "should", List.of(
-                                            Map.of("multi_match", Map.of(
-                                                    "query", query,
-                                                    "fields", SEARCH_FIELDS,
-                                                    "type", "phrase",
-                                                    "boost", 2.0)),
-                                            Map.of("multi_match", Map.of(
-                                                    "query", query,
-                                                    "fields", SEARCH_FIELDS,
-                                                    "type", "best_fields",
-                                                    "operator", "or",
-                                                    "fuzziness", "AUTO",
-                                                    "prefix_length", 1,
-                                                    "max_expansions", 50)))));
+                "bool",
+                Map.of(
+                        "minimum_should_match",
+                        1,
+                        "should",
+                        List.of(
+                                Map.of(
+                                        "multi_match",
+                                        Map.of(
+                                                "query",
+                                                query,
+                                                "fields",
+                                                SEARCH_FIELDS,
+                                                "type",
+                                                "phrase",
+                                                "boost",
+                                                2.0)),
+                                Map.of(
+                                        "multi_match",
+                                        Map.of(
+                                                "query",
+                                                query,
+                                                "fields",
+                                                SEARCH_FIELDS,
+                                                "type",
+                                                "best_fields",
+                                                "operator",
+                                                "or",
+                                                "fuzziness",
+                                                "AUTO",
+                                                "prefix_length",
+                                                1,
+                                                "max_expansions",
+                                                50)))));
     }
 
     private static String compactString(Object value, int max) {
-        if (!(value instanceof String text)) return null;
+        if (!(value instanceof String text))
+
+            return null;
+
         return text.codePointCount(0, text.length()) <= max ? text : text.substring(0, text.offsetByCodePoints(0, max));
     }
 
     public List<Map<String, Object>> search(String query, int limit) {
         if (!properties.isEnabled() || query == null || query.isBlank()) {
+
             return List.of();
         }
         try {
             Map<String, Object> body = Map.of(
                     "size", limit,
                     "query", relevanceQuery(query),
-                    "highlight", Map.of(
-                            "pre_tags", List.of("<mark>"),
-                            "post_tags", List.of("</mark>"),
-                            "fields", Map.of(
-                                    "title", Map.of("number_of_fragments", 0),
-                                    "text", Map.of("fragment_size", 220, "number_of_fragments", 2))));
+                    "highlight",
+                            Map.of(
+                                    "pre_tags", List.of("<mark>"),
+                                    "post_tags", List.of("</mark>"),
+                                    "fields",
+                                            Map.of(
+                                                    "title", Map.of("number_of_fragments", 0),
+                                                    "text", Map.of("fragment_size", 220, "number_of_fragments", 2))));
 
-            Map<?, ?> response = restClient.post()
+            Map<?, ?> response = restClient
+                    .post()
                     .uri("/{index}/_search", properties.getIndexName())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
@@ -177,19 +233,22 @@ public class ElasticIndexClient implements SearchIndex {
 
             Object hitsObject = response == null ? null : response.get("hits");
             if (!(hitsObject instanceof Map<?, ?> hits)) {
+
                 return List.of();
             }
             Object hitList = hits.get("hits");
             if (!(hitList instanceof List<?> list)) {
+
                 return List.of();
             }
+
             return list.stream()
                     .filter(Map.class::isInstance)
                     .map(Map.class::cast)
                     .map(ElasticIndexClient::mapSearchHit)
                     .toList();
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return List.of();
         }
     }
@@ -202,15 +261,18 @@ public class ElasticIndexClient implements SearchIndex {
      */
     public List<Map<String, Object>> fieldCaps() {
         if (!properties.isEnabled()) {
+
             return List.of();
         }
         try {
-            Map<?, ?> response = restClient.get()
+            Map<?, ?> response = restClient
+                    .get()
                     .uri("/{index}/_field_caps?fields=*", properties.getIndexName())
                     .retrieve()
                     .body(Map.class);
             Object fieldsObject = response == null ? null : response.get("fields");
             if (!(fieldsObject instanceof Map<?, ?> fields)) {
+
                 return List.of();
             }
             List<Map<String, Object>> result = new java.util.ArrayList<>();
@@ -234,9 +296,10 @@ public class ElasticIndexClient implements SearchIndex {
                 field.put("aggregatable", Boolean.TRUE.equals(cap.get("aggregatable")));
                 result.add(field);
             }
+
             return result;
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return List.of();
         }
     }
@@ -248,6 +311,7 @@ public class ElasticIndexClient implements SearchIndex {
      * default).
      */
     public List<String> termsEnum(String field, String prefix, int size) {
+
         return termsEnum(field, prefix, size, false);
     }
 
@@ -267,8 +331,8 @@ public class ElasticIndexClient implements SearchIndex {
      * <p>Note: {@code _terms_enum} requires Elasticsearch &gt;= 7.14.
      */
     public List<String> termsEnum(String field, String prefix, int size, boolean caseInsensitive) {
-        if (!properties.isEnabled() || field == null || field.isBlank()
-                || !TERMS_ENUM_FIELDS.contains(field)) {
+        if (!properties.isEnabled() || field == null || field.isBlank() || !TERMS_ENUM_FIELDS.contains(field)) {
+
             return List.of();
         }
         try {
@@ -277,7 +341,8 @@ public class ElasticIndexClient implements SearchIndex {
                     "string", prefix == null ? "" : prefix,
                     "size", size,
                     "case_insensitive", caseInsensitive);
-            Map<?, ?> response = restClient.post()
+            Map<?, ?> response = restClient
+                    .post()
                     .uri("/{index}/_terms_enum", properties.getIndexName())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
@@ -285,11 +350,13 @@ public class ElasticIndexClient implements SearchIndex {
                     .body(Map.class);
             Object terms = response == null ? null : response.get("terms");
             if (!(terms instanceof List<?> list)) {
+
                 return List.of();
             }
+
             return list.stream().map(String::valueOf).toList();
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return List.of();
         }
     }
@@ -302,39 +369,46 @@ public class ElasticIndexClient implements SearchIndex {
         if (hit.get("highlight") != null) {
             result.put("highlight", hit.get("highlight"));
         }
+
         return result;
     }
 
     private void ensureIndex() {
         if (indexReady.get()) {
+
             return;
         }
         try {
-            restClient.head().uri("/{index}", properties.getIndexName()).retrieve().toBodilessEntity();
+            restClient
+                    .head()
+                    .uri("/{index}", properties.getIndexName())
+                    .retrieve()
+                    .toBodilessEntity();
             indexReady.set(true);
+
             return;
-        }
-        catch (RestClientException ignored) {
+        } catch (RestClientException ignored) {
             // Create below. If another process wins the race, indexing will retry on the next event.
         }
 
         Map<String, Object> indexDefinition = Map.of(
-                "settings", Map.of(
-                        "number_of_shards", 1,
-                        "number_of_replicas", properties.getNumberOfReplicas()),
-                "mappings", Map.of(
-                        "properties", Map.of(
-                                "sessionId", Map.of("type", "keyword"),
-                                "source", Map.of("type", "keyword"),
-                                "clientSessionId", Map.of("type", "keyword"),
-                                "eventType", Map.of("type", "keyword"),
-                                "turnId", Map.of("type", "keyword"),
-                                "title", Map.of("type", "text"),
-                                "cwd", Map.of("type", "keyword"),
-                                "toolName", Map.of("type", "keyword"),
-                                "text", Map.of("type", "text"),
-                                "observedAt", Map.of("type", "date"))));
-        restClient.put()
+                "settings", Map.of("number_of_shards", 1, "number_of_replicas", properties.getNumberOfReplicas()),
+                "mappings",
+                        Map.of(
+                                "properties",
+                                Map.of(
+                                        "sessionId", Map.of("type", "keyword"),
+                                        "source", Map.of("type", "keyword"),
+                                        "clientSessionId", Map.of("type", "keyword"),
+                                        "eventType", Map.of("type", "keyword"),
+                                        "turnId", Map.of("type", "keyword"),
+                                        "title", Map.of("type", "text"),
+                                        "cwd", Map.of("type", "keyword"),
+                                        "toolName", Map.of("type", "keyword"),
+                                        "text", Map.of("type", "text"),
+                                        "observedAt", Map.of("type", "date"))));
+        restClient
+                .put()
                 .uri("/{index}", properties.getIndexName())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(indexDefinition)
@@ -344,6 +418,7 @@ public class ElasticIndexClient implements SearchIndex {
     }
 
     private static Map<String, Object> document(AgentSession session, AgentEvent event) {
+
         return Map.of(
                 "sessionId", session.id(),
                 "source", event.source(),

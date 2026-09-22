@@ -21,16 +21,12 @@ public record EventFacetCounts(Long total, Fields fields, String reason) {
     public static final int VALUE_LIMIT = 25;
 
     public record Fields(
-            List<ValueCount> source,
-            List<ValueCount> kind,
-            List<ValueCount> tool,
-            List<ValueCount> project) {
-    }
+            List<ValueCount> source, List<ValueCount> kind, List<ValueCount> tool, List<ValueCount> project) {}
 
-    public record ValueCount(String value, long count) {
-    }
+    public record ValueCount(String value, long count) {}
 
     public static EventFacetCounts skipped(String reason) {
+
         return new EventFacetCounts(null, null, reason);
     }
 }

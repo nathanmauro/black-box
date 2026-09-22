@@ -1,28 +1,27 @@
 package dev.nathan.sbaagentic.runner;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class CrashRecoveryIntegrationTest {
 
     @TempDir
     Path tempDir;
+
     private final RealProcessRunner processRunner = new RealProcessRunner();
 
     @Test
@@ -36,12 +35,19 @@ class CrashRecoveryIntegrationTest {
             Path worktree = repo.resolve(".worktrees/bb-orphan");
             git(repo, "worktree", "add", "-b", "auto/orphan", worktree.toString(), "main");
             TmuxController tmux = mock(TmuxController.class);
-            if (unknown) when(tmux.hasSession("bb-run-orphan")).thenThrow(new IllegalStateException("session probe unavailable"));
+            if (unknown)
+                when(tmux.hasSession("bb-run-orphan"))
+                        .thenThrow(new IllegalStateException("session probe unavailable"));
             else when(tmux.hasSession("bb-run-orphan")).thenReturn(true);
 
             new CrashRecovery(mock(BlackBoxApiClient.class), tmux, processRunner, new StoryFrontmatterParser())
-                    .reconcile(new RunnerConfig(1, List.of(), null,
-                            List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))), "blackbox-runner");
+                    .reconcile(
+                            new RunnerConfig(
+                                    1,
+                                    List.of(),
+                                    null,
+                                    List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))),
+                            "blackbox-runner");
 
             assertThat(worktree).isDirectory();
             assertThat(git(repo, "branch", "--list", "auto/orphan").stdout()).isNotBlank();
@@ -63,17 +69,28 @@ class CrashRecoveryIntegrationTest {
             if (hasLog) Files.writeString(worktree.resolve("worker.log"), "last verified worker checkpoint\n");
             assertThat(git(worktree, "status", "--porcelain").stdout()).isBlank();
 
-            new CrashRecovery(mock(BlackBoxApiClient.class), mock(TmuxController.class), processRunner,
-                    new StoryFrontmatterParser()).reconcile(new RunnerConfig(1, List.of(), null,
-                    List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))), "blackbox-runner");
+            new CrashRecovery(
+                            mock(BlackBoxApiClient.class),
+                            mock(TmuxController.class),
+                            processRunner,
+                            new StoryFrontmatterParser())
+                    .reconcile(
+                            new RunnerConfig(
+                                    1,
+                                    List.of(),
+                                    null,
+                                    List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))),
+                            "blackbox-runner");
 
             if (hasLog) {
-                assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("last verified worker checkpoint\n");
-                assertThat(git(repo, "branch", "--list", "auto/orphan").stdout()).isNotBlank();
-            }
-            else {
+                assertThat(Files.readString(worktree.resolve("worker.log")))
+                        .isEqualTo("last verified worker checkpoint\n");
+                assertThat(git(repo, "branch", "--list", "auto/orphan").stdout())
+                        .isNotBlank();
+            } else {
                 assertThat(worktree).doesNotExist();
-                assertThat(git(repo, "branch", "--list", "auto/orphan").stdout()).isBlank();
+                assertThat(git(repo, "branch", "--list", "auto/orphan").stdout())
+                        .isBlank();
             }
         }
     }
@@ -83,6 +100,7 @@ class CrashRecoveryIntegrationTest {
         command.addAll(List.of(arguments));
         ProcessResult result = processRunner.run(command, directory.toFile(), Duration.ofSeconds(10));
         assertThat(result.exitCode()).as(result.stderr()).isZero();
+
         return result;
     }
 }

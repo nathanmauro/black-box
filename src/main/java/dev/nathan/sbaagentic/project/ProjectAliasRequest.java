@@ -1,6 +1,3 @@
 package dev.nathan.sbaagentic.project;
 
-public record ProjectAliasRequest(
-        String aliasKey,
-        String canonicalKey) {
-}
+public record ProjectAliasRequest(String aliasKey, String canonicalKey) {}

@@ -31,21 +31,17 @@ public interface RecordingCatalog {
     List<AgentEvent> conversationEventsForSession(String sessionId);
 
     EventFeedResponse feed(
-            String query,
-            boolean meaningfulOnly,
-            String before,
-            String since,
-            List<String> projectScopes,
-            int limit);
+            String query, boolean meaningfulOnly, String before, String since, List<String> projectScopes, int limit);
 
-    default EventFeedResponse feed(
-            String query, boolean meaningfulOnly, String before, String since, int limit) {
+    default EventFeedResponse feed(String query, boolean meaningfulOnly, String before, String since, int limit) {
+
         return feed(query, meaningfulOnly, before, since, List.of(), limit);
     }
 
     EventFacetCounts facetCounts(String query, boolean meaningfulOnly, List<String> projectScopes);
 
     default EventFacetCounts facetCounts(String query, boolean meaningfulOnly) {
+
         return facetCounts(query, meaningfulOnly, List.of());
     }
 

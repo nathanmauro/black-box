@@ -3,7 +3,6 @@ package dev.nathan.sbaagentic.recording;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "sba.transcript")
@@ -15,6 +14,7 @@ public class TranscriptProperties {
     private int cacheEntries = 8;
 
     public List<String> getCodexRoots() {
+
         return codexRoots;
     }
 
@@ -23,6 +23,7 @@ public class TranscriptProperties {
     }
 
     public List<String> getClaudeRoots() {
+
         return claudeRoots;
     }
 
@@ -31,6 +32,7 @@ public class TranscriptProperties {
     }
 
     public long getMaxBytes() {
+
         return maxBytes;
     }
 
@@ -39,6 +41,7 @@ public class TranscriptProperties {
     }
 
     public int getCacheEntries() {
+
         return cacheEntries;
     }
 
@@ -49,8 +52,10 @@ public class TranscriptProperties {
     private static List<String> defaultRoots(String first, String second) {
         String home = System.getProperty("user.home", "");
         if (home.isBlank()) {
+
             return new ArrayList<>();
         }
+
         return new ArrayList<>(List.of(Path.of(home, first, second).toString()));
     }
 }

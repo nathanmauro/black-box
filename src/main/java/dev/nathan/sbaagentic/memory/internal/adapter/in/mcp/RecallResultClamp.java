@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.in.mcp;
 
-import java.util.ArrayList;
-import java.util.List;
-
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
+import java.util.ArrayList;
+import java.util.List;
 
 final class RecallResultClamp {
 
@@ -14,18 +13,20 @@ final class RecallResultClamp {
     private static final int ITEM_OVERHEAD_CHARS = 200;
     private static final int MIN_TRIMMED_FIELD_CHARS = 80;
 
-    private RecallResultClamp() {
-    }
+    private RecallResultClamp() {}
 
     static int normalizeMaxChars(Integer maxChars) {
         if (maxChars == null || maxChars <= 0) {
+
             return DEFAULT_MAX_CHARS;
         }
+
         return Math.max(MIN_MAX_CHARS, maxChars);
     }
 
     static RecallResult clamp(RecallResult result, int maxChars) {
         if (result == null) {
+
             return null;
         }
         List<RecalledItem> originalItems = result.items() == null ? List.of() : result.items();
@@ -51,6 +52,7 @@ final class RecallResultClamp {
             }
             break;
         }
+
         return new RecallResult(
                 result.scope(),
                 result.withinHours(),
@@ -63,13 +65,16 @@ final class RecallResultClamp {
 
     static long cost(RecallResult result) {
         if (result == null || result.items() == null) {
+
             return 0;
         }
+
         return result.items().stream().mapToLong(RecallResultClamp::itemCost).sum();
     }
 
     private static TrimmedItem trimToFit(RecalledItem item, long maxItemCost) {
         if (item == null) {
+
             return null;
         }
         RecalledItem candidate = item;
@@ -83,6 +88,7 @@ final class RecallResultClamp {
             trimmed = true;
         }
         if (cost <= maxItemCost && trimmed) {
+
             return new TrimmedItem(candidate);
         }
 
@@ -93,13 +99,16 @@ final class RecallResultClamp {
             trimmed = true;
         }
         if (cost <= maxItemCost && trimmed) {
+
             return new TrimmedItem(candidate);
         }
+
         return null;
     }
 
     private static TrimmedField trimField(String value, long requiredSavings) {
         if (value == null || value.length() <= MIN_TRIMMED_FIELD_CHARS || requiredSavings <= 0) {
+
             return null;
         }
 
@@ -117,26 +126,32 @@ final class RecallResultClamp {
 
         int savedChars = savings(value.length(), chosenKeep);
         if (savedChars <= 0) {
+
             return null;
         }
         int removedChars = value.length() - chosenKeep;
         String suffix = suffix(removedChars);
+
         return new TrimmedField(value.substring(0, chosenKeep) + suffix, savedChars);
     }
 
     private static int savings(int originalLength, int keep) {
         int removedChars = originalLength - keep;
+
         return originalLength - keep - suffix(removedChars).length();
     }
 
     private static String suffix(int removedChars) {
+
         return "… (+" + removedChars + " chars)";
     }
 
     private static long itemCost(RecalledItem item) {
         if (item == null) {
+
             return ITEM_OVERHEAD_CHARS;
         }
+
         return ITEM_OVERHEAD_CHARS
                 + length(item.headline())
                 + length(item.rationale())
@@ -147,11 +162,13 @@ final class RecallResultClamp {
     }
 
     private static int length(String value) {
+
         return value == null ? 0 : value.length();
     }
 
     private static int joinedLength(List<String> values) {
         if (values == null || values.isEmpty()) {
+
             return 0;
         }
         int length = 0;
@@ -166,10 +183,12 @@ final class RecallResultClamp {
             length += value.length();
             afterFirst = true;
         }
+
         return length;
     }
 
     private static RecalledItem withText(RecalledItem item, String headline, String rationale) {
+
         return new RecalledItem(
                 item.eventId(),
                 item.sessionId(),
@@ -188,9 +207,7 @@ final class RecallResultClamp {
                 item.score());
     }
 
-    private record TrimmedField(String value, int savedChars) {
-    }
+    private record TrimmedField(String value, int savedChars) {}
 
-    private record TrimmedItem(RecalledItem item) {
-    }
+    private record TrimmedItem(RecalledItem item) {}
 }

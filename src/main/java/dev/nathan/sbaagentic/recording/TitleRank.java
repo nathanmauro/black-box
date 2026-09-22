@@ -25,6 +25,5 @@ public final class TitleRank {
     /** AI-generated title produced at summarize time. Locks above all ingest ranks. */
     public static final int AI = 100;
 
-    private TitleRank() {
-    }
+    private TitleRank() {}
 }

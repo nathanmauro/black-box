@@ -1,20 +1,16 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
-
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class JevRequestBuilderTest {
 
@@ -54,10 +50,20 @@ class JevRequestBuilderTest {
                 "s1",
                 Instant.parse("2026-09-21T12:00:00Z"),
                 Instant.parse("2026-09-21T12:00:00Z"),
-                List.of(new BeatEvent("e1", "s1", "UserPromptSubmit", "user", "build it", null, null, null, Map.of(),
+                List.of(new BeatEvent(
+                        "e1",
+                        "s1",
+                        "UserPromptSubmit",
+                        "user",
+                        "build it",
+                        null,
+                        null,
+                        null,
+                        Map.of(),
                         Instant.parse("2026-09-21T12:00:00Z"))),
                 List.of("Nathan: build it"),
                 "Nathan: build it");
+
         return new BeatState(
                 beat,
                 new BeatState.SessionState("codex", "/Users/nathan/Developer/proj/sba-agentic", "Orbit cortex"),

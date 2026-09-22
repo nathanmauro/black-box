@@ -13,7 +13,8 @@ public record MemoryHit(
         String snippet) {
 
     public MemoryHit withScore(double nextScore) {
-        return new MemoryHit(id, nextScore, title, source, sourcePath, sessionId, clientSessionId,
-                timestamp, text, snippet);
+
+        return new MemoryHit(
+                id, nextScore, title, source, sourcePath, sessionId, clientSessionId, timestamp, text, snippet);
     }
 }

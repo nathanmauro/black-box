@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
-import java.util.Locale;
-
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum SpecStatus {
     ACTIVE("active"),
@@ -17,6 +16,7 @@ public enum SpecStatus {
 
     @JsonValue
     public String value() {
+
         return value;
     }
 
@@ -27,6 +27,7 @@ public enum SpecStatus {
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         for (SpecStatus status : values()) {
             if (status.value.equals(normalized)) {
+
                 return status;
             }
         }

@@ -1,18 +1,15 @@
 package dev.nathan.sbaagentic.summary.internal.application;
 
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.SessionStopped;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
+import jakarta.annotation.PreDestroy;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.SessionStopped;
-import dev.nathan.sbaagentic.summary.SummaryOperations;
-
-import jakarta.annotation.PreDestroy;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -27,6 +24,7 @@ public class SessionFinalizationService {
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "sba-session-finalizer");
         thread.setDaemon(true);
+
         return thread;
     });
     private final Set<String> pending = ConcurrentHashMap.newKeySet();
@@ -41,6 +39,7 @@ public class SessionFinalizationService {
         AgentSession session = stopped.session();
         AgentEvent event = stopped.event();
         if (hasSummary(session) || !pending.add(session.id())) {
+
             return;
         }
         executor.execute(() -> {
@@ -49,12 +48,14 @@ public class SessionFinalizationService {
                 if (latest != null && !hasSummary(latest)) {
                     summaryService.summarize(session.id());
                 }
-            }
-            catch (Exception ex) {
-                log.warn("Black Box final summary failed for sessionId={} source={} clientSessionId={}",
-                        session.id(), session.source(), session.clientSessionId(), ex);
-            }
-            finally {
+            } catch (Exception ex) {
+                log.warn(
+                        "Black Box final summary failed for sessionId={} source={} clientSessionId={}",
+                        session.id(),
+                        session.source(),
+                        session.clientSessionId(),
+                        ex);
+            } finally {
                 pending.remove(session.id());
             }
         });
@@ -66,6 +67,7 @@ public class SessionFinalizationService {
     }
 
     private static boolean hasSummary(AgentSession session) {
+
         return session.summary() != null && !session.summary().isBlank();
     }
 }

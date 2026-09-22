@@ -4,7 +4,6 @@ import dev.nathan.sbaagentic.judgment.JudgmentHealth;
 import dev.nathan.sbaagentic.judgment.JudgmentHealthOperations;
 import dev.nathan.sbaagentic.judgment.JudgmentProperties;
 import dev.nathan.sbaagentic.judgment.internal.application.port.JudgeStats;
-
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -14,9 +13,7 @@ public class JudgmentHealthService implements JudgmentHealthOperations {
     private final JudgmentProperties properties;
     private final ObjectProvider<JudgmentListener> listener;
 
-    public JudgmentHealthService(
-            JudgmentProperties properties,
-            ObjectProvider<JudgmentListener> listener) {
+    public JudgmentHealthService(JudgmentProperties properties, ObjectProvider<JudgmentListener> listener) {
         this.properties = properties;
         this.listener = listener;
     }
@@ -25,6 +22,7 @@ public class JudgmentHealthService implements JudgmentHealthOperations {
     public JudgmentHealth health() {
         JudgmentListener active = listener.getIfAvailable();
         JudgeStats stats = active == null ? JudgeStats.empty() : active.judgeStats();
+
         return new JudgmentHealth(
                 properties.isEnabled(),
                 properties.getProvider(),

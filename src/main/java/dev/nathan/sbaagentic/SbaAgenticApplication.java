@@ -1,9 +1,8 @@
 package dev.nathan.sbaagentic;
 
 import java.time.Clock;
-import java.util.Set;
 import java.util.Map;
-
+import java.util.Set;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -15,6 +14,7 @@ public class SbaAgenticApplication {
     /** Injectable server clock: grammar time tokens resolve against it, and tests can fix it. */
     @Bean
     public Clock clock() {
+
         return Clock.systemDefaultZone();
     }
 

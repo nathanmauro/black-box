@@ -1,19 +1,15 @@
 package dev.nathan.sbaagentic.project.internal.application;
 
-import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
-
-import java.util.List;
-
-import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectOperations;
 import dev.nathan.sbaagentic.project.ProjectSavedMeld;
-import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineResponse;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
-
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import java.util.List;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -28,15 +24,18 @@ public class ProjectService implements ProjectOperations {
     }
 
     public List<ProjectSummary> projects() {
+
         return repository.summaries();
     }
 
     public List<AgentSession> sessions(String projectKey, int limit) {
+
         return repository.sessionsForProject(aliasService.resolve(ProjectKeyCodec.decode(projectKey)), limit);
     }
 
     public ProjectTimelineResponse timeline(String projectKey, int limit, int offset) {
         String canonicalKey = aliasService.resolve(ProjectKeyCodec.decode(projectKey));
+
         return new ProjectTimelineResponse(
                 ProjectKeyCodec.encode(canonicalKey),
                 canonicalKey,
@@ -48,10 +47,12 @@ public class ProjectService implements ProjectOperations {
     }
 
     public List<ProjectSavedMeld> melds(String projectKey) {
+
         return repository.savedMeldsForProject(aliasService.resolve(ProjectKeyCodec.decode(projectKey)));
     }
 
     public ProjectAlias putAlias(ProjectAliasRequest request) {
+
         return aliasService.put(request);
     }
 

@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
-import java.util.Map;
-
-import dev.nathan.sbaagentic.summary.SummaryModelOperations;
+import dev.nathan.sbaagentic.judgment.JudgmentHealthOperations;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.memory.MemorySearchOperations;
-import dev.nathan.sbaagentic.judgment.JudgmentHealthOperations;
-
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +32,7 @@ public class SystemController {
 
     @GetMapping("/status")
     public Map<String, Object> status() {
+
         return Map.of(
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
@@ -43,21 +42,25 @@ public class SystemController {
 
     @GetMapping("/stats")
     public DashboardStats stats() {
+
         return repository.dashboardStats();
     }
 
     @GetMapping("/health/local-ai")
     public Object localAiHealth() {
+
         return localAiClient.health();
     }
 
     @GetMapping("/health/elasticsearch")
     public Object elasticsearchHealth() {
+
         return memorySearch.elasticHealth();
     }
 
     @GetMapping("/health/judge")
     public Object judgeHealth() {
+
         return judgmentHealth.health();
     }
 }

@@ -1,5 +1,18 @@
 package dev.nathan.sbaagentic.summary.internal.application;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.CONFLICT;
+import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
+
+import com.samskivert.mustache.Mustache;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.summary.ExportTarget;
+import dev.nathan.sbaagentic.summary.SummaryExport;
+import dev.nathan.sbaagentic.summary.SummaryExportOperations;
+import dev.nathan.sbaagentic.summary.SummaryExportProperties;
+import dev.nathan.sbaagentic.summary.SummaryExportProperties.Target;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -12,32 +25,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
-import com.samskivert.mustache.Mustache;
-
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.summary.ExportTarget;
-import dev.nathan.sbaagentic.summary.SummaryExport;
-import dev.nathan.sbaagentic.summary.SummaryExportOperations;
-import dev.nathan.sbaagentic.summary.SummaryExportProperties;
-import dev.nathan.sbaagentic.summary.SummaryExportProperties.Target;
-
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import static org.springframework.http.HttpStatus.BAD_REQUEST;
-import static org.springframework.http.HttpStatus.CONFLICT;
-import static org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR;
-import static org.springframework.http.HttpStatus.NOT_FOUND;
-
 @Service
 public class SummaryExportService implements SummaryExportOperations {
 
     private static final String MARKDOWN_FILE = "markdown-file";
-    private static final DateTimeFormatter MONTH = DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter MONTH =
+            DateTimeFormatter.ofPattern("yyyy-MM").withZone(ZoneOffset.UTC);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
     private final RecordingCatalog repository;
@@ -45,15 +43,14 @@ public class SummaryExportService implements SummaryExportOperations {
     private final ResourceLoader resourceLoader;
 
     public SummaryExportService(
-            RecordingCatalog repository,
-            SummaryExportProperties properties,
-            ResourceLoader resourceLoader) {
+            RecordingCatalog repository, SummaryExportProperties properties, ResourceLoader resourceLoader) {
         this.repository = repository;
         this.properties = properties;
         this.resourceLoader = resourceLoader;
     }
 
     public List<ExportTarget> targets() {
+
         return properties.getTargets().stream()
                 .filter(Target::isEnabled)
                 .map(target -> new ExportTarget(
@@ -64,7 +61,8 @@ public class SummaryExportService implements SummaryExportOperations {
     }
 
     public SummaryExport exportSummary(String sessionId, String targetId) {
-        AgentSession session = repository.findSessionById(sessionId)
+        AgentSession session = repository
+                .findSessionById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Session not found"));
         if (session.summary() == null || session.summary().isBlank()) {
             throw new ResponseStatusException(CONFLICT, "Session has no summary to export");
@@ -74,6 +72,7 @@ public class SummaryExportService implements SummaryExportOperations {
         if (!MARKDOWN_FILE.equalsIgnoreCase(firstNonBlank(target.getType(), MARKDOWN_FILE))) {
             throw new ResponseStatusException(BAD_REQUEST, "Unsupported export target type: " + target.getType());
         }
+
         return writeMarkdownFile(session, target);
     }
 
@@ -81,6 +80,7 @@ public class SummaryExportService implements SummaryExportOperations {
         if (targetId == null || targetId.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "Export target id is required");
         }
+
         return properties.getTargets().stream()
                 .filter(Target::isEnabled)
                 .filter(target -> targetId.equals(target.getId()))
@@ -101,12 +101,17 @@ public class SummaryExportService implements SummaryExportOperations {
 
         try {
             Files.createDirectories(notePath.getParent());
-            Files.writeString(notePath, render(loadTemplate(target), model), StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-        }
-        catch (IOException ex) {
+            Files.writeString(
+                    notePath,
+                    render(loadTemplate(target), model),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException ex) {
             throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "Unable to export summary", ex);
         }
+
         return new SummaryExport(
                 session.id(),
                 target.getId(),
@@ -119,15 +124,20 @@ public class SummaryExportService implements SummaryExportOperations {
     private Path exportRoot(Target target) {
         String configured = target.getDirectory();
         if (configured == null || configured.isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST,
-                    "Export directory is not configured for target: " + target.getId());
+            throw new ResponseStatusException(
+                    BAD_REQUEST, "Export directory is not configured for target: " + target.getId());
         }
         if (configured.equals("~")) {
+
             return Path.of(System.getProperty("user.home")).toAbsolutePath().normalize();
         }
         if (configured.startsWith("~/")) {
-            return Path.of(System.getProperty("user.home"), configured.substring(2)).toAbsolutePath().normalize();
+
+            return Path.of(System.getProperty("user.home"), configured.substring(2))
+                    .toAbsolutePath()
+                    .normalize();
         }
+
         return Path.of(configured).toAbsolutePath().normalize();
     }
 
@@ -138,6 +148,7 @@ public class SummaryExportService implements SummaryExportOperations {
             throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "Export template not found: " + location);
         }
         try (InputStream input = resource.getInputStream()) {
+
             return new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
@@ -170,10 +181,12 @@ public class SummaryExportService implements SummaryExportOperations {
         model.put("month", MONTH.format(session.startedAt()));
         model.put("slug", slug(session.title()));
         model.put("shortId", shortId(session.id()));
+
         return model;
     }
 
     private static String render(String template, Map<String, Object> model) {
+
         return Mustache.compiler()
                 .escapeHTML(false)
                 .compile(template)
@@ -182,41 +195,51 @@ public class SummaryExportService implements SummaryExportOperations {
     }
 
     private static String yaml(String value) {
-        return "\"" + String.valueOf(value)
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n") + "\"";
+
+        return "\""
+                + String.valueOf(value)
+                        .replace("\\", "\\\\")
+                        .replace("\"", "\\\"")
+                        .replace("\r", "\\r")
+                        .replace("\n", "\\n")
+                + "\"";
     }
 
     private static String escapeTable(String value) {
+
         return value == null ? "" : value.replace("|", "\\|");
     }
 
     private static String slug(String value) {
-        String slug = String.valueOf(value).toLowerCase(Locale.ROOT)
+        String slug = String.valueOf(value)
+                .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-|-$)", "");
         if (slug.isBlank()) {
+
             return "session-summary";
         }
+
         return slug.length() > 64 ? slug.substring(0, 64).replaceAll("-$", "") : slug;
     }
 
     private static String shortId(String id) {
         if (id == null || id.length() <= 8) {
+
             return String.valueOf(id);
         }
+
         return id.substring(0, 8);
     }
 
     private static String tag(String value) {
         String tag = String.valueOf(value).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]+", "-");
+
         return tag.isBlank() ? "unknown" : tag;
     }
 
     private static String firstNonBlank(String value, String fallback) {
+
         return value == null || value.isBlank() ? fallback : value;
     }
-
 }

@@ -1,6 +1,10 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -18,34 +22,28 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-
-import dev.nathan.sbaagentic.recording.EventIngestRequest;
-import dev.nathan.sbaagentic.recording.EventRecorder;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-
 /**
  * End-to-end check that a newly ingested event is pushed to a live {@code /api/stream} subscriber as
  * an {@code event.appended} Server-Sent Event.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-stream-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false",
-        "server.shutdown=immediate"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-stream-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false",
+            "server.shutdown=immediate"
+        })
 class EventStreamTest {
 
     @LocalServerPort
@@ -63,11 +61,16 @@ class EventStreamTest {
     @Test
     void idleStreamReceivesHeartbeatBeforeProxyTimeoutWithoutNewEvents() throws Exception {
         var client = HttpClient.newHttpClient();
-        var response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
-                .header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofInputStream());
+        var response = client.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                        .header("Accept", "text/event-stream")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofInputStream());
         var reader = Executors.newSingleThreadExecutor(runnable -> {
             var thread = new Thread(runnable, "sse-idle-test-reader");
             thread.setDaemon(true);
+
             return thread;
         });
         var input = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8));
@@ -93,6 +96,7 @@ class EventStreamTest {
         ExecutorService reader = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "sse-test-reader");
             thread.setDaemon(true); // must not keep the surefire fork JVM alive on a blocking read
+
             return thread;
         });
         HttpClient client = HttpClient.newHttpClient();
@@ -104,8 +108,8 @@ class EventStreamTest {
         Future<?> pump = reader.submit(() -> {
             try {
                 HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-                try (BufferedReader in = new BufferedReader(
-                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                try (BufferedReader in =
+                        new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = in.readLine()) != null) {
                         lines.add(line);
@@ -121,13 +125,21 @@ class EventStreamTest {
             await().atMost(Duration.ofSeconds(5)).until(() -> broadcaster.subscriberCount() >= 1);
 
             ingestService.ingest(new EventIngestRequest(
-                    "codex", "stream-session", "turn-1", "Decision", "assistant",
-                    "This decision is pushed over SSE.", "/tmp/project", null, null, null,
+                    "codex",
+                    "stream-session",
+                    "turn-1",
+                    "Decision",
+                    "assistant",
+                    "This decision is pushed over SSE.",
+                    "/tmp/project",
+                    null,
+                    null,
+                    null,
                     Map.of("title", "sse push"),
                     Instant.parse("2026-06-16T12:00:00Z")));
 
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-                    assertThat(String.join("\n", lines))
+            await().atMost(Duration.ofSeconds(5))
+                    .untilAsserted(() -> assertThat(String.join("\n", lines))
                             .contains("event.appended")
                             .contains("\"id\":")
                             .contains("\"source\":\"codex\"")
@@ -147,11 +159,13 @@ class EventStreamTest {
         insertReplayFixture("replay-session", "replay-event-2", "2026-09-21T12:00:01Z", "second");
 
         HttpClient client = HttpClient.newHttpClient();
-        var response = client.send(HttpRequest.newBuilder(URI.create(
-                        "http://localhost:" + port + "/api/stream?since=2026-09-21T11:59:59Z"))
-                .header("Accept", "text/event-stream")
-                .GET()
-                .build(), HttpResponse.BodyHandlers.ofInputStream());
+        var response = client.send(
+                HttpRequest.newBuilder(
+                                URI.create("http://localhost:" + port + "/api/stream?since=2026-09-21T11:59:59Z"))
+                        .header("Accept", "text/event-stream")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofInputStream());
         try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
             String replay = readLines(in, 10);
             assertThat(replay)
@@ -172,11 +186,13 @@ class EventStreamTest {
         insertReplayFixture("cursor-session", "cursor-event-2", "2026-09-21T12:10:01Z", "second");
 
         HttpClient client = HttpClient.newHttpClient();
-        var response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
-                .header("Accept", "text/event-stream")
-                .header("Last-Event-ID", "2026-09-21T12:10:00Z|cursor-event-1")
-                .GET()
-                .build(), HttpResponse.BodyHandlers.ofInputStream());
+        var response = client.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                        .header("Accept", "text/event-stream")
+                        .header("Last-Event-ID", "2026-09-21T12:10:00Z|cursor-event-1")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofInputStream());
         try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
             String replay = readLines(in, 6);
             assertThat(replay).doesNotContain("cursor-event-1");
@@ -213,6 +229,7 @@ class EventStreamTest {
             }
             out.append(line).append('\n');
         }
+
         return out.toString();
     }
 }

@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.workflow;
 
-import java.util.Locale;
-
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum TaskEventType {
     CREATED("task.created"),
@@ -21,6 +20,7 @@ public enum TaskEventType {
 
     @JsonValue
     public String value() {
+
         return value;
     }
 
@@ -31,6 +31,7 @@ public enum TaskEventType {
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         for (TaskEventType type : values()) {
             if (type.value.equals(normalized)) {
+
                 return type;
             }
         }

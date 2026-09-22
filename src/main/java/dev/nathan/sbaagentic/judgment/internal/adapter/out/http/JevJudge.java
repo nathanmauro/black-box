@@ -1,19 +1,16 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
+import dev.nathan.sbaagentic.judgment.internal.application.port.Judge;
+import dev.nathan.sbaagentic.judgment.internal.application.port.JudgeStats;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
-import dev.nathan.sbaagentic.judgment.internal.application.port.Judge;
-import dev.nathan.sbaagentic.judgment.internal.application.port.JudgeStats;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +63,7 @@ public class JevJudge implements Judge {
     @Override
     public Optional<Judgment> judge(BeatState state) {
         if (apiKey == null || apiKey.isBlank()) {
+
             return Optional.empty();
         }
         Instant start = clock.instant();
@@ -76,17 +74,19 @@ public class JevJudge implements Judge {
             long latency = Duration.between(start, clock.instant()).toMillis();
             lastLatencyMs = latency;
             JsonNode json = objectMapper.readTree(response);
+
             return Optional.of(validator.validate(json, state, clock.instant(), latency));
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             failures.incrementAndGet();
             log.warn("Jev judgment failed", ex);
+
             return Optional.empty();
         }
     }
 
     @Override
     public JudgeStats stats() {
+
         return new JudgeStats(calls.get(), failures.get(), lastLatencyMs);
     }
 }

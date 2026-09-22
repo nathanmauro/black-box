@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.project;
 
-import java.util.List;
-
 import dev.nathan.sbaagentic.recording.AgentSession;
+import java.util.List;
 
 public interface ProjectOperations {
 

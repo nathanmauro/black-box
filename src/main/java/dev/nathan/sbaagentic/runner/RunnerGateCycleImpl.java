@@ -1,22 +1,18 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
 import dev.nathan.sbaagentic.runner.gate.GateEvaluator;
 import dev.nathan.sbaagentic.runner.gate.GateResult;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -55,20 +51,15 @@ public class RunnerGateCycleImpl implements GateCycle {
                             actorId,
                             "progress",
                             sdlc
-                                    ? "Gate passed; existing SDLC plan task "
-                                            + existing.id() + " reused."
-                                    : "Gate passed; existing auto task "
-                                            + existing.id() + " reused.",
+                                    ? "Gate passed; existing SDLC plan task " + existing.id() + " reused."
+                                    : "Gate passed; existing auto task " + existing.id() + " reused.",
                             Map.of(sdlc ? "planTaskId" : "autoTaskId", existing.id()));
-                }
-                else {
-                    apiClient.enqueueTask(
-                            spec.id(), task.title(), successorLane, task.priority(), actorId);
+                } else {
+                    apiClient.enqueueTask(spec.id(), task.title(), successorLane, task.priority(), actorId);
                 }
                 try {
-                    List<String> findings = result.findings().isEmpty()
-                            ? List.of("all checks green")
-                            : result.findings();
+                    List<String> findings =
+                            result.findings().isEmpty() ? List.of("all checks green") : result.findings();
                     String annotation = "Gate passed: " + String.join("; ", findings);
                     if (result.resolvedVerify() != null) {
                         annotation += " | resolved verify: " + result.resolvedVerify();
@@ -95,52 +86,52 @@ public class RunnerGateCycleImpl implements GateCycle {
                             sdlc
                                     ? "SDLC plan-lane execution will pick this up next."
                                     : "Auto-lane execution will pick this up next.");
-                }
-                catch (RuntimeException postEnqueueFailure) {
+                } catch (RuntimeException postEnqueueFailure) {
                     if (sdlc) {
                         log.error(
                                 "SDLC plan task enqueued for spec {} but annotate/complete failed on gate task {} "
                                         + "afterward; leaving the gate task claimed rather than releasing it, to "
                                         + "avoid a duplicate sdlc:plan enqueue on re-evaluation. Manual cleanup "
                                         + "may be required.",
-                                spec.id(), task.id(), postEnqueueFailure);
-                    }
-                    else {
+                                spec.id(),
+                                task.id(),
+                                postEnqueueFailure);
+                    } else {
                         log.error(
                                 "Auto task enqueued for spec {} but annotate/complete failed on gate task {} "
                                         + "afterward; leaving the gate task claimed rather than releasing it, to "
                                         + "avoid a duplicate auto-lane enqueue on re-evaluation. Manual cleanup "
                                         + "may be required.",
-                                spec.id(), task.id(), postEnqueueFailure);
+                                spec.id(),
+                                task.id(),
+                                postEnqueueFailure);
                     }
                 }
+
                 return;
             }
 
-            apiClient.updateTaskStatus(
-                    task.id(), actorId, "blocked", String.join("\n", result.findings()));
+            apiClient.updateTaskStatus(task.id(), actorId, "blocked", String.join("\n", result.findings()));
             apiClient.annotate(
                     task.id(),
                     actorId,
                     "progress",
                     "Gate blocked: " + result.findings().size() + " issue(s) found.",
                     Map.of("findings", result.findings()));
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.error("Gate evaluation failed for task {}; releasing it back to open", task.id(), ex);
-            apiClient.updateTaskStatus(
-                    task.id(), actorId, "open", "Gate evaluation crashed: " + ex.getMessage());
+            apiClient.updateTaskStatus(task.id(), actorId, "open", "Gate evaluation crashed: " + ex.getMessage());
         }
     }
 
     private Optional<Task> existingTask(String specId, String lane) {
+
         return apiClient.listTasks(null, lane).stream()
                 .map(TaskSnapshot::task)
                 .filter(task -> task != null
                         && specId.equals(task.specId())
                         && lane.equals(task.lane())
-                        && (task.status() == TaskStatus.OPEN
-                                || task.status() == TaskStatus.IN_PROGRESS))
+                        && (task.status() == TaskStatus.OPEN || task.status() == TaskStatus.IN_PROGRESS))
                 .findFirst();
     }
 }

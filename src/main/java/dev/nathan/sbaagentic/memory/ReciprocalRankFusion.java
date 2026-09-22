@@ -10,8 +10,7 @@ public final class ReciprocalRankFusion {
 
     private static final int RRF_K = 60;
 
-    private ReciprocalRankFusion() {
-    }
+    private ReciprocalRankFusion() {}
 
     public static List<MemoryHit> fuse(List<MemoryHit> lexical, List<MemoryHit> vector, int limit) {
         Map<String, MemoryHit> firstHitById = new LinkedHashMap<>();
@@ -23,17 +22,13 @@ public final class ReciprocalRankFusion {
         for (Map.Entry<String, MemoryHit> entry : firstHitById.entrySet()) {
             fused.add(entry.getValue().withScore(scores.getOrDefault(entry.getKey(), 0.0)));
         }
-        fused.sort(Comparator
-                .comparingDouble(MemoryHit::score)
-                .reversed()
-                .thenComparing(MemoryHit::id));
+        fused.sort(Comparator.comparingDouble(MemoryHit::score).reversed().thenComparing(MemoryHit::id));
+
         return fused.stream().limit(Math.max(0, limit)).toList();
     }
 
     private static void addRanking(
-            List<MemoryHit> ranking,
-            Map<String, MemoryHit> firstHitById,
-            Map<String, Double> scores) {
+            List<MemoryHit> ranking, Map<String, MemoryHit> firstHitById, Map<String, Double> scores) {
         for (int i = 0; i < ranking.size(); i++) {
             MemoryHit hit = ranking.get(i);
             if (hit == null || hit.id() == null || hit.id().isBlank()) {

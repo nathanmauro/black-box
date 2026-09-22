@@ -1,4 +1,3 @@
 package dev.nathan.sbaagentic.workflow;
 
-public record ClaimTaskRequest(String lane, String agent) {
-}
+public record ClaimTaskRequest(String lane, String agent) {}

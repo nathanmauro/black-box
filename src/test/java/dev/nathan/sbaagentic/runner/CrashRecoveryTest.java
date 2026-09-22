@@ -1,21 +1,10 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.SpecStatus;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
@@ -25,11 +14,19 @@ import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
+import dev.nathan.sbaagentic.runner.process.ProcessRunner;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class CrashRecoveryTest {
 
@@ -46,16 +43,15 @@ class CrashRecoveryTest {
         ProcessRunner processRunner = (command, workingDir, timeout) -> {
             throw new AssertionError("Protected worktree should not be inspected or pruned: " + command);
         };
-        CrashRecovery recovery = new CrashRecovery(
-                apiClient, new NoOpTmux(), processRunner, new StoryFrontmatterParser());
+        CrashRecovery recovery =
+                new CrashRecovery(apiClient, new NoOpTmux(), processRunner, new StoryFrontmatterParser());
 
         recovery.reconcile(
                 new RunnerConfig(
                         1,
                         List.of(),
                         null,
-                        List.of(new RepoConfig(
-                                repo.toString(), false, false, "git status --short", ""))),
+                        List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))),
                 "blackbox-runner");
 
         assertThat(worktree).isDirectory();
@@ -76,9 +72,10 @@ class CrashRecoveryTest {
                 Map.of(
                         "kind", "progress",
                         "text", "Build preserved for review.",
-                        "dataJson", Map.of(
-                                "branch", RunExecutor.branchName("Story task", "build-1"),
-                                "worktree", worktree.toString())),
+                        "dataJson",
+                                Map.of(
+                                        "branch", RunExecutor.branchName("Story task", "build-1"),
+                                        "worktree", worktree.toString())),
                 Instant.parse("2026-07-16T12:00:01Z"));
         TaskEvent workerDone = new TaskEvent(
                 "worker-done",
@@ -92,21 +89,19 @@ class CrashRecoveryTest {
                         "text", "Worker completed.",
                         "dataJson", Map.of("event", "worker_done", "outcome", "done")),
                 Instant.parse("2026-07-16T12:00:00Z"));
-        RecordingApiClient apiClient = new RecordingApiClient(
-                build, null, List.of(workerDone, buildState));
+        RecordingApiClient apiClient = new RecordingApiClient(build, null, List.of(workerDone, buildState));
         ProcessRunner processRunner = (command, workingDir, timeout) -> {
             throw new AssertionError("Deferred worktree should not be pruned: " + command);
         };
-        CrashRecovery recovery = new CrashRecovery(
-                apiClient, new NoOpTmux(), processRunner, new StoryFrontmatterParser());
+        CrashRecovery recovery =
+                new CrashRecovery(apiClient, new NoOpTmux(), processRunner, new StoryFrontmatterParser());
 
         recovery.reconcile(
                 new RunnerConfig(
                         1,
                         List.of(),
                         null,
-                        List.of(new RepoConfig(
-                                repo.toString(), false, false, "git status --short", ""))),
+                        List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))),
                 "blackbox-runner");
 
         assertThat(worktree).isDirectory();
@@ -208,31 +203,28 @@ class CrashRecoveryTest {
 
     private void prune(Path repo, TaskSnapshot build, ProcessRunner processRunner) {
         CrashRecovery recovery = new CrashRecovery(
-                new RecordingApiClient(build, null),
-                new NoOpTmux(),
-                processRunner,
-                new StoryFrontmatterParser());
+                new RecordingApiClient(build, null), new NoOpTmux(), processRunner, new StoryFrontmatterParser());
 
         recovery.reconcile(
                 new RunnerConfig(
                         1,
                         List.of(),
                         null,
-                        List.of(new RepoConfig(
-                                repo.toString(), false, false, "git status --short", ""))),
+                        List.of(new RepoConfig(repo.toString(), false, false, "git status --short", ""))),
                 "blackbox-runner");
     }
 
     private static ProcessRunner.ProcessResult ok(String stdout) {
+
         return new ProcessRunner.ProcessResult(0, stdout, "", false);
     }
 
     private static ProcessRunner.ProcessResult failed() {
+
         return new ProcessRunner.ProcessResult(128, null, "fatal: not a valid ref", false);
     }
 
-    private static TaskSnapshot snapshot(
-            Path repo, String taskId, String lane, TaskStatus status) {
+    private static TaskSnapshot snapshot(Path repo, String taskId, String lane, TaskStatus status) {
         Instant now = Instant.parse("2026-07-16T12:00:00Z");
         Task task = new Task(
                 taskId,
@@ -258,6 +250,7 @@ class CrashRecoveryTest {
                 "nathan",
                 now,
                 now);
+
         return new TaskSnapshot(task, spec);
     }
 
@@ -271,8 +264,7 @@ class CrashRecoveryTest {
             this(build, review, List.of());
         }
 
-        private RecordingApiClient(
-                TaskSnapshot build, TaskSnapshot review, List<TaskEvent> buildEvents) {
+        private RecordingApiClient(TaskSnapshot build, TaskSnapshot review, List<TaskEvent> buildEvents) {
             super(new ObjectMapper());
             this.build = build;
             this.review = review;
@@ -281,14 +273,15 @@ class CrashRecoveryTest {
 
         @Override
         public List<TaskSnapshot> listTasks(String status) {
-            return "in_progress".equals(status)
-                            && build.task().status() == TaskStatus.IN_PROGRESS
+
+            return "in_progress".equals(status) && build.task().status() == TaskStatus.IN_PROGRESS
                     ? List.of(build)
                     : List.of();
         }
 
         @Override
         public List<TaskSnapshot> listTasks(String status, String lane) {
+
             return switch (lane) {
                 case "sdlc:review" -> review == null ? List.of() : List.of(review);
                 case "auto" -> List.of(build);
@@ -298,22 +291,20 @@ class CrashRecoveryTest {
 
         @Override
         public List<TaskEvent> taskEvents(String taskId) {
+
             return build.task().id().equals(taskId) ? buildEvents : List.of();
         }
 
         @Override
-        public TaskChange updateTaskStatus(
-                String taskId, String actor, String status, String blockedReason) {
+        public TaskChange updateTaskStatus(String taskId, String actor, String status, String blockedReason) {
+
             return null;
         }
 
         @Override
         public TaskAnnotation annotate(
-                String taskId,
-                String actor,
-                String kind,
-                String text,
-                Map<String, Object> dataJson) {
+                String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {
+
             return null;
         }
     }
@@ -330,6 +321,7 @@ class CrashRecoveryTest {
 
         private ScriptedProcessRunner on(String commandFragment, ProcessResult result) {
             responses.put(commandFragment, result);
+
             return this;
         }
 
@@ -337,6 +329,7 @@ class CrashRecoveryTest {
         public ProcessResult run(List<String> command, File workingDir, Duration timeout) {
             String joined = String.join(" ", command);
             issued.add(joined);
+
             return responses.entrySet().stream()
                     .filter(entry -> joined.contains(entry.getKey()))
                     .map(Map.Entry::getValue)
@@ -346,10 +339,12 @@ class CrashRecoveryTest {
 
         private boolean issued(String... parts) {
             String fragment = String.join(" ", parts);
+
             return issued.stream().anyMatch(command -> command.contains(fragment));
         }
 
         private String commandFor(String fragment) {
+
             return issued.stream()
                     .filter(command -> command.contains(fragment))
                     .findFirst()
@@ -361,23 +356,22 @@ class CrashRecoveryTest {
 
         @Override
         public boolean hasSession(String sessionName) {
+
             return false;
         }
 
         @Override
-        public void killSession(String sessionName) {
-        }
+        public void killSession(String sessionName) {}
 
         @Override
-        public void newSession(String sessionName, File cwd, int width, int height) {
-        }
+        public void newSession(String sessionName, File cwd, int width, int height) {}
 
         @Override
-        public void sendKeys(String sessionName, String text) {
-        }
+        public void sendKeys(String sessionName, String text) {}
 
         @Override
         public String capturePane(String sessionName) {
+
             return "";
         }
     }

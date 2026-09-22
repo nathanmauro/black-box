@@ -9,18 +9,20 @@ final class Json {
 
     private static final JsonNodeFactory FACTORY = JsonNodeFactory.instance;
 
-    private Json() {
-    }
+    private Json() {}
 
     static ObjectNode object() {
+
         return FACTORY.objectNode();
     }
 
     static ArrayNode array() {
+
         return FACTORY.arrayNode();
     }
 
     static boolean num01(JsonNode node) {
+
         return node != null
                 && node.isNumber()
                 && Double.isFinite(node.asDouble())

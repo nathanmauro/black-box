@@ -10,9 +10,7 @@ public record BeatState(
         boolean askHuman,
         double ruleHuman) {
 
-    public record SessionState(String source, String repo, String title) {
-    }
+    public record SessionState(String source, String repo, String title) {}
 
-    public record OtherSessionState(String sessionId, int k, String source, String repo, String title, String latest) {
-    }
+    public record OtherSessionState(String sessionId, int k, String source, String repo, String title, String latest) {}
 }

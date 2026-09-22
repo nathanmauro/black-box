@@ -9,5 +9,4 @@ public record SessionLinkView(
         LinkType linkType,
         String taskId,
         Instant createdAt,
-        SessionRef session) {
-}
+        SessionRef session) {}

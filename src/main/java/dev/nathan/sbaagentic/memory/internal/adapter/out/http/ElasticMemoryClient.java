@@ -1,17 +1,15 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
+import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
+import dev.nathan.sbaagentic.memory.MemoryHit;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
+import dev.nathan.sbaagentic.memory.MemoryRetrievalUnavailable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
-import dev.nathan.sbaagentic.memory.MemoryHit;
-import dev.nathan.sbaagentic.memory.MemoryRetrievalOperations;
-import dev.nathan.sbaagentic.memory.MemoryRetrievalStatus;
-import dev.nathan.sbaagentic.memory.MemoryRetrievalUnavailable;
-import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
-
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -25,9 +23,7 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
     private final MemoryRetrievalProperties ask;
     private final RestClient restClient;
 
-    public ElasticMemoryClient(
-            ElasticsearchProperties elasticsearch,
-            MemoryRetrievalProperties ask) {
+    public ElasticMemoryClient(ElasticsearchProperties elasticsearch, MemoryRetrievalProperties ask) {
         this.elasticsearch = elasticsearch;
         this.ask = ask;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
@@ -42,15 +38,17 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
     @Override
     public MemoryRetrievalStatus status() {
         if (!elasticsearch.isEnabled()) {
+
             return MemoryRetrievalStatus.disabled("elasticsearch disabled");
         }
         try {
             // HEAD the memory index itself: a reachable cluster without the index is still an
             // unavailable ASK dependency, and the UI hides the workspace off this signal.
             restClient.head().uri("/{index}", ask.getMemoryIndex()).retrieve().toBodilessEntity();
+
             return MemoryRetrievalStatus.available(ask.getMemoryIndex());
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return MemoryRetrievalStatus.unavailable(ex.getMessage());
         }
     }
@@ -60,6 +58,7 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         if (!elasticsearch.isEnabled()) {
             throw new MemoryRetrievalUnavailable("elasticsearch disabled");
         }
+
         return search(bm25Query(query, limit, ask));
     }
 
@@ -68,6 +67,7 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         if (!elasticsearch.isEnabled()) {
             throw new MemoryRetrievalUnavailable("elasticsearch disabled");
         }
+
         return search(knnQuery(embedding, limit, ask));
     }
 
@@ -81,14 +81,18 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("size", limit);
         body.put("query", Map.of("multi_match", multiMatch));
-        body.put("highlight", Map.of(
-                "pre_tags", List.of("<mark>"),
-                "post_tags", List.of("</mark>"),
-                "fields", Map.of(
-                        "title", Map.of("number_of_fragments", 0),
-                        "text", Map.of("fragment_size", 260, "number_of_fragments", 2),
-                        "content", Map.of("fragment_size", 260, "number_of_fragments", 2),
-                        "summary", Map.of("fragment_size", 260, "number_of_fragments", 2))));
+        body.put(
+                "highlight",
+                Map.of(
+                        "pre_tags", List.of("<mark>"),
+                        "post_tags", List.of("</mark>"),
+                        "fields",
+                                Map.of(
+                                        "title", Map.of("number_of_fragments", 0),
+                                        "text", Map.of("fragment_size", 260, "number_of_fragments", 2),
+                                        "content", Map.of("fragment_size", 260, "number_of_fragments", 2),
+                                        "summary", Map.of("fragment_size", 260, "number_of_fragments", 2))));
+
         return body;
     }
 
@@ -102,20 +106,22 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("size", limit);
         body.put("knn", knn);
+
         return body;
     }
 
     private List<MemoryHit> search(Map<String, Object> body) {
         try {
-            Map<?, ?> response = restClient.post()
+            Map<?, ?> response = restClient
+                    .post()
                     .uri("/{index}/_search", ask.getMemoryIndex())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
                     .body(Map.class);
+
             return mapHits(response);
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
             throw new MemoryRetrievalUnavailable(ex.getMessage());
         }
     }
@@ -123,10 +129,12 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
     static List<MemoryHit> mapHits(Map<?, ?> response) {
         Object hitsObject = response == null ? null : response.get("hits");
         if (!(hitsObject instanceof Map<?, ?> hits)) {
+
             return List.of();
         }
         Object hitList = hits.get("hits");
         if (!(hitList instanceof List<?> list)) {
+
             return List.of();
         }
         List<MemoryHit> mapped = new ArrayList<>();
@@ -135,12 +143,14 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
                 mapped.add(mapHit(hit));
             }
         }
+
         return mapped;
     }
 
     private static MemoryHit mapHit(Map<?, ?> hit) {
         Map<?, ?> source = hit.get("_source") instanceof Map<?, ?> map ? map : Map.of();
         String text = firstString(source, "text", "content", "summary", "chunk", "body");
+
         return new MemoryHit(
                 string(hit.get("_id")),
                 number(hit.get("_score")),
@@ -160,10 +170,15 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
             for (String field : List.of("text", "content", "summary", "title")) {
                 Object fragments = highlight.get(field);
                 if (fragments instanceof List<?> list && !list.isEmpty()) {
-                    return clamp(String.join(" ... ", list.stream().map(String::valueOf).toList()), 520);
+
+                    return clamp(
+                            String.join(
+                                    " ... ", list.stream().map(String::valueOf).toList()),
+                            520);
                 }
             }
         }
+
         return clamp(fallback, 520);
     }
 
@@ -171,24 +186,30 @@ public class ElasticMemoryClient implements MemoryRetrievalOperations {
         for (String key : keys) {
             Object value = map.get(key);
             if (value instanceof String text && !text.isBlank()) {
+
                 return text;
             }
         }
+
         return "";
     }
 
     private static String string(Object value) {
+
         return value == null ? "" : String.valueOf(value);
     }
 
     private static double number(Object value) {
+
         return value instanceof Number number ? number.doubleValue() : 0.0;
     }
 
     private static String clamp(String value, int max) {
         if (value == null) {
+
             return "";
         }
+
         return value.length() <= max ? value : value.substring(0, max - 1) + "…";
     }
 }

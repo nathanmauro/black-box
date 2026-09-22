@@ -1,10 +1,8 @@
 package dev.nathan.sbaagentic.recording;
 
-import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 
 /**
  * A structured decision an agent commits into the recorder: what it chose, why, what else it
@@ -20,5 +18,4 @@ public record CaptureDecisionRequest(
         String rationale,
         List<String> alternatives,
         Double confidence,
-        List<String> openLoops) {
-}
+        List<String> openLoops) {}

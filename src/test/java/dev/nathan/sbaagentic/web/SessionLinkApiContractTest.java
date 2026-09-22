@@ -1,12 +1,15 @@
 package dev.nathan.sbaagentic.web;
 
-import java.util.UUID;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,20 +17,15 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-session-link-api-contract-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-session-link-api-contract-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 @AutoConfigureMockMvc
 class SessionLinkApiContractTest {
 
@@ -145,8 +143,7 @@ class SessionLinkApiContractTest {
                         .content(linkJson("parent-b", "child-3", "continued", null)))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/api/session-links/child-counts")
-                        .param("ids", "parent-a,parent-b,parent-none"))
+        mockMvc.perform(get("/api/session-links/child-counts").param("ids", "parent-a,parent-b,parent-none"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$['parent-a']").value(2))
                 .andExpect(jsonPath("$['parent-b']").value(1))
@@ -164,19 +161,11 @@ class SessionLinkApiContractTest {
                 .andExpect(content().json("{}"));
     }
 
-    private String linkJson(
-            String parentSessionId,
-            String childSessionId,
-            String linkType,
-            String taskId) throws Exception {
-        return objectMapper.writeValueAsString(new LinkBody(
-                parentSessionId, childSessionId, linkType, taskId));
+    private String linkJson(String parentSessionId, String childSessionId, String linkType, String taskId)
+            throws Exception {
+
+        return objectMapper.writeValueAsString(new LinkBody(parentSessionId, childSessionId, linkType, taskId));
     }
 
-    private record LinkBody(
-            String parentSessionId,
-            String childSessionId,
-            String linkType,
-            String taskId) {
-    }
+    private record LinkBody(String parentSessionId, String childSessionId, String linkType, String taskId) {}
 }

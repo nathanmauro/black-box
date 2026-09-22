@@ -1,7 +1,8 @@
 package dev.nathan.sbaagentic.recording;
 
-import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -9,16 +10,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.sqlite.SQLiteDataSource;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.sqlite.SQLiteDataSource;
 
 /**
  * Proves the FTS5 index contract: trigger population on insert/delete/update, consistency across
@@ -26,15 +23,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * idempotency with resumable progress, and the probe failing soft when FTS5 (or the table name)
  * is unusable.
  */
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-fts-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-event-fts-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class EventFtsIndexTest {
 
     @Autowired
@@ -84,8 +82,7 @@ class EventFtsIndexTest {
         String after = uniqueTerm();
         String eventId = seed("Update original " + before, null);
 
-        jdbcTemplate.update("UPDATE agent_events SET text = ? WHERE id = ?",
-                "Update replacement " + after, eventId);
+        jdbcTemplate.update("UPDATE agent_events SET text = ? WHERE id = ?", "Update replacement " + after, eventId);
 
         assertThat(matchedEventIds(before)).isEmpty();
         assertThat(matchedEventIds(after)).containsExactly(eventId);
@@ -171,28 +168,42 @@ class EventFtsIndexTest {
 
     private String seed(String text, String toolOutputJson) {
         String clientSessionId = "fts-" + UUID.randomUUID().toString().replace("-", "");
-        return ingestService.ingest(new EventIngestRequest(
-                "codex", clientSessionId, "turn-1", "Decision", "assistant",
-                text, "/tmp/fts", toolOutputJson == null ? null : "Bash", null, toolOutputJson,
-                Map.of("title", "FTS " + clientSessionId),
-                Instant.parse("2026-07-01T12:00:00Z"))).eventId();
+
+        return ingestService
+                .ingest(new EventIngestRequest(
+                        "codex",
+                        clientSessionId,
+                        "turn-1",
+                        "Decision",
+                        "assistant",
+                        text,
+                        "/tmp/fts",
+                        toolOutputJson == null ? null : "Bash",
+                        null,
+                        toolOutputJson,
+                        Map.of("title", "FTS " + clientSessionId),
+                        Instant.parse("2026-07-01T12:00:00Z")))
+                .eventId();
     }
 
     private long rowidOf(String eventId) {
-        Long rowid = jdbcTemplate.queryForObject(
-                "SELECT rowid FROM agent_events WHERE id = ?", Long.class, eventId);
+        Long rowid = jdbcTemplate.queryForObject("SELECT rowid FROM agent_events WHERE id = ?", Long.class, eventId);
         assertThat(rowid).isNotNull();
+
         return rowid;
     }
 
     private int matchCount(String term) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT count(*) FROM event_fts WHERE event_fts MATCH ?",
-                Integer.class, EventFtsIndex.matchExpression(List.of(term)));
+                Integer.class,
+                EventFtsIndex.matchExpression(List.of(term)));
+
         return count == null ? 0 : count;
     }
 
     private List<String> matchedEventIds(String term) {
+
         return jdbcTemplate.queryForList("""
                 SELECT e.id FROM agent_events e
                  WHERE e.rowid IN (SELECT rowid FROM event_fts WHERE event_fts MATCH ?)
@@ -200,6 +211,7 @@ class EventFtsIndexTest {
     }
 
     private static String uniqueTerm() {
+
         return "ftsterm" + UUID.randomUUID().toString().replace("-", "");
     }
 }

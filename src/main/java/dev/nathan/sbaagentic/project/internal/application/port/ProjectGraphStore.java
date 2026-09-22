@@ -23,14 +23,7 @@ public interface ProjectGraphStore {
             String headline,
             String text,
             Map<String, Object> metadata,
-            Instant observedAt) {
-    }
+            Instant observedAt) {}
 
-    record TaskRow(
-            String id,
-            String title,
-            String status,
-            int priority,
-            Instant updatedAt) {
-    }
+    record TaskRow(String id, String title, String status, int priority, Instant updatedAt) {}
 }

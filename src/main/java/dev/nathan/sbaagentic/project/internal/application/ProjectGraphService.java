@@ -1,14 +1,5 @@
 package dev.nathan.sbaagentic.project.internal.application;
 
-import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.project.ProjectGraphOperations;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
@@ -18,7 +9,13 @@ import dev.nathan.sbaagentic.project.TrajectoryTask;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.TaskRow;
-
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -46,8 +43,7 @@ public class ProjectGraphService implements ProjectGraphOperations {
         List<TrajectoryCapture> captures = store.recentCaptures(canonicalKey, CAPTURE_LIMIT).stream()
                 .map(ProjectGraphService::toCapture)
                 .sorted(Comparator.comparing(
-                        TrajectoryCapture::observedAt,
-                        Comparator.nullsLast(Comparator.reverseOrder()))
+                                TrajectoryCapture::observedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(TrajectoryCapture::id, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(CAPTURE_LIMIT)
                 .toList();
@@ -55,6 +51,7 @@ public class ProjectGraphService implements ProjectGraphOperations {
                 .limit(TASK_LIMIT)
                 .map(ProjectGraphService::toTask)
                 .toList();
+
         return new ProjectTrajectoryResponse(
                 ProjectKeyCodec.encode(canonicalKey),
                 canonicalKey,
@@ -69,15 +66,15 @@ public class ProjectGraphService implements ProjectGraphOperations {
         Map<String, Object> metadata = row.metadata() == null ? Map.of() : row.metadata();
         List<TrajectoryPath> paths = paths(metadata.get("paths"));
         String kind = kind(row, metadata);
-        String fallbackHeadline = firstNonBlank(
-                row.headline(),
-                firstNonBlank(firstLine(row.text()), row.eventType()));
-        String headline = switch (kind) {
-            case KIND_DECISION -> firstNonBlank(str(metadata.get("decision")), fallbackHeadline);
-            case KIND_HANDOFF -> firstNonBlank(str(metadata.get("contextSummary")), fallbackHeadline);
-            case KIND_PROJECTION -> firstNonBlank(firstPathTitle(paths), fallbackHeadline);
-            default -> fallbackHeadline;
-        };
+        String fallbackHeadline = firstNonBlank(row.headline(), firstNonBlank(firstLine(row.text()), row.eventType()));
+        String headline =
+                switch (kind) {
+                    case KIND_DECISION -> firstNonBlank(str(metadata.get("decision")), fallbackHeadline);
+                    case KIND_HANDOFF -> firstNonBlank(str(metadata.get("contextSummary")), fallbackHeadline);
+                    case KIND_PROJECTION -> firstNonBlank(firstPathTitle(paths), fallbackHeadline);
+                    default -> fallbackHeadline;
+                };
+
         return new TrajectoryCapture(
                 row.id(),
                 kind,
@@ -98,31 +95,32 @@ public class ProjectGraphService implements ProjectGraphOperations {
     }
 
     private static TrajectoryTask toTask(TaskRow row) {
-        return new TrajectoryTask(
-                row.id(),
-                row.title(),
-                row.status(),
-                row.priority(),
-                row.updatedAt());
+
+        return new TrajectoryTask(row.id(), row.title(), row.status(), row.priority(), row.updatedAt());
     }
 
     private static String kind(CaptureRow row, Map<String, Object> metadata) {
         if (SOURCE_TYPE_SAVED_MELD.equals(row.sourceType())) {
+
             return KIND_MELD;
         }
         String metadataKind = knownKind(str(metadata.get("kind")));
         if (metadataKind != null) {
+
             return metadataKind;
         }
         String eventKind = knownKind(row.eventType());
+
         return eventKind == null ? KIND_OBSERVATION : eventKind;
     }
 
     private static String knownKind(String value) {
         if (value == null || value.isBlank()) {
+
             return null;
         }
         String normalized = value.strip().toLowerCase(Locale.ROOT);
+
         return switch (normalized) {
             case KIND_DECISION, KIND_HANDOFF, KIND_OBSERVATION, KIND_PROJECTION -> normalized;
             default -> null;
@@ -131,6 +129,7 @@ public class ProjectGraphService implements ProjectGraphOperations {
 
     private static List<TrajectoryPath> paths(Object value) {
         if (!(value instanceof List<?> list)) {
+
             return null;
         }
         List<TrajectoryPath> paths = new ArrayList<>();
@@ -144,18 +143,22 @@ public class ProjectGraphService implements ProjectGraphOperations {
                 }
             }
         }
+
         return paths.isEmpty() ? null : paths;
     }
 
     private static String firstPathTitle(List<TrajectoryPath> paths) {
         if (paths == null) {
+
             return null;
         }
         for (TrajectoryPath path : paths) {
             if (notBlank(path.title())) {
+
                 return path.title();
             }
         }
+
         return null;
     }
 
@@ -167,43 +170,53 @@ public class ProjectGraphService implements ProjectGraphOperations {
                     out.add(String.valueOf(element));
                 }
             }
+
             return out.isEmpty() ? null : out;
         }
+
         return null;
     }
 
     private static Double asDouble(Object value) {
         if (value instanceof Number number) {
+
             return number.doubleValue();
         }
         if (value instanceof String text && !text.isBlank()) {
             try {
+
                 return Double.parseDouble(text.trim());
-            }
-            catch (NumberFormatException ignored) {
+            } catch (NumberFormatException ignored) {
+
                 return null;
             }
         }
+
         return null;
     }
 
     private static String firstNonBlank(String first, String second) {
+
         return notBlank(first) ? first : second;
     }
 
     private static boolean notBlank(String value) {
+
         return value != null && !value.isBlank();
     }
 
     private static String firstLine(String value) {
         if (value == null) {
+
             return null;
         }
         int newline = value.indexOf('\n');
+
         return newline >= 0 ? value.substring(0, newline) : value;
     }
 
     private static String str(Object value) {
+
         return value == null ? null : String.valueOf(value);
     }
 }
