@@ -4,12 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.judgment.JudgmentProperties;
 import dev.nathan.sbaagentic.judgment.internal.adapter.out.http.HttpJevTransport;
 import dev.nathan.sbaagentic.judgment.internal.adapter.out.http.JevJudge;
+import dev.nathan.sbaagentic.judgment.internal.adapter.out.http.JevTelemetry;
 import dev.nathan.sbaagentic.judgment.internal.adapter.out.http.JevTransport;
 import dev.nathan.sbaagentic.judgment.internal.adapter.out.http.JudgeQuestionSet;
 import dev.nathan.sbaagentic.judgment.internal.application.BeatFolder;
 import dev.nathan.sbaagentic.judgment.internal.application.JudgmentStateBuilder;
 import dev.nathan.sbaagentic.judgment.internal.application.NoopJudge;
 import dev.nathan.sbaagentic.judgment.internal.application.port.Judge;
+import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
 import java.time.Clock;
@@ -73,7 +75,8 @@ public class JudgmentConfiguration {
             JevTransport transport,
             JudgeQuestionSet questions,
             Clock clock,
-            Environment environment) {
+            Environment environment,
+            ExportRedactor redactor) {
         String apiKey = firstText(
                 environment.getProperty("SBA_JUDGE_API_KEY"),
                 environment.getProperty("TYPESAFE_API_KEY"),
@@ -81,7 +84,14 @@ public class JudgmentConfiguration {
                 System.getenv("TYPESAFE_API_KEY"));
 
         return new JevJudge(
-                apiKey, Duration.ofMillis(properties.getTimeoutMs()), objectMapper, transport, questions, clock);
+                apiKey,
+                Duration.ofMillis(properties.getTimeoutMs()),
+                objectMapper,
+                transport,
+                questions,
+                clock,
+                new JevTelemetry(properties.isPayloadTelemetryEnabled(), objectMapper),
+                redactor::redactForExport);
     }
 
     private static String firstText(String... values) {

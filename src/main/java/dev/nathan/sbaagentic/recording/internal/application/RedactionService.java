@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -10,7 +11,7 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RedactionService {
+public class RedactionService implements ExportRedactor {
 
     private static final String REDACTED = "[REDACTED]";
     // Anchored at token starts via lookbehind, with a bounded lazy prefix and a possessive
@@ -23,6 +24,30 @@ public class RedactionService {
     // rather than stored unscanned.
     private static final int MAX_SCAN_CHARS = 50_000;
     private static final String CLIP_MARKER = " …[truncated]";
+
+    private final List<RedactionRule> exportRules = exportRules();
+
+    private static List<RedactionRule> exportRules() {
+        List<RedactionRule> result = new ArrayList<>(builtInRules());
+        // JSON embedded in a text leaf may be escaped more than once. Conservatively
+        // remove the rest of that leaf after a quoted credential key; do not guess
+        // nested string boundaries and accidentally retain part of a secret.
+        result.add(literal(SECRET_KEY + "\\\\*[\"']\\s*:\\s*.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL));
+
+        return result;
+    }
+
+    @Override
+    public String redactForExport(String text) {
+        if (text == null)
+
+            return null;
+
+        String result = text.length() > MAX_SCAN_CHARS ? text.substring(0, MAX_SCAN_CHARS) + CLIP_MARKER : text;
+        for (RedactionRule rule : exportRules) result = rule.redact(result);
+
+        return result;
+    }
 
     private final boolean enabled;
     private final List<RedactionRule> rules;

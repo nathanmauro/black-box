@@ -120,6 +120,8 @@ sba:
   judge:
     enabled: ${SBA_JUDGE_ENABLED:false}
     provider: ${SBA_JUDGE_PROVIDER:jev}
+    # Private serialized request content. Enable only with an approved local log sink.
+    payload-telemetry-enabled: ${SBA_JUDGE_PAYLOAD_TELEMETRY_ENABLED:false}
     max-others: ${SBA_JUDGE_MAX_OTHERS:8}
     timeout-ms: ${SBA_JUDGE_TIMEOUT_MS:12000}
     beat:

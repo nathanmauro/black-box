@@ -55,7 +55,7 @@ class JevJudgeTest {
         assertThat(judge.stats().failures()).isZero();
     }
 
-    private static BeatState state() {
+    static BeatState state() {
         Beat beat = new Beat(
                 "b1",
                 "s1",
