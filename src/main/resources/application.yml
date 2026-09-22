@@ -117,6 +117,15 @@ sba:
     # Secret-looking values (private key blocks, bearer/API keys, AWS credentials, and password/token
     # assignments) are replaced with [REDACTED] before persistence.
     redact-enabled: ${SBA_REDACT_ENABLED:true}
+  judge:
+    enabled: ${SBA_JUDGE_ENABLED:false}
+    provider: ${SBA_JUDGE_PROVIDER:jev}
+    max-others: ${SBA_JUDGE_MAX_OTHERS:8}
+    timeout-ms: ${SBA_JUDGE_TIMEOUT_MS:12000}
+    beat:
+      gap-ms: ${SBA_JUDGE_BEAT_GAP_MS:4000}
+      max-events: ${SBA_JUDGE_BEAT_MAX_EVENTS:12}
+      max-chars: ${SBA_JUDGE_BEAT_MAX_CHARS:1500}
 
 ---
 # Keep SQLite driver properties off the PostgreSQL connection pool.

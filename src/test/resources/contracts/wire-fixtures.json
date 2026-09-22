@@ -30,6 +30,7 @@
     "DashboardStats.BreakdownCount": {"name":"codex","count":1},
     "DashboardStats.DailyCount": {"day":"2026-07-20","count":1},
     "ElasticHealth": {"enabled":false,"available":false,"indexName":"events","detail":"disabled"},
+    "EventJudgment": {"eventId":"event-1","sessionId":"session-1","beatId":"beat-1","judge":"jev","model":"jev-latest","version":"orbit-jev-v1","answers":{},"judgedAt":"2026-07-20T12:00:00Z"},
     "EventFeedItem": {"id":"event-1","sessionId":"session-1","source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","toolName":null,"toolInputJson":null,"toolOutputJson":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z","cwd":"/repo","sessionTitle":"Refactor"},
     "EventFeedResponse": {"limit":100,"count":1,"items":[],"nextBefore":null},
     "EventIngestRequest": {"source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","cwd":"/repo","toolName":null,"toolInput":null,"toolOutput":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z"},
@@ -85,8 +86,9 @@
     "LinkErrorCode": ["VALIDATION_FAILED","DUPLICATE_LINK"]
   },
   "sseFrames": {
-    "event.appended": {"sessionId":"session-1","source":"codex","eventType":"Handoff","toolName":null,"title":"Refactor","observedAt":"2026-07-20T12:00:00Z","id":"event-1","cwd":"/repo"},
-    "session.updated": {"sessionId":"session-1","source":"codex","title":"Refactor","cwd":"/repo","eventCount":1,"lastSeenAt":"2026-07-20T12:00:00Z"},
+    "event.appended": {"sessionId":"session-1","source":"codex","eventType":"Handoff","toolName":null,"title":"Refactor","observedAt":"2026-07-20T12:00:00Z","id":"event-1","cwd":"/repo","role":"assistant","textPreview":"Preview","parentSessionId":null},
+    "session.updated": {"sessionId":"session-1","source":"codex","title":"Refactor","cwd":"/repo","eventCount":1,"lastSeenAt":"2026-07-20T12:00:00Z","spawnedBy":null,"linkTypes":[]},
+    "judgment.appended": {"eventIds":["event-1"],"sessionId":"session-1","beatId":"beat-1","phase":"building","salience":1.2,"novelty":0.4,"human":0.0,"kin":{"session-2":0.7},"judge":"jev","model":"jev-latest","version":"orbit-jev-v1","judgedAt":"2026-07-20T12:00:00Z"},
     "task.created": {"task":{},"transitionId":"transition-1","transitionType":"task.created","observedAt":"2026-07-20T12:00:00Z"},
     "task.claimed": {"task":{},"transitionId":"transition-1","transitionType":"task.claimed","observedAt":"2026-07-20T12:00:00Z"},
     "task.blocked": {"task":{},"transitionId":"transition-1","transitionType":"task.blocked","observedAt":"2026-07-20T12:00:00Z"},

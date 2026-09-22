@@ -38,6 +38,7 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
+import dev.nathan.sbaagentic.judgment.EventJudgment;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
@@ -125,6 +126,7 @@ class WireContractFixtureTest {
         Map<String, Class<?>> frames = Map.ofEntries(
                 entry("event.appended", StreamEvents.EventAppended.class),
                 entry("session.updated", StreamEvents.SessionUpdated.class),
+                entry("judgment.appended", StreamEvents.JudgmentAppended.class),
                 entry("task.created", StreamEvents.TaskChanged.class),
                 entry("task.claimed", StreamEvents.TaskChanged.class),
                 entry("task.blocked", StreamEvents.TaskChanged.class),
@@ -202,6 +204,7 @@ class WireContractFixtureTest {
                 entry("DashboardStats.BreakdownCount", DashboardStats.BreakdownCount.class),
                 entry("DashboardStats.DailyCount", DashboardStats.DailyCount.class),
                 entry("ElasticHealth", ElasticHealth.class),
+                entry("EventJudgment", EventJudgment.class),
                 entry("EventFeedItem", EventFeedItem.class),
                 entry("EventFeedResponse", EventFeedResponse.class),
                 entry("EventIngestRequest", EventIngestRequest.class),

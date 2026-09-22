@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import java.util.List;
+import java.util.Map;
+
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 
@@ -19,7 +22,10 @@ public final class StreamEvents {
             String title,
             String observedAt,
             String id,
-            String cwd) {
+            String cwd,
+            String role,
+            String textPreview,
+            String parentSessionId) {
     }
 
     /** The owning session's latest state after an append, named SSE event {@code session.updated}. */
@@ -29,7 +35,25 @@ public final class StreamEvents {
             String title,
             String cwd,
             long eventCount,
-            String lastSeenAt) {
+            String lastSeenAt,
+            String spawnedBy,
+            List<String> linkTypes) {
+    }
+
+    /** A judged beat appended by the cortex stage, named SSE event {@code judgment.appended}. */
+    public record JudgmentAppended(
+            List<String> eventIds,
+            String sessionId,
+            String beatId,
+            String phase,
+            double salience,
+            double novelty,
+            double human,
+            Map<String, Double> kin,
+            String judge,
+            String model,
+            String version,
+            String judgedAt) {
     }
 
     /** A committed task lifecycle change, named for the value of {@code transitionType}. */

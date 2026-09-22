@@ -6,6 +6,7 @@ import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.judgment.JudgmentHealthOperations;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,14 +19,17 @@ public class SystemController {
     private final RecordingCatalog repository;
     private final SummaryModelOperations localAiClient;
     private final MemorySearchOperations memorySearch;
+    private final JudgmentHealthOperations judgmentHealth;
 
     public SystemController(
             RecordingCatalog repository,
             SummaryModelOperations localAiClient,
-            MemorySearchOperations memorySearch) {
+            MemorySearchOperations memorySearch,
+            JudgmentHealthOperations judgmentHealth) {
         this.repository = repository;
         this.localAiClient = localAiClient;
         this.memorySearch = memorySearch;
+        this.judgmentHealth = judgmentHealth;
     }
 
     @GetMapping("/status")
@@ -33,7 +37,8 @@ public class SystemController {
         return Map.of(
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
-                "elasticsearch", memorySearch.elasticHealth());
+                "elasticsearch", memorySearch.elasticHealth(),
+                "judge", judgmentHealth.health());
     }
 
     @GetMapping("/stats")
@@ -49,5 +54,10 @@ public class SystemController {
     @GetMapping("/health/elasticsearch")
     public Object elasticsearchHealth() {
         return memorySearch.elasticHealth();
+    }
+
+    @GetMapping("/health/judge")
+    public Object judgeHealth() {
+        return judgmentHealth.health();
     }
 }

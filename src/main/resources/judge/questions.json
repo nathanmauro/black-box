@@ -1,0 +1,54 @@
+{
+  "version": "orbit-jev-v1",
+  "model": "jev-latest",
+  "maxOthers": 8,
+  "questions": {
+    "phase": {
+      "type": "choice",
+      "instructions": "What kind of work does `beat` represent right now? Judge by the substance of what is happening, not by tool names. `session` says who is working where; `trail` holds the same session's previous beats for context.",
+      "criteria": {
+        "conversing": "Nathan and an agent talking: a prompt, a spoken utterance, a question, a reply in prose with no tool work.",
+        "exploring": "Reading, searching, listing, inspecting, mapping a codebase or a system to understand it.",
+        "building": "Writing or editing code, files, configs, documents; creating something that did not exist.",
+        "verifying": "Running tests, checks, builds, lints, screenshots, or reviewing output to confirm something works.",
+        "deciding": "Weighing approaches, recording a decision, choosing between options, planning what to do.",
+        "handing_off": "Summarizing state for a future agent or person: handoffs, breadcrumbs, commits, final reports.",
+        "blocked": "Waiting, failing repeatedly, missing permissions or credentials, an error that stops progress."
+      }
+    },
+    "salience": {
+      "type": "score",
+      "instructions": "How much would Nathan want to notice `beat` in a live picture of his day? He cares about turning points and meaningful progress, not mechanics.",
+      "criteria": [
+        "Routine mechanics: listing files, reading, small edits, ordinary tool churn.",
+        "Meaningful progress: a feature landing, a test passing after a fix, a real finding, a substantive exchange.",
+        "A turning point: a decision that changes direction, a handoff, a failure that blocks, a new thread opening, something Nathan said that reframes the work."
+      ]
+    },
+    "novelty": {
+      "type": "score",
+      "instructions": "How does `beat` relate to `trail`, the same session's previous beats?",
+      "criteria": [
+        "Continues the same work as the trail.",
+        "A new direction inside the same body of work.",
+        "A different thread entirely: a new topic or task unrelated to the trail."
+      ]
+    },
+    "human": {
+      "type": "noul",
+      "instructions": "Does `beat` contain Nathan's own words, spoken or typed, rather than a message relayed from another agent, a system notice, or pasted machine output? Ignore `session.title`; judge only the lines in `beat`.",
+      "criteria": {
+        "true": "A prompt he typed, an utterance he spoke, a note he dictated, an instruction in his voice.",
+        "false": "Only tool output, code, file contents, or the agent's own prose and reports."
+      }
+    }
+  },
+  "kin": {
+    "type": "noul",
+    "instructions": "Is `beat` working on the same underlying thread as `others[K]`? Judge by what the work is about, not by repo path or which client is doing it. Two sessions in the same repo doing unrelated things are not kin; two sessions in different repos advancing the same idea are.",
+    "criteria": {
+      "true": "The same thread: the same feature, question, bug, idea, or line of thinking, even across repos or clients.",
+      "false": "Different work, even if it shares a repo, a tool, or a time of day."
+    }
+  }
+}

@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -55,6 +56,9 @@ class EventStreamTest {
 
     @Autowired
     EventBroadcaster broadcaster;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     @Test
     void idleStreamReceivesHeartbeatBeforeProxyTimeoutWithoutNewEvents() throws Exception {
@@ -127,11 +131,88 @@ class EventStreamTest {
                             .contains("event.appended")
                             .contains("\"id\":")
                             .contains("\"source\":\"codex\"")
-                            .contains("\"cwd\":\"/tmp/project\""));
+                            .contains("\"cwd\":\"/tmp/project\"")
+                            .contains("\"role\":\"assistant\"")
+                            .contains("\"textPreview\":\"This decision is pushed over SSE.\""));
         } finally {
             pump.cancel(true);
             reader.shutdownNow();
             client.shutdownNow(); // release the kept-alive SSE connection and HttpClient threads
         }
+    }
+
+    @Test
+    void streamReplaysSinceOldestFirstWithSseCursorIds() throws Exception {
+        insertReplayFixture("replay-session", "replay-event-1", "2026-09-21T12:00:00Z", "first");
+        insertReplayFixture("replay-session", "replay-event-2", "2026-09-21T12:00:01Z", "second");
+
+        HttpClient client = HttpClient.newHttpClient();
+        var response = client.send(HttpRequest.newBuilder(URI.create(
+                        "http://localhost:" + port + "/api/stream?since=2026-09-21T11:59:59Z"))
+                .header("Accept", "text/event-stream")
+                .GET()
+                .build(), HttpResponse.BodyHandlers.ofInputStream());
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+            String replay = readLines(in, 10);
+            assertThat(replay)
+                    .contains("id:2026-09-21T12:00:00Z|replay-event-1")
+                    .contains("id:2026-09-21T12:00:01Z|replay-event-2")
+                    .contains("\"textPreview\":\"first\"")
+                    .contains("\"textPreview\":\"second\"");
+            assertThat(replay.indexOf("replay-event-1")).isLessThan(replay.indexOf("replay-event-2"));
+        } finally {
+            response.body().close();
+            client.shutdownNow();
+        }
+    }
+
+    @Test
+    void lastEventIdReplaysAfterCursorExclusively() throws Exception {
+        insertReplayFixture("cursor-session", "cursor-event-1", "2026-09-21T12:10:00Z", "first");
+        insertReplayFixture("cursor-session", "cursor-event-2", "2026-09-21T12:10:01Z", "second");
+
+        HttpClient client = HttpClient.newHttpClient();
+        var response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                .header("Accept", "text/event-stream")
+                .header("Last-Event-ID", "2026-09-21T12:10:00Z|cursor-event-1")
+                .GET()
+                .build(), HttpResponse.BodyHandlers.ofInputStream());
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+            String replay = readLines(in, 6);
+            assertThat(replay).doesNotContain("cursor-event-1");
+            assertThat(replay).contains("cursor-event-2");
+        } finally {
+            response.body().close();
+            client.shutdownNow();
+        }
+    }
+
+    private void insertReplayFixture(String sessionId, String eventId, String observedAt, String text) {
+        jdbcTemplate.update("""
+                INSERT INTO agent_sessions (
+                    id, source, client_session_id, title, title_rank, cwd, started_at, last_seen_at, event_count
+                )
+                VALUES (?, 'codex', ?, 'Replay', 5, '/tmp/replay',
+                        '2026-09-21T12:00:00Z', ?, 1)
+                ON CONFLICT (source, client_session_id) DO UPDATE SET last_seen_at = excluded.last_seen_at
+                """, sessionId, sessionId + "-client", observedAt);
+        jdbcTemplate.update("""
+                INSERT INTO agent_events (
+                    id, session_id, source, client_session_id, event_type, role, text, observed_at
+                )
+                VALUES (?, ?, 'codex', ?, 'Decision', 'assistant', ?, ?)
+                """, eventId, sessionId, sessionId + "-client", text, observedAt);
+    }
+
+    private static String readLines(BufferedReader in, int maxLines) throws Exception {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < maxLines; i++) {
+            String line = in.readLine();
+            if (line == null) {
+                break;
+            }
+            out.append(line).append('\n');
+        }
+        return out.toString();
     }
 }

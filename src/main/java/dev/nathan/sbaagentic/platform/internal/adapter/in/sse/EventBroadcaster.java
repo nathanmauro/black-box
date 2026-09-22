@@ -2,17 +2,15 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.EventRecorded;
+import java.util.function.Supplier;
 
 import jakarta.annotation.PreDestroy;
 
-import org.springframework.context.event.EventListener;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,8 +27,25 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @EnableScheduling
 public class EventBroadcaster {
 
-    private record Subscriber(SseEmitter emitter, BooleanSupplier authorized) {}
+    static final int REPLAY_LIMIT = 2_000;
+    private record Pending(SseEmitter.SseEventBuilder frame, StreamEvents.EventAppended event) {}
+    private static final class Subscriber {
+        final SseEmitter emitter;
+        final BooleanSupplier authorized;
+        final List<Pending> pending = new ArrayList<>();
+        boolean replaying = true;
+        boolean closed;
+        Subscriber(SseEmitter emitter, BooleanSupplier authorized) {
+            this.emitter = emitter;
+            this.authorized = authorized;
+        }
+        SseEmitter emitter() { return emitter; }
+        BooleanSupplier authorized() { return authorized; }
+    }
     private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
+
+    public EventBroadcaster() {
+    }
 
     /** Registers a new subscriber. The browser's native {@code EventSource} reconnects on drop. */
     public SseEmitter register() {
@@ -39,6 +54,19 @@ public class EventBroadcaster {
 
     /** Recheck a browser session before each publication; an open stream must not outlive access. */
     public SseEmitter register(BooleanSupplier authorized) {
+        return register(authorized, List::of);
+    }
+
+    /** Registers a subscriber and replays missed event.appended frames before live delivery. */
+    public SseEmitter register(BooleanSupplier authorized, List<StreamEvents.EventAppended> replay) {
+        return register(authorized, () -> replay);
+    }
+
+    /**
+     * Registers the subscriber before loading replay frames, then sends replay frames to that same
+     * subscriber. This keeps expensive replay work out of the pre-subscription path.
+     */
+    public SseEmitter register(BooleanSupplier authorized, Supplier<List<StreamEvents.EventAppended>> replay) {
         SseEmitter emitter = new SseEmitter(0L); // no server-side timeout
         Subscriber subscriber = new Subscriber(emitter, authorized);
         emitter.onCompletion(() -> subscribers.remove(subscriber));
@@ -48,38 +76,41 @@ public class EventBroadcaster {
         // Flush the response immediately so the browser fires `open` (and the UI shows "live")
         // right away, instead of staying "connecting" until the first real event is published.
         send(subscriber, SseEmitter.event().comment("connected"));
+        try {
+            List<StreamEvents.EventAppended> history = replay.get();
+            synchronized (subscriber) {
+                if (subscriber.closed) return emitter;
+                Set<String> sent = new HashSet<>();
+                for (StreamEvents.EventAppended payload : history.stream().limit(REPLAY_LIMIT).toList()) {
+                    sendEventAppended(subscriber, payload);
+                    sent.add(payload.id());
+                }
+                if (history.size() > REPLAY_LIMIT) {
+                    // Never jump into live traffic past an omitted page. Native EventSource
+                    // resumes at the final delivered ID; other clients get an explicit signal.
+                    send(subscriber, SseEmitter.event().name("replay.more")
+                            .data(java.util.Map.of("cursor", cursor(history.get(REPLAY_LIMIT - 1))), MediaType.APPLICATION_JSON));
+                    close(subscriber);
+                    return emitter;
+                }
+                for (Pending pending : subscriber.pending) {
+                    if (pending.event() == null) send(subscriber, pending.frame());
+                    else if (sent.add(pending.event().id())) sendEventAppended(subscriber, pending.event());
+                }
+                subscriber.pending.clear();
+                subscriber.replaying = false;
+            }
+        } catch (RuntimeException failure) {
+            close(subscriber);
+            throw failure;
+        }
         return emitter;
     }
 
-    @EventListener
-    @Order(30)
-    public void broadcastRecordedEvent(EventRecorded recorded) {
-        AgentSession session = recorded.session();
-        AgentEvent event = recorded.event();
-        try {
-            publishEventAppended(new StreamEvents.EventAppended(
-                    event.sessionId(),
-                    event.source(),
-                    event.eventType(),
-                    event.toolName(),
-                    session.title(),
-                    event.observedAt() == null ? null : event.observedAt().toString(),
-                    event.id(),
-                    session.cwd()));
-            publishSessionUpdated(new StreamEvents.SessionUpdated(
-                    session.id(),
-                    session.source(),
-                    session.title(),
-                    session.cwd(),
-                    session.eventCount(),
-                    session.lastSeenAt() == null ? null : session.lastSeenAt().toString()));
-        } catch (RuntimeException ex) {
-            // Broadcasting is best-effort; never let it break ingest.
-        }
-    }
-
     public void publishEventAppended(StreamEvents.EventAppended payload) {
-        send("event.appended", payload);
+        for (Subscriber subscriber : subscribers) {
+            dispatch(subscriber, new Pending(null, payload));
+        }
     }
 
     public void publishSessionUpdated(StreamEvents.SessionUpdated payload) {
@@ -94,18 +125,55 @@ public class EventBroadcaster {
         send("task.note", payload);
     }
 
+    public void publishJudgmentAppended(StreamEvents.JudgmentAppended payload) {
+        send("judgment.appended", payload);
+    }
+
     /** One shared Spring scheduler keeps idle proxy connections active; comments create no events. */
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     void heartbeat() {
         for (Subscriber subscriber : subscribers) {
-            send(subscriber, SseEmitter.event().comment("heartbeat"));
+            dispatch(subscriber, new Pending(SseEmitter.event().comment("heartbeat"), null));
         }
     }
 
     private void send(String name, Object payload) {
         for (Subscriber subscriber : subscribers) {
-            send(subscriber, SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
+            dispatch(subscriber, new Pending(SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON), null));
         }
+    }
+
+    private void dispatch(Subscriber subscriber, Pending pending) {
+        synchronized (subscriber) {
+            if (subscriber.closed) return;
+            if (subscriber.replaying) {
+                if (subscriber.pending.size() >= REPLAY_LIMIT) {
+                    send(subscriber, SseEmitter.event().name("replay.reset")
+                            .data(java.util.Map.of("reason", "live-buffer-overflow"), MediaType.APPLICATION_JSON));
+                    close(subscriber);
+                } else subscriber.pending.add(pending);
+            } else if (pending.event() == null) send(subscriber, pending.frame());
+            else sendEventAppended(subscriber, pending.event());
+        }
+    }
+
+    private void close(Subscriber subscriber) {
+        subscriber.closed = true;
+        subscriber.pending.clear();
+        subscribers.remove(subscriber);
+        subscriber.emitter().complete();
+    }
+
+    private void sendEventAppended(Subscriber subscriber, StreamEvents.EventAppended payload) {
+        SseEmitter.SseEventBuilder event = SseEmitter.event()
+                .id(cursor(payload))
+                .name("event.appended")
+                .data(payload, MediaType.APPLICATION_JSON);
+        send(subscriber, event);
+    }
+
+    private static String cursor(StreamEvents.EventAppended payload) {
+        return (payload.observedAt() == null ? "" : payload.observedAt()) + "|" + payload.id();
     }
 
     private void send(Subscriber subscriber, SseEmitter.SseEventBuilder event) {
