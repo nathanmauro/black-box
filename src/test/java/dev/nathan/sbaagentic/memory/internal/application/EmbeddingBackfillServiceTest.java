@@ -1,12 +1,6 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.atomic.AtomicInteger;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingSourceReader;
@@ -15,11 +9,15 @@ import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore;
 import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore.StoredEmbedding;
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class EmbeddingBackfillServiceTest {
 
@@ -36,7 +34,8 @@ class EmbeddingBackfillServiceTest {
 
     @Test
     void dryRunWritesNothingAndReportsAccurateCount() {
-        sourceReader.sources(source("event", "event-1", "Decision", "already indexed"),
+        sourceReader.sources(
+                source("event", "event-1", "Decision", "already indexed"),
                 source("event", "event-2", "Decision", "needs indexing"),
                 source("session_summary", "session-1", null, "summary needs indexing"));
         store.upsert(stored("event", "event-1", EmbeddingVector.contentHash("already indexed")));
@@ -55,7 +54,8 @@ class EmbeddingBackfillServiceTest {
 
     @Test
     void applyIsIdempotentOnSecondRun() {
-        sourceReader.sources(source("event", "event-1", "Decision", "first decision"),
+        sourceReader.sources(
+                source("event", "event-1", "Decision", "first decision"),
                 source("session_summary", "session-1", null, "first summary"));
 
         var first = service.backfillEmbeddings(new MemoryEmbeddingBackfillRequest(true, 10, 10));
@@ -75,9 +75,17 @@ class EmbeddingBackfillServiceTest {
         sourceReader.sources(
                 source("event", "event-1", "Decision", "same decision"),
                 source("event", "event-2", "Decision", "same dimensions changed"));
-        store.upsert(stored("event", "event-1", "old-model", new float[] { 1.0f, 0.0f },
+        store.upsert(stored(
+                "event",
+                "event-1",
+                "old-model",
+                new float[] {1.0f, 0.0f},
                 EmbeddingVector.contentHash("same decision")));
-        store.upsert(stored("event", "event-2", "test-model", new float[] { 1.0f },
+        store.upsert(stored(
+                "event",
+                "event-2",
+                "test-model",
+                new float[] {1.0f},
                 EmbeddingVector.contentHash("same dimensions changed")));
 
         var result = service.backfillEmbeddings(new MemoryEmbeddingBackfillRequest(true, 10, 10));
@@ -93,14 +101,14 @@ class EmbeddingBackfillServiceTest {
 
     @Test
     void resumeAfterCancellationEmbedsOnlyTheRemainder() {
-        sourceReader.sources(source("event", "event-1", "Decision", "first decision"),
+        sourceReader.sources(
+                source("event", "event-1", "Decision", "first decision"),
                 source("event", "event-2", "Observation", "second observation"),
                 source("session_summary", "session-1", null, "third summary"));
         AtomicInteger checks = new AtomicInteger();
 
         var interrupted = service.backfillEmbeddings(
-                new MemoryEmbeddingBackfillRequest(true, 10, 10),
-                () -> checks.incrementAndGet() <= 2);
+                new MemoryEmbeddingBackfillRequest(true, 10, 10), () -> checks.incrementAndGet() <= 2);
 
         assertThat(interrupted.canceled()).isTrue();
         assertThat(interrupted.embedded()).isEqualTo(1);
@@ -117,15 +125,18 @@ class EmbeddingBackfillServiceTest {
     }
 
     private static EmbeddingSource source(String targetKind, String targetId, String eventType, String text) {
+
         return new EmbeddingSource(targetKind, targetId, eventType, text, Map.of());
     }
 
     private static StoredEmbedding stored(String targetKind, String targetId, String contentHash) {
-        return stored(targetKind, targetId, "test-model", new float[] { 1.0f, 0.0f }, contentHash);
+
+        return stored(targetKind, targetId, "test-model", new float[] {1.0f, 0.0f}, contentHash);
     }
 
     private static StoredEmbedding stored(
             String targetKind, String targetId, String model, float[] values, String contentHash) {
+
         return new StoredEmbedding(
                 targetKind,
                 targetId,
@@ -142,6 +153,7 @@ class EmbeddingBackfillServiceTest {
             this.sources = List.of(sources).stream()
                     .sorted((left, right) -> {
                         int kind = left.targetKind().compareTo(right.targetKind());
+
                         return kind != 0 ? kind : left.targetId().compareTo(right.targetId());
                     })
                     .toList();
@@ -151,6 +163,7 @@ class EmbeddingBackfillServiceTest {
         public List<EmbeddingSource> nextBatch(String afterTargetKind, String afterTargetId, int limit) {
             String afterKind = afterTargetKind == null ? "" : afterTargetKind;
             String afterId = afterTargetId == null ? "" : afterTargetId;
+
             return sources.stream()
                     .filter(source -> source.targetKind().compareTo(afterKind) > 0
                             || (source.targetKind().equals(afterKind)
@@ -172,6 +185,7 @@ class EmbeddingBackfillServiceTest {
         @Override
         public Optional<String> findHash(String targetKind, String targetId) {
             StoredEmbedding embedding = embeddings.get(key(targetKind, targetId));
+
             return embedding == null ? Optional.empty() : Optional.of(embedding.contentHash());
         }
 
@@ -179,6 +193,7 @@ class EmbeddingBackfillServiceTest {
         public boolean hasCurrentEmbedding(
                 String targetKind, String targetId, String contentHash, String model, int dimensions) {
             StoredEmbedding embedding = embeddings.get(key(targetKind, targetId));
+
             return embedding != null
                     && embedding.contentHash().equals(contentHash)
                     && embedding.vector().model().equals(model)
@@ -187,6 +202,7 @@ class EmbeddingBackfillServiceTest {
 
         @Override
         public List<StoredEmbedding> loadAll(String model, int dimensions) {
+
             return embeddings.values().stream()
                     .filter(embedding -> embedding.vector().model().equals(model))
                     .filter(embedding -> embedding.vector().values().length == dimensions)
@@ -200,10 +216,12 @@ class EmbeddingBackfillServiceTest {
 
         @Override
         public long count() {
+
             return embeddings.size();
         }
 
         private static String key(String targetKind, String targetId) {
+
             return targetKind + ":" + targetId;
         }
     }
@@ -214,40 +232,48 @@ class EmbeddingBackfillServiceTest {
 
         @Override
         public EmbeddingVector embedDocument(String text) {
+
             return embed(text);
         }
 
         @Override
         public EmbeddingVector embedQuery(String text) {
+
             return embed(text);
         }
 
         @Override
         public String documentContentHash(String text) {
+
             return EmbeddingVector.contentHash(text);
         }
 
         private EmbeddingVector embed(String text) {
             embeddedTargetTexts.add(text);
-            return new EmbeddingVector("test-model", new float[] { 1.0f, embeddedTargetTexts.size() });
+
+            return new EmbeddingVector("test-model", new float[] {1.0f, embeddedTargetTexts.size()});
         }
 
         @Override
         public boolean available() {
+
             return true;
         }
 
         @Override
         public String model() {
+
             return "test-model";
         }
 
         @Override
         public int dimensions() {
+
             return 2;
         }
 
         List<String> embeddedTargetTexts() {
+
             return List.copyOf(embeddedTargetTexts);
         }
 

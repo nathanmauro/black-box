@@ -1,7 +1,14 @@
 package dev.nathan.sbaagentic.runner;
 
+import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,19 +20,8 @@ import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.stream.Stream;
-
-import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -56,7 +52,8 @@ public class CrashRecovery {
         boolean sdlcStateKnown = protectSdlcReviewWorktrees(activeWorktreeNames, actorId);
         for (TaskSnapshot snapshot : inProgress) {
             String taskId = snapshot.task().id();
-            String worktreeName = Path.of(RunnerNaming.worktreeDirName(taskId)).getFileName().toString();
+            String worktreeName =
+                    Path.of(RunnerNaming.worktreeDirName(taskId)).getFileName().toString();
             if (!actorId.equals(snapshot.task().claimedBy())) {
                 activeWorktreeNames.add(worktreeName);
                 continue;
@@ -81,22 +78,20 @@ public class CrashRecovery {
             for (RepoConfig repo : config.repos()) {
                 pruneOrphanedWorktrees(repo, activeWorktreeNames);
             }
-        }
-        else {
+        } else {
             log.warn("Skipping orphaned worktree pruning because SDLC preservation state is unavailable");
         }
     }
 
-    private boolean protectSdlcReviewWorktrees(
-            Set<String> activeWorktreeNames, String actorId) {
+    private boolean protectSdlcReviewWorktrees(Set<String> activeWorktreeNames, String actorId) {
         List<TaskSnapshot> reviews;
         List<TaskSnapshot> builds;
         try {
             reviews = safeList(apiClient.listTasks(null, "sdlc:review"));
             builds = safeList(apiClient.listTasks(null, "auto"));
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Unable to read SDLC tasks during crash recovery", ex);
+
             return false;
         }
 
@@ -111,33 +106,30 @@ public class CrashRecovery {
                 continue;
             }
             Task task = snapshot.task();
-            if (preservedSpecIds.contains(task.specId())
-                    || hasDeferredBuildMarker(snapshot, actorId)) {
+            if (preservedSpecIds.contains(task.specId()) || hasDeferredBuildMarker(snapshot, actorId)) {
                 activeWorktreeNames.add(Path.of(RunnerNaming.worktreeDirName(task.id()))
                         .getFileName()
                         .toString());
             }
         }
+
         return true;
     }
 
     private boolean hasDeferredBuildMarker(TaskSnapshot snapshot, String actorId) {
         Task task = snapshot.task();
         if (task.status() == TaskStatus.CANCELLED || !isSdlc(snapshot)) {
+
             return false;
         }
-        String expectedName = Path.of(RunnerNaming.worktreeDirName(task.id()))
-                .getFileName()
-                .toString();
+        String expectedName =
+                Path.of(RunnerNaming.worktreeDirName(task.id())).getFileName().toString();
         List<TaskEvent> events;
         try {
             events = safeList(apiClient.taskEvents(task.id()));
-        }
-        catch (RuntimeException ex) {
-            log.warn(
-                    "Unable to verify deferred SDLC build state for task {}; preserving its worktree",
-                    task.id(),
-                    ex);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to verify deferred SDLC build state for task {}; preserving its worktree", task.id(), ex);
+
             return true;
         }
         boolean workerDone = events.stream().anyMatch(event -> {
@@ -146,28 +138,34 @@ public class CrashRecovery {
                     || !"blackbox-runner-worker".equals(event.actor())
                     || event.detail() == null
                     || !"progress".equals(event.detail().get("kind"))) {
+
                 return false;
             }
             Object rawData = event.detail().get("dataJson");
             if (!(rawData instanceof Map<?, ?> data)) {
+
                 return false;
             }
-            return "worker_done".equals(data.get("event"))
-                    && "done".equals(data.get("outcome"));
+
+            return "worker_done".equals(data.get("event")) && "done".equals(data.get("outcome"));
         });
         if (!workerDone) {
+
             return false;
         }
+
         return events.stream().anyMatch(event -> {
             if (event == null
                     || event.type() != TaskEventType.NOTE
                     || !Objects.equals(actorId, event.actor())
                     || event.detail() == null
                     || !"progress".equals(event.detail().get("kind"))) {
+
                 return false;
             }
             Object rawData = event.detail().get("dataJson");
             if (!(rawData instanceof Map<?, ?> data)) {
+
                 return false;
             }
             Object branch = data.get("branch");
@@ -176,13 +174,16 @@ public class CrashRecovery {
                     || branchValue.isBlank()
                     || !(worktree instanceof String worktreeValue)
                     || worktreeValue.isBlank()) {
+
                 return false;
             }
             try {
+
                 return RunExecutor.branchName(task.title(), task.id()).equals(branchValue)
-                        && expectedName.equals(Path.of(worktreeValue).getFileName().toString());
-            }
-            catch (RuntimeException ex) {
+                        && expectedName.equals(
+                                Path.of(worktreeValue).getFileName().toString());
+            } catch (RuntimeException ex) {
+
                 return false;
             }
         });
@@ -193,23 +194,29 @@ public class CrashRecovery {
             log.warn(
                     "Auto task {} has no attached spec during crash recovery; preserving conservatively",
                     snapshot.task().id());
+
             return true;
         }
-        return frontmatterParser.parse(snapshot.spec().body())
+
+        return frontmatterParser
+                .parse(snapshot.spec().body())
                 .map(parsed -> "sdlc".equals(parsed.frontmatter().mode()))
                 .orElse(false);
     }
 
     private void pruneOrphanedWorktrees(RepoConfig repo, Set<String> activeWorktreeNames) {
         if (repo == null || repo.path() == null || repo.path().isBlank()) {
+
             return;
         }
         Path repoPath = Path.of(repo.path()).toAbsolutePath().normalize();
         if (!Files.isDirectory(repoPath)) {
+
             return;
         }
         Path worktreesPath = repoPath.resolve(".worktrees");
         if (!Files.isDirectory(worktreesPath)) {
+
             return;
         }
 
@@ -217,14 +224,16 @@ public class CrashRecovery {
         try (Stream<Path> children = Files.list(worktreesPath)) {
             candidates = children.filter(Files::isDirectory)
                     .filter(path -> path.getFileName().toString().startsWith("bb-"))
-                    .filter(path -> !activeWorktreeNames.contains(path.getFileName().toString()))
+                    .filter(path ->
+                            !activeWorktreeNames.contains(path.getFileName().toString()))
                     .toList();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             log.warn("Unable to inspect runner worktrees under {}: {}", worktreesPath, ex.getMessage());
+
             return;
         }
         if (candidates.isEmpty()) {
+
             return;
         }
 
@@ -241,16 +250,23 @@ public class CrashRecovery {
         try {
             if (tmux.hasSession(RunnerNaming.tmuxSessionName(taskShort))) {
                 log.warn("Preserving orphaned worktree {}: worker session is still running", worktreePath);
+
                 return;
             }
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Preserving orphaned worktree {}: worker shutdown cannot be verified", worktreePath, ex);
+
             return;
         }
         ProcessRunner.ProcessResult status = processRunner.run(
-                List.of("git", "-C", worktreePath.toString(), "status", "--porcelain",
-                        "--untracked-files=all", "--ignored=matching"),
+                List.of(
+                        "git",
+                        "-C",
+                        worktreePath.toString(),
+                        "status",
+                        "--porcelain",
+                        "--untracked-files=all",
+                        "--ignored=matching"),
                 worktreePath.toFile(),
                 GIT_TIMEOUT);
         if (status.exitCode() != 0
@@ -258,34 +274,30 @@ public class CrashRecovery {
                 || status.stdout() == null
                 || !status.stdout().isBlank()) {
             log.warn("orphaned dirty worktree left for inspection: {}", worktreePath);
+
             return;
         }
 
         String branchName = currentBranch(worktreePath);
         if (!safeToDestroy(worktreePath, branchName, defaultBranch)) {
+
             return;
         }
 
         ProcessRunner.ProcessResult remove = processRunner.run(
-                List.of(
-                        "git",
-                        "-C",
-                        repoPath.toString(),
-                        "worktree",
-                        "remove",
-                        worktreePath.toString()),
+                List.of("git", "-C", repoPath.toString(), "worktree", "remove", worktreePath.toString()),
                 repoPath.toFile(),
                 GIT_TIMEOUT);
         if (remove.exitCode() != 0 || remove.timedOut()) {
             log.warn("Unable to remove clean orphaned worktree {}: {}", worktreePath, remove.stderr());
+
             return;
         }
         ProcessRunner.ProcessResult prune = processRunner.run(
-                List.of("git", "-C", repoPath.toString(), "worktree", "prune"),
-                repoPath.toFile(),
-                GIT_TIMEOUT);
+                List.of("git", "-C", repoPath.toString(), "worktree", "prune"), repoPath.toFile(), GIT_TIMEOUT);
         if (prune.exitCode() != 0 || prune.timedOut()) {
             log.warn("Unable to prune worktree metadata for {}: {}", repoPath, prune.stderr());
+
             return;
         }
         if (branchName != null && !branchName.isBlank() && !"HEAD".equals(branchName)) {
@@ -305,8 +317,10 @@ public class CrashRecovery {
                 worktreePath.toFile(),
                 GIT_TIMEOUT);
         if (branch.exitCode() != 0 || branch.timedOut() || branch.stdout() == null) {
+
             return null;
         }
+
         return branch.stdout().strip();
     }
 
@@ -324,6 +338,7 @@ public class CrashRecovery {
                     "Preserving orphaned worktree {}: unable to resolve the repo default branch, so "
                             + "commits that exist only on its branch cannot be ruled out",
                     worktreePath);
+
             return false;
         }
         OptionalInt unpublished = unpublishedCommitCount(worktreePath, defaultBranch);
@@ -333,6 +348,7 @@ public class CrashRecovery {
                             + "unpublished commits",
                     worktreePath,
                     branchName);
+
             return false;
         }
         if (unpublished.getAsInt() > 0) {
@@ -343,8 +359,10 @@ public class CrashRecovery {
                     branchName,
                     unpublished.getAsInt(),
                     defaultBranch);
+
             return false;
         }
+
         return true;
     }
 
@@ -368,12 +386,14 @@ public class CrashRecovery {
                 worktreePath.toFile(),
                 GIT_TIMEOUT);
         if (revList.exitCode() != 0 || revList.timedOut() || revList.stdout() == null) {
+
             return OptionalInt.empty();
         }
         try {
+
             return OptionalInt.of(Integer.parseInt(revList.stdout().strip()));
-        }
-        catch (NumberFormatException ex) {
+        } catch (NumberFormatException ex) {
+
             return OptionalInt.empty();
         }
     }
@@ -391,6 +411,7 @@ public class CrashRecovery {
         if (remoteHead.exitCode() == 0 && !remoteHead.timedOut() && remoteHead.stdout() != null) {
             String resolved = remoteHead.stdout().strip();
             if (!resolved.isBlank() && !"origin/HEAD".equals(resolved)) {
+
                 return resolved;
             }
         }
@@ -401,13 +422,16 @@ public class CrashRecovery {
         if (symbolic.exitCode() == 0 && !symbolic.timedOut() && symbolic.stdout() != null) {
             String resolved = symbolic.stdout().strip();
             if (!resolved.isBlank()) {
+
                 return resolved;
             }
         }
+
         return null;
     }
 
     private static <T> List<T> safeList(List<T> values) {
+
         return values == null ? List.of() : values;
     }
 }

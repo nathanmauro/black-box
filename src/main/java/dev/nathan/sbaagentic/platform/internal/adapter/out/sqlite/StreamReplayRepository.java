@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.out.sqlite;
 
+import dev.nathan.sbaagentic.platform.internal.application.StreamEventSnapshot;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-
-import dev.nathan.sbaagentic.platform.internal.application.StreamEventSnapshot;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -32,7 +30,9 @@ public class StreamReplayRepository {
     }
 
     public List<StreamEventSnapshot> eventsSince(Instant since) {
-        return jdbcTemplate.query("""
+
+        return jdbcTemplate.query(
+                """
                 SELECT e.id, e.session_id, e.source, e.event_type, e.role, e.text,
                        e.tool_name, e.observed_at, s.title, s.cwd, s.spawned_by
                   FROM agent_events e
@@ -46,9 +46,12 @@ public class StreamReplayRepository {
     public List<StreamEventSnapshot> eventsAfterCursor(String lastEventId) {
         StreamCursor cursor = StreamCursor.parse(lastEventId);
         if (cursor == null) {
+
             return List.of();
         }
-        return jdbcTemplate.query("""
+
+        return jdbcTemplate.query(
+                """
                 SELECT e.id, e.session_id, e.source, e.event_type, e.role, e.text,
                        e.tool_name, e.observed_at, s.title, s.cwd, s.spawned_by
                   FROM agent_events e
@@ -57,11 +60,16 @@ public class StreamReplayRepository {
                     OR (%s = ? AND e.id > ?)
                  ORDER BY %s ASC, e.id ASC
                  LIMIT ?
-                """.formatted(ORDERED_TIME, ORDERED_TIME, ORDERED_TIME), this::mapSnapshot,
-                CURSOR_TIME.format(cursor.observedAt()), CURSOR_TIME.format(cursor.observedAt()), cursor.id(), LIMIT);
+                """.formatted(ORDERED_TIME, ORDERED_TIME, ORDERED_TIME),
+                this::mapSnapshot,
+                CURSOR_TIME.format(cursor.observedAt()),
+                CURSOR_TIME.format(cursor.observedAt()),
+                cursor.id(),
+                LIMIT);
     }
 
     private StreamEventSnapshot mapSnapshot(ResultSet rs, int rowNum) throws SQLException {
+
         return new StreamEventSnapshot(
                 rs.getString("id"),
                 rs.getString("session_id"),
@@ -79,18 +87,19 @@ public class StreamReplayRepository {
     private record StreamCursor(Instant observedAt, String id) {
         private static StreamCursor parse(String value) {
             if (value == null || value.isBlank()) {
+
                 return null;
             }
             int separator = value.indexOf('|');
             if (separator <= 0 || separator == value.length() - 1) {
+
                 return null;
             }
             try {
-                return new StreamCursor(
-                        Instant.parse(value.substring(0, separator)),
-                        value.substring(separator + 1));
-            }
-            catch (DateTimeParseException ex) {
+
+                return new StreamCursor(Instant.parse(value.substring(0, separator)), value.substring(separator + 1));
+            } catch (DateTimeParseException ex) {
+
                 return null;
             }
         }

@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.JsonNode;
-
-import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 
 public class JevAnswerValidator {
 
@@ -33,8 +31,7 @@ public class JevAnswerValidator {
         JsonNode humanAnswer = answers.path("human");
         if (state.askHuman()) {
             human = noul(humanAnswer, "human");
-        }
-        else if (!humanAnswer.isMissingNode()) {
+        } else if (!humanAnswer.isMissingNode()) {
             noul(humanAnswer, "human");
         }
 
@@ -67,13 +64,15 @@ public class JevAnswerValidator {
         if (choice == null || choice.isBlank()) {
             throw malformed("bad " + id + " choice");
         }
+
         return choice;
     }
 
     private double score(JsonNode node, String id, int levelCount) {
         requireType(node, id, "score");
         JsonNode score = node.path("score");
-        if (!score.isNumber() || !Double.isFinite(score.asDouble())
+        if (!score.isNumber()
+                || !Double.isFinite(score.asDouble())
                 || score.asDouble() < 0.0
                 || score.asDouble() > Math.max(0, levelCount - 1)) {
             throw malformed("bad " + id + " score");
@@ -82,6 +81,7 @@ public class JevAnswerValidator {
             throw malformed("bad " + id + " confidence");
         }
         validateProbabilities(node.path("probabilities"), id);
+
         return score.asDouble();
     }
 
@@ -90,6 +90,7 @@ public class JevAnswerValidator {
         if (!Json.num01(node.path("noul"))) {
             throw malformed("bad " + id + " noul");
         }
+
         return node.path("noul").asDouble();
     }
 
@@ -101,6 +102,7 @@ public class JevAnswerValidator {
 
     private void validateProbabilities(JsonNode node, String id) {
         if (node == null || node.isMissingNode() || node.isNull()) {
+
             return;
         }
         if (!node.isObject()) {
@@ -114,6 +116,7 @@ public class JevAnswerValidator {
     }
 
     private static MalformedJudgmentException malformed(String message) {
+
         return new MalformedJudgmentException(message);
     }
 }

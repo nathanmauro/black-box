@@ -8,5 +8,4 @@ public record MemoryEmbeddingBackfillResult(
         long skipped,
         long embedded,
         long failed,
-        boolean canceled) {
-}
+        boolean canceled) {}

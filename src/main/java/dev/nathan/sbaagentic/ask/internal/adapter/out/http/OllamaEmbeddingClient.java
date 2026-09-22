@@ -1,13 +1,11 @@
 package dev.nathan.sbaagentic.ask.internal.adapter.out.http;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
 import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
 import dev.nathan.sbaagentic.ask.internal.application.port.QueryEmbedder;
-
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -34,13 +32,15 @@ public class OllamaEmbeddingClient implements QueryEmbedder {
     @Override
     public AskComponentStatus status() {
         if (!properties.isEmbeddingEnabled()) {
+
             return AskComponentStatus.disabled("embeddings disabled");
         }
         try {
             restClient.get().uri("/").retrieve().toBodilessEntity();
+
             return AskComponentStatus.available(properties.getEmbeddingModel());
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return AskComponentStatus.unavailable(ex.getMessage());
         }
     }
@@ -51,7 +51,8 @@ public class OllamaEmbeddingClient implements QueryEmbedder {
             throw new AskDependencyUnavailable("embeddings disabled");
         }
         try {
-            Map<?, ?> response = restClient.post()
+            Map<?, ?> response = restClient
+                    .post()
                     .uri(properties.getEmbeddingPath())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of("model", properties.getEmbeddingModel(), "prompt", query))
@@ -62,9 +63,9 @@ public class OllamaEmbeddingClient implements QueryEmbedder {
                 throw new AskDependencyUnavailable("embedding dimensions " + embedding.length
                         + " did not match expected " + properties.getEmbeddingDimensions());
             }
+
             return embedding;
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
             throw new AskDependencyUnavailable(ex.getMessage());
         }
     }
@@ -72,10 +73,12 @@ public class OllamaEmbeddingClient implements QueryEmbedder {
     private static float[] extractEmbedding(Map<?, ?> response) {
         Object embedding = response == null ? null : response.get("embedding");
         if (embedding instanceof List<?> list) {
+
             return toFloatArray(list);
         }
         Object embeddings = response == null ? null : response.get("embeddings");
         if (embeddings instanceof List<?> outer && !outer.isEmpty() && outer.getFirst() instanceof List<?> first) {
+
             return toFloatArray(first);
         }
         throw new AskDependencyUnavailable("embedding response did not include a vector");
@@ -90,6 +93,7 @@ public class OllamaEmbeddingClient implements QueryEmbedder {
             }
             values[i] = number.floatValue();
         }
+
         return values;
     }
 }

@@ -1,32 +1,5 @@
 package dev.nathan.sbaagentic.project;
 
-import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.web.servlet.MockMvc;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -35,15 +8,38 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-project-alias-integration-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.project.internal.application.ProjectAliasService;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.web.servlet.MockMvc;
+
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-project-alias-integration-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 @AutoConfigureMockMvc
 class ProjectAliasIntegrationTest {
 
@@ -75,7 +71,9 @@ class ProjectAliasIntegrationTest {
                 .andExpect(jsonPath("$.aliasKey").value(alias))
                 .andExpect(jsonPath("$.canonicalKey").value(primary))
                 .andExpect(jsonPath("$.source").value("manual"))
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
         assertThat(objectMapper.readTree(createdBody).path("id").asText()).isNotBlank();
 
         JsonNode project = project(primary);
@@ -96,11 +94,11 @@ class ProjectAliasIntegrationTest {
         mockMvc.perform(get("/api/projects/{projectKey}/timeline", legacyAliasProjectKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.canonicalKey").value(primary))
-                .andExpect(jsonPath("$.projectKey").value(project.path("projectKey").asText()))
+                .andExpect(jsonPath("$.projectKey")
+                        .value(project.path("projectKey").asText()))
                 .andExpect(jsonPath("$.items.length()").value(2));
 
-        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias))
-                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias)).andExpect(status().isNoContent());
         assertThat(project(primary).path("sessionCount").asInt()).isEqualTo(1);
         assertThat(project(alias).path("sessionCount").asInt()).isEqualTo(1);
         mockMvc.perform(get("/api/projects/{projectKey}/sessions", legacyAliasProjectKey))
@@ -117,10 +115,14 @@ class ProjectAliasIntegrationTest {
 
         String first = putAlias(alias, primary)
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
         String second = putAlias(alias, primary)
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
         assertThat(objectMapper.readTree(second).path("id").asText())
                 .isEqualTo(objectMapper.readTree(first).path("id").asText());
 
@@ -130,10 +132,8 @@ class ProjectAliasIntegrationTest {
         putAlias("/", primary).andExpect(status().isBadRequest());
         putAlias("__no_project__", primary).andExpect(status().isBadRequest());
 
-        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias))
-                .andExpect(status().isNoContent());
-        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias)).andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", alias)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -145,12 +145,12 @@ class ProjectAliasIntegrationTest {
         seedEvent("nested-" + key, nestedAlias, "Decision", "Nested worktree decision");
         JsonNode nestedProject = project(nestedPrimary);
         assertThat(nestedProject.path("sessionCount").asInt()).isEqualTo(1);
-        assertThat(scope(nestedProject, nestedAlias).path("primary").asBoolean()).isFalse();
+        assertThat(scope(nestedProject, nestedAlias).path("primary").asBoolean())
+                .isFalse();
         assertThat(scope(nestedProject, nestedAlias).path("source").asText()).isEqualTo("nested-worktree");
         assertThat(aliasSource(nestedAlias)).isEqualTo("nested-worktree");
 
-        Path nearestOwner = tempDir.resolve("outer-" + key)
-                .resolve(".worktrees/outer/inner-repository");
+        Path nearestOwner = tempDir.resolve("outer-" + key).resolve(".worktrees/outer/inner-repository");
         Files.createDirectories(nearestOwner.resolve(".git"));
         String innerWorktree = nearestOwner.resolve(".worktrees/inner").toString();
         seedEvent("nearest-owner-" + key, innerWorktree, "Decision", "Nested repository worktree");
@@ -161,26 +161,30 @@ class ProjectAliasIntegrationTest {
         seedEvent("ambiguous-" + key, ambiguous, "Decision", "Ambiguous basename");
         assertThat(project(ambiguous).path("sessionCount").asInt()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?", Integer.class, ambiguous)).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?", Integer.class, ambiguous))
+                .isZero();
 
-        String globalClaudeWorktree = Path.of(System.getProperty("user.home"),
-                ".claude", "worktrees", "global-" + key).toString();
+        String globalClaudeWorktree = Path.of(System.getProperty("user.home"), ".claude", "worktrees", "global-" + key)
+                .toString();
         seedEvent("global-claude-" + key, globalClaudeWorktree, "Decision", "Global Claude worktree");
         assertThat(project(globalClaudeWorktree).path("sessionCount").asInt()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
-                Integer.class,
-                globalClaudeWorktree)).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
+                        Integer.class,
+                        globalClaudeWorktree))
+                .isZero();
 
         Path nonRepository = tempDir.resolve("not-a-repository-" + key);
         Files.createDirectories(nonRepository);
-        String nonRepositoryWorktree = nonRepository.resolve(".worktrees/worker").toString();
+        String nonRepositoryWorktree =
+                nonRepository.resolve(".worktrees/worker").toString();
         seedEvent("non-repository-" + key, nonRepositoryWorktree, "Decision", "Non-repository worktree path");
         assertThat(project(nonRepositoryWorktree).path("sessionCount").asInt()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
-                Integer.class,
-                nonRepositoryWorktree)).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
+                        Integer.class,
+                        nonRepositoryWorktree))
+                .isZero();
 
         Path owner = tempDir.resolve("owner-" + key);
         Path commonDir = owner.resolve(".git");
@@ -194,7 +198,8 @@ class ProjectAliasIntegrationTest {
         seedEvent("git-linked-" + key, linked.toString(), "Decision", "Linked Git worktree");
         JsonNode gitProject = project(owner.toString());
         assertThat(gitProject.path("sessionCount").asInt()).isEqualTo(1);
-        assertThat(scope(gitProject, linked.toString()).path("primary").asBoolean()).isFalse();
+        assertThat(scope(gitProject, linked.toString()).path("primary").asBoolean())
+                .isFalse();
         assertThat(scope(gitProject, linked.toString()).path("source").asText()).isEqualTo("git-commondir");
         assertThat(aliasSource(linked.toString())).isEqualTo("git-commondir");
 
@@ -206,11 +211,13 @@ class ProjectAliasIntegrationTest {
         Files.writeString(unrelatedLinked.resolve(".git"), "gitdir: " + unrelatedGitDir);
 
         seedEvent("git-unrelated-" + key, unrelatedLinked.toString(), "Decision", "Unverified Git pointer");
-        assertThat(project(unrelatedLinked.toString()).path("sessionCount").asInt()).isEqualTo(1);
+        assertThat(project(unrelatedLinked.toString()).path("sessionCount").asInt())
+                .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
-                Integer.class,
-                unrelatedLinked.toString())).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
+                        Integer.class,
+                        unrelatedLinked.toString()))
+                .isZero();
     }
 
     @Test
@@ -219,18 +226,27 @@ class ProjectAliasIntegrationTest {
         String primary = tempDir.resolve("startup-primary-" + key).toString();
         String alias = primary + "/.worktrees/preexisting";
         Files.createDirectories(Path.of(primary).resolve(".git"));
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO agent_sessions
                        (id, source, client_session_id, title, title_rank, cwd,
                         started_at, last_seen_at, event_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, "startup-session-" + key, "codex", "startup-client-" + key,
-                "Preexisting worktree", 1, alias,
-                "2026-07-15T11:00:00Z", "2026-07-15T11:00:00Z", 0);
+                """,
+                "startup-session-" + key,
+                "codex",
+                "startup-client-" + key,
+                "Preexisting worktree",
+                1,
+                alias,
+                "2026-07-15T11:00:00Z",
+                "2026-07-15T11:00:00Z",
+                0);
 
         assertThat(project(alias).path("sessionCount").asInt()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?", Integer.class, alias)).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?", Integer.class, alias))
+                .isZero();
 
         projectAliasService.discoverVerifiedAliases();
 
@@ -249,15 +265,13 @@ class ProjectAliasIntegrationTest {
         seedEvent("cycle-worktree-" + key, futureWorktree, "Decision", "Future worktree evidence");
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?",
-                Integer.class,
-                futureWorktree)).isZero();
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key = ?", Integer.class, futureWorktree))
+                .isZero();
         JsonNode project = project(futureWorktree);
         assertThat(project.path("sessionCount").asInt()).isEqualTo(1);
         assertThat(scope(project, owner).path("source").asText()).isEqualTo("manual");
 
-        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", owner))
-                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/project-aliases").param("aliasKey", owner)).andExpect(status().isNoContent());
     }
 
     @Test
@@ -277,9 +291,8 @@ class ProjectAliasIntegrationTest {
         assertThat(scope(merged, firstPrimary).path("source").asText()).isEqualTo("manual");
         assertThat(scope(merged, worktree).path("source").asText()).isEqualTo("nested-worktree");
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT canonical_key FROM project_aliases WHERE alias_key = ?",
-                String.class,
-                worktree)).isEqualTo(firstPrimary);
+                        "SELECT canonical_key FROM project_aliases WHERE alias_key = ?", String.class, worktree))
+                .isEqualTo(firstPrimary);
 
         mockMvc.perform(delete("/api/project-aliases").param("aliasKey", firstPrimary))
                 .andExpect(status().isNoContent());
@@ -308,10 +321,8 @@ class ProjectAliasIntegrationTest {
 
         assertThat(failures).filteredOn(failure -> failure != null).hasSize(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key IN (?, ?)",
-                Integer.class,
-                first,
-                second)).isEqualTo(1);
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key IN (?, ?)", Integer.class, first, second))
+                .isEqualTo(1);
         assertThat(projectAliasService.resolve(first)).isEqualTo(projectAliasService.resolve(second));
     }
 
@@ -331,10 +342,11 @@ class ProjectAliasIntegrationTest {
                 start);
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM project_aliases WHERE alias_key IN (?, ?)",
-                Integer.class,
-                owner,
-                worktree)).isEqualTo(1);
+                        "SELECT COUNT(*) FROM project_aliases WHERE alias_key IN (?, ?)",
+                        Integer.class,
+                        owner,
+                        worktree))
+                .isEqualTo(1);
         assertThat(projectAliasService.resolve(owner)).isEqualTo(projectAliasService.resolve(worktree));
     }
 
@@ -350,26 +362,38 @@ class ProjectAliasIntegrationTest {
         JsonNode project = project(primary);
         String primaryProjectKey = project.path("projectKey").asText();
         String aliasProjectKey = scope(project, alias).path("projectKey").asText();
-        JsonNode sessions = objectMapper.readTree(mockMvc.perform(
-                        get("/api/projects/{projectKey}/sessions", aliasProjectKey))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString());
+        JsonNode sessions =
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", aliasProjectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString());
         List<String> sessionIds = textValues(sessions, "id");
 
         String historicalMeldId = UUID.randomUUID().toString();
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO session_melds
                        (id, project_key, title, body, provider, model, prompt_version,
                         execution_mode, saved_from_preview, metadata_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, historicalMeldId, alias, "Historical alias meld", "Historical body", "local",
-                "context-bundle", "v1", "export_bundle", 1, null, "2026-07-15T12:05:00Z");
+                """,
+                historicalMeldId,
+                alias,
+                "Historical alias meld",
+                "Historical body",
+                "local",
+                "context-bundle",
+                "v1",
+                "export_bundle",
+                1,
+                null,
+                "2026-07-15T12:05:00Z");
 
         mockMvc.perform(post("/api/projects/{projectKey}/melds/preview", aliasProjectKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "sessionIds", sessionIds,
-                                "executionMode", "export_bundle"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("sessionIds", sessionIds, "executionMode", "export_bundle"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.canonicalKey").value(primary))
                 .andExpect(jsonPath("$.projectKey").value(primaryProjectKey))
@@ -391,25 +415,33 @@ class ProjectAliasIntegrationTest {
                 .andExpect(jsonPath("$.projectKey").value(primaryProjectKey));
 
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM session_melds WHERE project_key = ?", Integer.class, primary)).isEqualTo(1);
+                        "SELECT COUNT(*) FROM session_melds WHERE project_key = ?", Integer.class, primary))
+                .isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM session_melds WHERE project_key = ?", Integer.class, alias)).isEqualTo(1);
+                        "SELECT COUNT(*) FROM session_melds WHERE project_key = ?", Integer.class, alias))
+                .isEqualTo(1);
         mockMvc.perform(get("/api/projects/{projectKey}/melds", primaryProjectKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[*].canonicalKey").value(org.hamcrest.Matchers.everyItem(
-                        org.hamcrest.Matchers.is(primary))));
+                .andExpect(jsonPath("$[*].canonicalKey")
+                        .value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(primary))));
 
-        JsonNode timeline = objectMapper.readTree(mockMvc.perform(
-                        get("/api/projects/{projectKey}/timeline", primaryProjectKey).param("limit", "20"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString());
+        JsonNode timeline =
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/timeline", primaryProjectKey)
+                                .param("limit", "20"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString());
         assertThat(textValues(timeline.path("items"), "sourceType").stream()
-                .filter("saved_meld"::equals)
-                .count()).isEqualTo(2);
+                        .filter("saved_meld"::equals)
+                        .count())
+                .isEqualTo(2);
     }
 
-    private org.springframework.test.web.servlet.ResultActions putAlias(String alias, String canonical) throws Exception {
+    private org.springframework.test.web.servlet.ResultActions putAlias(String alias, String canonical)
+            throws Exception {
+
         return mockMvc.perform(put("/api/project-aliases")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of(
@@ -434,9 +466,12 @@ class ProjectAliasIntegrationTest {
     private JsonNode project(String canonicalKey) throws Exception {
         JsonNode projects = objectMapper.readTree(mockMvc.perform(get("/api/projects"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString());
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
         for (JsonNode project : projects) {
             if (canonicalKey.equals(project.path("canonicalKey").asText())) {
+
                 return project;
             }
         }
@@ -446,6 +481,7 @@ class ProjectAliasIntegrationTest {
     private static JsonNode scope(JsonNode project, String canonicalKey) {
         for (JsonNode scope : project.path("scopes")) {
             if (canonicalKey.equals(scope.path("canonicalKey").asText())) {
+
                 return scope;
             }
         }
@@ -453,6 +489,7 @@ class ProjectAliasIntegrationTest {
     }
 
     private String aliasSource(String aliasKey) {
+
         return jdbcTemplate.queryForObject(
                 "SELECT source FROM project_aliases WHERE alias_key = ?", String.class, aliasKey);
     }
@@ -462,42 +499,38 @@ class ProjectAliasIntegrationTest {
         for (JsonNode item : items) {
             values.add(item.path(field).asText());
         }
+
         return values;
     }
 
     private static List<Throwable> runConcurrently(
-            ThrowingOperation first,
-            ThrowingOperation second,
-            CountDownLatch ready,
-            CountDownLatch start) throws Exception {
+            ThrowingOperation first, ThrowingOperation second, CountDownLatch ready, CountDownLatch start)
+            throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<Throwable> firstResult = executor.submit(() -> runAfterSignal(first, ready, start));
             Future<Throwable> secondResult = executor.submit(() -> runAfterSignal(second, ready, start));
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
-            return java.util.Arrays.asList(
-                    firstResult.get(5, TimeUnit.SECONDS),
-                    secondResult.get(5, TimeUnit.SECONDS));
-        }
-        finally {
+
+            return java.util.Arrays.asList(firstResult.get(5, TimeUnit.SECONDS), secondResult.get(5, TimeUnit.SECONDS));
+        } finally {
             executor.shutdownNow();
         }
     }
 
-    private static Throwable runAfterSignal(
-            ThrowingOperation operation,
-            CountDownLatch ready,
-            CountDownLatch start) {
+    private static Throwable runAfterSignal(ThrowingOperation operation, CountDownLatch ready, CountDownLatch start) {
         ready.countDown();
         try {
             if (!start.await(5, TimeUnit.SECONDS)) {
+
                 return new AssertionError("Timed out waiting to start concurrent alias write");
             }
             operation.run();
+
             return null;
-        }
-        catch (Throwable failure) {
+        } catch (Throwable failure) {
+
             return failure;
         }
     }
@@ -508,6 +541,7 @@ class ProjectAliasIntegrationTest {
     }
 
     private static String uniqueKey() {
+
         return UUID.randomUUID().toString().replace("-", "");
     }
 }

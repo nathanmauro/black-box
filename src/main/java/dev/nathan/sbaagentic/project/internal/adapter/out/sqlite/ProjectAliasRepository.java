@@ -1,14 +1,12 @@
 package dev.nathan.sbaagentic.project.internal.adapter.out.sqlite;
 
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-
-import dev.nathan.sbaagentic.project.ProjectAlias;
-import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -30,6 +28,7 @@ public class ProjectAliasRepository implements ProjectAliasStore {
     }
 
     public List<ProjectAlias> findAll() {
+
         return jdbcTemplate.query("""
                 SELECT id, alias_key, canonical_key, source, created_at
                   FROM project_aliases
@@ -38,6 +37,7 @@ public class ProjectAliasRepository implements ProjectAliasStore {
     }
 
     public Optional<ProjectAlias> findByAliasKey(String aliasKey) {
+
         return jdbcTemplate.query("""
                 SELECT id, alias_key, canonical_key, source, created_at
                   FROM project_aliases
@@ -45,24 +45,22 @@ public class ProjectAliasRepository implements ProjectAliasStore {
                 """, this::mapAlias, aliasKey).stream().findFirst();
     }
 
-    public ProjectAlias insert(
-            String id,
-            String aliasKey,
-            String canonicalKey,
-            String source,
-            Instant createdAt) {
+    public ProjectAlias insert(String id, String aliasKey, String canonicalKey, String source, Instant createdAt) {
         jdbcTemplate.update("""
                 INSERT INTO project_aliases (id, alias_key, canonical_key, source, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 """, id, aliasKey, canonicalKey, source, createdAt.toString());
+
         return new ProjectAlias(id, aliasKey, canonicalKey, source, createdAt);
     }
 
     public int delete(String aliasKey) {
+
         return jdbcTemplate.update("DELETE FROM project_aliases WHERE alias_key = ?", aliasKey);
     }
 
     public List<String> distinctObservedScopes() {
+
         return jdbcTemplate.queryForList("""
                 SELECT DISTINCT %s AS scope
                   FROM agent_sessions
@@ -71,6 +69,7 @@ public class ProjectAliasRepository implements ProjectAliasStore {
     }
 
     private ProjectAlias mapAlias(ResultSet rs, int rowNum) throws SQLException {
+
         return new ProjectAlias(
                 rs.getString("id"),
                 rs.getString("alias_key"),

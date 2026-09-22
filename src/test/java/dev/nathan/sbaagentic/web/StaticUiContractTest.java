@@ -1,13 +1,12 @@
 package dev.nathan.sbaagentic.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Stream;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Contract for the built single-page UI that Spring Boot serves from {@code static/}. The bundle is
@@ -35,12 +34,14 @@ class StaticUiContractTest {
         assertThat(Files.isDirectory(assets)).isTrue();
 
         try (Stream<Path> files = Files.list(assets)) {
-            List<String> names = files.map(path -> path.getFileName().toString()).toList();
+            List<String> names =
+                    files.map(path -> path.getFileName().toString()).toList();
             assertThat(names).anyMatch(name -> name.endsWith(".js"));
             assertThat(names).anyMatch(name -> name.endsWith(".css"));
         }
 
-        assertThat(STATIC.resolve("fonts")).isDirectoryContaining("glob:**/inter-latin-400-normal.woff2")
+        assertThat(STATIC.resolve("fonts"))
+                .isDirectoryContaining("glob:**/inter-latin-400-normal.woff2")
                 .isDirectoryContaining("glob:**/inter-latin-500-normal.woff2")
                 .isDirectoryContaining("glob:**/inter-latin-600-normal.woff2")
                 .isDirectoryContaining("glob:**/inter-latin-700-normal.woff2")

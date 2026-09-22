@@ -1,14 +1,12 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import dev.nathan.sbaagentic.recording.IngestionProperties;
-
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,27 +35,30 @@ public class RedactionService {
 
     public String redact(String text) {
         if (!enabled || text == null) {
+
             return text;
         }
-        String redacted = text.length() > MAX_SCAN_CHARS
-                ? text.substring(0, MAX_SCAN_CHARS) + CLIP_MARKER
-                : text;
+        String redacted = text.length() > MAX_SCAN_CHARS ? text.substring(0, MAX_SCAN_CHARS) + CLIP_MARKER : text;
         for (RedactionRule rule : rules) {
             redacted = rule.redact(redacted);
         }
+
         return redacted;
     }
 
     /** Whether {@link #redact(String)} will clip this scalar before scanning it. */
     public boolean clips(String text) {
+
         return enabled && text != null && text.length() > MAX_SCAN_CHARS;
     }
 
     public Object redactDeep(Object value) {
         if (!enabled || value == null) {
+
             return value;
         }
         if (value instanceof String text) {
+
             return redact(text);
         }
         if (value instanceof Map<?, ?> map) {
@@ -65,6 +66,7 @@ public class RedactionService {
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 redacted.put(entry.getKey(), redactDeep(entry.getValue()));
             }
+
             return redacted;
         }
         if (value instanceof List<?> list) {
@@ -72,22 +74,26 @@ public class RedactionService {
             for (Object item : list) {
                 redacted.add(redactDeep(item));
             }
+
             return redacted;
         }
+
         return value;
     }
 
     private static List<RedactionRule> builtInRules() {
+
         return List.of(
-                literal("-----BEGIN [^-\\r\\n]*PRIVATE KEY-----.*?-----END [^-\\r\\n]*PRIVATE KEY-----",
+                literal(
+                        "-----BEGIN [^-\\r\\n]*PRIVATE KEY-----.*?-----END [^-\\r\\n]*PRIVATE KEY-----",
                         Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
                 literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
                 new RedactionRule(
-                        Pattern.compile("(?i)(" + SECRET_KEY + ")(\\s*[=:]\\s*)(\"[^\"\\s]{8,}\"|'[^'\\s]{8,}'|[^\\s\"']{8,})"),
+                        Pattern.compile(
+                                "(?i)(" + SECRET_KEY + ")(\\s*[=:]\\s*)(\"[^\"\\s]{8,}\"|'[^'\\s]{8,}'|[^\\s\"']{8,})"),
                         RedactionService::redactAssignment),
                 new RedactionRule(
-                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"),
-                        matcher -> "Bearer " + REDACTED),
+                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"), matcher -> "Bearer " + REDACTED),
                 literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
                 literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", 0),
                 literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", 0));
@@ -98,10 +104,12 @@ public class RedactionService {
         for (String pattern : patterns) {
             customRules.add(literal(pattern, 0));
         }
+
         return customRules;
     }
 
     private static RedactionRule literal(String pattern, int flags) {
+
         return new RedactionRule(Pattern.compile(pattern, flags), matcher -> REDACTED);
     }
 
@@ -109,8 +117,10 @@ public class RedactionService {
         String value = matcher.group(3);
         if (value.startsWith("\"") || value.startsWith("'")) {
             String quote = value.substring(0, 1);
+
             return matcher.group(1) + matcher.group(2) + quote + REDACTED + quote;
         }
+
         return matcher.group(1) + matcher.group(2) + REDACTED;
     }
 
@@ -123,6 +133,7 @@ public class RedactionService {
                 matcher.appendReplacement(redacted, Matcher.quoteReplacement(replacement.replace(matcher)));
             }
             matcher.appendTail(redacted);
+
             return redacted.toString();
         }
     }

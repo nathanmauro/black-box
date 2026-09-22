@@ -1,26 +1,24 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
-import java.util.List;
-import java.util.Map;
-
-import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
-import dev.nathan.sbaagentic.recording.EventIngestRequest;
-import dev.nathan.sbaagentic.recording.EventRecorder;
-import dev.nathan.sbaagentic.recording.IngestResponse;
-import dev.nathan.sbaagentic.recording.ProjectionPath;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.ProjectionPath;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class StructuredCaptureServiceTest {
@@ -84,13 +82,13 @@ class StructuredCaptureServiceTest {
         StructuredCaptureService service = new StructuredCaptureService(recorder);
 
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> service.captureProjection(new CaptureProjectionRequest(
-                        "codex", "client-null", "/repo", "Basis", null)))
+                .isThrownBy(() -> service.captureProjection(
+                        new CaptureProjectionRequest("codex", "client-null", "/repo", "Basis", null)))
                 .withMessage("Projection paths must include at least one path with a title.");
 
         assertThatIllegalArgumentException()
-                .isThrownBy(() -> service.captureProjection(new CaptureProjectionRequest(
-                        "codex", "client-empty", "/repo", "Basis", List.of())))
+                .isThrownBy(() -> service.captureProjection(
+                        new CaptureProjectionRequest("codex", "client-empty", "/repo", "Basis", List.of())))
                 .withMessage("Projection paths must include at least one path with a title.");
 
         verifyNoInteractions(recorder);
@@ -144,11 +142,7 @@ class StructuredCaptureServiceTest {
 
         StructuredCaptureService service = new StructuredCaptureService(recorder);
         service.captureProjection(new CaptureProjectionRequest(
-                "codex",
-                "client-3",
-                "/repo",
-                null,
-                List.of(new ProjectionPath("First future", null, null))));
+                "codex", "client-3", "/repo", null, List.of(new ProjectionPath("First future", null, null))));
 
         ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
         verify(recorder).ingest(captor.capture());

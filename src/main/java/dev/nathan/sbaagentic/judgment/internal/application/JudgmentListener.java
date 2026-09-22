@@ -1,31 +1,25 @@
 package dev.nathan.sbaagentic.judgment.internal.application;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-
 import dev.nathan.sbaagentic.judgment.JudgmentAppended;
 import dev.nathan.sbaagentic.judgment.JudgmentPublication;
-import dev.nathan.sbaagentic.judgment.JudgmentProperties;
 import dev.nathan.sbaagentic.judgment.internal.application.port.Judge;
 import dev.nathan.sbaagentic.judgment.internal.application.port.JudgeStats;
 import dev.nathan.sbaagentic.judgment.internal.application.port.JudgmentRepository;
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 import dev.nathan.sbaagentic.recording.EventRecorded;
-
 import jakarta.annotation.PreDestroy;
-
+import java.time.Clock;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
@@ -72,6 +66,7 @@ public class JudgmentListener {
                 runnable -> {
                     Thread thread = new Thread(runnable, "blackbox-judge");
                     thread.setDaemon(true);
+
                     return thread;
                 },
                 (runnable, pool) -> {
@@ -90,6 +85,7 @@ public class JudgmentListener {
     @Order(35)
     public void judgeRecordedEvent(EventRecorded recorded) {
         if (recorded == null || recorded.event() == null) {
+
             return;
         }
         BeatFolder.FoldResult result = folder.fold(recorded.event());
@@ -105,14 +101,17 @@ public class JudgmentListener {
     }
 
     public int queued() {
+
         return executor.getQueue().size();
     }
 
     public long dropped() {
+
         return dropped.get();
     }
 
     public JudgeStats judgeStats() {
+
         return judge.stats();
     }
 
@@ -124,19 +123,19 @@ public class JudgmentListener {
         try {
             Optional<BeatState> state = stateBuilder.build(beat, trails);
             if (state.isEmpty()) {
+
                 return;
             }
             Optional<Judgment> judgment = judge.judge(state.get());
             if (judgment.isEmpty()) {
+
                 return;
             }
             repository.saveForBeat(beat, judgment.get());
             publish(beat, judgment.get());
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("Judgment processing failed for beat {}", beat.id(), ex);
-        }
-        finally {
+        } finally {
             remember(beat);
         }
     }
@@ -154,7 +153,9 @@ public class JudgmentListener {
                 judgment.judge(),
                 judgment.model(),
                 judgment.version(),
-                judgment.judgedAt() == null ? Instant.now().toString() : judgment.judgedAt().toString()));
+                judgment.judgedAt() == null
+                        ? Instant.now().toString()
+                        : judgment.judgedAt().toString()));
     }
 
     private void remember(Beat beat) {
@@ -164,6 +165,7 @@ public class JudgmentListener {
             while (titles.size() > TRAIL_CAPACITY) {
                 titles.removeFirst();
             }
+
             return titles;
         });
     }

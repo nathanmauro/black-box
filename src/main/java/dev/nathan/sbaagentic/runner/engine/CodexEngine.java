@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.runner.engine;
 
+import dev.nathan.sbaagentic.runner.EngineConfig;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -7,9 +8,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-
-import dev.nathan.sbaagentic.runner.EngineConfig;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -17,6 +15,7 @@ public class CodexEngine implements Engine {
 
     @Override
     public String id() {
+
         return "codex";
     }
 
@@ -62,6 +61,7 @@ public class CodexEngine implements Engine {
         // which codex's argument parser would otherwise reject as a malformed flag.
         command.add("--");
         command.add(prompt);
+
         return List.copyOf(command);
     }
 
@@ -73,22 +73,24 @@ public class CodexEngine implements Engine {
         String canonical;
         try {
             canonical = worktreeDir.getCanonicalPath();
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             canonical = absolute;
         }
         StringBuilder entries = new StringBuilder(trustedProjectEntry(absolute));
         if (!canonical.equals(absolute)) {
             entries.append(',').append(trustedProjectEntry(canonical));
         }
+
         return entries.toString();
     }
 
     private static String trustedProjectEntry(String path) {
+
         return "\"" + tomlEscape(path) + "\"={trust_level=\"trusted\"}";
     }
 
     private static String tomlEscape(String value) {
+
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
@@ -96,22 +98,28 @@ public class CodexEngine implements Engine {
     // The common directory two levels up is where index locks, refs, and objects live.
     private static Optional<String> gitCommonDir(File worktreeDir) {
         if (worktreeDir == null) {
+
             return Optional.empty();
         }
         Path pointer = worktreeDir.toPath().resolve(".git");
         if (!Files.isRegularFile(pointer)) {
+
             return Optional.empty();
         }
         try {
             String content = Files.readString(pointer).strip();
             if (!content.startsWith("gitdir:")) {
+
                 return Optional.empty();
             }
             Path gitDir = Path.of(content.substring("gitdir:".length()).strip());
             Path common = gitDir.getParent() == null ? null : gitDir.getParent().getParent();
-            return common == null ? Optional.empty() : Optional.of(common.toAbsolutePath().toString());
-        }
-        catch (IOException ex) {
+
+            return common == null
+                    ? Optional.empty()
+                    : Optional.of(common.toAbsolutePath().toString());
+        } catch (IOException ex) {
+
             return Optional.empty();
         }
     }

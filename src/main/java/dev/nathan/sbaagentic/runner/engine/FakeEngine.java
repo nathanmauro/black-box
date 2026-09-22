@@ -1,11 +1,9 @@
 package dev.nathan.sbaagentic.runner.engine;
 
-import java.io.File;
-import java.util.List;
-
 import dev.nathan.sbaagentic.runner.EngineConfig;
 import dev.nathan.sbaagentic.runner.RunnerNaming;
-
+import java.io.File;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -13,11 +11,13 @@ public class FakeEngine implements Engine {
 
     @Override
     public String id() {
+
         return "fake";
     }
 
     @Override
     public List<String> command(String prompt, EngineConfig config, File worktreeDir) {
+
         // The run executor supplies SBA_TASK_ID and SBA_WORKTREE instead of passing a large prompt.
         // Absolute path: the tmux pane's cwd is the target repo's worktree, not the sba-agentic
         // checkout these scripts live in (see RunnerNaming.scriptPath).

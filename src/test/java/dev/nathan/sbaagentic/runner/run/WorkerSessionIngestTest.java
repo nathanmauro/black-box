@@ -1,5 +1,9 @@
 package dev.nathan.sbaagentic.runner.run;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -7,14 +11,8 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.IngestResponse;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class WorkerSessionIngestTest {
 
@@ -33,44 +31,37 @@ class WorkerSessionIngestTest {
         Path older = writeRollout(sessions.resolve("older.jsonl"), worktree, "session-old");
         Path newer = writeRollout(sessions.resolve("newer.jsonl"), worktree, "session-new");
         Path mismatch = writeRollout(
-                sessions.resolve("mismatch.jsonl"),
-                Files.createDirectories(tempDir.resolve("other")),
-                "session-other");
+                sessions.resolve("mismatch.jsonl"), Files.createDirectories(tempDir.resolve("other")), "session-other");
         Files.setLastModifiedTime(older, FileTime.fromMillis(1_000));
         Files.setLastModifiedTime(newer, FileTime.fromMillis(2_000));
         Files.setLastModifiedTime(mismatch, FileTime.fromMillis(3_000));
 
         Optional<Path> found = ingest.findLatestMatchingRollout(
-                sessions.getParent().getParent().getParent(),
-                worktree.toFile().getCanonicalPath());
+                sessions.getParent().getParent().getParent(), worktree.toFile().getCanonicalPath());
 
         assertThat(found).contains(newer);
     }
 
     @Test
     void returnsEmptyWhenSessionsRootIsMissingOrNoCwdMatches() throws Exception {
-        WorkerSessionIngest ingest = new WorkerSessionIngest(
-                new FakeBlackBoxApiClient(), objectMapper);
+        WorkerSessionIngest ingest = new WorkerSessionIngest(new FakeBlackBoxApiClient(), objectMapper);
         Path worktree = Files.createDirectories(tempDir.resolve("worktree"));
         Path sessions = Files.createDirectories(tempDir.resolve("sessions"));
         writeRollout(
-                sessions.resolve("mismatch.jsonl"),
-                Files.createDirectories(tempDir.resolve("other")),
-                "session-other");
+                sessions.resolve("mismatch.jsonl"), Files.createDirectories(tempDir.resolve("other")), "session-other");
 
         assertThat(ingest.findLatestMatchingRollout(
                         tempDir.resolve("missing"), worktree.toFile().getCanonicalPath()))
                 .isEmpty();
-        assertThat(ingest.findLatestMatchingRollout(
-                        sessions, worktree.toFile().getCanonicalPath()))
+        assertThat(ingest.findLatestMatchingRollout(sessions, worktree.toFile().getCanonicalPath()))
                 .isEmpty();
     }
 
     @Test
     void ingestsLinesThenLinksAndAnnotatesWithLoadBearingSessionIdKey() throws Exception {
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
-        IngestResponse response = new IngestResponse(
-                "event-1", "worker-internal-1", "codex", "worker-client-1", "session_meta", false);
+        IngestResponse response =
+                new IngestResponse("event-1", "worker-internal-1", "codex", "worker-client-1", "session_meta", false);
         apiClient.ingestResponse = response;
         WorkerSessionIngest ingest = new WorkerSessionIngest(apiClient, objectMapper);
         Path worktree = Files.createDirectories(tempDir.resolve("worktree"));
@@ -103,18 +94,17 @@ class WorkerSessionIngestTest {
                         "worker-client-1",
                         "session_meta",
                         worktree.toFile().getCanonicalPath());
-        assertThat(apiClient.postEventCalls)
-                .allSatisfy(call -> {
-                    assertThat(call.metadata().get("title")).isEqualTo("Codex worker session");
-                    assertThat(call.metadata()).containsKey("raw");
-                    assertThat(call.observedAt()).isInstanceOf(Instant.class);
-                });
+        assertThat(apiClient.postEventCalls).allSatisfy(call -> {
+            assertThat(call.metadata().get("title")).isEqualTo("Codex worker session");
+            assertThat(call.metadata()).containsKey("raw");
+            assertThat(call.observedAt()).isInstanceOf(Instant.class);
+        });
         assertThat(apiClient.postEventCalls.get(1).text()).isEqualTo("hello");
-        assertThat(apiClient.sessionLinkCalls).containsExactly(
-                new FakeBlackBoxApiClient.SessionLinkCall(
+        assertThat(apiClient.sessionLinkCalls)
+                .containsExactly(new FakeBlackBoxApiClient.SessionLinkCall(
                         "orchestrator-1", "worker-internal-1", "spawned", "task-1"));
-        assertThat(apiClient.annotationCalls).containsExactly(
-                new FakeBlackBoxApiClient.AnnotationCall(
+        assertThat(apiClient.annotationCalls)
+                .containsExactly(new FakeBlackBoxApiClient.AnnotationCall(
                         "task-1",
                         "blackbox-runner",
                         "worker_session",
@@ -125,8 +115,8 @@ class WorkerSessionIngestTest {
     @Test
     void ingestsOnlyNewRolloutLinesAcrossPeriodicAndCompletionPasses() throws Exception {
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
-        IngestResponse response = new IngestResponse(
-                "event-1", "worker-internal-1", "codex", "worker-client-1", "session_meta", false);
+        IngestResponse response =
+                new IngestResponse("event-1", "worker-internal-1", "codex", "worker-client-1", "session_meta", false);
         apiClient.ingestResponse = response;
         WorkerSessionIngest ingest = new WorkerSessionIngest(apiClient, objectMapper);
         Path worktree = Files.createDirectories(tempDir.resolve("worktree"));
@@ -192,6 +182,7 @@ class WorkerSessionIngestTest {
                         + "\"payload\":{\"session_id\":\"" + sessionId + "\",\"cwd\":\""
                         + cwd.toFile().getCanonicalPath().replace("\\", "\\\\").replace("\"", "\\\"")
                         + "\"}}\n");
+
         return path;
     }
 }

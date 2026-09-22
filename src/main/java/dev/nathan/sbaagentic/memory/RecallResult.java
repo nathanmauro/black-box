@@ -17,12 +17,7 @@ public record RecallResult(
         boolean truncated) {
 
     public RecallResult(
-            String scope,
-            int withinHours,
-            List<String> kinds,
-            int count,
-            List<RecalledItem> items,
-            String mode) {
+            String scope, int withinHours, List<String> kinds, int count, List<RecalledItem> items, String mode) {
         this(scope, withinHours, kinds, count, items, mode, false);
     }
 }

@@ -1,21 +1,19 @@
 package dev.nathan.sbaagentic.runner.ship;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.RunnerNaming;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.RunnerNaming;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ShipScriptTest {
 
@@ -39,8 +37,7 @@ class ShipScriptTest {
         JsonNode result = runShip(repo, "auto/story-task1", "requires human review");
 
         assertThat(result.path("status").asText()).isEqualTo("local-only");
-        assertThat(result.path("reason").asText())
-                .isEqualTo("repo config danger flag: requires human review");
+        assertThat(result.path("reason").asText()).isEqualTo("repo config danger flag: requires human review");
         assertThat(result.path("manualCommands")).hasSize(2);
     }
 
@@ -48,7 +45,13 @@ class ShipScriptTest {
     void pushFailureReturnsPushAndPrManualCommands() throws Exception {
         Path repo = initializeRepo();
         String branch = command(repo, "git", "branch", "--show-current").strip();
-        command(repo, "git", "remote", "add", "origin", tempDir.resolve("missing.git").toString());
+        command(
+                repo,
+                "git",
+                "remote",
+                "add",
+                "origin",
+                tempDir.resolve("missing.git").toString());
 
         JsonNode result = runShip(repo, branch, "");
 
@@ -73,9 +76,8 @@ class ShipScriptTest {
                 "Story title",
                 "Worker summary"));
         builder.directory(repo.toFile());
-        builder.environment().put(
-                "PATH",
-                fakeBin + File.pathSeparator + System.getenv().getOrDefault("PATH", ""));
+        builder.environment()
+                .put("PATH", fakeBin + File.pathSeparator + System.getenv().getOrDefault("PATH", ""));
         Process process = builder.start();
         boolean finished = process.waitFor(10, TimeUnit.SECONDS);
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -83,10 +85,12 @@ class ShipScriptTest {
 
         assertThat(finished).as("ship.sh timed out; stderr: %s", stderr).isTrue();
         assertThat(process.exitValue()).as("ship.sh stderr: %s", stderr).isZero();
-        return new ObjectMapper().readTree(stdout.lines()
-                .filter(line -> !line.isBlank())
-                .reduce((first, second) -> second)
-                .orElseThrow());
+
+        return new ObjectMapper()
+                .readTree(stdout.lines()
+                        .filter(line -> !line.isBlank())
+                        .reduce((first, second) -> second)
+                        .orElseThrow());
     }
 
     private Path initializeRepo() throws Exception {
@@ -97,6 +101,7 @@ class ShipScriptTest {
         Files.writeString(repo.resolve("README.md"), "fixture\n");
         command(repo, "git", "add", "README.md");
         command(repo, "git", "commit", "-m", "initial fixture");
+
         return repo;
     }
 
@@ -109,6 +114,7 @@ class ShipScriptTest {
         assertThat(process.exitValue())
                 .as("command failed: %s; stderr: %s", List.of(command), stderr)
                 .isZero();
+
         return stdout;
     }
 }

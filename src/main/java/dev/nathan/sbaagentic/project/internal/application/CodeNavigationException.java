@@ -15,6 +15,7 @@ public class CodeNavigationException extends RuntimeException {
     }
 
     public CodeNavigationError code() {
+
         return code;
     }
 }

@@ -29,15 +29,37 @@ final class AuthSettings {
     }
 
     private static void validateSecret(String name, String value) {
-        if (value.length() < 32 || value.isBlank() || value.chars().distinct().count() < 8
+        if (value.length() < 32
+                || value.isBlank()
+                || value.chars().distinct().count() < 8
                 || value.chars().anyMatch(Character::isWhitespace)) {
-            throw new IllegalStateException(name + " must be an independently generated secret of at least 32 characters without whitespace");
+            throw new IllegalStateException(
+                    name + " must be an independently generated secret of at least 32 characters without whitespace");
         }
     }
 
-    boolean enabled() { return enabled; }
-    String username() { return username; }
-    String password() { return password; }
-    String apiToken() { return apiToken; }
-    boolean secureCookies() { return secureCookies; }
+    boolean enabled() {
+
+        return enabled;
+    }
+
+    String username() {
+
+        return username;
+    }
+
+    String password() {
+
+        return password;
+    }
+
+    String apiToken() {
+
+        return apiToken;
+    }
+
+    boolean secureCookies() {
+
+        return secureCookies;
+    }
 }

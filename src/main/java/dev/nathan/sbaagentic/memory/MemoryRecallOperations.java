@@ -8,6 +8,7 @@ public interface MemoryRecallOperations {
      * Recalls with the default result count. Retained so existing callers keep compiling.
      */
     default RecallResult recall(String scope, int withinHours, List<String> kinds) {
+
         return recall(scope, withinHours, kinds, null);
     }
 

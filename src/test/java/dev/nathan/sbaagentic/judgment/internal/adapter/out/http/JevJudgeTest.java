@@ -1,5 +1,11 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -7,18 +13,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.core.io.ClassPathResource;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class JevJudgeTest {
 
@@ -32,6 +28,7 @@ class JevJudgeTest {
             assertThat(endpoint).isEqualTo(JevJudge.ENDPOINT);
             assertThat(apiKey).isEqualTo("key");
             assertThat(timeout).isEqualTo(Duration.ofSeconds(12));
+
             return """
                     {"model":"jev-latest","answers":{
                       "phase":{"type":"choice","choice":"building","confidence":0.9,"probabilities":{"building":0.9}},
@@ -41,7 +38,12 @@ class JevJudgeTest {
                     }}
                     """;
         };
-        JevJudge judge = new JevJudge("key", Duration.ofSeconds(12), objectMapper, transport, questions,
+        JevJudge judge = new JevJudge(
+                "key",
+                Duration.ofSeconds(12),
+                objectMapper,
+                transport,
+                questions,
                 Clock.fixed(Instant.parse("2026-09-21T12:00:00Z"), ZoneOffset.UTC));
 
         var result = judge.judge(state());
@@ -59,10 +61,20 @@ class JevJudgeTest {
                 "s1",
                 Instant.parse("2026-09-21T12:00:00Z"),
                 Instant.parse("2026-09-21T12:00:00Z"),
-                List.of(new BeatEvent("e1", "s1", "PostToolUse", "tool", "out", "exec", "{}", "{}", Map.of(),
+                List.of(new BeatEvent(
+                        "e1",
+                        "s1",
+                        "PostToolUse",
+                        "tool",
+                        "out",
+                        "exec",
+                        "{}",
+                        "{}",
+                        Map.of(),
                         Instant.parse("2026-09-21T12:00:00Z"))),
                 List.of("exec(mvn test) → passed"),
                 "exec(mvn test) → passed");
+
         return new BeatState(
                 beat,
                 new BeatState.SessionState("codex", "/repo", "Orbit"),

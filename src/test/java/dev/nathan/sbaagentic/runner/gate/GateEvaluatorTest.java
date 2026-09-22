@@ -1,20 +1,18 @@
 package dev.nathan.sbaagentic.runner.gate;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import dev.nathan.sbaagentic.runner.RepoConfig;
+import dev.nathan.sbaagentic.runner.RunnerConfig;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
+import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-
-import dev.nathan.sbaagentic.runner.RepoConfig;
-import dev.nathan.sbaagentic.runner.RunnerConfig;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
-import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class GateEvaluatorTest {
 
@@ -27,9 +25,8 @@ class GateEvaluatorTest {
     void passesWithExplicitVerifyCommand() throws Exception {
         Path repo = gitRepo("explicit-verify");
 
-        GateResult result = evaluate(
-                story(repo, "mvn -q test", false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+        GateResult result =
+                evaluate(story(repo, "mvn -q test", false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isTrue();
         assertThat(result.findings()).isEmpty();
@@ -42,8 +39,7 @@ class GateEvaluatorTest {
         Path repo = gitRepo("sdlc-mode");
 
         GateResult result = evaluate(
-                story(repo, "sdlc", "mvn -q test", false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+                story(repo, "sdlc", "mvn -q test", false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isTrue();
         assertThat(result.mode()).isEqualTo("sdlc");
@@ -54,9 +50,8 @@ class GateEvaluatorTest {
         Path repo = gitRepo("derived-verify");
         Files.writeString(repo.resolve("pom.xml"), "<project/>");
 
-        GateResult result = evaluate(
-                story(repo, null, false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+        GateResult result =
+                evaluate(story(repo, null, false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isTrue();
         assertThat(result.resolvedVerify()).isEqualTo("mvn test");
@@ -66,9 +61,8 @@ class GateEvaluatorTest {
     void failsWhenRepoPathDoesNotExist() {
         Path repo = tempDir.resolve("missing");
 
-        GateResult result = evaluate(
-                story(repo, "mvn test", false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+        GateResult result =
+                evaluate(story(repo, "mvn test", false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isFalse();
         assertThat(result.findings()).contains("repo path does not exist: " + repo);
@@ -78,9 +72,8 @@ class GateEvaluatorTest {
     void failsWhenRepoPathIsNotGitWorkingTree() throws Exception {
         Path repo = Files.createDirectory(tempDir.resolve("plain-directory"));
 
-        GateResult result = evaluate(
-                story(repo, "mvn test", false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+        GateResult result =
+                evaluate(story(repo, "mvn test", false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isFalse();
         assertThat(result.findings()).contains("repo path is not a git working tree: " + repo);
@@ -90,14 +83,13 @@ class GateEvaluatorTest {
     void failsWhenRepoIsNotAllowlisted() throws Exception {
         Path repo = gitRepo("not-allowlisted");
 
-        GateResult result = evaluate(
-                story(repo, "mvn test", false, acceptanceCriteria()),
-                config());
+        GateResult result = evaluate(story(repo, "mvn test", false, acceptanceCriteria()), config());
 
         assertThat(result.pass()).isFalse();
-        assertThat(result.findings()).contains(
-                "repo is not in the runner config allowlist: " + repo + " (configured repos: )",
-                "push intent check was not run because repo is not in the runner config allowlist");
+        assertThat(result.findings())
+                .contains(
+                        "repo is not in the runner config allowlist: " + repo + " (configured repos: )",
+                        "push intent check was not run because repo is not in the runner config allowlist");
     }
 
     @Test
@@ -105,11 +97,9 @@ class GateEvaluatorTest {
         Path repo = gitRepo("acceptance");
         RunnerConfig config = config(repoConfig(repo, true, ""));
 
-        GateResult missing = evaluate(
-                story(repo, "mvn test", false, "## Goal\nBuild it.\n"), config);
-        GateResult empty = evaluate(
-                story(repo, "mvn test", false, "## Acceptance criteria\n\n## Constraints\nNone.\n"),
-                config);
+        GateResult missing = evaluate(story(repo, "mvn test", false, "## Goal\nBuild it.\n"), config);
+        GateResult empty =
+                evaluate(story(repo, "mvn test", false, "## Acceptance criteria\n\n## Constraints\nNone.\n"), config);
 
         assertThat(missing.pass()).isFalse();
         assertThat(missing.findings()).contains("Acceptance criteria section is missing");
@@ -121,14 +111,13 @@ class GateEvaluatorTest {
     void failsWhenVerifyCannotBeDerived() throws Exception {
         Path repo = gitRepo("no-verify-convention");
 
-        GateResult result = evaluate(
-                story(repo, null, false, acceptanceCriteria()),
-                config(repoConfig(repo, true, "")));
+        GateResult result =
+                evaluate(story(repo, null, false, acceptanceCriteria()), config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isFalse();
         assertThat(result.resolvedVerify()).isNull();
-        assertThat(result.findings()).contains(
-                "verify command not specified and not derivable "
+        assertThat(result.findings())
+                .contains("verify command not specified and not derivable "
                         + "(no pom.xml/package.json/Makefile at repo root)");
     }
 
@@ -137,25 +126,22 @@ class GateEvaluatorTest {
         Path repo = gitRepo("danger-veto");
 
         GateResult result = evaluate(
-                story(repo, "mvn test", true, acceptanceCriteria()),
-                config(repoConfig(repo, true, "production repo")));
+                story(repo, "mvn test", true, acceptanceCriteria()), config(repoConfig(repo, true, "production repo")));
 
         assertThat(result.pass()).isFalse();
-        assertThat(result.findings()).contains(
-                "story requests push:true but repo config carries a danger flag: production repo");
+        assertThat(result.findings())
+                .contains("story requests push:true but repo config carries a danger flag: production repo");
     }
 
     @Test
     void failsWhenPushIntentConflictsWithRepoPushVeto() throws Exception {
         Path repo = gitRepo("push-veto");
 
-        GateResult result = evaluate(
-                story(repo, "mvn test", true, acceptanceCriteria()),
-                config(repoConfig(repo, false, "")));
+        GateResult result =
+                evaluate(story(repo, "mvn test", true, acceptanceCriteria()), config(repoConfig(repo, false, "")));
 
         assertThat(result.pass()).isFalse();
-        assertThat(result.findings()).contains(
-                "story requests push:true but repo config has push:false");
+        assertThat(result.findings()).contains("story requests push:true but repo config has push:false");
     }
 
     @Test
@@ -163,25 +149,27 @@ class GateEvaluatorTest {
         GateResult result = evaluate("# Story without frontmatter", config());
 
         assertThat(result.pass()).isFalse();
-        assertThat(result.findings()).contains(
-                "Story frontmatter missing or malformed (expected YAML between --- markers).",
-                "repo field is missing",
-                "repo is not in the runner config allowlist: null (configured repos: )",
-                "Acceptance criteria section is missing",
-                "verify command not specified and not derivable "
-                        + "(no pom.xml/package.json/Makefile at repo root)",
-                "push intent check was not run because repo is not in the runner config allowlist");
+        assertThat(result.findings())
+                .contains(
+                        "Story frontmatter missing or malformed (expected YAML between --- markers).",
+                        "repo field is missing",
+                        "repo is not in the runner config allowlist: null (configured repos: )",
+                        "Acceptance criteria section is missing",
+                        "verify command not specified and not derivable "
+                                + "(no pom.xml/package.json/Makefile at repo root)",
+                        "push intent check was not run because repo is not in the runner config allowlist");
     }
 
     @Test
     void advisorFeedbackNeverFlipsDeterministicPass() throws Exception {
         Path repo = gitRepo("advisor");
-        GateAdvisor blockingAdvisor = (storyBody, findings) ->
-                new GateAdvisor.GateAdvisorNote("Review the story wording.", true);
+        GateAdvisor blockingAdvisor =
+                (storyBody, findings) -> new GateAdvisor.GateAdvisorNote("Review the story wording.", true);
 
-        GateResult result = evaluator(blockingAdvisor).evaluate(
-                taskSpec(story(repo, "mvn test", false, acceptanceCriteria())),
-                config(repoConfig(repo, true, "")));
+        GateResult result = evaluator(blockingAdvisor)
+                .evaluate(
+                        taskSpec(story(repo, "mvn test", false, acceptanceCriteria())),
+                        config(repoConfig(repo, true, "")));
 
         assertThat(result.pass()).isTrue();
         assertThat(result.findings()).containsExactly("[advisor] Review the story wording.");
@@ -189,55 +177,51 @@ class GateEvaluatorTest {
     }
 
     private GateResult evaluate(String body, RunnerConfig config) {
+
         return evaluator(noOpAdvisor()).evaluate(taskSpec(body), config);
     }
 
     private GateEvaluator evaluator(GateAdvisor advisor) {
+
         return new GateEvaluator(new StoryFrontmatterParser(), processRunner, advisor);
     }
 
     private Path gitRepo(String name) throws Exception {
         Path repo = Files.createDirectory(tempDir.resolve(name));
-        ProcessResult result = processRunner.run(
-                List.of("git", "init"), repo.toFile(), Duration.ofSeconds(10));
-        assertThat(result.exitCode())
-                .as("git init stderr: %s", result.stderr())
-                .isZero();
+        ProcessResult result = processRunner.run(List.of("git", "init"), repo.toFile(), Duration.ofSeconds(10));
+        assertThat(result.exitCode()).as("git init stderr: %s", result.stderr()).isZero();
+
         return repo;
     }
 
     private static GateAdvisor noOpAdvisor() {
+
         return (storyBody, findings) -> new GateAdvisor.GateAdvisorNote("", false);
     }
 
     private static RunnerConfig config(RepoConfig... repos) {
+
         return new RunnerConfig(1, List.of(), null, List.of(repos));
     }
 
     private static RepoConfig repoConfig(Path repo, boolean push, String danger) {
+
         return new RepoConfig(repo.toString(), push, false, null, danger);
     }
 
     private static TaskSpec taskSpec(String body) {
-        return new TaskSpec(
-                "spec-1", "/tmp/project", "Story", body, null, null, "test", null, null);
+
+        return new TaskSpec("spec-1", "/tmp/project", "Story", body, null, null, "test", null, null);
     }
 
-    private static String story(
-            Path repo,
-            String verify,
-            boolean push,
-            String bodyMarkdown) {
+    private static String story(Path repo, String verify, boolean push, String bodyMarkdown) {
+
         return story(repo, "full_auto", verify, push, bodyMarkdown);
     }
 
-    private static String story(
-            Path repo,
-            String mode,
-            String verify,
-            boolean push,
-            String bodyMarkdown) {
+    private static String story(Path repo, String mode, String verify, boolean push, String bodyMarkdown) {
         String verifyLine = verify == null ? "" : "verify: '" + verify.replace("'", "''") + "'\n";
+
         return "---\n"
                 + "story: v1\n"
                 + "repo: '" + repo.toString().replace("'", "''") + "'\n"
@@ -251,6 +235,7 @@ class GateEvaluatorTest {
     }
 
     private static String acceptanceCriteria() {
+
         return "## Acceptance criteria\n- The requested behavior works.\n";
     }
 }

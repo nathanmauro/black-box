@@ -1,15 +1,13 @@
 package dev.nathan.sbaagentic.ask.internal.adapter.out.http;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.ask.AskCitation;
 import dev.nathan.sbaagentic.ask.AskComponentStatus;
 import dev.nathan.sbaagentic.ask.AskModelProperties;
 import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.ask.internal.application.AskDependencyUnavailable;
 import dev.nathan.sbaagentic.ask.internal.application.port.AnswerSynthesizer;
-
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -50,13 +48,15 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
     @Override
     public AskComponentStatus status() {
         if (!localAi.isEnabled()) {
+
             return AskComponentStatus.disabled("local chat disabled");
         }
         try {
             restClient.get().uri("/v1/models").retrieve().toBodilessEntity();
+
             return AskComponentStatus.available(localAi.getModel());
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
+
             return AskComponentStatus.unavailable(ex.getMessage());
         }
     }
@@ -72,11 +72,17 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
                     "temperature", 0.2,
                     "max_tokens", ask.getAnswerMaxTokens(),
                     "stream", false,
-                    "messages", List.of(
-                            Map.of("role", "system", "content", ASK_SYSTEM),
-                            Map.of("role", "user", "content", clampToBudget(
-                                    userPrompt(question, citations), localAi.getMaxInputChars()))));
-            Map<?, ?> response = restClient.post()
+                    "messages",
+                            List.of(
+                                    Map.of("role", "system", "content", ASK_SYSTEM),
+                                    Map.of(
+                                            "role",
+                                            "user",
+                                            "content",
+                                            clampToBudget(
+                                                    userPrompt(question, citations), localAi.getMaxInputChars()))));
+            Map<?, ?> response = restClient
+                    .post()
                     .uri(localAi.getChatPath())
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
@@ -86,9 +92,9 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
             if (content == null) {
                 throw new AskDependencyUnavailable("local AI returned no message content");
             }
+
             return content;
-        }
-        catch (RestClientException ex) {
+        } catch (RestClientException ex) {
             throw new AskDependencyUnavailable(ex.getMessage());
         }
     }
@@ -100,10 +106,12 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
             if (message instanceof Map<?, ?> messageMap) {
                 Object content = messageMap.get("content");
                 if (content instanceof String value && !value.isBlank()) {
+
                     return value.trim();
                 }
             }
         }
+
         return null;
     }
 
@@ -123,27 +131,33 @@ public class LocalAskSynthesizer implements AnswerSynthesizer {
                     .append("\n\n");
         }
         prompt.append("Answer with citations.");
+
         return prompt.toString();
     }
 
     private static String clampToBudget(String text, int budget) {
         int effective = Math.max(MIN_INPUT_BUDGET, budget);
         if (text.length() <= effective) {
+
             return text;
         }
         int keep = effective - ELISION_MARKER.length();
         int head = keep / 2;
         int tail = keep - head;
+
         return text.substring(0, head) + ELISION_MARKER + text.substring(text.length() - tail);
     }
 
     private static String sourceLabel(AskCitation citation) {
         if (citation.sessionId() != null && !citation.sessionId().isBlank()) {
+
             return "Black Box session " + citation.sessionId();
         }
         if (citation.sourcePath() != null && !citation.sourcePath().isBlank()) {
+
             return citation.sourcePath();
         }
+
         return citation.source();
     }
 }

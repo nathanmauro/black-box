@@ -1,14 +1,11 @@
 package dev.nathan.sbaagentic.project.internal.config;
 
-import java.time.Duration;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.project.EditorProperties;
-
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class EditorPropertiesBindingTest {
 

@@ -1,5 +1,13 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.file;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.TranscriptProperties;
+import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
+import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptMessageSource;
+import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptRead;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -18,17 +26,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.TranscriptProperties;
-import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
-import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptMessageSource;
-import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptRead;
-
 import org.springframework.stereotype.Component;
 
 /** Reads only human-visible user/assistant text from known Codex and Claude JSONL transcripts. */
@@ -44,9 +41,7 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
     private final Map<CacheKey, CacheEntry> cache;
 
     public JsonlTranscriptMessageSource(
-            ObjectMapper objectMapper,
-            RedactionService redaction,
-            TranscriptProperties properties) {
+            ObjectMapper objectMapper, RedactionService redaction, TranscriptProperties properties) {
         this.objectMapper = objectMapper;
         this.redaction = redaction;
         this.properties = properties;
@@ -56,24 +51,28 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
     @Override
     public TranscriptRead read(AgentSession session, List<String> candidatePaths) {
         if (candidatePaths == null || candidatePaths.isEmpty()) {
+
             return TranscriptRead.unavailable("not-recorded");
         }
         String source = normalizedSource(session.source());
-        List<String> roots = switch (source) {
-            case "codex" -> properties.getCodexRoots();
-            case "claude" -> properties.getClaudeRoots();
-            default -> null;
-        };
+        List<String> roots =
+                switch (source) {
+                    case "codex" -> properties.getCodexRoots();
+                    case "claude" -> properties.getClaudeRoots();
+                    default -> null;
+                };
         if (roots == null) {
+
             return TranscriptRead.unavailable("unsupported-source");
         }
         String lastReason = "not-readable";
         for (String candidate : candidatePaths) {
             try {
                 Path path = confinedPath(candidate, roots);
-                BasicFileAttributes attributes = Files.readAttributes(
-                        path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-                if (!attributes.isRegularFile() || !path.getFileName().toString().endsWith(".jsonl")) {
+                BasicFileAttributes attributes =
+                        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (!attributes.isRegularFile()
+                        || !path.getFileName().toString().endsWith(".jsonl")) {
                     lastReason = "not-a-transcript-file";
                     continue;
                 }
@@ -90,12 +89,13 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                 List<AgentEvent> messages = parsed.messages().stream()
                         .map(message -> toEvent(session, message))
                         .toList();
+
                 return new TranscriptRead(true, parsed.complete(), parsed.reason(), messages);
-            }
-            catch (IOException | RuntimeException ex) {
+            } catch (IOException | RuntimeException ex) {
                 lastReason = "not-readable";
             }
         }
+
         return TranscriptRead.unavailable(lastReason);
     }
 
@@ -111,14 +111,15 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                 root = root.toRealPath();
             }
             if (path.startsWith(root)) {
+
                 return path;
             }
         }
         throw new IOException("Transcript path is outside configured roots");
     }
 
-    private ParsedTranscript cachedOrParse(
-            Path path, BasicFileAttributes attributes, String source) throws IOException {
+    private ParsedTranscript cachedOrParse(Path path, BasicFileAttributes attributes, String source)
+            throws IOException {
         CacheKey key = new CacheKey(path, source);
         CacheStamp stamp = new CacheStamp(
                 String.valueOf(attributes.fileKey()),
@@ -128,6 +129,7 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
         synchronized (cache) {
             CacheEntry hit = cache.get(key);
             if (hit != null && hit.stamp().equals(stamp)) {
+
                 return hit.transcript();
             }
         }
@@ -141,10 +143,12 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                 cache.remove(eldest);
             }
         }
+
         return parsed;
     }
 
     private ParsedTranscript parse(Path path, String source) throws IOException {
+
         return switch (source) {
             case "claude" -> parseClaude(path);
             case "codex" -> parseCodex(path);
@@ -160,14 +164,13 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
         ParseIssues issues = new ParseIssues();
         long ordinal = 0;
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            for (String line; (line = reader.readLine()) != null;) {
+            for (String line; (line = reader.readLine()) != null; ) {
                 ordinal++;
                 if (line.isBlank()) continue;
                 JsonNode root;
                 try {
                     root = objectMapper.readTree(line);
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     issues.malformedLines++;
                     continue;
                 }
@@ -187,23 +190,23 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                     String role = text(payload, "role");
                     if ("assistant".equals(role)) {
                         String body = contentText(payload.path("content"), role);
-                        message = parsedMessage(
-                                root, payload, currentTurnId, role, body, ordinal, 2, issues);
+                        message = parsedMessage(root, payload, currentTurnId, role, body, ordinal, 2, issues);
                     }
-                }
-                else if ("event_msg".equals(type)) {
+                } else if ("event_msg".equals(type)) {
                     String payloadType = text(payload, "type");
-                    String role = switch (payloadType) {
-                        case "user_message" -> "user";
-                        case "agent_message" -> "assistant";
-                        default -> null;
-                    };
+                    String role =
+                            switch (payloadType) {
+                                case "user_message" -> "user";
+                                case "agent_message" -> "assistant";
+                                default -> null;
+                            };
                     message = parsedMessage(
                             root, payload, currentTurnId, role, text(payload, "message"), ordinal, 1, issues);
                 }
                 if (message != null) messages.add(message);
             }
         }
+
         return new ParsedTranscript(
                 transcriptId,
                 parentId,
@@ -222,14 +225,13 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
         long ordinal = 0;
         String currentTurnId = null;
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            for (String line; (line = reader.readLine()) != null;) {
+            for (String line; (line = reader.readLine()) != null; ) {
                 ordinal++;
                 if (line.isBlank()) continue;
                 JsonNode root;
                 try {
                     root = objectMapper.readTree(line);
-                }
-                catch (IOException ex) {
+                } catch (IOException ex) {
                     issues.malformedLines++;
                     continue;
                 }
@@ -249,11 +251,11 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                 if ("user".equals(role)) {
                     currentTurnId = firstText(root, "promptId", "uuid");
                 }
-                ParsedMessage parsed = parsedMessage(
-                        root, messageNode, currentTurnId, role, body, ordinal, 2, issues);
+                ParsedMessage parsed = parsedMessage(root, messageNode, currentTurnId, role, body, ordinal, 2, issues);
                 if (parsed != null) messages.add(parsed);
             }
         }
+
         return new ParsedTranscript(
                 transcriptId,
                 null,
@@ -274,11 +276,13 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
             int priority,
             ParseIssues issues) {
         if (!("user".equals(role) || "assistant".equals(role)) || body == null || body.isBlank()) {
+
             return null;
         }
         Instant observedAt = instant(text(root, "timestamp"));
         if (observedAt == null) {
             issues.invalidTimestamps++;
+
             return null;
         }
         String sourceId = firstText(payload, "id", "uuid");
@@ -287,14 +291,8 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
         if (redaction.clips(body)) {
             issues.clippedMessages++;
         }
-        return new ParsedMessage(
-                sourceId,
-                turnId,
-                role,
-                redaction.redact(body),
-                observedAt,
-                ordinal,
-                priority);
+
+        return new ParsedMessage(sourceId, turnId, role, redaction.redact(body), observedAt, ordinal, priority);
     }
 
     private static List<ParsedMessage> deduplicate(List<ParsedMessage> input) {
@@ -310,19 +308,35 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
             }
             kept.add(candidate);
         }
+
         return List.copyOf(kept);
     }
 
     private static boolean duplicates(ParsedMessage left, ParsedMessage right) {
-        if (!left.role().equals(right.role())) return false;
-        if (!normalize(left.text()).equals(normalize(right.text()))) return false;
-        if (left.turnId() != null && left.turnId().equals(right.turnId())) return true;
+        if (!left.role().equals(right.role()))
+
+            return false;
+
+        if (!normalize(left.text()).equals(normalize(right.text())))
+
+            return false;
+
+        if (left.turnId() != null && left.turnId().equals(right.turnId()))
+
+            return true;
+
         return Duration.between(left.observedAt(), right.observedAt()).abs().compareTo(DUPLICATE_WINDOW) <= 0;
     }
 
     private static String contentText(JsonNode content, String role) {
-        if (content.isTextual()) return content.asText();
-        if (!content.isArray()) return null;
+        if (content.isTextual())
+
+            return content.asText();
+
+        if (!content.isArray())
+
+            return null;
+
         List<String> parts = new ArrayList<>();
         for (JsonNode block : content) {
             String type = text(block, "type");
@@ -334,28 +348,35 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
                 if (value != null && !value.isBlank()) parts.add(value);
             }
         }
+
         return parts.isEmpty() ? null : String.join("\n\n", parts);
     }
 
     private static boolean ownsTranscript(AgentSession session, Path path, ParsedTranscript parsed) {
         String clientId = session.clientSessionId();
-        if (clientId == null || parsed.transcriptId() == null) return false;
+        if (clientId == null || parsed.transcriptId() == null)
+
+            return false;
+
         String source = normalizedSource(session.source());
         if ("claude".equals(source) && clientId.contains(":")) {
             int separator = clientId.lastIndexOf(':');
             String parentId = clientId.substring(0, separator);
             String agentId = clientId.substring(separator + 1);
             String normalizedPath = path.toString().replace('\\', '/');
+
             return parsed.transcriptId().equals(parentId)
                     && parsed.agentIds().contains(agentId)
                     && normalizedPath.contains("/" + parentId + "/subagents/")
                     && path.getFileName().toString().contains(agentId);
         }
+
         return parsed.transcriptId().equals(clientId)
                 && path.getFileName().toString().contains(clientId);
     }
 
     private static AgentEvent toEvent(AgentSession session, ParsedMessage message) {
+
         return new AgentEvent(
                 "tx:" + session.source() + ":" + message.sourceId(),
                 session.id(),
@@ -373,11 +394,15 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
     }
 
     private static Instant instant(String value) {
-        if (value == null) return null;
+        if (value == null)
+
+            return null;
+
         try {
+
             return Instant.parse(value);
-        }
-        catch (DateTimeParseException ex) {
+        } catch (DateTimeParseException ex) {
+
             return null;
         }
     }
@@ -385,34 +410,36 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
     private static String firstText(JsonNode node, String... fields) {
         for (String field : fields) {
             String value = text(node, field);
-            if (value != null) return value;
+            if (value != null)
+
+                return value;
         }
+
         return null;
     }
 
     private static String text(JsonNode node, String field) {
-        if (node == null || node.isMissingNode() || node.isNull()) return null;
+        if (node == null || node.isMissingNode() || node.isNull())
+
+            return null;
+
         JsonNode value = node.get(field);
+
         return value != null && value.isTextual() && !value.asText().isBlank() ? value.asText() : null;
     }
 
     private static String normalize(String value) {
+
         return String.valueOf(value).replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
     }
 
     private static String normalizedSource(String value) {
+
         return String.valueOf(value == null ? "" : value).trim().toLowerCase(Locale.ROOT);
     }
 
     private record ParsedMessage(
-            String sourceId,
-            String turnId,
-            String role,
-            String text,
-            Instant observedAt,
-            long ordinal,
-            int priority) {
-    }
+            String sourceId, String turnId, String role, String text, Instant observedAt, long ordinal, int priority) {}
 
     private record ParsedTranscript(
             String transcriptId,
@@ -424,6 +451,7 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
             int clippedMessages) {
 
         boolean complete() {
+
             return malformedLines == 0 && invalidTimestamps == 0 && clippedMessages == 0;
         }
 
@@ -432,6 +460,7 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
             if (malformedLines > 0) reasons.add(malformedLines + " malformed line(s) skipped");
             if (invalidTimestamps > 0) reasons.add(invalidTimestamps + " message(s) had no valid timestamp");
             if (clippedMessages > 0) reasons.add(clippedMessages + " oversized message(s) clipped");
+
             return reasons.isEmpty() ? null : String.join("; ", reasons);
         }
     }
@@ -442,12 +471,9 @@ public class JsonlTranscriptMessageSource implements TranscriptMessageSource {
         private int clippedMessages;
     }
 
-    private record CacheStamp(String fileKey, long size, long modifiedAt, int parserVersion) {
-    }
+    private record CacheStamp(String fileKey, long size, long modifiedAt, int parserVersion) {}
 
-    private record CacheKey(Path path, String source) {
-    }
+    private record CacheKey(Path path, String source) {}
 
-    private record CacheEntry(CacheStamp stamp, ParsedTranscript transcript) {
-    }
+    private record CacheEntry(CacheStamp stamp, ParsedTranscript transcript) {}
 }

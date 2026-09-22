@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.summary.internal.adapter.out.process;
 
+import dev.nathan.sbaagentic.summary.SummaryProperties;
+import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -8,10 +10,6 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-
-import dev.nathan.sbaagentic.summary.SummaryProperties;
-import dev.nathan.sbaagentic.summary.internal.application.port.ExternalSummaryModel;
-
 import org.springframework.stereotype.Component;
 
 @Component
@@ -26,6 +24,7 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
     public Optional<String> summarize(String transcript) {
         String command = properties.getExternalCommand();
         if (command == null || command.isBlank()) {
+
             return Optional.empty();
         }
 
@@ -36,8 +35,7 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
 
             try (var stdin = process.getOutputStream()) {
                 stdin.write((transcript == null ? "" : transcript).getBytes(StandardCharsets.UTF_8));
-            }
-            catch (IOException brokenPipe) {
+            } catch (IOException brokenPipe) {
                 // The command may exit or close stdin before the transcript is fully
                 // written (fast failure, or a command that never reads stdin). The
                 // exit code and stdout below decide the outcome, not this write.
@@ -50,28 +48,31 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
                 if (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly();
                 }
+
                 return Optional.empty();
             }
             if (process.exitValue() != 0) {
                 stderr.join();
+
                 return Optional.empty();
             }
             String summary = stdout.join().strip();
+
             return summary.isBlank() ? Optional.empty() : Optional.of(summary);
-        }
-        catch (IOException | InterruptedException | UncheckedIOException ex) {
+        } catch (IOException | InterruptedException | UncheckedIOException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
+
             return Optional.empty();
         }
     }
 
     private static String read(InputStream input) {
         try {
+
             return new String(input.readAllBytes(), StandardCharsets.UTF_8);
-        }
-        catch (IOException ex) {
+        } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
     }

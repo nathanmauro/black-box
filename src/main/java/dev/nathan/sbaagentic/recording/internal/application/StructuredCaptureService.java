@@ -1,11 +1,5 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
@@ -14,7 +8,11 @@ import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
-
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -43,8 +41,14 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         putIfPresent(metadata, "openLoops", trimList(request.openLoops()));
         putIfPresent(metadata, "confidence", request.confidence());
         putIfPresent(metadata, "repo", request.repo());
-        return write(request.source(), request.clientSessionId(), request.repo(), "Decision",
-                renderDecision(request), metadata);
+
+        return write(
+                request.source(),
+                request.clientSessionId(),
+                request.repo(),
+                "Decision",
+                renderDecision(request),
+                metadata);
     }
 
     @Override
@@ -57,8 +61,14 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         putIfPresent(metadata, "openLoops", trimList(request.openLoops()));
         putIfPresent(metadata, "nextAction", request.nextAction());
         putIfPresent(metadata, "repo", request.repo());
-        return write(request.source(), request.clientSessionId(), request.repo(), "Handoff",
-                renderHandoff(request), metadata);
+
+        return write(
+                request.source(),
+                request.clientSessionId(),
+                request.repo(),
+                "Handoff",
+                renderHandoff(request),
+                metadata);
     }
 
     @Override
@@ -72,17 +82,23 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         metadata.put("paths", pathMetadata(paths));
         putIfPresent(metadata, "basis", request.basis());
         putIfPresent(metadata, "repo", request.repo());
-        return write(request.source(), request.clientSessionId(), request.repo(), "Projection",
-                renderProjection(request, paths), metadata);
+
+        return write(
+                request.source(),
+                request.clientSessionId(),
+                request.repo(),
+                "Projection",
+                renderProjection(request, paths),
+                metadata);
     }
 
     @Override
-    public IngestResponse captureObservation(
-            String source, String clientSessionId, String repo, String text) {
+    public IngestResponse captureObservation(String source, String clientSessionId, String repo, String text) {
         requireNotBlank("text", text);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", KIND_OBSERVATION);
         putIfPresent(metadata, "repo", repo);
+
         return write(source, clientSessionId, repo, "Observation", text, metadata);
     }
 
@@ -96,9 +112,20 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         // MCP and in-process callers do not pass through REST's @Valid request validation.
         requireNotBlank("source", source);
         requireNotBlank("clientSessionId", clientSessionId);
+
         return recorder.ingest(new EventIngestRequest(
-                source, clientSessionId, null, eventType, "assistant", text, repo,
-                null, null, null, metadata, Instant.now()));
+                source,
+                clientSessionId,
+                null,
+                eventType,
+                "assistant",
+                text,
+                repo,
+                null,
+                null,
+                null,
+                metadata,
+                Instant.now()));
     }
 
     private static String renderDecision(CaptureDecisionRequest request) {
@@ -109,6 +136,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         if (request.confidence() != null) {
             body.append("\n\nConfidence: ").append(request.confidence());
         }
+
         return body.toString();
     }
 
@@ -120,6 +148,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         body.append(request.contextSummary().strip());
         appendList(body, "Open loops", request.openLoops());
         appendBlock(body, "Next", request.nextAction());
+
         return body.toString();
     }
 
@@ -129,6 +158,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             appendPath(body, i + 1, paths.get(i));
         }
         appendBlock(body, "Basis", request.basis());
+
         return body.toString();
     }
 
@@ -163,6 +193,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
 
     private static List<String> trimList(List<String> values) {
         if (values == null) {
+
             return null;
         }
         List<String> out = new ArrayList<>();
@@ -171,11 +202,13 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
                 out.add(value.strip());
             }
         }
+
         return out.isEmpty() ? null : out;
     }
 
     private static List<ProjectionPath> trimPaths(List<ProjectionPath> paths) {
         if (paths == null) {
+
             return List.of();
         }
         List<ProjectionPath> out = new ArrayList<>();
@@ -192,6 +225,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
                 break;
             }
         }
+
         return out;
     }
 
@@ -204,6 +238,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             putIfPresent(item, "confidence", path.confidence());
             out.add(item);
         }
+
         return out;
     }
 
@@ -214,10 +249,12 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     }
 
     private static String stripOrNull(String value) {
+
         return notBlank(value) ? value.strip() : null;
     }
 
     private static boolean notBlank(String value) {
+
         return value != null && !value.isBlank();
     }
 

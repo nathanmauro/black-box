@@ -1,24 +1,20 @@
 package dev.nathan.sbaagentic.runner;
 
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-
-import java.io.File;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.runner.engine.Engine;
-import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager;
-import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager.CreatedWorktree;
-import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader;
-import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader.BuildArtifact;
-import dev.nathan.sbaagentic.runner.internal.application.RunContextLoader;
-import dev.nathan.sbaagentic.runner.internal.application.PlanStageExecutor;
-import dev.nathan.sbaagentic.runner.internal.application.ReviewStageExecutor;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatter;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
+import dev.nathan.sbaagentic.runner.internal.application.PlanStageExecutor;
+import dev.nathan.sbaagentic.runner.internal.application.ReviewStageExecutor;
+import dev.nathan.sbaagentic.runner.internal.application.RunContextLoader;
+import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader;
+import dev.nathan.sbaagentic.runner.internal.application.SdlcStateReader.BuildArtifact;
+import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager;
+import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager.CreatedWorktree;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner;
 import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
 import dev.nathan.sbaagentic.runner.process.TmuxController;
@@ -32,13 +28,13 @@ import dev.nathan.sbaagentic.runner.run.WorkerRunExecutor.WorkerRunResult;
 import dev.nathan.sbaagentic.runner.run.WorkerSessionIngest;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor;
 import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
-
+import java.io.File;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -48,9 +44,8 @@ import org.springframework.stereotype.Component;
 public class RunExecutor implements AutoCycle {
 
     private static final Logger log = LoggerFactory.getLogger(RunExecutor.class);
-    private static final String INVALID_STORY_REASON =
-            "Auto task has no valid repo/verify in its story frontmatter; "
-                    + "this should have been caught at the gate.";
+    private static final String INVALID_STORY_REASON = "Auto task has no valid repo/verify in its story frontmatter; "
+            + "this should have been caught at the gate.";
 
     private final BlackBoxApiClient apiClient;
     private final ProcessRunner processRunner;
@@ -88,27 +83,11 @@ public class RunExecutor implements AutoCycle {
         this.sdlcStateReader = new SdlcStateReader(apiClient);
         this.runContextLoader = new RunContextLoader(apiClient, frontmatterParser);
         this.workerRunExecutor = new WorkerRunExecutor(
-                apiClient,
-                tmux,
-                processRunner,
-                completionDetector,
-                workerSessionIngest,
-                engines,
-                activeRunRegistry);
+                apiClient, tmux, processRunner, completionDetector, workerSessionIngest, engines, activeRunRegistry);
         this.planStageExecutor = new PlanStageExecutor(
-                apiClient,
-                workerRunExecutor,
-                goalPromptBuilder,
-                runContextLoader,
-                worktreeManager,
-                sdlcStateReader);
+                apiClient, workerRunExecutor, goalPromptBuilder, runContextLoader, worktreeManager, sdlcStateReader);
         this.reviewStageExecutor = new ReviewStageExecutor(
-                apiClient,
-                workerRunExecutor,
-                goalPromptBuilder,
-                runContextLoader,
-                worktreeManager,
-                sdlcStateReader);
+                apiClient, workerRunExecutor, goalPromptBuilder, runContextLoader, worktreeManager, sdlcStateReader);
     }
 
     public RunExecutor(
@@ -161,11 +140,7 @@ public class RunExecutor implements AutoCycle {
     }
 
     @Override
-    public void execute(
-            TaskChange claimedAutoTask,
-            RunnerConfig config,
-            String actorId,
-            String orchestratorSessionId) {
+    public void execute(TaskChange claimedAutoTask, RunnerConfig config, String actorId, String orchestratorSessionId) {
         Task task = claimedAutoTask.snapshot().task();
         File repoDir = null;
         File worktreeDir = null;
@@ -183,6 +158,7 @@ public class RunExecutor implements AutoCycle {
             Optional<StoryFrontmatterParser.ParsedStory> parsed = frontmatterParser.parse(spec.body());
             if (parsed.isEmpty() || isBlank(parsed.orElseThrow().frontmatter().repo())) {
                 block(task.id(), actorId, INVALID_STORY_REASON);
+
                 return;
             }
             StoryFrontmatter frontmatter = parsed.orElseThrow().frontmatter();
@@ -195,6 +171,7 @@ public class RunExecutor implements AutoCycle {
                         task.id(),
                         actorId,
                         "Auto task repo is no longer present in runner config: " + frontmatter.repo());
+
                 return;
             }
 
@@ -203,19 +180,19 @@ public class RunExecutor implements AutoCycle {
             String resolvedVerify = resolveVerify(frontmatter.verify(), repoConfig, repoDir);
             if (isBlank(resolvedVerify)) {
                 block(task.id(), actorId, INVALID_STORY_REASON);
+
                 return;
             }
 
             boolean sdlc = "sdlc".equals(frontmatter.mode());
             if (sdlc) {
                 if (!hasApprovedPlan(spec.id(), actorId)) {
-                    block(
-                            task.id(),
-                            actorId,
-                            "SDLC build requires a completed plan and an un-rejected plan approval.");
+                    block(task.id(), actorId, "SDLC build requires a completed plan and an un-rejected plan approval.");
+
                     return;
                 }
                 if (resumeDeferredBuildIfPresent(task, spec, actorId, repoDir)) {
+
                     return;
                 }
             }
@@ -225,22 +202,16 @@ public class RunExecutor implements AutoCycle {
             tmuxSessionName = RunnerNaming.tmuxSessionName(task.id());
 
             File worktreeParent = worktreeDir.getParentFile();
-            if (worktreeParent != null
-                    && !worktreeParent.isDirectory()
-                    && !worktreeParent.mkdirs()) {
-                block(
-                        task.id(),
-                        actorId,
-                        "Unable to create worktree parent directory: " + worktreeParent);
+            if (worktreeParent != null && !worktreeParent.isDirectory() && !worktreeParent.mkdirs()) {
+                block(task.id(), actorId, "Unable to create worktree parent directory: " + worktreeParent);
+
                 return;
             }
 
             ProcessResult worktreeResult = createWorktree(repoDir, worktreeDir, branchName);
             if (worktreeResult.exitCode() != 0 || worktreeResult.timedOut()) {
-                block(
-                        task.id(),
-                        actorId,
-                        "Unable to create git worktree: " + processDetail(worktreeResult));
+                block(task.id(), actorId, "Unable to create git worktree: " + processDetail(worktreeResult));
+
                 return;
             }
             checkpoint = "worktree created; worker not started";
@@ -249,51 +220,54 @@ public class RunExecutor implements AutoCycle {
                     task.id(),
                     actorId,
                     "progress",
-                    "Worktree created at " + worktreeDir.getAbsolutePath()
-                            + " on branch " + branchName + ".",
+                    "Worktree created at " + worktreeDir.getAbsolutePath() + " on branch " + branchName + ".",
                     null);
 
             String prompt = goalPromptBuilder.build(task.id(), spec.body(), resolvedVerify);
             checkpoint = "worktree created; worker execution entered, outcome not yet known";
             WorkerRunResult result = workerRunExecutor.execute(
-                    task,
-                    repoDir,
-                    worktreeDir,
-                    prompt,
-                    config,
-                    actorId,
-                    orchestratorSessionId,
-                    RunStage.BUILD);
+                    task, repoDir, worktreeDir, prompt, config, actorId, orchestratorSessionId, RunStage.BUILD);
             tmuxSessionName = result.tmuxSessionName();
             checkpoint = "worker returned " + result.outcome();
             if (result.outcome() == WorkerOutcome.NO_ENGINE) {
                 String disposition = cleanupWorktreeAndBranch(createdWorktree, tmuxSessionName);
-                worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                        worktreeDir, branchName, checkpoint, disposition);
+                worktreeManager.reportRecovery(
+                        task.id(), actorId, orchestratorSessionId, worktreeDir, branchName, checkpoint, disposition);
                 block(task.id(), actorId, "No enabled engine configured");
+
                 return;
             }
             if (result.outcome() == WorkerOutcome.REQUEUED) {
                 String disposition = cleanupWorktreeAndBranch(createdWorktree, tmuxSessionName);
-                worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                        worktreeDir, branchName, checkpoint, disposition);
+                worktreeManager.reportRecovery(
+                        task.id(), actorId, orchestratorSessionId, worktreeDir, branchName, checkpoint, disposition);
+
                 return;
             }
 
             switch (result.outcome()) {
                 case TIMED_OUT -> {
-                    worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                            worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
-                    apiClient.updateTaskStatus(
+                    worktreeManager.reportRecovery(
                             task.id(),
                             actorId,
-                            "blocked",
-                            "Run timed out after 45m. " + result.detail());
+                            orchestratorSessionId,
+                            worktreeDir,
+                            branchName,
+                            checkpoint,
+                            "Worktree and branch retained for inspection.");
+                    apiClient.updateTaskStatus(
+                            task.id(), actorId, "blocked", "Run timed out after 45m. " + result.detail());
                     workerRunExecutor.killSessionBestEffort(tmuxSessionName);
                 }
                 case BLOCKED -> {
-                    worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                            worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
+                    worktreeManager.reportRecovery(
+                            task.id(),
+                            actorId,
+                            orchestratorSessionId,
+                            worktreeDir,
+                            branchName,
+                            checkpoint,
+                            "Worktree and branch retained for inspection.");
                     apiClient.updateTaskStatus(task.id(), actorId, "blocked", result.detail());
                     workerRunExecutor.killSessionBestEffort(tmuxSessionName);
                 }
@@ -304,29 +278,15 @@ public class RunExecutor implements AutoCycle {
                                 actorId,
                                 "progress",
                                 "SDLC build verified and committed; shipping is deferred until review approval.",
-                                Map.of(
-                                        "branch", branchName,
-                                        "worktree", worktreeDir.getAbsolutePath()));
+                                Map.of("branch", branchName, "worktree", worktreeDir.getAbsolutePath()));
                         preserveWorktree = true;
-                        deferSdlcShip(
-                                task,
-                                spec,
-                                actorId,
-                                branchName,
-                                worktreeDir,
-                                tmuxSessionName,
-                                result.detail());
+                        deferSdlcShip(task, spec, actorId, branchName, worktreeDir, tmuxSessionName, result.detail());
+
                         return;
                     }
                     apiClient.annotate(
-                            task.id(),
-                            actorId,
-                            "progress",
-                            "Worker reported done; handing off to ship.",
-                            null);
-                    String workerSummary = isBlank(result.detail())
-                            ? "Auto-lane run completed."
-                            : result.detail();
+                            task.id(), actorId, "progress", "Worker reported done; handing off to ship.", null);
+                    String workerSummary = isBlank(result.detail()) ? "Auto-lane run completed." : result.detail();
                     ShipResult shipResult = shipExecutor.ship(
                             task.id(),
                             actorId,
@@ -338,14 +298,21 @@ public class RunExecutor implements AutoCycle {
                             tmuxSessionName);
                     checkpoint = "worker reported DONE; ship returned " + shipResult.status();
                     if ("blocked".equals(shipResult.status())) {
-                        worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                                worktreeDir, branchName, checkpoint, "Worktree and branch retained for inspection.");
+                        worktreeManager.reportRecovery(
+                                task.id(),
+                                actorId,
+                                orchestratorSessionId,
+                                worktreeDir,
+                                branchName,
+                                checkpoint,
+                                "Worktree and branch retained for inspection.");
                         apiClient.updateTaskStatus(
                                 task.id(),
                                 actorId,
                                 "blocked",
                                 "Ship failed after one repair round: " + shipResult.reason());
                         workerRunExecutor.killSessionBestEffort(tmuxSessionName);
+
                         return;
                     }
 
@@ -370,8 +337,8 @@ public class RunExecutor implements AutoCycle {
                                     + "once the gate is fixed.";
                         }
                         default -> {
-                            completionSummary = "Work committed locally only: unknown ship status "
-                                    + shipResult.status();
+                            completionSummary =
+                                    "Work committed locally only: unknown ship status " + shipResult.status();
                             openLoops = shipResult.manualCommands();
                             nextAction = "Inspect the ship annotation before retrying.";
                         }
@@ -390,11 +357,11 @@ public class RunExecutor implements AutoCycle {
                         pruneMergedWorktree(task.id(), actorId, repoDir, worktreeDir);
                     }
                 }
-                case NO_ENGINE, REQUEUED -> throw new IllegalStateException(
-                        "Worker run terminal handling reached unexpected outcome " + result.outcome());
+                case NO_ENGINE, REQUEUED ->
+                    throw new IllegalStateException(
+                            "Worker run terminal handling reached unexpected outcome " + result.outcome());
             }
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.error("Auto-lane execution failed for task {}; releasing it back to open", task.id(), ex);
             String disposition = preserveWorktree
                     ? "SDLC build worktree and branch retained for review."
@@ -402,37 +369,35 @@ public class RunExecutor implements AutoCycle {
             if (preserveWorktree) {
                 workerRunExecutor.killSessionBestEffort(tmuxSessionName);
             }
-            String recovery = worktreeManager.reportRecovery(task.id(), actorId, orchestratorSessionId,
-                    worktreeDir, branchName, checkpoint, disposition);
+            String recovery = worktreeManager.reportRecovery(
+                    task.id(), actorId, orchestratorSessionId, worktreeDir, branchName, checkpoint, disposition);
             try {
                 apiClient.updateTaskStatus(
                         task.id(),
                         actorId,
                         "open",
                         "Auto-lane execution crashed: " + ex.getMessage() + ". " + recovery);
-            }
-            catch (RuntimeException updateFailure) {
+            } catch (RuntimeException updateFailure) {
                 log.error("Unable to release crashed auto task {} back to open", task.id(), updateFailure);
             }
-        }
-        finally {
+        } finally {
             workerRunExecutor.finish(task.id(), RunnerNaming.tmuxSessionName(task.id()));
         }
     }
 
-    private boolean resumeDeferredBuildIfPresent(
-            Task task, TaskSpec spec, String actorId, File repoDir) {
+    private boolean resumeDeferredBuildIfPresent(Task task, TaskSpec spec, String actorId, File repoDir) {
         Optional<BuildArtifact> artifact = buildArtifact(task.id(), actorId);
         if (artifact.isEmpty()) {
+
             return false;
         }
 
-        if (!validPreservedWorktree(repoDir, task, artifact.orElseThrow())
-                || !hasWorkerDone(task.id())) {
+        if (!validPreservedWorktree(repoDir, task, artifact.orElseThrow()) || !hasWorkerDone(task.id())) {
             block(
                     task.id(),
                     actorId,
                     "Preserved SDLC build state failed validation; refusing to skip the build worker.");
+
             return true;
         }
 
@@ -445,8 +410,8 @@ public class RunExecutor implements AutoCycle {
                         + artifact.orElseThrow().branch() + ".",
                 List.of(),
                 "SDLC review-lane execution will pick this up next.");
-        taskChainer.ensureTask(
-                spec.id(), task.title(), "sdlc:review", task.priority(), actorId);
+        taskChainer.ensureTask(spec.id(), task.title(), "sdlc:review", task.priority(), actorId);
+
         return true;
     }
 
@@ -470,65 +435,63 @@ public class RunExecutor implements AutoCycle {
                     summary,
                     List.of(),
                     "SDLC review-lane execution will pick this up next.");
-            taskChainer.ensureTask(
-                    spec.id(), task.title(), "sdlc:review", task.priority(), actorId);
-        }
-        finally {
+            taskChainer.ensureTask(spec.id(), task.title(), "sdlc:review", task.priority(), actorId);
+        } finally {
             workerRunExecutor.killSessionBestEffort(tmuxSessionName);
         }
     }
 
     private boolean hasApprovedPlan(String specId, String actorId) {
+
         return sdlcStateReader.hasApprovedPlan(specId, actorId);
     }
 
     private Optional<BuildArtifact> buildArtifact(String taskId, String actorId) {
+
         return sdlcStateReader.buildArtifact(taskId, actorId);
     }
 
     private boolean hasWorkerDone(String taskId) {
+
         return sdlcStateReader.hasWorkerDone(taskId);
     }
 
     public void executePlan(
-            TaskChange claimedPlanTask,
-            RunnerConfig config,
-            String actorId,
-            String orchestratorSessionId) {
+            TaskChange claimedPlanTask, RunnerConfig config, String actorId, String orchestratorSessionId) {
         planStageExecutor.execute(claimedPlanTask, config, actorId, orchestratorSessionId);
     }
 
     public void executeReview(
-            TaskChange claimedReviewTask,
-            RunnerConfig config,
-            String actorId,
-            String orchestratorSessionId) {
+            TaskChange claimedReviewTask, RunnerConfig config, String actorId, String orchestratorSessionId) {
         reviewStageExecutor.execute(claimedReviewTask, config, actorId, orchestratorSessionId);
     }
 
-    private boolean validPreservedWorktree(
-            File repoDir, Task buildTask, BuildArtifact artifact) {
-        return artifact != null && worktreeManager.validPreservedWorktree(
-                repoDir, buildTask, artifact.branch(), artifact.worktree());
+    private boolean validPreservedWorktree(File repoDir, Task buildTask, BuildArtifact artifact) {
+
+        return artifact != null
+                && worktreeManager.validPreservedWorktree(repoDir, buildTask, artifact.branch(), artifact.worktree());
     }
 
     ProcessResult createWorktree(File repoDir, File worktreeDir, String branchName) {
+
         return worktreeManager.createWorktree(repoDir, worktreeDir, branchName);
     }
 
     static String branchName(String title, String taskId) {
+
         return WorktreeManager.branchName(title, taskId);
     }
 
-    private void pruneMergedWorktree(
-            String taskId, String actorId, File repoDir, File worktreeDir) {
+    private void pruneMergedWorktree(String taskId, String actorId, File repoDir, File worktreeDir) {
         worktreeManager.pruneMergedWorktree(taskId, actorId, repoDir, worktreeDir);
     }
 
     private String cleanupWorktreeAndBranch(CreatedWorktree createdWorktree, String tmuxSessionName) {
         if (!workerRunExecutor.stopSessionForCleanup(tmuxSessionName)) {
+
             return "Worktree and branch preserved: worker shutdown could not be confirmed.";
         }
+
         return worktreeManager.cleanupWorktreeAndBranch(createdWorktree);
     }
 
@@ -537,26 +500,30 @@ public class RunExecutor implements AutoCycle {
     }
 
     private static String resolveVerify(String storyVerify, RepoConfig repoConfig, File repoDir) {
+
         return RunContextLoader.resolveVerify(storyVerify, repoConfig, repoDir);
     }
 
     private static String processDetail(ProcessResult result) {
         String output = !isBlank(result.stderr()) ? result.stderr().strip() : safeStrip(result.stdout());
+
         return "exit " + result.exitCode()
                 + (result.timedOut() ? ", timed out" : "")
                 + (output.isBlank() ? "" : ": " + output);
     }
 
     private static String safeStrip(String value) {
+
         return value == null ? "" : value.strip();
     }
 
     private static boolean isBlank(String value) {
+
         return value == null || value.isBlank();
     }
 
     private static <T> List<T> safeList(List<T> values) {
+
         return values == null ? List.of() : values;
     }
-
 }

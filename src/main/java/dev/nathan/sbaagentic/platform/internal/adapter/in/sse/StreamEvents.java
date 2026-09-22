@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Lightweight payloads pushed over the {@code /api/stream} Server-Sent Events channel. These carry
@@ -25,8 +24,7 @@ public final class StreamEvents {
             String cwd,
             String role,
             String textPreview,
-            String parentSessionId) {
-    }
+            String parentSessionId) {}
 
     /** The owning session's latest state after an append, named SSE event {@code session.updated}. */
     public record SessionUpdated(
@@ -37,8 +35,7 @@ public final class StreamEvents {
             long eventCount,
             String lastSeenAt,
             String spawnedBy,
-            List<String> linkTypes) {
-    }
+            List<String> linkTypes) {}
 
     /** A judged beat appended by the cortex stage, named SSE event {@code judgment.appended}. */
     public record JudgmentAppended(
@@ -53,21 +50,13 @@ public final class StreamEvents {
             String judge,
             String model,
             String version,
-            String judgedAt) {
-    }
+            String judgedAt) {}
 
     /** A committed task lifecycle change, named for the value of {@code transitionType}. */
-    public record TaskChanged(
-            Task task,
-            String transitionId,
-            String transitionType,
-            String observedAt) {
-    }
+    public record TaskChanged(Task task, String transitionId, String transitionType, String observedAt) {}
 
     /** A committed task annotation, named SSE event {@code task.note}. */
-    public record TaskNoted(Task task, TaskAnnotation annotation, String observedAt) {
-    }
+    public record TaskNoted(Task task, TaskAnnotation annotation, String observedAt) {}
 
-    private StreamEvents() {
-    }
+    private StreamEvents() {}
 }

@@ -1,13 +1,12 @@
 package dev.nathan.sbaagentic.project.internal.application.port;
 
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.project.ProjectSavedMeld;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 public interface ProjectCatalogStore {
 
@@ -21,8 +20,7 @@ public interface ProjectCatalogStore {
 
     List<ProjectTimelineBlock> timelineBlocks(String canonicalKey, int limit, int offset);
 
-    List<ProjectTimelineBlock> timelineBlocksForSession(
-            String canonicalKey, String sessionId, int limit);
+    List<ProjectTimelineBlock> timelineBlocksForSession(String canonicalKey, String sessionId, int limit);
 
     void insertSavedMeld(
             String id,

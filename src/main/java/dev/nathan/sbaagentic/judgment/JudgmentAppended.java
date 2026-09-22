@@ -15,5 +15,4 @@ public record JudgmentAppended(
         String judge,
         String model,
         String version,
-        String judgedAt) {
-}
+        String judgedAt) {}

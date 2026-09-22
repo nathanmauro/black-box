@@ -1,7 +1,18 @@
 package dev.nathan.sbaagentic.project.internal.application;
 
-import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
+import dev.nathan.sbaagentic.project.ProjectMeldOperations;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
+import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldSessionRef;
+import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
+import dev.nathan.sbaagentic.project.ProjectSavedMeld;
+import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import dev.nathan.sbaagentic.recording.AgentSession;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,24 +23,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.project.ProjectMeldOperations;
-import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
-import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
-import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
-import dev.nathan.sbaagentic.project.ProjectMeldSessionRef;
-import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
-import dev.nathan.sbaagentic.project.ProjectSavedMeld;
-import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
-import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
-import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
 @Service
 public class ProjectMeldService implements ProjectMeldOperations {
@@ -48,9 +45,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
     private final ProjectAliasService aliasService;
 
     public ProjectMeldService(
-            ProjectCatalogStore repository,
-            ProjectMeldSummarizer summaryBackend,
-            ProjectAliasService aliasService) {
+            ProjectCatalogStore repository, ProjectMeldSummarizer summaryBackend, ProjectAliasService aliasService) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
         this.aliasService = aliasService;
@@ -63,16 +58,17 @@ public class ProjectMeldService implements ProjectMeldOperations {
             throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");
         }
         if (sessionIds.size() > MAX_SELECTED_SESSIONS) {
-            throw new ResponseStatusException(BAD_REQUEST,
-                    "Select " + MAX_SELECTED_SESSIONS + " sessions or fewer");
+            throw new ResponseStatusException(BAD_REQUEST, "Select " + MAX_SELECTED_SESSIONS + " sessions or fewer");
         }
 
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         Map<String, List<ProjectTimelineBlock>> evidence = evidenceBySession(canonicalKey, sessions);
         Bundle bundle = buildBundle(canonicalKey, sessions, evidence);
         String executionMode = executionMode(request.executionMode());
-        String provider = firstNonBlank(request.provider(), executionMode.equals(DIRECT) ? "configured-summary" : "local");
-        String model = firstNonBlank(request.model(), executionMode.equals(DIRECT) ? "summary-backend" : "context-bundle");
+        String provider =
+                firstNonBlank(request.provider(), executionMode.equals(DIRECT) ? "configured-summary" : "local");
+        String model =
+                firstNonBlank(request.model(), executionMode.equals(DIRECT) ? "summary-backend" : "context-bundle");
         String preview = bundle.text();
         String status = "bundle";
 
@@ -80,10 +76,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
             try {
                 preview = summaryBackend.summarize(directPrompt(bundle.text()));
                 status = "preview";
-            }
-            catch (RuntimeException ex) {
-                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                        "Meld preview failed: " + ex.getMessage(), ex);
+            } catch (RuntimeException ex) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY, "Meld preview failed: " + ex.getMessage(), ex);
             }
         }
 
@@ -115,8 +110,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
             throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");
         }
         if (sessionIds.size() > MAX_SELECTED_SESSIONS) {
-            throw new ResponseStatusException(BAD_REQUEST,
-                    "Select " + MAX_SELECTED_SESSIONS + " sessions or fewer");
+            throw new ResponseStatusException(BAD_REQUEST, "Select " + MAX_SELECTED_SESSIONS + " sessions or fewer");
         }
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         String id = UUID.randomUUID().toString();
@@ -143,6 +137,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 metadata,
                 createdAt,
                 sessions);
+
         return new ProjectSavedMeld(
                 id,
                 ProjectKeyCodec.encode(canonicalKey),
@@ -161,35 +156,37 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
     private List<AgentSession> orderedSessions(String canonicalKey, List<String> sessionIds) {
         List<AgentSession> found = repository.sessionsForProjectByIds(canonicalKey, sessionIds);
-        Map<String, AgentSession> byId = found.stream()
-                .collect(Collectors.toMap(AgentSession::id, session -> session));
-        List<String> missing = sessionIds.stream()
-                .filter(id -> !byId.containsKey(id))
-                .toList();
+        Map<String, AgentSession> byId = found.stream().collect(Collectors.toMap(AgentSession::id, session -> session));
+        List<String> missing =
+                sessionIds.stream().filter(id -> !byId.containsKey(id)).toList();
         if (!missing.isEmpty()) {
-            throw new ResponseStatusException(BAD_REQUEST,
-                    "Selected sessions must belong to this project: " + String.join(", ", missing));
+            throw new ResponseStatusException(
+                    BAD_REQUEST, "Selected sessions must belong to this project: " + String.join(", ", missing));
         }
+
         return sessionIds.stream().map(byId::get).toList();
     }
 
-    private Map<String, List<ProjectTimelineBlock>> evidenceBySession(String canonicalKey, List<AgentSession> sessions) {
+    private Map<String, List<ProjectTimelineBlock>> evidenceBySession(
+            String canonicalKey, List<AgentSession> sessions) {
         Map<String, List<ProjectTimelineBlock>> evidence = new LinkedHashMap<>();
         for (AgentSession session : sessions) {
-            evidence.put(session.id(),
+            evidence.put(
+                    session.id(),
                     repository.timelineBlocksForSession(canonicalKey, session.id(), MAX_EVIDENCE_PER_SESSION));
         }
+
         return evidence;
     }
 
     private Bundle buildBundle(
-            String canonicalKey,
-            List<AgentSession> sessions,
-            Map<String, List<ProjectTimelineBlock>> evidence) {
+            String canonicalKey, List<AgentSession> sessions, Map<String, List<ProjectTimelineBlock>> evidence) {
         List<String> degradationNotes = new ArrayList<>();
         StringBuilder builder = new StringBuilder();
         builder.append("# Project Meld Bundle\n\n");
-        builder.append("- Project: ").append(ProjectKeyCodec.labelFor(canonicalKey)).append('\n');
+        builder.append("- Project: ")
+                .append(ProjectKeyCodec.labelFor(canonicalKey))
+                .append('\n');
         builder.append("- Canonical key: ").append(canonicalKey).append('\n');
         builder.append("- Selected sessions: ").append(sessions.size()).append('\n');
         builder.append("- Bundle policy: summaries first, then bounded high-signal evidence.\n\n");
@@ -199,12 +196,19 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 .toList();
         int index = 1;
         for (AgentSession session : chronological) {
-            builder.append("## Session ").append(index++).append(": ")
-                    .append(firstNonBlank(session.title(), session.clientSessionId())).append("\n\n");
+            builder.append("## Session ")
+                    .append(index++)
+                    .append(": ")
+                    .append(firstNonBlank(session.title(), session.clientSessionId()))
+                    .append("\n\n");
             builder.append("- Session id: ").append(session.id()).append('\n');
-            builder.append("- Client session id: ").append(session.clientSessionId()).append('\n');
+            builder.append("- Client session id: ")
+                    .append(session.clientSessionId())
+                    .append('\n');
             builder.append("- Source: ").append(session.source()).append('\n');
-            builder.append("- CWD: ").append(firstNonBlank(session.cwd(), "(none)")).append('\n');
+            builder.append("- CWD: ")
+                    .append(firstNonBlank(session.cwd(), "(none)"))
+                    .append('\n');
             builder.append("- Started: ").append(session.startedAt()).append('\n');
             builder.append("- Last seen: ").append(session.lastSeenAt()).append('\n');
             builder.append("- Events: ").append(session.eventCount()).append("\n\n");
@@ -213,8 +217,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 builder.append("### Summary\n\n");
                 builder.append("(No saved summary for this session.)\n\n");
                 degradationNotes.add("Missing summary for " + session.clientSessionId());
-            }
-            else {
+            } else {
                 builder.append("### Summary\n\n");
                 appendClipped(builder, session.summary().strip(), MAX_TEXT_CHARS);
                 builder.append("\n\n");
@@ -238,12 +241,16 @@ public class ProjectMeldService implements ProjectMeldOperations {
             text = text.substring(0, MAX_BUNDLE_CHARS - marker.length()) + marker;
             degradationNotes.add("Bundle clipped to " + MAX_BUNDLE_CHARS + " characters");
         }
+
         return new Bundle(text, List.copyOf(degradationNotes));
     }
 
     private static void appendEvidence(StringBuilder builder, ProjectTimelineBlock block) {
-        builder.append("- [").append(block.observedAt()).append("] ")
-                .append(block.blockType()).append(" / ")
+        builder.append("- [")
+                .append(block.observedAt())
+                .append("] ")
+                .append(block.blockType())
+                .append(" / ")
                 .append(firstNonBlank(block.eventType(), "event"))
                 .append(" / ")
                 .append(firstNonBlank(block.source(), "unknown"))
@@ -273,6 +280,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
     private static void appendClipped(StringBuilder builder, String value, int maxChars) {
         if (value.length() <= maxChars) {
             builder.append(value);
+
             return;
         }
         int keep = Math.max(0, maxChars - 28);
@@ -280,6 +288,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
     }
 
     private static String directPrompt(String bundle) {
+
         return """
                 Create a Black Box project meld from this bounded context bundle.
 
@@ -294,6 +303,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
     private static List<String> normalizedSessionIds(List<String> sessionIds) {
         if (sessionIds == null) {
+
             return List.of();
         }
         Set<String> ids = new LinkedHashSet<>();
@@ -302,17 +312,21 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 ids.add(id.strip());
             }
         }
+
         return List.copyOf(ids);
     }
 
     private static String executionMode(String value) {
         if (DIRECT.equalsIgnoreCase(value)) {
+
             return DIRECT;
         }
+
         return EXPORT_BUNDLE;
     }
 
     private static ProjectMeldSessionRef sessionRef(AgentSession session) {
+
         return new ProjectMeldSessionRef(
                 session.id(),
                 session.source(),
@@ -325,6 +339,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
     }
 
     private static String firstNonBlank(String value, String fallback) {
+
         return value == null || value.isBlank() ? fallback : value;
     }
 
@@ -332,9 +347,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
         if (value == null || value.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, message);
         }
+
         return value.strip();
     }
 
-    private record Bundle(String text, List<String> degradationNotes) {
-    }
+    private record Bundle(String text, List<String> degradationNotes) {}
 }

@@ -1,9 +1,6 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
-import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
@@ -14,11 +11,13 @@ import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
-
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -26,16 +25,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-embedding-indexer-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-embedding-indexer-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class EmbeddingIndexerIntegrationTest {
 
     @Autowired
@@ -71,7 +69,10 @@ class EmbeddingIndexerIntegrationTest {
 
     @Test
     void recordingDecisionProducesOneEmbeddingRow() {
-        recorder.ingest(event("decision-session", "Decision", "Keep SQLite canonical",
+        recorder.ingest(event(
+                "decision-session",
+                "Decision",
+                "Keep SQLite canonical",
                 Map.of("kind", "decision", "decision", "Keep SQLite canonical")));
 
         assertThat(embeddingCount()).isEqualTo(1);
@@ -90,7 +91,10 @@ class EmbeddingIndexerIntegrationTest {
     void throwingEmbedderStillLeavesEventRecorded() {
         embedder.throwing(true);
 
-        IngestResponse response = recorder.ingest(event("throwing-session", "Decision", "Record before indexing",
+        IngestResponse response = recorder.ingest(event(
+                "throwing-session",
+                "Decision",
+                "Record before indexing",
                 Map.of("kind", "decision", "decision", "Record before indexing")));
 
         assertThat(embedder.calls()).isEqualTo(1);
@@ -104,12 +108,30 @@ class EmbeddingIndexerIntegrationTest {
     void repeatedSameRecordedEventDoesNotReEmbedUnchangedHash() {
         Instant observedAt = Instant.parse("2026-07-28T12:00:00Z");
         AgentSession session = new AgentSession(
-                "session-id", "codex", "duplicate-index", "Duplicate index", "/repo",
-                null, observedAt, observedAt, 1, null);
+                "session-id",
+                "codex",
+                "duplicate-index",
+                "Duplicate index",
+                "/repo",
+                null,
+                observedAt,
+                observedAt,
+                1,
+                null);
         AgentEvent event = new AgentEvent(
-                "event-id", session.id(), "codex", session.clientSessionId(), null,
-                "Decision", "agent", "Use one vector per target", null, null, null,
-                Map.of("kind", "decision", "decision", "Use one vector per target"), observedAt);
+                "event-id",
+                session.id(),
+                "codex",
+                session.clientSessionId(),
+                null,
+                "Decision",
+                "agent",
+                "Use one vector per target",
+                null,
+                null,
+                null,
+                Map.of("kind", "decision", "decision", "Use one vector per target"),
+                observedAt);
 
         assertThat(indexer.indexEvent(event)).isEqualTo(EmbeddingIndexer.IndexOutcome.EMBEDDED);
         assertThat(indexer.indexEvent(event)).isEqualTo(EmbeddingIndexer.IndexOutcome.SKIPPED);
@@ -142,10 +164,8 @@ class EmbeddingIndexerIntegrationTest {
     }
 
     private EventIngestRequest event(
-            String clientSessionId,
-            String eventType,
-            String text,
-            Map<String, Object> metadata) {
+            String clientSessionId, String eventType, String text, Map<String, Object> metadata) {
+
         return new EventIngestRequest(
                 "codex",
                 clientSessionId,
@@ -163,14 +183,14 @@ class EmbeddingIndexerIntegrationTest {
 
     private long embeddingCount() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_embeddings", Long.class);
+
         return count == null ? 0 : count;
     }
 
     private long embeddingCount(String targetKind) {
         Long count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM memory_embeddings WHERE target_kind = ?",
-                Long.class,
-                targetKind);
+                "SELECT COUNT(*) FROM memory_embeddings WHERE target_kind = ?", Long.class, targetKind);
+
         return count == null ? 0 : count;
     }
 
@@ -180,6 +200,7 @@ class EmbeddingIndexerIntegrationTest {
         @Bean
         @Primary
         CountingTextEmbedder countingTextEmbedder() {
+
             return new CountingTextEmbedder();
         }
     }
@@ -191,16 +212,19 @@ class EmbeddingIndexerIntegrationTest {
 
         @Override
         public EmbeddingVector embedDocument(String text) {
+
             return embed(text);
         }
 
         @Override
         public EmbeddingVector embedQuery(String text) {
+
             return embed(text);
         }
 
         @Override
         public String documentContentHash(String text) {
+
             return EmbeddingVector.contentHash(text);
         }
 
@@ -209,21 +233,25 @@ class EmbeddingIndexerIntegrationTest {
             if (throwing.get()) {
                 throw new TextEmbeddingUnavailable("boom");
             }
-            return new EmbeddingVector("test-model", new float[] { 1.0f, calls.get(), text.length() });
+
+            return new EmbeddingVector("test-model", new float[] {1.0f, calls.get(), text.length()});
         }
 
         @Override
         public boolean available() {
+
             return true;
         }
 
         @Override
         public String model() {
+
             return "test-model";
         }
 
         @Override
         public int dimensions() {
+
             return 3;
         }
 
@@ -232,6 +260,7 @@ class EmbeddingIndexerIntegrationTest {
         }
 
         int calls() {
+
             return calls.get();
         }
 

@@ -8,6 +8,7 @@ public class MemoryVectorProperties {
     private String sqliteVecPath = "";
 
     public String getSqliteVecPath() {
+
         return sqliteVecPath;
     }
 

@@ -1,15 +1,14 @@
 package dev.nathan.sbaagentic.runner.internal.application;
 
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
 
 public class ApprovalInterpreter {
 
@@ -29,8 +28,10 @@ public class ApprovalInterpreter {
             if (!isAnnotation(event, "approval")) {
                 continue;
             }
+
             return parseApproval(event).filter(approval -> expectedStage.equals(approval.stage()));
         }
+
         return Optional.empty();
     }
 
@@ -41,9 +42,11 @@ public class ApprovalInterpreter {
             if (approval.isPresent()
                     && expectedStage.equals(approval.orElseThrow().stage())
                     && "reject".equals(approval.orElseThrow().decision())) {
+
                 return approval;
             }
         }
+
         return Optional.empty();
     }
 
@@ -55,10 +58,7 @@ public class ApprovalInterpreter {
         data.put("decision", "reject");
         data.put("stage", approval.stage());
         data.put("feedback", feedback);
-        apiClient.annotate(
-                task.id(), actorId, "progress",
-                "SDLC " + approval.stage() + " rejected: " + feedback,
-                data);
+        apiClient.annotate(task.id(), actorId, "progress", "SDLC " + approval.stage() + " rejected: " + feedback, data);
     }
 
     public Optional<ShipMarker> latestShipMarker(List<TaskEvent> events, String actorId) {
@@ -71,15 +71,18 @@ public class ApprovalInterpreter {
             if (!SHIPPED.equals(stringValue(data.get("sdlc")))) {
                 continue;
             }
+
             return Optional.of(new ShipMarker(
                     stringValue(data.get("status")),
                     stringValue(data.get("branch")),
                     stringValue(data.get("worktree"))));
         }
+
         return Optional.empty();
     }
 
     public boolean hasRunnerMarker(List<TaskEvent> events, String actorId, String marker) {
+
         return events.stream()
                 .filter(event -> isRunnerProgress(event, actorId))
                 .map(ApprovalInterpreter::dataJson)
@@ -92,21 +95,24 @@ public class ApprovalInterpreter {
             if (event != null && WORKER_ACTOR.equals(event.actor()) && isAnnotation(event, kind)) {
                 String text = stringValue(event.detail().get("text"));
                 if (!isBlank(text)) {
+
                     return Optional.of(text);
                 }
             }
         }
+
         return Optional.empty();
     }
 
     public boolean hasWorkerDone(List<TaskEvent> events) {
+
         return events.stream().anyMatch(event -> {
-            if (event == null
-                    || !WORKER_ACTOR.equals(event.actor())
-                    || !isAnnotation(event, "progress")) {
+            if (event == null || !WORKER_ACTOR.equals(event.actor()) || !isAnnotation(event, "progress")) {
+
                 return false;
             }
             Map<?, ?> data = dataJson(event);
+
             return "worker_done".equals(stringValue(data.get("event")))
                     && "done".equals(stringValue(data.get("outcome")));
         });
@@ -114,6 +120,7 @@ public class ApprovalInterpreter {
 
     private Optional<Approval> parseApproval(TaskEvent event) {
         if (!isAnnotation(event, "approval")) {
+
             return Optional.empty();
         }
         Map<?, ?> data = dataJson(event);
@@ -121,17 +128,20 @@ public class ApprovalInterpreter {
         String stage = stringValue(data.get("stage"));
         if ((!"approve".equals(decision) && !"reject".equals(decision))
                 || (!"plan".equals(stage) && !"review".equals(stage))) {
+
             return Optional.empty();
         }
-        return Optional.of(new Approval(
-                event.id(), decision, stage, stringValue(data.get("feedback"))));
+
+        return Optional.of(new Approval(event.id(), decision, stage, stringValue(data.get("feedback"))));
     }
 
     private static boolean isRunnerProgress(TaskEvent event, String actorId) {
+
         return event != null && Objects.equals(actorId, event.actor()) && isAnnotation(event, "progress");
     }
 
     private static boolean isAnnotation(TaskEvent event, String kind) {
+
         return event != null
                 && event.type() == TaskEventType.NOTE
                 && event.detail() != null
@@ -140,23 +150,25 @@ public class ApprovalInterpreter {
 
     private static Map<?, ?> dataJson(TaskEvent event) {
         if (event == null || event.detail() == null) {
+
             return Map.of();
         }
         Object data = event.detail().get("dataJson");
+
         return data instanceof Map<?, ?> map ? map : Map.of();
     }
 
     private static String stringValue(Object value) {
+
         return value instanceof String string ? string : null;
     }
 
     private static boolean isBlank(String value) {
+
         return value == null || value.isBlank();
     }
 
-    public record Approval(String id, String decision, String stage, String feedback) {
-    }
+    public record Approval(String id, String decision, String stage, String feedback) {}
 
-    public record ShipMarker(String status, String branch, String worktree) {
-    }
+    public record ShipMarker(String status, String branch, String worktree) {}
 }

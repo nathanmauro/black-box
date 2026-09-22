@@ -1,17 +1,14 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite;
 
+import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import jakarta.annotation.PostConstruct;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,8 +58,8 @@ public class EventFtsIndex {
     }
 
     @Autowired
-    public EventFtsIndex(JdbcTemplate jdbcTemplate, Clock clock,
-            @Value("${sba.storage.backend:sqlite}") String backend) {
+    public EventFtsIndex(
+            JdbcTemplate jdbcTemplate, Clock clock, @Value("${sba.storage.backend:sqlite}") String backend) {
         this.jdbcTemplate = jdbcTemplate;
         this.clock = clock;
         this.sqlite = "sqlite".equals(backend);
@@ -75,7 +72,9 @@ public class EventFtsIndex {
      */
     @PostConstruct
     public void ensureFtsSchema() {
-        if (!sqlite) return;
+        if (!sqlite)
+
+            return;
         try {
             jdbcTemplate.execute("""
                     CREATE VIRTUAL TABLE IF NOT EXISTS event_fts
@@ -121,8 +120,7 @@ public class EventFtsIndex {
                     """, STATE_ID, clock.instant().toString(), STATE_ID);
             available = true;
             backfillComplete = stateComplete();
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             available = false;
             backfillComplete = false;
             log.warn("FTS5 unavailable; free-text search stays on the LIKE fallback: {}", ex.getMessage());
@@ -131,11 +129,13 @@ public class EventFtsIndex {
 
     /** Table and triggers are installed and healthy. */
     public boolean available() {
+
         return available;
     }
 
     /** MATCH may serve queries: installed, healthy, and the backfill has covered every old row. */
     public boolean ready() {
+
         return available && backfillComplete;
     }
 
@@ -152,6 +152,7 @@ public class EventFtsIndex {
     @EventListener(ApplicationReadyEvent.class)
     public void startBackgroundBackfill() {
         if (!available || backfillComplete) {
+
             return;
         }
         Thread worker = new Thread(this::runBackfillSafely, "event-fts-backfill");
@@ -167,12 +168,14 @@ public class EventFtsIndex {
      */
     public void runBackfill() {
         if (!available) {
+
             return;
         }
         while (true) {
             Map<String, Object> state = state();
             if (state == null || ((Number) state.get("complete")).intValue() == 1) {
                 backfillComplete = state != null;
+
                 return;
             }
             long last = ((Number) state.get("last_rowid")).longValue();
@@ -186,6 +189,7 @@ public class EventFtsIndex {
                     """, Long.class, last, target, BATCH_SIZE);
             if (batchEnd == null) {
                 markComplete(target);
+
                 return;
             }
             jdbcTemplate.update("""
@@ -196,11 +200,14 @@ public class EventFtsIndex {
                     """.formatted(extraExpression("")), last, batchEnd);
             if (batchEnd >= target) {
                 markComplete(target);
+
                 return;
             }
             jdbcTemplate.update(
                     "UPDATE search_index_state SET last_rowid = ?, updated_at = ? WHERE id = ?",
-                    batchEnd, clock.instant().toString(), STATE_ID);
+                    batchEnd,
+                    clock.instant().toString(),
+                    STATE_ID);
         }
     }
 
@@ -211,6 +218,7 @@ public class EventFtsIndex {
      */
     public void rebuild() {
         if (!available) {
+
             return;
         }
         backfillComplete = false;
@@ -233,15 +241,17 @@ public class EventFtsIndex {
      * a multi-word term (a quoted phrase in the grammar) becomes a phrase query.
      */
     public static String matchExpression(List<String> terms) {
+
         return terms.stream()
                 .map(term -> "\"" + term.replace("\"", "\"\"") + "\"*")
                 .collect(Collectors.joining(" "));
     }
 
     static String extraExpression(String prefix) {
+
         return ("substr(coalesce(%stool_output_json, ''), 1, 6000) || ' ' || "
-                + "substr(coalesce(%smetadata_json, ''), 1, 4000) || ' ' || "
-                + "substr(coalesce(%stool_input_json, ''), 1, 2000)")
+                        + "substr(coalesce(%smetadata_json, ''), 1, 4000) || ' ' || "
+                        + "substr(coalesce(%stool_input_json, ''), 1, 2000)")
                 .formatted(prefix, prefix, prefix);
     }
 
@@ -249,8 +259,7 @@ public class EventFtsIndex {
         try {
             runBackfill();
             log.info("FTS5 backfill complete");
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             log.warn("FTS5 backfill failed; free-text search stays on the LIKE fallback: {}", ex.getMessage());
         }
     }
@@ -258,18 +267,22 @@ public class EventFtsIndex {
     private void markComplete(long target) {
         jdbcTemplate.update(
                 "UPDATE search_index_state SET last_rowid = ?, complete = 1, updated_at = ? WHERE id = ?",
-                target, clock.instant().toString(), STATE_ID);
+                target,
+                clock.instant().toString(),
+                STATE_ID);
         backfillComplete = true;
     }
 
     private boolean stateComplete() {
         Map<String, Object> state = state();
+
         return state != null && ((Number) state.get("complete")).intValue() == 1;
     }
 
     private Map<String, Object> state() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT last_rowid, target_rowid, complete FROM search_index_state WHERE id = ?", STATE_ID);
+
         return rows.isEmpty() ? null : rows.get(0);
     }
 }

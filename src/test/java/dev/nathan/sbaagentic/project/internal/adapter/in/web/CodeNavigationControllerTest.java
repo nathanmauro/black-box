@@ -1,6 +1,12 @@
 package dev.nathan.sbaagentic.project.internal.adapter.in.web;
 
-import java.util.List;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.nathan.sbaagentic.project.CodeNavigationOperations;
 import dev.nathan.sbaagentic.project.CodeNavigationResult;
@@ -11,21 +17,12 @@ import dev.nathan.sbaagentic.project.ProjectMeldOperations;
 import dev.nathan.sbaagentic.project.ProjectOperations;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationError;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationException;
-
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class CodeNavigationControllerTest {
 
@@ -73,8 +70,7 @@ class CodeNavigationControllerTest {
     void mapsNavigationFailuresToStableTypedEnvelopes() throws Exception {
         when(navigation.openInEditor(any(CodeReference.class)))
                 .thenThrow(new CodeNavigationException(
-                        CodeNavigationError.OUTSIDE_PROJECT_ROOT,
-                        "The file reference leaves its known project root."));
+                        CodeNavigationError.OUTSIDE_PROJECT_ROOT, "The file reference leaves its known project root."));
 
         mockMvc.perform(post("/api/open-in-editor")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -84,7 +80,6 @@ class CodeNavigationControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.status").value(403))
                 .andExpect(jsonPath("$.error.type").value("outside_project_root"))
-                .andExpect(jsonPath("$.error.message")
-                        .value("The file reference leaves its known project root."));
+                .andExpect(jsonPath("$.error.message").value("The file reference leaves its known project root."));
     }
 }

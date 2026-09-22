@@ -1,13 +1,12 @@
 package dev.nathan.sbaagentic.workflow.internal.application.port;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.workflow.AnnotationKind;
 import dev.nathan.sbaagentic.workflow.Task;
 import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 import dev.nathan.sbaagentic.workflow.TaskEvent;
 import dev.nathan.sbaagentic.workflow.TaskEventType;
+import java.util.List;
+import java.util.Map;
 
 public interface TaskHistoryStore {
 

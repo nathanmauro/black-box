@@ -1,9 +1,6 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -12,10 +9,11 @@ import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
-
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class RecordingLifecyclePublicationTest {
 
@@ -24,32 +22,49 @@ class RecordingLifecyclePublicationTest {
         List<String> sequence = new ArrayList<>();
         Instant observedAt = Instant.parse("2026-07-20T13:00:00Z");
         AgentSession session = new AgentSession(
-                "session-id", "codex", "client-id", "Stop", "/repo", null,
-                observedAt, observedAt, 1, null);
+                "session-id", "codex", "client-id", "Stop", "/repo", null, observedAt, observedAt, 1, null);
         AgentEvent event = new AgentEvent(
-                "event-id", session.id(), "codex", "client-id", "turn-1", "Stop",
-                "assistant", "done", null, null, null, Map.of(), observedAt);
+                "event-id",
+                session.id(),
+                "codex",
+                "client-id",
+                "turn-1",
+                "Stop",
+                "assistant",
+                "done",
+                null,
+                null,
+                null,
+                Map.of(),
+                observedAt);
         RecordingStore store = (request, at, title, titleRank) -> {
             sequence.add("persisted");
+
             return new RecordingStore.Persisted(session, event);
         };
         EventIngestService service = new EventIngestService(
-                store,
-                new IngestionProperties(),
-                new RedactionService(new IngestionProperties()),
-                published -> {
+                store, new IngestionProperties(), new RedactionService(new IngestionProperties()), published -> {
                     if (published instanceof EventRecorded recorded) {
                         sequence.add("recorded");
                         recorded.markIndexed();
-                    }
-                    else if (published instanceof SessionStopped) {
+                    } else if (published instanceof SessionStopped) {
                         sequence.add("stopped");
                     }
                 });
 
         var response = service.ingest(new EventIngestRequest(
-                "codex", "client-id", "turn-1", "Stop", "assistant", "done", "/repo",
-                null, null, null, Map.of(), observedAt));
+                "codex",
+                "client-id",
+                "turn-1",
+                "Stop",
+                "assistant",
+                "done",
+                "/repo",
+                null,
+                null,
+                null,
+                Map.of(),
+                observedAt));
 
         assertThat(sequence).containsExactly("persisted", "recorded", "stopped");
         assertThat(response.indexed()).isTrue();
@@ -60,33 +75,55 @@ class RecordingLifecyclePublicationTest {
         List<String> sequence = new ArrayList<>();
         Instant observedAt = Instant.parse("2026-07-22T13:00:00Z");
         AgentSession session = new AgentSession(
-                "child-session-id", "claude", "parent-1:agent-abc", "code-reviewer", "/repo", null,
-                observedAt, observedAt, 1, "parent-1");
+                "child-session-id",
+                "claude",
+                "parent-1:agent-abc",
+                "code-reviewer",
+                "/repo",
+                null,
+                observedAt,
+                observedAt,
+                1,
+                "parent-1");
         AgentEvent event = new AgentEvent(
-                "event-id", session.id(), "claude", "parent-1:agent-abc", null, "SubagentStop",
-                "assistant", "done", null, null, null,
+                "event-id",
+                session.id(),
+                "claude",
+                "parent-1:agent-abc",
+                null,
+                "SubagentStop",
+                "assistant",
+                "done",
+                null,
+                null,
+                null,
                 Map.of("agentId", "agent-abc", "agentType", "code-reviewer", "parentClientSessionId", "parent-1"),
                 observedAt);
         RecordingStore store = (request, at, title, titleRank) -> {
             sequence.add("persisted");
+
             return new RecordingStore.Persisted(session, event);
         };
         EventIngestService service = new EventIngestService(
-                store,
-                new IngestionProperties(),
-                new RedactionService(new IngestionProperties()),
-                published -> {
+                store, new IngestionProperties(), new RedactionService(new IngestionProperties()), published -> {
                     if (published instanceof EventRecorded) {
                         sequence.add("recorded");
-                    }
-                    else if (published instanceof SessionStopped) {
+                    } else if (published instanceof SessionStopped) {
                         sequence.add("stopped");
                     }
                 });
 
         service.ingest(new EventIngestRequest(
-                "claude", "parent-1:agent-abc", null, "SubagentStop", "assistant", "done", "/repo",
-                null, null, null,
+                "claude",
+                "parent-1:agent-abc",
+                null,
+                "SubagentStop",
+                "assistant",
+                "done",
+                "/repo",
+                null,
+                null,
+                null,
                 Map.of("agentId", "agent-abc", "agentType", "code-reviewer", "parentClientSessionId", "parent-1"),
                 observedAt));
 

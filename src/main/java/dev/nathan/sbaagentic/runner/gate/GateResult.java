@@ -14,10 +14,7 @@ public record GateResult(
     }
 
     public GateResult(
-            boolean pass,
-            List<String> findings,
-            String resolvedVerify,
-            GateAdvisor.GateAdvisorNote advisorNote) {
+            boolean pass, List<String> findings, String resolvedVerify, GateAdvisor.GateAdvisorNote advisorNote) {
         this(pass, findings, resolvedVerify, advisorNote, null);
     }
 }

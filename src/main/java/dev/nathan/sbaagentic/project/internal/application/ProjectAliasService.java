@@ -1,10 +1,16 @@
 package dev.nathan.sbaagentic.project.internal.application;
 
-import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
-
 import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
+import dev.nathan.sbaagentic.project.ProjectAlias;
+import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectAliasSnapshot;
+import dev.nathan.sbaagentic.project.ProjectScope;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
+import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
+import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -19,22 +25,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-
-import dev.nathan.sbaagentic.recording.EventRecorded;
-import dev.nathan.sbaagentic.project.ProjectAlias;
-import dev.nathan.sbaagentic.project.ProjectAliasRequest;
-import dev.nathan.sbaagentic.project.ProjectAliasSnapshot;
-import dev.nathan.sbaagentic.project.ProjectScope;
-import dev.nathan.sbaagentic.project.ProjectScopeOperations;
-import dev.nathan.sbaagentic.project.internal.application.port.ProjectAliasStore;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -47,9 +43,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
     static final String NESTED_WORKTREE_SOURCE = "nested-worktree";
     static final String GIT_COMMONDIR_SOURCE = "git-commondir";
 
-    private static final List<String> NESTED_WORKTREE_MARKERS = List.of(
-            "/.claude/worktrees/",
-            "/.worktrees/");
+    private static final List<String> NESTED_WORKTREE_MARKERS = List.of("/.claude/worktrees/", "/.worktrees/");
 
     private final ProjectAliasStore repository;
 
@@ -65,21 +59,25 @@ public class ProjectAliasService implements ProjectScopeOperations {
 
     @Override
     public String resolve(String scope) {
+
         return snapshot().resolve(scope);
     }
 
     @Override
     public List<String> scopesFor(String scope) {
+
         return snapshot().scopesFor(scope);
     }
 
     @Override
     public List<ProjectScope> projectScopesFor(String scope) {
+
         return snapshot().projectScopesFor(scope);
     }
 
     @Override
     public ProjectAliasSnapshot snapshot() {
+
         return new Snapshot(repository.findAll());
     }
 
@@ -104,32 +102,28 @@ public class ProjectAliasService implements ProjectScopeOperations {
         Optional<ProjectAlias> existing = repository.findByAliasKey(aliasKey);
         if (existing.isPresent()) {
             ProjectAlias alias = existing.get();
-            if (requestedCanonical.equals(alias.canonicalKey())
-                    || canonicalKey.equals(resolve(alias.canonicalKey()))) {
+            if (requestedCanonical.equals(alias.canonicalKey()) || canonicalKey.equals(resolve(alias.canonicalKey()))) {
+
                 return alias;
             }
-            throw new ResponseStatusException(
-                    CONFLICT,
-                    "Project scope is already aliased to " + alias.canonicalKey());
+            throw new ResponseStatusException(CONFLICT, "Project scope is already aliased to " + alias.canonicalKey());
         }
 
         try {
+
             return repository.insert(
-                    UUID.randomUUID().toString(),
-                    aliasKey,
-                    canonicalKey,
-                    MANUAL_SOURCE,
-                    Instant.now());
-        }
-        catch (DataIntegrityViolationException ex) {
+                    UUID.randomUUID().toString(), aliasKey, canonicalKey, MANUAL_SOURCE, Instant.now());
+        } catch (DataIntegrityViolationException ex) {
             Optional<ProjectAlias> concurrent = repository.findByAliasKey(aliasKey);
             if (concurrent.isPresent() && canonicalKey.equals(concurrent.get().canonicalKey())) {
+
                 return concurrent.get();
             }
             if (concurrent.isPresent()) {
                 throw new ResponseStatusException(
                         CONFLICT,
-                        "Project scope is already aliased to " + concurrent.get().canonicalKey());
+                        "Project scope is already aliased to "
+                                + concurrent.get().canonicalKey());
             }
             throw ex;
         }
@@ -137,14 +131,11 @@ public class ProjectAliasService implements ProjectScopeOperations {
 
     public synchronized void delete(String aliasKey) {
         String normalized = requiredScope(aliasKey, "Alias key");
-        ProjectAlias existing = repository.findByAliasKey(normalized)
-                .orElseThrow(() -> new ResponseStatusException(
-                        NOT_FOUND,
-                        "Unknown project alias: " + normalized));
+        ProjectAlias existing = repository
+                .findByAliasKey(normalized)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Unknown project alias: " + normalized));
         if (!MANUAL_SOURCE.equals(existing.source())) {
-            throw new ResponseStatusException(
-                    CONFLICT,
-                    "Automatically discovered project aliases cannot be deleted.");
+            throw new ResponseStatusException(CONFLICT, "Automatically discovered project aliases cannot be deleted.");
         }
         if (repository.delete(normalized) == 0) {
             throw new ResponseStatusException(NOT_FOUND, "Unknown project alias: " + normalized);
@@ -167,17 +158,18 @@ public class ProjectAliasService implements ProjectScopeOperations {
     public void discoverVerifiedAlias(String observedScope) {
         try {
             if (observedScope == null || observedScope.isBlank() || protectedScope(observedScope)) {
+
                 return;
             }
             Optional<String> gitOwner = linkedGitOwner(observedScope);
             if (gitOwner.isPresent()) {
                 persistDiscovered(observedScope, gitOwner.get(), GIT_COMMONDIR_SOURCE);
+
                 return;
             }
             nestedWorktreeOwner(observedScope)
                     .ifPresent(owner -> persistDiscovered(observedScope, owner, NESTED_WORKTREE_SOURCE));
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
             // Alias discovery is supporting metadata. It must never turn a successfully persisted
             // event into an ingestion failure; the raw project scope remains fully usable.
             LOGGER.warn("Unable to discover a verified project alias for scope {}", observedScope, ex);
@@ -188,6 +180,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
         String aliasKey = ProjectKeyCodec.canonicalize(aliasScope);
         String canonicalKey = ProjectKeyCodec.canonicalize(canonicalScope);
         if (protectedScope(aliasKey) || protectedScope(canonicalKey) || aliasKey.equals(canonicalKey)) {
+
             return;
         }
         if (aliasKey.equals(resolve(canonicalKey))) {
@@ -195,21 +188,17 @@ public class ProjectAliasService implements ProjectScopeOperations {
                     "Skipping discovered project alias {} -> {} because it would create a cycle",
                     aliasKey,
                     canonicalKey);
+
             return;
         }
         Optional<ProjectAlias> existing = repository.findByAliasKey(aliasKey);
         if (existing.isPresent()) {
+
             return;
         }
         try {
-            repository.insert(
-                    UUID.randomUUID().toString(),
-                    aliasKey,
-                    canonicalKey,
-                    source,
-                    Instant.now());
-        }
-        catch (DataIntegrityViolationException ignored) {
+            repository.insert(UUID.randomUUID().toString(), aliasKey, canonicalKey, source, Instant.now());
+        } catch (DataIntegrityViolationException ignored) {
             // Concurrent ingestion can discover the same worktree twice. The unique alias key is
             // authoritative; discovery never replaces whichever mapping committed first.
         }
@@ -228,21 +217,25 @@ public class ProjectAliasService implements ProjectScopeOperations {
         if (nearestMarkerAt <= 0
                 || nearestMarker == null
                 || nearestMarkerAt + nearestMarker.length() >= scope.length()) {
+
             return Optional.empty();
         }
 
         try {
-            Path owner = Path.of(scope.substring(0, nearestMarkerAt)).normalize().toAbsolutePath();
+            Path owner =
+                    Path.of(scope.substring(0, nearestMarkerAt)).normalize().toAbsolutePath();
             Path home = Path.of(System.getProperty("user.home")).normalize().toAbsolutePath();
             Path dotGit = owner.resolve(".git");
             if (owner.equals(home)
                     || protectedScope(owner.toString())
                     || (!Files.isDirectory(dotGit) && !Files.isRegularFile(dotGit))) {
+
                 return Optional.empty();
             }
+
             return Optional.of(owner.toString());
-        }
-        catch (InvalidPathException | SecurityException ignored) {
+        } catch (InvalidPathException | SecurityException ignored) {
+
             return Optional.empty();
         }
     }
@@ -251,24 +244,27 @@ public class ProjectAliasService implements ProjectScopeOperations {
         try {
             Path candidate = Path.of(scope);
             if (!candidate.isAbsolute() || !Files.exists(candidate)) {
+
                 return Optional.empty();
             }
             Path current = Files.isDirectory(candidate) ? candidate : candidate.getParent();
             while (current != null) {
                 Path dotGit = current.resolve(".git");
                 if (Files.isRegularFile(dotGit)) {
+
                     return ownerFromGitFile(dotGit, current);
                 }
                 if (Files.isDirectory(dotGit)) {
+
                     return Optional.empty();
                 }
                 current = current.getParent();
             }
-        }
-        catch (InvalidPathException | SecurityException ignored) {
+        } catch (InvalidPathException | SecurityException ignored) {
             // An ingested cwd is untrusted historical data. Invalid or inaccessible paths remain
             // separate scopes and can still be explicitly aliased later.
         }
+
         return Optional.empty();
     }
 
@@ -276,6 +272,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
         try {
             String pointer = Files.readString(dotGit).trim();
             if (!pointer.startsWith("gitdir:")) {
+
                 return Optional.empty();
             }
             Path gitDir = Path.of(pointer.substring("gitdir:".length()).trim());
@@ -285,6 +282,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
             gitDir = gitDir.normalize().toAbsolutePath();
             Path commonDirFile = gitDir.resolve("commondir");
             if (!Files.isRegularFile(commonDirFile)) {
+
                 return Optional.empty();
             }
             Path commonDir = Path.of(Files.readString(commonDirFile).trim());
@@ -296,15 +294,18 @@ public class ProjectAliasService implements ProjectScopeOperations {
                     || commonDir.getFileName() == null
                     || !".git".equals(commonDir.getFileName().toString())
                     || !gitDir.startsWith(commonDir.resolve("worktrees"))) {
+
                 return Optional.empty();
             }
             Path owner = commonDir.getParent();
             if (owner == null || owner.equals(worktreeRoot) || protectedScope(owner.toString())) {
+
                 return Optional.empty();
             }
+
             return Optional.of(owner.toString());
-        }
-        catch (IOException | InvalidPathException | SecurityException ignored) {
+        } catch (IOException | InvalidPathException | SecurityException ignored) {
+
             return Optional.empty();
         }
     }
@@ -313,6 +314,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(label + " is required.");
         }
+
         return ProjectKeyCodec.canonicalize(value);
     }
 
@@ -324,6 +326,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
 
     private static boolean protectedScope(String scope) {
         String normalized = ProjectKeyCodec.canonicalize(scope);
+
         return "/".equals(normalized) || ProjectKeyCodec.NO_PROJECT_KEY.equals(normalized);
     }
 
@@ -348,6 +351,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
             String normalized = ProjectKeyCodec.canonicalize(scope);
             String cached = resolved.get(normalized);
             if (cached != null) {
+
                 return cached;
             }
 
@@ -371,6 +375,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
             for (String visited : seen) {
                 resolved.put(visited, current);
             }
+
             return current;
         }
 
@@ -384,6 +389,7 @@ public class ProjectAliasService implements ProjectScopeOperations {
                     .map(ProjectAlias::aliasKey)
                     .map(ProjectKeyCodec::canonicalize)
                     .forEach(scopes::add);
+
             return List.copyOf(scopes);
         }
 
@@ -392,15 +398,12 @@ public class ProjectAliasService implements ProjectScopeOperations {
             String canonical = resolve(scope);
             List<ProjectScope> scopes = new ArrayList<>();
             scopes.add(new ProjectScope(
-                    ProjectKeyCodec.encode(canonical),
-                    canonical,
-                    ProjectKeyCodec.labelFor(canonical),
-                    true,
-                    null));
+                    ProjectKeyCodec.encode(canonical), canonical, ProjectKeyCodec.labelFor(canonical), true, null));
             aliases.stream()
                     .filter(alias -> resolvesTo(alias.aliasKey(), canonical))
                     .map(alias -> {
                         String aliasKey = ProjectKeyCodec.canonicalize(alias.aliasKey());
+
                         return new ProjectScope(
                                 ProjectKeyCodec.encode(aliasKey),
                                 aliasKey,
@@ -409,15 +412,17 @@ public class ProjectAliasService implements ProjectScopeOperations {
                                 alias.source());
                     })
                     .forEach(scopes::add);
+
             return List.copyOf(scopes);
         }
 
         private boolean resolvesTo(String scope, String canonical) {
             try {
+
                 return canonical.equals(resolve(scope));
-            }
-            catch (IllegalStateException ex) {
+            } catch (IllegalStateException ex) {
                 LOGGER.warn("Ignoring cyclic project alias while expanding scope {}", scope, ex);
+
                 return false;
             }
         }

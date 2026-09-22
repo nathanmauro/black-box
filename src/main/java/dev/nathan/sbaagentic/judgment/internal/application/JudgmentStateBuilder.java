@@ -1,5 +1,14 @@
 package dev.nathan.sbaagentic.judgment.internal.application;
 
+import dev.nathan.sbaagentic.judgment.JudgmentProperties;
+import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
+import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
+import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.EventTypes;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
+import dev.nathan.sbaagentic.workflow.SessionLink;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,30 +20,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import dev.nathan.sbaagentic.judgment.JudgmentProperties;
-import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
-import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
-import dev.nathan.sbaagentic.recording.AgentSession;
-import dev.nathan.sbaagentic.recording.EventTypes;
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-
 public class JudgmentStateBuilder {
 
     private static final Duration LIVE_WINDOW = Duration.ofMinutes(30);
-    private static final Set<String> PROMPT_TYPES = Set.of(
-            "userpromptsubmit",
-            "beforesubmitprompt",
-            "manualcapture",
-            "quicknote");
-    private static final List<String> RELAYED_PREFIXES = List.of(
-            "<agent-message",
-            "<system-reminder",
-            "<task-notification",
-            "<local-command",
-            "<command-name");
+    private static final Set<String> PROMPT_TYPES =
+            Set.of("userpromptsubmit", "beforesubmitprompt", "manualcapture", "quicknote");
+    private static final List<String> RELAYED_PREFIXES =
+            List.of("<agent-message", "<system-reminder", "<task-notification", "<local-command", "<command-name");
 
     private final RecordingCatalog recording;
     private final SessionLineageOperations lineage;
@@ -42,10 +34,7 @@ public class JudgmentStateBuilder {
     private final Clock clock;
 
     public JudgmentStateBuilder(
-            RecordingCatalog recording,
-            SessionLineageOperations lineage,
-            JudgmentProperties properties,
-            Clock clock) {
+            RecordingCatalog recording, SessionLineageOperations lineage, JudgmentProperties properties, Clock clock) {
         this.recording = recording;
         this.lineage = lineage;
         this.properties = properties;
@@ -55,12 +44,14 @@ public class JudgmentStateBuilder {
     public Optional<BeatState> build(Beat beat, Map<String, ArrayDeque<String>> trails) {
         Optional<AgentSession> session = recording.findSessionById(beat.sessionId());
         if (session.isEmpty()) {
+
             return Optional.empty();
         }
         AgentSession current = session.get();
         List<String> trail = trailFor(current.id(), trails);
         List<BeatState.OtherSessionState> others = othersFor(current, trails);
         boolean askHuman = askHuman(beat);
+
         return Optional.of(new BeatState(
                 beat,
                 new BeatState.SessionState(current.source(), current.cwd(), current.title()),
@@ -73,19 +64,18 @@ public class JudgmentStateBuilder {
     private List<String> trailFor(String sessionId, Map<String, ArrayDeque<String>> trails) {
         ArrayDeque<String> titles = trails.get(sessionId);
         if (titles == null || titles.isEmpty()) {
+
             return List.of();
         }
-        return titles.stream()
-                .skip(Math.max(0, titles.size() - 5))
-                .toList();
+
+        return titles.stream().skip(Math.max(0, titles.size() - 5)).toList();
     }
 
-    private List<BeatState.OtherSessionState> othersFor(
-            AgentSession current,
-            Map<String, ArrayDeque<String>> trails) {
+    private List<BeatState.OtherSessionState> othersFor(AgentSession current, Map<String, ArrayDeque<String>> trails) {
         Instant liveCutoff = clock.instant().minus(LIVE_WINDOW);
         List<AgentSession> liveSessions = recording.recentSessions(100, true).stream()
-                .filter(session -> session.lastSeenAt() != null && !session.lastSeenAt().isBefore(liveCutoff))
+                .filter(session ->
+                        session.lastSeenAt() != null && !session.lastSeenAt().isBefore(liveCutoff))
                 .toList();
         Set<String> excluded = relatedSessionIds(current, liveSessions);
         excluded.add(current.id());
@@ -107,6 +97,7 @@ public class JudgmentStateBuilder {
                     session.id(), k, session.source(), session.cwd(), session.title(), latest));
             k++;
         }
+
         return others;
     }
 
@@ -126,6 +117,7 @@ public class JudgmentStateBuilder {
                 related.add(session.id());
             }
         }
+
         return related;
     }
 
@@ -135,10 +127,12 @@ public class JudgmentStateBuilder {
             parents.add(link.parentSessionId());
         }
         if (session.spawnedBy() != null && !session.spawnedBy().isBlank()) {
-            recording.findSession(session.source(), session.spawnedBy())
+            recording
+                    .findSession(session.source(), session.spawnedBy())
                     .map(AgentSession::id)
                     .ifPresent(parents::add);
         }
+
         return parents;
     }
 
@@ -160,18 +154,20 @@ public class JudgmentStateBuilder {
 
     private List<SessionLink> safeLinksWhereChild(String sessionId) {
         try {
+
             return lineage.linksWhereChild(sessionId);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
+
             return List.of();
         }
     }
 
     private List<SessionLink> safeLinksWhereParent(String sessionId) {
         try {
+
             return lineage.linksWhereParent(sessionId);
-        }
-        catch (RuntimeException ex) {
+        } catch (RuntimeException ex) {
+
             return List.of();
         }
     }
@@ -179,11 +175,12 @@ public class JudgmentStateBuilder {
     private static String latestTitles(String sessionId, Map<String, ArrayDeque<String>> trails) {
         ArrayDeque<String> titles = trails.get(sessionId);
         if (titles == null || titles.isEmpty()) {
+
             return "";
         }
-        return String.join("\n", titles.stream()
-                .skip(Math.max(0, titles.size() - 3))
-                .toList());
+
+        return String.join(
+                "\n", titles.stream().skip(Math.max(0, titles.size() - 3)).toList());
     }
 
     private static boolean askHuman(Beat beat) {
@@ -194,14 +191,17 @@ public class JudgmentStateBuilder {
             }
             promptLike = true;
             if (!relayed(event.text())) {
+
                 return true;
             }
         }
+
         return false;
     }
 
     private static boolean promptLike(BeatEvent event) {
         String type = EventTypes.normalize(event.type());
+
         return PROMPT_TYPES.contains(type) || "user".equalsIgnoreCase(event.role());
     }
 
@@ -209,9 +209,11 @@ public class JudgmentStateBuilder {
         String value = text == null ? "" : text.trim().toLowerCase(java.util.Locale.ROOT);
         for (String prefix : RELAYED_PREFIXES) {
             if (value.startsWith(prefix)) {
+
                 return true;
             }
         }
+
         return false;
     }
 }

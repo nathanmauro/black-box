@@ -1,14 +1,13 @@
 package dev.nathan.sbaagentic.summary.internal.application;
 
-import dev.nathan.sbaagentic.summary.internal.adapter.out.http.LocalAiClient;
-import dev.nathan.sbaagentic.summary.internal.adapter.out.process.ExternalSummaryClient;
-import dev.nathan.sbaagentic.summary.SummaryModelProperties;
-import dev.nathan.sbaagentic.summary.SummaryProperties;
-
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import dev.nathan.sbaagentic.summary.SummaryModelProperties;
+import dev.nathan.sbaagentic.summary.SummaryProperties;
+import dev.nathan.sbaagentic.summary.internal.adapter.out.http.LocalAiClient;
+import dev.nathan.sbaagentic.summary.internal.adapter.out.process.ExternalSummaryClient;
+import org.junit.jupiter.api.Test;
 
 class SummaryBackendTest {
 
@@ -61,12 +60,14 @@ class SummaryBackendTest {
         SummaryProperties properties = new SummaryProperties();
         properties.setBackend("external");
         properties.setExternalCommand(command);
+
         return properties;
     }
 
     private static SummaryModelProperties disabledLocalModel() {
         SummaryModelProperties properties = new SummaryModelProperties();
         properties.setEnabled(false);
+
         return properties;
     }
 }

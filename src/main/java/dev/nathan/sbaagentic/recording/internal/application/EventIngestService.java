@@ -1,27 +1,25 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
-import java.time.Instant;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-
-import dev.nathan.sbaagentic.recording.IngestionProperties;
-import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.EventTypes;
-import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
+import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.Titles;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
-
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.stereotype.Service;
+import java.time.Instant;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Service;
 
 @Service
 public class EventIngestService implements EventRecorder {
@@ -84,26 +82,34 @@ public class EventIngestService implements EventRecorder {
         if (!result.replayed()) {
             // The receipt commits with the event. A replay must never restart optional work, even
             // if an earlier delivery failed between canonical persistence and publication.
-            publishOptional(new EventRecorded(persisted.session(), persisted.event()), persisted.event().id());
+            publishOptional(
+                    new EventRecorded(persisted.session(), persisted.event()),
+                    persisted.event().id());
             if (isFinalEvent(persisted.event().eventType())) {
-                publishOptional(new SessionStopped(persisted.session(), persisted.event()), persisted.event().id());
+                publishOptional(
+                        new SessionStopped(persisted.session(), persisted.event()),
+                        persisted.event().id());
             }
         }
-        return new IdempotentIngestResponse(identity.captureId(), persisted.event().id(),
-                persisted.event().sessionId(), result.replayed());
+
+        return new IdempotentIngestResponse(
+                identity.captureId(), persisted.event().id(), persisted.event().sessionId(), result.replayed());
     }
 
     private void publishOptional(Object event, String eventId) {
         try {
             eventPublisher.publishEvent(event);
-        }
-        catch (RuntimeException ex) {
-            log.warn("Canonical capture {} persisted, but optional {} publication failed",
-                    eventId, event.getClass().getSimpleName(), ex);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "Canonical capture {} persisted, but optional {} publication failed",
+                    eventId,
+                    event.getClass().getSimpleName(),
+                    ex);
         }
     }
 
     private static boolean isFinalEvent(String eventType) {
+
         return FINAL_EVENT_TYPES.contains(EventTypes.normalize(eventType));
     }
 
@@ -112,6 +118,7 @@ public class EventIngestService implements EventRecorder {
         String eventType = request.eventType().trim();
         String role = normalizeRole(request.role(), eventType, text);
         Map<String, Object> metadata = redactMetadata(request.metadata());
+
         return new EventIngestRequest(
                 request.source().trim().toLowerCase(Locale.ROOT),
                 request.clientSessionId().trim(),
@@ -130,6 +137,7 @@ public class EventIngestService implements EventRecorder {
     private String normalizeRole(String role, String eventType, String text) {
         String normalizedRole = blankToNull(role);
         if (normalizedRole == null || !normalizedRole.equalsIgnoreCase("agent")) {
+
             return normalizedRole;
         }
 
@@ -142,50 +150,62 @@ public class EventIngestService implements EventRecorder {
     }
 
     private String normalizeEventType(String eventType) {
+
         return EventTypes.normalize(eventType);
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> redactMetadata(Map<String, Object> metadata) {
         if (metadata == null) {
+
             return Map.of();
         }
+
         return (Map<String, Object>) redactionService.redactDeep(metadata);
     }
 
     private TitleCandidate titleFor(EventIngestRequest request) {
         Object title = request.metadata().get("title");
         if (title instanceof String value && !value.isBlank()) {
+
             return new TitleCandidate(Titles.sanitize(value), TitleRank.EXPLICIT);
         }
         if (request.text() != null && !request.text().isBlank()) {
+
             return new TitleCandidate(Titles.sanitize(Titles.firstLine(request.text())), TitleRank.TEXT);
         }
         if (request.toolName() != null && !request.toolName().isBlank()) {
-            return new TitleCandidate(Titles.sanitize(request.toolName() + " via " + request.eventType()), TitleRank.TOOL);
+
+            return new TitleCandidate(
+                    Titles.sanitize(request.toolName() + " via " + request.eventType()), TitleRank.TOOL);
         }
         Object agentType = request.metadata().get("agentType");
         if (agentType instanceof String type && !type.isBlank()) {
+
             return new TitleCandidate(Titles.sanitize(type), TitleRank.FALLBACK);
         }
+
         return new TitleCandidate(Titles.sanitize(request.source() + " " + request.eventType()), TitleRank.FALLBACK);
     }
 
     private String truncate(String value) {
         if (value == null) {
+
             return null;
         }
         int max = properties.getMaxTextLength();
         if (value.length() <= max) {
+
             return value;
         }
+
         return value.substring(0, max) + "\n[truncated]";
     }
 
-    private record TitleCandidate(String value, int rank) {
-    }
+    private record TitleCandidate(String value, int rank) {}
 
     private static String blankToNull(String value) {
+
         return value == null || value.isBlank() ? null : value;
     }
 }

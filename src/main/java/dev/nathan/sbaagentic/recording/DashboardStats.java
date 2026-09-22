@@ -10,9 +10,7 @@ public record DashboardStats(
         List<BreakdownCount> sessionsBySource,
         List<DailyCount> recentActivity) {
 
-    public record BreakdownCount(String name, long count) {
-    }
+    public record BreakdownCount(String name, long count) {}
 
-    public record DailyCount(String day, long count) {
-    }
+    public record DailyCount(String day, long count) {}
 }

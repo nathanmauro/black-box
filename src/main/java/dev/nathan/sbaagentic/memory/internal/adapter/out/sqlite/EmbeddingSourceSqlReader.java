@@ -1,22 +1,18 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
-import java.util.List;
-import java.util.Map;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingSourceReader;
-
+import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class EmbeddingSourceSqlReader implements EmbeddingSourceReader {
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -31,7 +27,9 @@ public class EmbeddingSourceSqlReader implements EmbeddingSourceReader {
         String afterKind = afterTargetKind == null ? "" : afterTargetKind;
         String afterId = afterTargetId == null ? "" : afterTargetId;
         int safeLimit = Math.max(1, limit);
-        return jdbcTemplate.query("""
+
+        return jdbcTemplate.query(
+                """
                 SELECT target_kind, target_id, event_type, text, metadata_json
                   FROM (
                         SELECT 'event' AS target_kind, e.id AS target_id, e.event_type, e.text, e.metadata_json
@@ -63,12 +61,14 @@ public class EmbeddingSourceSqlReader implements EmbeddingSourceReader {
 
     private Map<String, Object> fromJsonMap(String json) {
         if (json == null || json.isBlank()) {
+
             return Map.of();
         }
         try {
+
             return objectMapper.readValue(json, MAP_TYPE);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
+
             return Map.of();
         }
     }

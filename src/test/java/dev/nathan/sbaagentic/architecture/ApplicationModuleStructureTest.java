@@ -1,12 +1,11 @@
 package dev.nathan.sbaagentic.architecture;
 
-import dev.nathan.sbaagentic.SbaAgenticApplication;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.nathan.sbaagentic.SbaAgenticApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.docs.Documenter;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ApplicationModuleStructureTest {
 
@@ -17,8 +16,16 @@ class ApplicationModuleStructureTest {
         modules.verify();
         assertThat(modules.stream().map(module -> module.getIdentifier().toString()))
                 .containsExactlyInAnyOrder(
-                        "ask", "judgment", "memory", "platform", "project",
-                        "query", "recording", "runner", "summary", "workflow");
+                        "ask",
+                        "judgment",
+                        "memory",
+                        "platform",
+                        "project",
+                        "query",
+                        "recording",
+                        "runner",
+                        "summary",
+                        "workflow");
         new Documenter(modules).writeModulesAsPlantUml();
     }
 }

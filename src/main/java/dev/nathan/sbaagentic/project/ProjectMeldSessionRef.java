@@ -10,5 +10,4 @@ public record ProjectMeldSessionRef(
         String cwd,
         long eventCount,
         Instant startedAt,
-        Instant lastSeenAt) {
-}
+        Instant lastSeenAt) {}

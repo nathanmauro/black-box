@@ -1,5 +1,12 @@
 package dev.nathan.sbaagentic.runner.run;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import dev.nathan.sbaagentic.runner.RunnerNaming;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -11,17 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import dev.nathan.sbaagentic.runner.RunnerNaming;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class RunnerWorkerScriptsTest {
 
@@ -66,8 +64,7 @@ class RunnerWorkerScriptsTest {
     }
 
     @Test
-    void fakePlanAndReviewStagesPostStageArtifactThenDoneWithoutMutatingWorktree()
-            throws Exception {
+    void fakePlanAndReviewStagesPostStageArtifactThenDoneWithoutMutatingWorktree() throws Exception {
         assertReadOnlyFakeStage("plan", "plan");
         assertReadOnlyFakeStage("review", "review");
     }
@@ -75,17 +72,13 @@ class RunnerWorkerScriptsTest {
     private JsonNode runReport(String verb, String text) throws Exception {
         try (CaptureServer server = new CaptureServer(1)) {
             ProcessResult result = run(
-                    List.of(
-                            "/bin/bash",
-                            RunnerNaming.scriptPath("scripts/runner/report.sh"),
-                            TASK_ID,
-                            verb,
-                            text),
+                    List.of("/bin/bash", RunnerNaming.scriptPath("scripts/runner/report.sh"), TASK_ID, verb, text),
                     tempDir,
                     Map.of("SBA_BASE_URL", server.baseUrl()));
 
             assertThat(result.exitCode()).as(result.stderr()).isZero();
             assertThat(server.await(Duration.ofSeconds(5))).isTrue();
+
             return OBJECT_MAPPER.readTree(server.bodies().getFirst());
         }
     }
@@ -95,9 +88,7 @@ class RunnerWorkerScriptsTest {
         Path home = Files.createDirectories(tempDir.resolve("home-" + stage));
         try (CaptureServer server = new CaptureServer(2)) {
             ProcessResult result = run(
-                    List.of(
-                            "/bin/bash",
-                            RunnerNaming.scriptPath("scripts/runner/fake-worker.sh")),
+                    List.of("/bin/bash", RunnerNaming.scriptPath("scripts/runner/fake-worker.sh")),
                     worktree,
                     Map.of(
                             "HOME", home.toString(),
@@ -112,7 +103,10 @@ class RunnerWorkerScriptsTest {
                 assertThat(children.toList()).isEmpty();
             }
             assertThat(server.bodies()).hasSize(2);
-            assertThat(OBJECT_MAPPER.readTree(server.bodies().get(0)).path("kind").asText())
+            assertThat(OBJECT_MAPPER
+                            .readTree(server.bodies().get(0))
+                            .path("kind")
+                            .asText())
                     .isEqualTo(expectedKind);
             JsonNode done = OBJECT_MAPPER.readTree(server.bodies().get(1));
             assertThat(done.path("kind").asText()).isEqualTo("progress");
@@ -123,10 +117,8 @@ class RunnerWorkerScriptsTest {
         }
     }
 
-    private static ProcessResult run(
-            List<String> command,
-            Path workingDirectory,
-            Map<String, String> environment) throws Exception {
+    private static ProcessResult run(List<String> command, Path workingDirectory, Map<String, String> environment)
+            throws Exception {
         ProcessBuilder builder = new ProcessBuilder(command).directory(workingDirectory.toFile());
         builder.environment().putAll(environment);
         Process process = builder.start();
@@ -136,11 +128,11 @@ class RunnerWorkerScriptsTest {
         }
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+
         return new ProcessResult(finished ? process.exitValue() : -1, stdout, stderr);
     }
 
-    private record ProcessResult(int exitCode, String stdout, String stderr) {
-    }
+    private record ProcessResult(int exitCode, String stdout, String stderr) {}
 
     private static final class CaptureServer implements AutoCloseable {
 
@@ -156,14 +148,17 @@ class RunnerWorkerScriptsTest {
         }
 
         private String baseUrl() {
+
             return "http://127.0.0.1:" + server.getAddress().getPort();
         }
 
         private List<String> bodies() {
+
             return List.copyOf(bodies);
         }
 
         private boolean await(Duration timeout) throws InterruptedException {
+
             return requests.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
         }
 

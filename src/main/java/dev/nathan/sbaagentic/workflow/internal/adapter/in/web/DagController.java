@@ -1,12 +1,10 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.in.web;
 
-import java.util.UUID;
-
 import dev.nathan.sbaagentic.workflow.DagOperations;
 import dev.nathan.sbaagentic.workflow.DagResponse;
 import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import dev.nathan.sbaagentic.workflow.TaskErrorCode;
-
+import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,11 +23,13 @@ public class DagController {
 
     @GetMapping("/tasks/{taskId}/dag")
     public DagResponse taskDag(@PathVariable String taskId) {
+
         return dags.forTask(requireUuid(taskId));
     }
 
     @GetMapping("/dag")
     public DagResponse dag(@RequestParam String sessionId) {
+
         return dags.forSession(sessionId);
     }
 
@@ -43,14 +43,15 @@ public class DagController {
             if (!parsed.toString().equalsIgnoreCase(normalized)) {
                 throw new IllegalArgumentException("Noncanonical UUID");
             }
+
             return parsed.toString();
-        }
-        catch (IllegalArgumentException ex) {
+        } catch (IllegalArgumentException ex) {
             throw validation("Task id must be a UUID");
         }
     }
 
     private static TaskDomainException validation(String message) {
+
         return new TaskDomainException(TaskErrorCode.VALIDATION_FAILED, message, null, null, null);
     }
 }

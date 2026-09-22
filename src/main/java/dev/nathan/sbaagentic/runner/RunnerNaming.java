@@ -4,8 +4,7 @@ import java.nio.file.Path;
 
 public final class RunnerNaming {
 
-    private RunnerNaming() {
-    }
+    private RunnerNaming() {}
 
     /**
      * Resolves a {@code scripts/runner/*.sh} helper to an absolute path anchored at the runner
@@ -15,6 +14,7 @@ public final class RunnerNaming {
      * path only resolves by accident when the target repo happens to be sba-agentic itself.
      */
     public static String scriptPath(String relativeScriptPath) {
+
         return Path.of(System.getProperty("user.dir"), relativeScriptPath)
                 .toAbsolutePath()
                 .normalize()
@@ -26,14 +26,17 @@ public final class RunnerNaming {
             throw new IllegalArgumentException("Task id is required");
         }
         String normalized = taskId.strip();
+
         return normalized.substring(0, Math.min(8, normalized.length()));
     }
 
     public static String tmuxSessionName(String taskId) {
+
         return "bb-run-" + taskShort(taskId);
     }
 
     public static String worktreeDirName(String taskId) {
+
         return ".worktrees/bb-" + taskShort(taskId);
     }
 }

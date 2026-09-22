@@ -4,7 +4,6 @@ import dev.nathan.sbaagentic.judgment.JudgmentAppended;
 import dev.nathan.sbaagentic.judgment.JudgmentPublication;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.EventBroadcaster;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
-
 import org.springframework.stereotype.Component;
 
 @Component

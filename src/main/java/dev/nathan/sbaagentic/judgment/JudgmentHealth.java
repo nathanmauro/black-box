@@ -8,5 +8,4 @@ public record JudgmentHealth(
         long failures,
         Long lastLatencyMs,
         int queued,
-        long dropped) {
-}
+        long dropped) {}

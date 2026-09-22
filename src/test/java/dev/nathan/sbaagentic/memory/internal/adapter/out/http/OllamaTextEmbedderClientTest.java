@@ -1,35 +1,31 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
-import java.io.IOException;
-import java.net.URI;
-import java.time.Duration;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.internal.application.TextEmbeddingUnavailable;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
+import java.io.IOException;
+import java.net.URI;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.ClientHttpRequest;
 import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
-
-import org.springframework.test.web.client.MockRestServiceServer;
 
 class OllamaTextEmbedderClientTest {
 
@@ -96,7 +92,8 @@ class OllamaTextEmbedderClientTest {
     void documentContentHashIncludesDocumentPrefix() {
         MemoryEmbeddingProperties properties = properties();
         properties.setDocumentPrefix("doc:");
-        OllamaTextEmbedderClient client = new OllamaTextEmbedderClient(properties, RestClient.builder().build());
+        OllamaTextEmbedderClient client =
+                new OllamaTextEmbedderClient(properties, RestClient.builder().build());
 
         assertThat(client.documentContentHash("stored text"))
                 .isEqualTo(EmbeddingVector.contentHash("doc:stored text"))
@@ -108,8 +105,7 @@ class OllamaTextEmbedderClientTest {
         RestClient.Builder builder = RestClient.builder().baseUrl("http://embedding.test");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         OllamaTextEmbedderClient client = new OllamaTextEmbedderClient(properties(), builder.build());
-        server.expect(requestTo("http://embedding.test/api/embeddings"))
-                .andRespond(withSuccess("""
+        server.expect(requestTo("http://embedding.test/api/embeddings")).andRespond(withSuccess("""
                         {"embedding":[1.0,2.0]}
                         """, APPLICATION_JSON));
 
@@ -124,7 +120,8 @@ class OllamaTextEmbedderClientTest {
     void disabledClientIsUnavailableAndDoesNotCallHttp() {
         MemoryEmbeddingProperties properties = properties();
         properties.setEnabled(false);
-        OllamaTextEmbedderClient client = new OllamaTextEmbedderClient(properties, RestClient.builder().build());
+        OllamaTextEmbedderClient client =
+                new OllamaTextEmbedderClient(properties, RestClient.builder().build());
 
         assertThat(client.available()).isFalse();
         assertThatThrownBy(() -> client.embedQuery("text"))
@@ -179,6 +176,7 @@ class OllamaTextEmbedderClientTest {
         MemoryEmbeddingProperties properties = new MemoryEmbeddingProperties();
         properties.setDimensions(3);
         properties.setTimeout(Duration.ofMillis(50));
+
         return properties;
     }
 

@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.recording.internal.application.port;
 
-import java.util.List;
-
 import dev.nathan.sbaagentic.recording.AgentSession;
+import java.util.List;
 
 public interface TranscriptMessageSource {
 

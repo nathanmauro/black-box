@@ -1,22 +1,19 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.cli;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
+import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.recording.EventIngestRequest;
+import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.summary.SummaryModelOperations;
+import dev.nathan.sbaagentic.summary.SummaryOperations;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import dev.nathan.sbaagentic.summary.SummaryModelOperations;
-import dev.nathan.sbaagentic.summary.SummaryOperations;
-import dev.nathan.sbaagentic.recording.EventIngestRequest;
-import dev.nathan.sbaagentic.recording.EventRecorder;
-import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
-import dev.nathan.sbaagentic.memory.MemorySearchOperations;
-
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -56,6 +53,7 @@ public class SbaCli implements ApplicationRunner {
     public void run(ApplicationArguments args) throws Exception {
         List<String> positional = args.getNonOptionArgs();
         if (positional.isEmpty()) {
+
             return;
         }
 
@@ -128,9 +126,7 @@ public class SbaCli implements ApplicationRunner {
 
     private void embeddingsBackfill(ApplicationArguments args) throws IOException {
         writeJson(memoryEmbeddingOperations.backfillEmbeddings(new MemoryEmbeddingBackfillRequest(
-                flag(args, "apply"),
-                optionInt(args, "batch-size", 100),
-                optionInt(args, "progress-every", 250))));
+                flag(args, "apply"), optionInt(args, "batch-size", 100), optionInt(args, "progress-every", 250))));
     }
 
     private void usage() {
@@ -154,29 +150,36 @@ public class SbaCli implements ApplicationRunner {
 
     private static int limit(ApplicationArguments args, int defaultValue) {
         String value = option(args, "limit", Integer.toString(defaultValue));
+
         return Math.max(1, Math.min(Integer.parseInt(value), 250));
     }
 
     private static int optionInt(ApplicationArguments args, String name, int defaultValue) {
+
         return Integer.parseInt(option(args, name, Integer.toString(defaultValue)));
     }
 
     private static boolean flag(ApplicationArguments args, String name) {
         List<String> values = args.getOptionValues(name);
         if (values == null) {
+
             return false;
         }
         if (values.isEmpty()) {
+
             return true;
         }
+
         return Boolean.parseBoolean(values.getFirst());
     }
 
     private static String option(ApplicationArguments args, String name, String defaultValue) {
         List<String> values = args.getOptionValues(name);
         if (values == null || values.isEmpty()) {
+
             return defaultValue;
         }
+
         return values.getFirst();
     }
 }

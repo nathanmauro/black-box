@@ -1,5 +1,15 @@
 package dev.nathan.sbaagentic.web;
 
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -7,12 +17,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,37 +25,30 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.is;
-
-@SpringBootTest(properties = {
-        // A temp file DB takes the production WAL + busy_timeout path; cache=shared
-        // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false",
-        "sba.transcript.codex-roots[0]=${java.io.tmpdir}",
-        "sba.exports.targets[0].id=obsidian",
-        "sba.exports.targets[0].label=Obsidian",
-        "sba.exports.targets[0].type=markdown-file",
-        "sba.exports.targets[0].directory=target/test-obsidian-export",
-        "sba.exports.targets[1].id=team-wiki",
-        "sba.exports.targets[1].label=Team Wiki",
-        "sba.exports.targets[1].type=markdown-file",
-        "sba.exports.targets[1].directory=target/test-team-wiki-export",
-        "sba.exports.targets[1].filename-template={{source}}-{{slug}}-{{shortId}}.md",
-        "sba.exports.targets[2].id=unconfigured",
-        "sba.exports.targets[2].label=Unconfigured",
-        "sba.exports.targets[2].type=markdown-file"
-})
+@SpringBootTest(
+        properties = {
+            // A temp file DB takes the production WAL + busy_timeout path; cache=shared
+            // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false",
+            "sba.transcript.codex-roots[0]=${java.io.tmpdir}",
+            "sba.exports.targets[0].id=obsidian",
+            "sba.exports.targets[0].label=Obsidian",
+            "sba.exports.targets[0].type=markdown-file",
+            "sba.exports.targets[0].directory=target/test-obsidian-export",
+            "sba.exports.targets[1].id=team-wiki",
+            "sba.exports.targets[1].label=Team Wiki",
+            "sba.exports.targets[1].type=markdown-file",
+            "sba.exports.targets[1].directory=target/test-team-wiki-export",
+            "sba.exports.targets[1].filename-template={{source}}-{{slug}}-{{shortId}}.md",
+            "sba.exports.targets[2].id=unconfigured",
+            "sba.exports.targets[2].label=Unconfigured",
+            "sba.exports.targets[2].type=markdown-file"
+        })
 @AutoConfigureMockMvc
 class AgenticControllerTest {
 
@@ -84,7 +82,8 @@ class AgenticControllerTest {
 
         mockMvc.perform(get("/api/sessions"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.clientSessionId == 'turn-group-1')].title").value(hasItem("Compile fix")));
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'turn-group-1')].title")
+                        .value(hasItem("Compile fix")));
 
         mockMvc.perform(get("/api/search").param("q", "Compiled"))
                 .andExpect(status().isOk())
@@ -116,8 +115,7 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.id").value(sessionId))
                 .andExpect(jsonPath("$.clientSessionId").value("direct-session-lookup"));
 
-        mockMvc.perform(get("/api/sessions/{sessionId}", "missing-session"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/sessions/{sessionId}", "missing-session")).andExpect(status().isNotFound());
     }
 
     @Test
@@ -148,8 +146,7 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.sessionId").value(sessionId))
                 .andExpect(jsonPath("$.text").value("Open this exact event."));
 
-        mockMvc.perform(get("/api/events/{eventId}", "missing-event"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/events/{eventId}", "missing-event")).andExpect(status().isNotFound());
     }
 
     @Test
@@ -172,12 +169,13 @@ class AgenticControllerTest {
                                     "metadata", Map.of("rawHook", Map.of("transcript_path", transcript.toString())),
                                     "observedAt", "2026-08-30T12:00:00Z"))))
                     .andExpect(status().isOk())
-                    .andReturn().getResponse().getContentAsString();
-            String sessionId = objectMapper.readTree(startBody).path("sessionId").asText();
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            String sessionId =
+                    objectMapper.readTree(startBody).path("sessionId").asText();
             jdbcTemplate.update(
-                    "UPDATE agent_sessions SET summary = ? WHERE id = ?",
-                    "Transcript endpoint fixture",
-                    sessionId);
+                    "UPDATE agent_sessions SET summary = ? WHERE id = ?", "Transcript endpoint fixture", sessionId);
             mockMvc.perform(post("/api/events")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(Map.of(
@@ -191,7 +189,8 @@ class AgenticControllerTest {
                                     "observedAt", "2026-08-30T12:01:00Z"))))
                     .andExpect(status().isOk());
 
-            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId).param("limit", "100"))
+            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId)
+                            .param("limit", "100"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.available").value(true))
                     .andExpect(jsonPath("$.complete").value(true))
@@ -205,8 +204,7 @@ class AgenticControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.count").value(1))
                     .andExpect(jsonPath("$.events[0].text").value("Transcript only answer"));
-        }
-        finally {
+        } finally {
             Files.deleteIfExists(transcript);
         }
     }
@@ -257,9 +255,7 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.items[0].sessionTitle").value("Feed noise"))
                 .andExpect(jsonPath("$.items[0].id").isNotEmpty());
 
-        mockMvc.perform(get("/api/events")
-                        .param("q", key)
-                        .param("meaningful", "true"))
+        mockMvc.perform(get("/api/events").param("q", key).param("meaningful", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].eventType").value("Decision"));
@@ -325,14 +321,10 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.fields.project[0].value").value("/tmp/" + key));
 
         // is:all in q beats meaningful=true on the wire — same precedence as the feed (D16).
-        mockMvc.perform(get("/api/events/facets")
-                        .param("q", key)
-                        .param("meaningful", "true"))
+        mockMvc.perform(get("/api/events/facets").param("q", key).param("meaningful", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(1));
-        mockMvc.perform(get("/api/events/facets")
-                        .param("q", key + " is:all")
-                        .param("meaningful", "true"))
+        mockMvc.perform(get("/api/events/facets").param("q", key + " is:all").param("meaningful", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(2));
 
@@ -493,11 +485,9 @@ class AgenticControllerTest {
 
     @Test
     void missingStaticAndDiscoveryResourcesReturnNotFound() throws Exception {
-        mockMvc.perform(get("/app.js"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/app.js")).andExpect(status().isNotFound());
 
-        mockMvc.perform(get("/.well-known/openid-configuration/mcp"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/.well-known/openid-configuration/mcp")).andExpect(status().isNotFound());
     }
 
     @Test
@@ -511,9 +501,7 @@ class AgenticControllerTest {
 
     @Test
     void askReturnsGroundedNoHitAnswerWhenNoMemoryHitsExist() throws Exception {
-        mockMvc.perform(post("/api/ask")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+        mockMvc.perform(post("/api/ask").contentType(MediaType.APPLICATION_JSON).content("""
                                 {
                                   "question": "What did we decide about agent memory?",
                                   "limit": 6
@@ -539,9 +527,7 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.error.type").value("missing_parameter"))
                 .andExpect(jsonPath("$.error.message").value("Missing required query parameter: q"));
 
-        mockMvc.perform(post("/api/ask")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{"))
+        mockMvc.perform(post("/api/ask").contentType(MediaType.APPLICATION_JSON).content("{"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.status").value(400))
                 .andExpect(jsonPath("$.error.type").value("malformed_json"))
@@ -611,9 +597,7 @@ class AgenticControllerTest {
      */
     @Test
     void searchValuesUnknownFieldReturnsEmptyWithoutSqlLeak() throws Exception {
-        mockMvc.perform(get("/api/search/values")
-                        .param("field", "bogus_field")
-                        .param("prefix", "x"))
+        mockMvc.perform(get("/api/search/values").param("field", "bogus_field").param("prefix", "x"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").value(empty()));
 
@@ -652,7 +636,8 @@ class AgenticControllerTest {
 
         mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                        .content(
+                                """
                                 {
                                   "source": "%s",
                                   "clientSessionId": "%s",
@@ -668,12 +653,18 @@ class AgenticControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalSessions").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
                 .andExpect(jsonPath("$.totalEvents").value(org.hamcrest.Matchers.greaterThanOrEqualTo(2)))
-                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(codexSource)).value(hasItem(1)))
-                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(claudeSource)).value(hasItem(1)))
-                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(decisionKind)).value(hasItem(1)))
-                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(handoffKind)).value(hasItem(1)))
-                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(codexSource)).value(hasItem(1)))
-                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(claudeSource)).value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(codexSource))
+                        .value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsBySource[?(@.name == '%s')].count".formatted(claudeSource))
+                        .value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(decisionKind))
+                        .value(hasItem(1)))
+                .andExpect(jsonPath("$.eventsByKind[?(@.name == '%s')].count".formatted(handoffKind))
+                        .value(hasItem(1)))
+                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(codexSource))
+                        .value(hasItem(1)))
+                .andExpect(jsonPath("$.sessionsBySource[?(@.name == '%s')].count".formatted(claudeSource))
+                        .value(hasItem(1)))
                 .andExpect(jsonPath("$.recentActivity[?(@.day == '%s')].count".formatted(LocalDate.now(ZoneOffset.UTC)))
                         .value(hasItem(org.hamcrest.Matchers.greaterThanOrEqualTo(2))));
 
@@ -766,19 +757,25 @@ class AgenticControllerTest {
         JsonNode project = projectByCanonicalKey(objectMapper.readTree(projectsBody), cwd);
         org.assertj.core.api.Assertions.assertThat(project).isNotNull();
         String projectKey = project.get("projectKey").asText();
-        org.assertj.core.api.Assertions.assertThat(project.get("label").asText()).isEqualTo(cwd);
-        org.assertj.core.api.Assertions.assertThat(project.get("sessionCount").asInt()).isEqualTo(2);
-        org.assertj.core.api.Assertions.assertThat(project.get("eventCount").asInt()).isEqualTo(4);
-        org.assertj.core.api.Assertions.assertThat(project.get("savedMeldCount").asInt()).isZero();
+        org.assertj.core.api.Assertions.assertThat(project.get("label").asText())
+                .isEqualTo(cwd);
+        org.assertj.core.api.Assertions.assertThat(project.get("sessionCount").asInt())
+                .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(project.get("eventCount").asInt())
+                .isEqualTo(4);
+        org.assertj.core.api.Assertions.assertThat(project.get("savedMeldCount").asInt())
+                .isZero();
 
         mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-one')].eventCount").value(hasItem(2)))
-                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-two')].eventCount").value(hasItem(2)));
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-one')].eventCount")
+                        .value(hasItem(2)))
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'projects-alpha-two')].eventCount")
+                        .value(hasItem(2)));
 
-        String timelineBody = mockMvc.perform(get("/api/projects/{projectKey}/timeline", projectKey)
-                        .param("limit", "10"))
+        String timelineBody = mockMvc.perform(
+                        get("/api/projects/{projectKey}/timeline", projectKey).param("limit", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.projectKey").value(projectKey))
                 .andExpect(jsonPath("$.items.length()").value(3))
@@ -861,18 +858,18 @@ class AgenticControllerTest {
                         .getContentAsString()),
                 cwd);
         String projectKey = project.get("projectKey").asText();
-        JsonNode sessions = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString());
+        JsonNode sessions =
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString());
         List<String> sessionIds = textValues(sessions, "id");
 
         mockMvc.perform(post("/api/projects/{projectKey}/melds/preview", projectKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "sessionIds", sessionIds,
-                                "executionMode", "export_bundle"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("sessionIds", sessionIds, "executionMode", "export_bundle"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("bundle"))
                 .andExpect(jsonPath("$.executionMode").value("export_bundle"))
@@ -882,7 +879,8 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.sessionCount").value(2))
                 .andExpect(jsonPath("$.evidenceCount").value(3))
                 .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("# Project Meld Bundle")))
-                .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("Keep export bundle mode local by default")))
+                .andExpect(jsonPath("$.bundle")
+                        .value(org.hamcrest.Matchers.containsString("Keep export bundle mode local by default")))
                 .andExpect(jsonPath("$.bundle").value(org.hamcrest.Matchers.containsString("ProjectService.java")))
                 .andExpect(jsonPath("$.degradationNotes").isArray());
     }
@@ -929,18 +927,22 @@ class AgenticControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        JsonNode project = projectByCanonicalKey(objectMapper.readTree(mockMvc.perform(get("/api/projects"))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), cwd);
+        JsonNode project = projectByCanonicalKey(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                cwd);
         org.assertj.core.api.Assertions.assertThat(project).isNotNull();
         String projectKey = project.get("projectKey").asText();
-        List<String> sessionIds = textValues(objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), "id");
+        List<String> sessionIds = textValues(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                "id");
 
         String saveBody = mockMvc.perform(post("/api/melds")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1021,9 +1023,12 @@ class AgenticControllerTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString());
-        String projectKey = projectByCanonicalKey(projects, cwd).get("projectKey").asText();
-        String otherProjectKey = projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
-        String localSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+        String projectKey =
+                projectByCanonicalKey(projects, cwd).get("projectKey").asText();
+        String otherProjectKey =
+                projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
+        String localSessionId = objectMapper
+                .readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -1031,7 +1036,8 @@ class AgenticControllerTest {
                 .get(0)
                 .get("id")
                 .asText();
-        String foreignSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
+        String foreignSessionId = objectMapper
+                .readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -1097,17 +1103,21 @@ class AgenticControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        JsonNode project = projectByCanonicalKey(objectMapper.readTree(mockMvc.perform(get("/api/projects"))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), cwd);
+        JsonNode project = projectByCanonicalKey(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                cwd);
         String projectKey = project.get("projectKey").asText();
-        List<String> sessionIds = textValues(objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), "id");
+        List<String> sessionIds = textValues(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                "id");
 
         mockMvc.perform(post("/api/melds")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1175,9 +1185,12 @@ class AgenticControllerTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString());
-        String projectKey = projectByCanonicalKey(projects, cwd).get("projectKey").asText();
-        String otherProjectKey = projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
-        String foreignSessionId = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
+        String projectKey =
+                projectByCanonicalKey(projects, cwd).get("projectKey").asText();
+        String otherProjectKey =
+                projectByCanonicalKey(projects, otherCwd).get("projectKey").asText();
+        String foreignSessionId = objectMapper
+                .readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", otherProjectKey))
                         .andExpect(status().isOk())
                         .andReturn()
                         .getResponse()
@@ -1188,9 +1201,8 @@ class AgenticControllerTest {
 
         mockMvc.perform(post("/api/projects/{projectKey}/melds/preview", projectKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "sessionIds", List.of(foreignSessionId),
-                                "executionMode", "export_bundle"))))
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("sessionIds", List.of(foreignSessionId), "executionMode", "export_bundle"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.message")
                         .value(org.hamcrest.Matchers.containsString("Selected sessions must belong to this project")));
@@ -1199,9 +1211,11 @@ class AgenticControllerTest {
     private JsonNode projectByCanonicalKey(JsonNode projects, String canonicalKey) {
         for (JsonNode project : projects) {
             if (canonicalKey.equals(project.path("canonicalKey").asText())) {
+
                 return project;
             }
         }
+
         return null;
     }
 
@@ -1210,6 +1224,7 @@ class AgenticControllerTest {
         for (JsonNode item : items) {
             values.add(item.path(fieldName).asText());
         }
+
         return values;
     }
 
@@ -1248,8 +1263,10 @@ class AgenticControllerTest {
 
         mockMvc.perform(get("/api/sessions").param("limit", "200"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent')].title").value(hasItem("Spawn a reviewer subagent.")))
-                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent:agent-1')]").isEmpty());
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent')].title")
+                        .value(hasItem("Spawn a reviewer subagent.")))
+                .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent:agent-1')]")
+                        .isEmpty());
 
         mockMvc.perform(get("/api/sessions").param("limit", "200").param("includeChildren", "true"))
                 .andExpect(status().isOk())

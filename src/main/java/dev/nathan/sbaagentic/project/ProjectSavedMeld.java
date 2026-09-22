@@ -17,5 +17,4 @@ public record ProjectSavedMeld(
         boolean savedFromPreview,
         Map<String, Object> metadata,
         Instant createdAt,
-        List<ProjectMeldSessionRef> sessions) {
-}
+        List<ProjectMeldSessionRef> sessions) {}

@@ -12,6 +12,7 @@ public class JudgmentProperties {
     private final Beat beat = new Beat();
 
     public boolean isEnabled() {
+
         return enabled;
     }
 
@@ -20,6 +21,7 @@ public class JudgmentProperties {
     }
 
     public String getProvider() {
+
         return provider;
     }
 
@@ -28,6 +30,7 @@ public class JudgmentProperties {
     }
 
     public int getMaxOthers() {
+
         return maxOthers;
     }
 
@@ -36,6 +39,7 @@ public class JudgmentProperties {
     }
 
     public long getTimeoutMs() {
+
         return timeoutMs;
     }
 
@@ -44,6 +48,7 @@ public class JudgmentProperties {
     }
 
     public Beat getBeat() {
+
         return beat;
     }
 
@@ -53,6 +58,7 @@ public class JudgmentProperties {
         private int maxChars = 1_500;
 
         public long getGapMs() {
+
             return gapMs;
         }
 
@@ -61,6 +67,7 @@ public class JudgmentProperties {
         }
 
         public int getMaxEvents() {
+
             return maxEvents;
         }
 
@@ -69,6 +76,7 @@ public class JudgmentProperties {
         }
 
         public int getMaxChars() {
+
             return maxChars;
         }
 

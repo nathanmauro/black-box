@@ -7,5 +7,4 @@ public record RepoConfig(
         boolean push,
         @JsonProperty("auto_merge") boolean autoMerge,
         String verify,
-        String danger) {
-}
+        String danger) {}

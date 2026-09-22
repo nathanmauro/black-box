@@ -33,5 +33,4 @@ public record RecalledItem(
          * blank/path/id scopes, embedder unavailable, or semantic recall failure) or this item has no
          * stored embedding. This field never carries lexical, rank-fusion, or placeholder scores.
          */
-        Double score) {
-}
+        Double score) {}

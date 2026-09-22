@@ -6,6 +6,4 @@ import jakarta.validation.constraints.NotNull;
 
 /** Retry-capable envelope; the original event contract remains unchanged. */
 public record IdempotentEventIngestRequest(
-        @NotBlank String captureId,
-        @NotNull @Valid EventIngestRequest event) {
-}
+        @NotBlank String captureId, @NotNull @Valid EventIngestRequest event) {}

@@ -1,24 +1,22 @@
 package dev.nathan.sbaagentic.project;
 
-import java.nio.file.Path;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 class ProjectAliasSchemaTest {
 
     @Test
     void schemaAddsAliasTableAndUniqueAliasKeyIdempotently(@TempDir Path tempDir) {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(
-                "jdbc:sqlite:" + tempDir.resolve("project-alias-schema.db"));
+        DriverManagerDataSource dataSource =
+                new DriverManagerDataSource("jdbc:sqlite:" + tempDir.resolve("project-alias-schema.db"));
         dataSource.setDriverClassName("org.sqlite.JDBC");
 
         ResourceDatabasePopulator schema = new ResourceDatabasePopulator(new ClassPathResource("schema.sql"));
@@ -47,7 +45,6 @@ class ProjectAliasSchemaTest {
         assertThatThrownBy(() -> jdbc.update("""
                 INSERT INTO project_aliases (id, alias_key, canonical_key, source, created_at)
                 VALUES ('two', '/tmp/alias', '/tmp/second', 'manual', '2026-07-15T12:01:00Z')
-                """))
-                .hasMessageContaining("project_aliases.alias_key");
+                """)).hasMessageContaining("project_aliases.alias_key");
     }
 }

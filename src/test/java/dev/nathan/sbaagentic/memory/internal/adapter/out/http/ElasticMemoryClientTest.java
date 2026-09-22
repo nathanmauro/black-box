@@ -1,11 +1,10 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.http;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.memory.MemoryRetrievalProperties;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ElasticMemoryClientTest {
 
@@ -15,8 +14,7 @@ class ElasticMemoryClientTest {
     void buildsBm25QueryAgainstMemoryTextAndMetadataFields() throws Exception {
         MemoryRetrievalProperties properties = new MemoryRetrievalProperties();
 
-        String json = objectMapper.writeValueAsString(
-                ElasticMemoryClient.bm25Query("agent memory", 7, properties));
+        String json = objectMapper.writeValueAsString(ElasticMemoryClient.bm25Query("agent memory", 7, properties));
 
         assertThat(json)
                 .contains("\"size\":7")
@@ -38,7 +36,7 @@ class ElasticMemoryClientTest {
         properties.setVectorField("memory_vector");
 
         String json = objectMapper.writeValueAsString(
-                ElasticMemoryClient.knnQuery(new float[] { 0.1f, 0.2f, 0.3f }, 5, properties));
+                ElasticMemoryClient.knnQuery(new float[] {0.1f, 0.2f, 0.3f}, 5, properties));
 
         assertThat(json)
                 .contains("\"size\":5")
@@ -59,11 +57,16 @@ class ElasticMemoryClientTest {
     @Test
     void mapsChronicleMetadataFromAskMyHistoryHits() {
         var response = java.util.Map.of(
-                "hits", java.util.Map.of(
-                        "hits", java.util.List.of(java.util.Map.of(
-                                "_id", "chronicle-1",
-                                "_score", 9.5,
-                                "_source", java.util.Map.of(
+                "hits",
+                java.util.Map.of(
+                        "hits",
+                        java.util.List.of(java.util.Map.of(
+                                "_id",
+                                "chronicle-1",
+                                "_score",
+                                9.5,
+                                "_source",
+                                java.util.Map.of(
                                         "corpus", "chronicle",
                                         "project", "chronicle",
                                         "sourcePath", "/home/user/agent-memory/notes/summary.md",

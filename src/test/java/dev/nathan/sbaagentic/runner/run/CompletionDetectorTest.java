@@ -1,19 +1,18 @@
 package dev.nathan.sbaagentic.runner.run;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
 import java.io.File;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-
-import dev.nathan.sbaagentic.runner.process.ProcessRunner;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
-
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
 class CompletionDetectorTest {
 
     private static final String TASK_ID = "12345678-abcd-4abc-8abc-1234567890ab";
@@ -26,12 +25,7 @@ class CompletionDetectorTest {
 
         CompletionDetector.CompletionResult result = detector(apiClient, new FakeTmux(true))
                 .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofSeconds(1),
-                        Duration.ofMillis(10),
-                        Instant.EPOCH);
+                        TASK_ID, SESSION, new File("."), Duration.ofSeconds(1), Duration.ofMillis(10), Instant.EPOCH);
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.DONE);
         assertThat(result.detail()).isEqualTo("green");
@@ -44,12 +38,7 @@ class CompletionDetectorTest {
 
         CompletionDetector.CompletionResult result = detector(apiClient, new FakeTmux(true))
                 .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofSeconds(1),
-                        Duration.ofMillis(10),
-                        Instant.EPOCH);
+                        TASK_ID, SESSION, new File("."), Duration.ofSeconds(1), Duration.ofMillis(10), Instant.EPOCH);
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.BLOCKED);
         assertThat(result.detail()).isEqualTo("need human input");
@@ -61,12 +50,7 @@ class CompletionDetectorTest {
 
         CompletionDetector.CompletionResult result = detector(apiClient, new FakeTmux(false))
                 .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofSeconds(5),
-                        Duration.ofSeconds(1),
-                        Instant.EPOCH);
+                        TASK_ID, SESSION, new File("."), Duration.ofSeconds(5), Duration.ofSeconds(1), Instant.EPOCH);
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.BLOCKED);
         assertThat(result.detail()).isEqualTo("tmux session ended without a completion report");
@@ -80,18 +64,14 @@ class CompletionDetectorTest {
 
         CompletionDetector.CompletionResult result = detector(apiClient, tmux)
                 .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofMillis(200),
-                        Duration.ofMillis(50),
-                        Instant.EPOCH);
+                        TASK_ID, SESSION, new File("."), Duration.ofMillis(200), Duration.ofMillis(50), Instant.EPOCH);
 
         assertThat(result.outcome()).isEqualTo(CompletionDetector.Outcome.TIMED_OUT);
-        assertThat(result.detail()).contains(
-                "pane still contains an active/waiting marker",
-                "git log -1: abc123 test commit",
-                "Working (still waiting)");
+        assertThat(result.detail())
+                .contains(
+                        "pane still contains an active/waiting marker",
+                        "git log -1: abc123 test commit",
+                        "Working (still waiting)");
     }
 
     @Test
@@ -113,37 +93,27 @@ class CompletionDetectorTest {
         apiClient.taskEvents = List.of(stale);
 
         CompletionDetector.CompletionResult staleResult = detector(apiClient, new FakeTmux(true))
-                .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofMillis(50),
-                        Duration.ofMillis(10),
-                        since);
+                .awaitCompletion(TASK_ID, SESSION, new File("."), Duration.ofMillis(50), Duration.ofMillis(10), since);
 
         assertThat(staleResult.outcome()).isEqualTo(CompletionDetector.Outcome.TIMED_OUT);
 
         apiClient.taskEvents = List.of(stale, workerDone("done", "fresh completion"));
         CompletionDetector.CompletionResult freshResult = detector(apiClient, new FakeTmux(true))
-                .awaitCompletion(
-                        TASK_ID,
-                        SESSION,
-                        new File("."),
-                        Duration.ofSeconds(1),
-                        Duration.ofMillis(10),
-                        since);
+                .awaitCompletion(TASK_ID, SESSION, new File("."), Duration.ofSeconds(1), Duration.ofMillis(10), since);
 
         assertThat(freshResult.outcome()).isEqualTo(CompletionDetector.Outcome.DONE);
         assertThat(freshResult.detail()).isEqualTo("fresh completion");
     }
 
     private static CompletionDetector detector(FakeBlackBoxApiClient apiClient, FakeTmux tmux) {
-        ProcessRunner processRunner = (command, workingDir, timeout) ->
-                new ProcessRunner.ProcessResult(0, "abc123 test commit\n", "", false);
+        ProcessRunner processRunner =
+                (command, workingDir, timeout) -> new ProcessRunner.ProcessResult(0, "abc123 test commit\n", "", false);
+
         return new CompletionDetector(apiClient, tmux, processRunner);
     }
 
     private static TaskEvent workerDone(String outcome, String text) {
+
         return new TaskEvent(
                 "event-1",
                 TASK_ID,
@@ -152,9 +122,12 @@ class CompletionDetectorTest {
                 null,
                 null,
                 Map.of(
-                        "kind", "progress",
-                        "text", text,
-                        "dataJson", Map.of("event", "worker_done", "outcome", outcome)),
+                        "kind",
+                        "progress",
+                        "text",
+                        text,
+                        "dataJson",
+                        Map.of("event", "worker_done", "outcome", outcome)),
                 Instant.now());
     }
 
@@ -169,6 +142,7 @@ class CompletionDetectorTest {
 
         @Override
         public boolean hasSession(String sessionName) {
+
             return sessionExists;
         }
 
@@ -183,11 +157,11 @@ class CompletionDetectorTest {
         }
 
         @Override
-        public void sendKeys(String sessionName, String text) {
-        }
+        public void sendKeys(String sessionName, String text) {}
 
         @Override
         public String capturePane(String sessionName) {
+
             return pane;
         }
     }

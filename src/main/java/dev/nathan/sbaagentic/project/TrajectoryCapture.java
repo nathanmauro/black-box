@@ -19,5 +19,4 @@ public record TrajectoryCapture(
         String toAgent,
         Double confidence,
         List<TrajectoryPath> paths,
-        Instant observedAt) {
-}
+        Instant observedAt) {}

@@ -8,5 +8,4 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public record ProjectionPath(
         String title,
         @JsonProperty(required = false) String description,
-        @JsonProperty(required = false) Double confidence) {
-}
+        @JsonProperty(required = false) Double confidence) {}

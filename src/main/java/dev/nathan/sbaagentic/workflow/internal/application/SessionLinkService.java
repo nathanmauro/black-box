@@ -1,8 +1,5 @@
 package dev.nathan.sbaagentic.workflow.internal.application;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.workflow.LinkDomainException;
@@ -10,11 +7,12 @@ import dev.nathan.sbaagentic.workflow.LinkErrorCode;
 import dev.nathan.sbaagentic.workflow.LinkType;
 import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
 import dev.nathan.sbaagentic.workflow.SessionLink;
-import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
 import dev.nathan.sbaagentic.workflow.SessionLinkView;
+import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
 import dev.nathan.sbaagentic.workflow.SessionRef;
 import dev.nathan.sbaagentic.workflow.internal.application.port.SessionLinkStore;
-
+import java.util.List;
+import java.util.Map;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -38,25 +36,19 @@ public class SessionLinkService implements SessionLineageOperations {
         LinkType linkType;
         try {
             linkType = LinkType.fromValue(request.linkType());
-        }
-        catch (IllegalArgumentException ex) {
-            throw new LinkDomainException(
-                    LinkErrorCode.VALIDATION_FAILED,
-                    "Unknown link type: " + request.linkType());
+        } catch (IllegalArgumentException ex) {
+            throw new LinkDomainException(LinkErrorCode.VALIDATION_FAILED, "Unknown link type: " + request.linkType());
         }
 
         try {
+
             return repository.createLink(
-                    request.parentSessionId(),
-                    request.childSessionId(),
-                    linkType,
-                    request.taskId());
-        }
-        catch (DataIntegrityViolationException ex) {
+                    request.parentSessionId(), request.childSessionId(), linkType, request.taskId());
+        } catch (DataIntegrityViolationException ex) {
             throw new LinkDomainException(
                     LinkErrorCode.DUPLICATE_LINK,
-                    "Link already exists for " + request.parentSessionId() + " -> "
-                            + request.childSessionId() + " (" + request.linkType() + ")");
+                    "Link already exists for " + request.parentSessionId() + " -> " + request.childSessionId() + " ("
+                            + request.linkType() + ")");
         }
     }
 
@@ -68,27 +60,32 @@ public class SessionLinkService implements SessionLineageOperations {
         List<SessionLinkView> children = repository.linksWhereParent(sessionId).stream()
                 .map(link -> view(link, link.childSessionId()))
                 .toList();
+
         return new SessionLinksResponse(parents, children);
     }
 
     @Override
     public List<SessionLink> linksWhereParent(String sessionId) {
+
         return repository.linksWhereParent(sessionId);
     }
 
     @Override
     public List<SessionLink> linksWhereChild(String sessionId) {
+
         return repository.linksWhereChild(sessionId);
     }
 
     @Override
     public List<SessionLink> linksForTask(String taskId) {
+
         return repository.linksForTaskId(taskId);
     }
 
     @Override
     public Map<String, Long> childCounts(List<String> sessionIds) {
         if (sessionIds == null) {
+
             return Map.of();
         }
         List<String> ids = sessionIds.stream()
@@ -96,15 +93,19 @@ public class SessionLinkService implements SessionLineageOperations {
                 .distinct()
                 .toList();
         if (ids.isEmpty()) {
+
             return Map.of();
         }
+
         return repository.childCounts(ids);
     }
 
     private SessionLinkView view(SessionLink link, String otherSessionId) {
-        SessionRef session = eventRepository.findSessionById(otherSessionId)
+        SessionRef session = eventRepository
+                .findSessionById(otherSessionId)
                 .map(other -> new SessionRef(other.id(), other.title(), other.source()))
                 .orElse(new SessionRef(otherSessionId, null, null));
+
         return new SessionLinkView(
                 link.id(),
                 link.parentSessionId(),
@@ -128,6 +129,7 @@ public class SessionLinkService implements SessionLineageOperations {
     }
 
     private static LinkDomainException validation(String message) {
+
         return new LinkDomainException(LinkErrorCode.VALIDATION_FAILED, message);
     }
 }

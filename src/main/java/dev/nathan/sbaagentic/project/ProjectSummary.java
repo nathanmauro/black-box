@@ -12,5 +12,4 @@ public record ProjectSummary(
         long savedMeldCount,
         Instant firstSeenAt,
         Instant lastSeenAt,
-        List<ProjectScope> scopes) {
-}
+        List<ProjectScope> scopes) {}

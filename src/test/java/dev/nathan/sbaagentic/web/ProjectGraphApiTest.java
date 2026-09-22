@@ -1,17 +1,19 @@
 package dev.nathan.sbaagentic.web;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import dev.nathan.sbaagentic.project.ProjectKey;
-
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,20 +21,15 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-project-graph-api-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.ask.embedding-enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-project-graph-api-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.ask.embedding-enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 @AutoConfigureMockMvc
 class ProjectGraphApiTest {
 
@@ -190,19 +187,23 @@ class ProjectGraphApiTest {
         setTaskStatus(doneTaskId, "done", "2026-08-05T10:08:00Z");
         setTaskStatus(cancelledTaskId, "cancelled", "2026-08-05T10:09:00Z");
 
-        JsonNode project = projectByCanonicalKey(objectMapper.readTree(mockMvc.perform(get("/api/projects"))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), cwd);
+        JsonNode project = projectByCanonicalKey(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                cwd);
         assertThat(project).isNotNull();
         String projectKey = project.path("projectKey").asText();
 
-        List<String> sessionIds = textValues(objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString()), "id");
+        List<String> sessionIds = textValues(
+                objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/sessions", projectKey))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString()),
+                "id");
         String meldBody = mockMvc.perform(post("/api/melds")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -219,8 +220,7 @@ class ProjectGraphApiTest {
                 .getResponse()
                 .getContentAsString();
         String meldId = objectMapper.readTree(meldBody).path("id").asText();
-        jdbcTemplate.update("UPDATE session_melds SET created_at = ? WHERE id = ?",
-                "2026-08-05T10:04:00Z", meldId);
+        jdbcTemplate.update("UPDATE session_melds SET created_at = ? WHERE id = ?", "2026-08-05T10:04:00Z", meldId);
 
         String graphBody = mockMvc.perform(get("/api/projects/{projectKey}/graph", projectKey))
                 .andExpect(status().isOk())
@@ -244,9 +244,12 @@ class ProjectGraphApiTest {
                 .isEqualTo("The heuristics will move quickly.");
         assertThat(captureByKind(graph, "decision").path("alternatives").get(0).asText())
                 .isEqualTo("Assemble SVG nodes server-side");
-        assertThat(captureByKind(graph, "handoff").path("nextAction").asText())
-                .isEqualTo("Build the SVG graph view");
-        assertThat(captureByKind(graph, "projection").path("paths").get(0).path("title").asText())
+        assertThat(captureByKind(graph, "handoff").path("nextAction").asText()).isEqualTo("Build the SVG graph view");
+        assertThat(captureByKind(graph, "projection")
+                        .path("paths")
+                        .get(0)
+                        .path("title")
+                        .asText())
                 .isEqualTo("Ship the trajectory tab");
 
         assertThat(graph.path("tasks").size()).isEqualTo(4);
@@ -281,7 +284,8 @@ class ProjectGraphApiTest {
         String sessionId = "session-" + key;
         String clientSessionId = "graph-order-" + key;
 
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO agent_sessions
                        (id, source, client_session_id, title, cwd, started_at, last_seen_at, event_count)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -295,7 +299,8 @@ class ProjectGraphApiTest {
                 "2026-08-05T10:00:00.999Z",
                 121);
         for (int i = 0; i < 120; i++) {
-            jdbcTemplate.update("""
+            jdbcTemplate.update(
+                    """
                     INSERT INTO agent_events
                            (id, session_id, source, client_session_id, event_type, role, text, observed_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -310,7 +315,8 @@ class ProjectGraphApiTest {
                     "2026-08-05T10:00:00.999Z");
         }
         String zeroFractionId = "zero-fraction-" + key;
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO agent_events
                        (id, session_id, source, client_session_id, event_type, role, text, observed_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -324,8 +330,8 @@ class ProjectGraphApiTest {
                 "Zero-fraction milestone",
                 "2026-08-05T10:00:00Z");
 
-        JsonNode graph = objectMapper.readTree(mockMvc.perform(get("/api/projects/{projectKey}/graph",
-                        ProjectKey.of(cwd).encoded()))
+        JsonNode graph = objectMapper.readTree(mockMvc.perform(get(
+                        "/api/projects/{projectKey}/graph", ProjectKey.of(cwd).encoded()))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -349,20 +355,27 @@ class ProjectGraphApiTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return objectMapper.readTree(body).path("snapshot").path("task").path("id").asText();
+
+        return objectMapper
+                .readTree(body)
+                .path("snapshot")
+                .path("task")
+                .path("id")
+                .asText();
     }
 
     private void setTaskStatus(String taskId, String status, String updatedAt) {
-        jdbcTemplate.update("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-                status, updatedAt, taskId);
+        jdbcTemplate.update("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", status, updatedAt, taskId);
     }
 
     private JsonNode projectByCanonicalKey(JsonNode projects, String canonicalKey) {
         for (JsonNode project : projects) {
             if (canonicalKey.equals(project.path("canonicalKey").asText())) {
+
                 return project;
             }
         }
+
         return null;
     }
 
@@ -371,12 +384,14 @@ class ProjectGraphApiTest {
         for (JsonNode item : items) {
             values.add(item.path(fieldName).asText());
         }
+
         return values;
     }
 
     private JsonNode captureByKind(JsonNode graph, String kind) {
         for (JsonNode capture : graph.path("captures")) {
             if (kind.equals(capture.path("kind").asText())) {
+
                 return capture;
             }
         }
@@ -386,6 +401,7 @@ class ProjectGraphApiTest {
     private JsonNode taskById(JsonNode graph, String taskId) {
         for (JsonNode task : graph.path("tasks")) {
             if (taskId.equals(task.path("id").asText())) {
+
                 return task;
             }
         }

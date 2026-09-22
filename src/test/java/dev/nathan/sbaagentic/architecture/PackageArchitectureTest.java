@@ -1,5 +1,15 @@
 package dev.nathan.sbaagentic.architecture;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.tngtech.archunit.core.domain.Dependency;
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.ArchRule;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -8,21 +18,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import com.tngtech.archunit.core.domain.Dependency;
-import com.tngtech.archunit.core.domain.JavaClass;
-import com.tngtech.archunit.core.domain.JavaClasses;
-import com.tngtech.archunit.core.importer.ClassFileImporter;
-import com.tngtech.archunit.core.importer.ImportOption;
-import com.tngtech.archunit.lang.ArchRule;
-
 import org.junit.jupiter.api.Test;
-
 import org.springframework.stereotype.Repository;
-
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static org.assertj.core.api.Assertions.assertThat;
 
 class PackageArchitectureTest {
 
@@ -32,9 +29,8 @@ class PackageArchitectureTest {
      * A module enters this set in the same commit that completes its vertical migration. Legacy
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
-    private static final Set<String> FULLY_MIGRATED_MODULES =
-            Set.of("ask", "memory", "platform", "project", "query", "recording", "runner", "summary",
-                    "workflow", "judgment");
+    private static final Set<String> FULLY_MIGRATED_MODULES = Set.of(
+            "ask", "memory", "platform", "project", "query", "recording", "runner", "summary", "workflow", "judgment");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())
@@ -43,14 +39,18 @@ class PackageArchitectureTest {
     @Test
     void applicationBootstrapStaysAtTheRoot() {
         classes()
-                .that().haveSimpleName("SbaAgenticApplication")
-                .should().resideInAPackage(BASE)
+                .that()
+                .haveSimpleName("SbaAgenticApplication")
+                .should()
+                .resideInAPackage(BASE)
                 .check(classes);
     }
 
     @Test
     void noNewGlobalLayerOrJunkDrawerPackagesAppear() {
-        noClasses().should().resideInAnyPackage(
+        noClasses()
+                .should()
+                .resideInAnyPackage(
                         BASE + ".controller..",
                         BASE + ".model..",
                         BASE + ".service..",
@@ -91,7 +91,9 @@ class PackageArchitectureTest {
                 .forEach(dependency -> {
                     String origin = moduleOf(dependency.getOriginClass());
                     String target = moduleOf(dependency.getTargetClass());
-                    if (origin != null && target != null && !origin.equals(target)
+                    if (origin != null
+                            && target != null
+                            && !origin.equals(target)
                             && FULLY_MIGRATED_MODULES.contains(origin)
                             && FULLY_MIGRATED_MODULES.contains(target)) {
                         graph.get(origin).add(target);
@@ -105,8 +107,11 @@ class PackageArchitectureTest {
         String root = BASE + "." + module;
         List<ArchRule> rules = new ArrayList<>();
         rules.add(noClasses()
-                .that().resideInAPackage(root + ".internal.domain..")
-                .should().dependOnClassesThat().resideInAnyPackage(
+                .that()
+                .resideInAPackage(root + ".internal.domain..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
                         "org.springframework.web..",
                         "org.springframework.jdbc..",
                         "jakarta.servlet..",
@@ -116,33 +121,43 @@ class PackageArchitectureTest {
                         "java.io..")
                 .allowEmptyShould(true));
         rules.add(noClasses()
-                .that().resideInAPackage(root + ".internal.application..")
-                .should().dependOnClassesThat().resideInAnyPackage(
-                        root + ".internal.adapter.in..",
-                        root + ".internal.adapter.out..")
+                .that()
+                .resideInAPackage(root + ".internal.application..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(root + ".internal.adapter.in..", root + ".internal.adapter.out..")
                 .allowEmptyShould(true));
         rules.add(noClasses()
-                .that().resideInAnyPackage(
+                .that()
+                .resideInAnyPackage(
                         root + ".internal.adapter.in.web..",
                         root + ".internal.adapter.in.mcp..",
                         root + ".internal.adapter.in.cli..")
-                .should().dependOnClassesThat().areAnnotatedWith(Repository.class)
+                .should()
+                .dependOnClassesThat()
+                .areAnnotatedWith(Repository.class)
                 .allowEmptyShould(true));
         rules.add(classes()
-                .that().areAnnotatedWith(Repository.class)
-                .and().resideInAPackage(root + "..")
-                .should().resideInAPackage(root + ".internal.adapter.out.sqlite..")
+                .that()
+                .areAnnotatedWith(Repository.class)
+                .and()
+                .resideInAPackage(root + "..")
+                .should()
+                .resideInAPackage(root + ".internal.adapter.out.sqlite..")
                 .allowEmptyShould(true));
+
         return rules;
     }
 
     private boolean crossesIntoAnotherModuleInternalPackage(Dependency dependency) {
         String targetPackage = dependency.getTargetClass().getPackageName();
         if (!targetPackage.startsWith(BASE + ".") || !targetPackage.contains(".internal.")) {
+
             return false;
         }
         String originModule = moduleOf(dependency.getOriginClass());
         String targetModule = moduleOf(dependency.getTargetClass());
+
         return originModule != null && targetModule != null && !originModule.equals(targetModule);
     }
 
@@ -150,10 +165,12 @@ class PackageArchitectureTest {
         String packageName = type.getPackageName();
         String prefix = BASE + ".";
         if (!packageName.startsWith(prefix)) {
+
             return null;
         }
         String remainder = packageName.substring(prefix.length());
         int separator = remainder.indexOf('.');
+
         return separator < 0 ? remainder : remainder.substring(0, separator);
     }
 
@@ -164,18 +181,16 @@ class PackageArchitectureTest {
         for (String node : graph.keySet()) {
             List<String> cycle = visit(node, graph, visited, active, path);
             if (!cycle.isEmpty()) {
+
                 return cycle;
             }
         }
+
         return List.of();
     }
 
     private static List<String> visit(
-            String node,
-            Map<String, Set<String>> graph,
-            Set<String> visited,
-            Set<String> active,
-            Deque<String> path) {
+            String node, Map<String, Set<String>> graph, Set<String> visited, Set<String> active, Deque<String> path) {
         if (active.contains(node)) {
             List<String> cycle = new ArrayList<>();
             boolean copy = false;
@@ -186,9 +201,11 @@ class PackageArchitectureTest {
                 }
             }
             cycle.add(node);
+
             return cycle;
         }
         if (!visited.add(node)) {
+
             return List.of();
         }
         active.add(node);
@@ -196,11 +213,13 @@ class PackageArchitectureTest {
         for (String target : graph.getOrDefault(node, Set.of())) {
             List<String> cycle = visit(target, graph, visited, active, path);
             if (!cycle.isEmpty()) {
+
                 return cycle;
             }
         }
         path.removeLast();
         active.remove(node);
+
         return List.of();
     }
 }

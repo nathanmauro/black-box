@@ -1,12 +1,11 @@
 package dev.nathan.sbaagentic.query;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pins the server-side resolution semantics of §5: since-side dates/keywords resolve to the START
@@ -18,8 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TimeSpecResolveTest {
 
-    private static final Clock CLOCK = Clock.fixed(
-            Instant.parse("2026-08-20T15:30:00Z"), ZoneId.of("America/New_York"));
+    private static final Clock CLOCK =
+            Clock.fixed(Instant.parse("2026-08-20T15:30:00Z"), ZoneId.of("America/New_York"));
 
     @Test
     void keywordTodayResolvesToStartAndExclusiveEndOfLocalDay() {
@@ -45,17 +44,14 @@ class TimeSpecResolveTest {
 
     @Test
     void exactInstantsResolveTheSameOnBothEdgesAndStayInclusive() {
-        assertThat(since("2026-08-18T14:00:00Z").resolve(CLOCK))
-                .isEqualTo(Instant.parse("2026-08-18T14:00:00Z"));
-        assertThat(until("2026-08-18T14:00:00Z").resolve(CLOCK))
-                .isEqualTo(Instant.parse("2026-08-18T14:00:00Z"));
+        assertThat(since("2026-08-18T14:00:00Z").resolve(CLOCK)).isEqualTo(Instant.parse("2026-08-18T14:00:00Z"));
+        assertThat(until("2026-08-18T14:00:00Z").resolve(CLOCK)).isEqualTo(Instant.parse("2026-08-18T14:00:00Z"));
         assertThat(until("2026-08-18T14:00:00Z").exclusiveEnd()).isFalse();
     }
 
     @Test
     void zoneLessDateTimeResolvesInTheClockZone() {
-        assertThat(since("2026-08-18T09:00").resolve(CLOCK))
-                .isEqualTo(Instant.parse("2026-08-18T13:00:00Z"));
+        assertThat(since("2026-08-18T09:00").resolve(CLOCK)).isEqualTo(Instant.parse("2026-08-18T13:00:00Z"));
     }
 
     @Test
@@ -71,21 +67,23 @@ class TimeSpecResolveTest {
     void lastIsSinceDurationSugar() {
         EventQuery parsed = EventQuery.parse("last:2h");
         assertThat(parsed.sinceSpec()).isPresent();
-        assertThat(parsed.sinceSpec().orElseThrow().resolve(CLOCK))
-                .isEqualTo(Instant.parse("2026-08-20T13:30:00Z"));
+        assertThat(parsed.sinceSpec().orElseThrow().resolve(CLOCK)).isEqualTo(Instant.parse("2026-08-20T13:30:00Z"));
         assertThat(parsed.untilSpec()).isEmpty();
     }
 
     private static TimeSpec since(String value) {
+
         return required(TimeSpec.parse(value, TimeSpec.Edge.START));
     }
 
     private static TimeSpec until(String value) {
+
         return required(TimeSpec.parse(value, TimeSpec.Edge.END));
     }
 
     private static TimeSpec required(TimeSpec spec) {
         assertThat(spec).isNotNull();
+
         return spec;
     }
 }

@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.runner.internal.client.blackbox;
 
-import java.util.Locale;
-
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum TaskStatus {
     OPEN("open"),
@@ -20,6 +19,7 @@ public enum TaskStatus {
 
     @JsonValue
     public String value() {
+
         return value;
     }
 
@@ -30,6 +30,7 @@ public enum TaskStatus {
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         for (TaskStatus status : values()) {
             if (status.value.equals(normalized)) {
+
                 return status;
             }
         }

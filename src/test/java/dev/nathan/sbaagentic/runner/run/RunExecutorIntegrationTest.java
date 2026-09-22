@@ -1,14 +1,13 @@
 package dev.nathan.sbaagentic.runner.run;
 
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -23,10 +22,6 @@ import dev.nathan.sbaagentic.runner.SdlcReviewCycle;
 import dev.nathan.sbaagentic.runner.engine.FakeEngine;
 import dev.nathan.sbaagentic.runner.gate.StoryFrontmatterParser;
 import dev.nathan.sbaagentic.runner.internal.application.WorktreeManager;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
-import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.runner.ship.ShipExecutor;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.Task;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEvent;
@@ -34,18 +29,21 @@ import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskEventType;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSnapshot;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskSpec;
 import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskStatus;
-
+import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
+import dev.nathan.sbaagentic.runner.process.RealProcessRunner;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.ship.ShipExecutor;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 class RunExecutorIntegrationTest {
 
@@ -67,12 +65,15 @@ class RunExecutorIntegrationTest {
         tmux.delayFirstWrite = true;
         tmux.failKill = true;
         doAnswer(invocation -> {
-            String text = invocation.getArgument(3);
-            if (text.startsWith("Engine '")) {
-                throw new IllegalStateException("post-launch API unavailable");
-            }
-            return invocation.callRealMethod();
-        }).when(apiClient).annotate(any(), any(), any(), any(), any());
+                    String text = invocation.getArgument(3);
+                    if (text.startsWith("Engine '")) {
+                        throw new IllegalStateException("post-launch API unavailable");
+                    }
+
+                    return invocation.callRealMethod();
+                })
+                .when(apiClient)
+                .annotate(any(), any(), any(), any(), any());
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
 
         executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
@@ -81,10 +82,15 @@ class RunExecutorIntegrationTest {
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
         assertThat(tmux.sessionExists).isTrue();
         assertThat(worktree).isDirectory();
-        assertThat(run(processRunner, worktree, "git", "status", "--porcelain").stdout()).isBlank();
-        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID)).stdout()).isNotBlank();
-        assertThat(apiClient.statusCalls).singleElement().satisfies(call ->
-                assertThat(call.blockedReason()).contains("worker shutdown could not be confirmed", worktree.toString())
+        assertThat(run(processRunner, worktree, "git", "status", "--porcelain").stdout())
+                .isBlank();
+        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID))
+                        .stdout())
+                .isNotBlank();
+        assertThat(apiClient.statusCalls)
+                .singleElement()
+                .satisfies(call -> assertThat(call.blockedReason())
+                        .contains("worker shutdown could not be confirmed", worktree.toString())
                         .doesNotContain("no worker output was found"));
         assertThat(apiClient.completeCalls).isEmpty();
         verifyNoInteractions(shipExecutor);
@@ -109,7 +115,9 @@ class RunExecutorIntegrationTest {
         assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
         assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
         assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
-        assertThat(run(processRunner, worktree, "git", "branch", "--show-current").stdout().strip())
+        assertThat(run(processRunner, worktree, "git", "branch", "--show-current")
+                        .stdout()
+                        .strip())
                 .isEqualTo(expectedBranch(TASK_ID));
         assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
                 .contains("fake worker test commit");
@@ -117,8 +125,13 @@ class RunExecutorIntegrationTest {
         assertThat(tmux.sessionExists).isFalse();
         assertThat(apiClient.statusCalls).singleElement().satisfies(call -> {
             assertThat(call.status()).isEqualTo("open");
-            assertThat(call.blockedReason()).contains(TASK_ID, "orchestrator-failure", worktree.toString(),
-                    expectedBranch(TASK_ID), "last verified checkpoint: worker returned DONE");
+            assertThat(call.blockedReason())
+                    .contains(
+                            TASK_ID,
+                            "orchestrator-failure",
+                            worktree.toString(),
+                            expectedBranch(TASK_ID),
+                            "last verified checkpoint: worker returned DONE");
         });
     }
 
@@ -129,15 +142,20 @@ class RunExecutorIntegrationTest {
         FakeBlackBoxApiClient apiClient = spy(new FakeBlackBoxApiClient());
         TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        when(shipExecutor.ship(any(), any(), any(), any(), any(), any(), any(), any())).thenAnswer(invocation -> {
-            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
-                    .completeTask(any(), any(), any(), any(), any(), any(), any());
-            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
-                    .annotate(any(), any(), any(), any(), any());
-            doThrow(new IllegalStateException("API unavailable")).when(apiClient)
-                    .updateTaskStatus(any(), any(), any(), any());
-            return new ShipExecutor.ShipResult("local-only", "push disabled", null, null, List.of());
-        });
+        when(shipExecutor.ship(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    doThrow(new IllegalStateException("API unavailable"))
+                            .when(apiClient)
+                            .completeTask(any(), any(), any(), any(), any(), any(), any());
+                    doThrow(new IllegalStateException("API unavailable"))
+                            .when(apiClient)
+                            .annotate(any(), any(), any(), any(), any());
+                    doThrow(new IllegalStateException("API unavailable"))
+                            .when(apiClient)
+                            .updateTaskStatus(any(), any(), any(), any());
+
+                    return new ShipExecutor.ShipResult("local-only", "push disabled", null, null, List.of());
+                });
         Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(WorktreeManager.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -147,16 +165,21 @@ class RunExecutorIntegrationTest {
                     .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-api-failure");
             Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
             assertThat(worktree).isDirectory();
-            assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
+            assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline")
+                            .stdout())
                     .contains("fake worker test commit");
-            assertThat(appender.list).anySatisfy(event -> assertThat(event.getFormattedMessage())
-                    .contains(TASK_ID, "orchestrator-api-failure", worktree.toString(), expectedBranch(TASK_ID),
-                            "last verified checkpoint: worker reported DONE; ship returned local-only",
-                            "preserved"));
+            assertThat(appender.list)
+                    .anySatisfy(event -> assertThat(event.getFormattedMessage())
+                            .contains(
+                                    TASK_ID,
+                                    "orchestrator-api-failure",
+                                    worktree.toString(),
+                                    expectedBranch(TASK_ID),
+                                    "last verified checkpoint: worker reported DONE; ship returned local-only",
+                                    "preserved"));
             assertThat(apiClient.completeCalls).isEmpty();
             assertThat(tmux.sessionExists).isFalse();
-        }
-        finally {
+        } finally {
             logger.detachAppender(appender);
             appender.stop();
         }
@@ -175,8 +198,7 @@ class RunExecutorIntegrationTest {
             executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
                     .execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-interrupted");
             assertThat(Thread.currentThread().isInterrupted()).isTrue();
-        }
-        finally {
+        } finally {
             Thread.interrupted();
         }
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
@@ -200,18 +222,27 @@ class RunExecutorIntegrationTest {
         tmux.leaveUnfinishedFiles = true;
         tmux.crashPlanAfterWriting = true;
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor).executePlan(
-                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.IN_PROGRESS),
-                config(repo), "blackbox-runner", "orchestrator-plan-failure");
+        executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor)
+                .executePlan(
+                        taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.IN_PROGRESS),
+                        config(repo),
+                        "blackbox-runner",
+                        "orchestrator-plan-failure");
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(PLAN_TASK_ID));
         assertThat(Files.readString(worktree.resolve("README.md"))).isEqualTo("unfinished edit\n");
         assertThat(Files.readString(worktree.resolve("untracked.txt"))).isEqualTo("recover me\n");
         assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
         assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
                 .contains("fake worker test commit");
-        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> assertThat(call.blockedReason())
-                .contains(PLAN_TASK_ID, "orchestrator-plan-failure", worktree.toString(), expectedBranch(PLAN_TASK_ID),
-                        "worker execution entered, outcome not yet known"));
+        assertThat(apiClient.statusCalls)
+                .singleElement()
+                .satisfies(call -> assertThat(call.blockedReason())
+                        .contains(
+                                PLAN_TASK_ID,
+                                "orchestrator-plan-failure",
+                                worktree.toString(),
+                                expectedBranch(PLAN_TASK_ID),
+                                "worker execution entered, outcome not yet known"));
         assertThat(apiClient.completeCalls).isEmpty();
         assertThat(tmux.sessionExists).isFalse();
         verifyNoInteractions(shipExecutor);
@@ -227,11 +258,20 @@ class RunExecutorIntegrationTest {
         tmux.pane = "HTTP 429: Too Many Requests";
         CompletionDetector detector = mock(CompletionDetector.class);
         when(detector.awaitCompletion(any(), any(), any(), any(), any(), any()))
-                .thenReturn(new CompletionDetector.CompletionResult(CompletionDetector.Outcome.TIMED_OUT, "still running"));
+                .thenReturn(
+                        new CompletionDetector.CompletionResult(CompletionDetector.Outcome.TIMED_OUT, "still running"));
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        RunExecutor executor = new RunExecutor(apiClient, tmux, processRunner, detector,
-                new RecordingWorkerSessionIngest(apiClient), new GoalPromptBuilder(), new StoryFrontmatterParser(),
-                List.of(new FakeEngine()), new ActiveRunRegistry(), shipExecutor);
+        RunExecutor executor = new RunExecutor(
+                apiClient,
+                tmux,
+                processRunner,
+                detector,
+                new RecordingWorkerSessionIngest(apiClient),
+                new GoalPromptBuilder(),
+                new StoryFrontmatterParser(),
+                List.of(new FakeEngine()),
+                new ActiveRunRegistry(),
+                shipExecutor);
 
         executor.execute(taskChange(repo), config(repo), "blackbox-runner", "orchestrator-requeued");
 
@@ -241,9 +281,12 @@ class RunExecutorIntegrationTest {
         assertThat(Files.readString(worktree.resolve("worker.log"))).isEqualTo("worker evidence\n");
         assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
                 .contains("fake worker test commit");
-        assertThat(apiClient.statusCalls).singleElement().satisfies(call -> assertThat(call.status()).isEqualTo("open"));
-        assertThat(apiClient.annotationCalls).anySatisfy(call -> assertThat(call.text())
-                .contains("orchestrator-requeued", "worker returned REQUEUED", "preserved"));
+        assertThat(apiClient.statusCalls)
+                .singleElement()
+                .satisfies(call -> assertThat(call.status()).isEqualTo("open"));
+        assertThat(apiClient.annotationCalls)
+                .anySatisfy(call -> assertThat(call.text())
+                        .contains("orchestrator-requeued", "worker returned REQUEUED", "preserved"));
         assertThat(apiClient.completeCalls).isEmpty();
         assertThat(tmux.sessionExists).isFalse();
         verifyNoInteractions(shipExecutor);
@@ -261,7 +304,9 @@ class RunExecutorIntegrationTest {
                 .execute(taskChange(repo), config, "blackbox-runner", "orchestrator-no-engine");
 
         assertThat(repo.resolve(RunnerNaming.worktreeDirName(TASK_ID))).doesNotExist();
-        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID)).stdout()).isBlank();
+        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(TASK_ID))
+                        .stdout())
+                .isBlank();
         assertThat(apiClient.statusCalls).singleElement().satisfies(call -> {
             assertThat(call.status()).isEqualTo("blocked");
             assertThat(call.blockedReason()).isEqualTo("No enabled engine configured");
@@ -299,23 +344,25 @@ class RunExecutorIntegrationTest {
 
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
         assertThat(worktree).isDirectory();
-        assertThat(run(processRunner, worktree, "git", "branch", "--show-current").stdout().strip())
+        assertThat(run(processRunner, worktree, "git", "branch", "--show-current")
+                        .stdout()
+                        .strip())
                 .isEqualTo("auto/implement-worker-s-result-12345678");
         assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
                 .contains("fake worker test commit");
         assertThat(tmux.sessionExists).isFalse();
         assertThat(activeRunRegistry.tmuxSessionFor(TASK_ID)).isEmpty();
-        assertThat(workerSessionIngest.call).isEqualTo(new IngestCall(
-                worktree.toFile(), TASK_ID, "blackbox-runner", "orchestrator-1"));
+        assertThat(workerSessionIngest.call)
+                .isEqualTo(new IngestCall(worktree.toFile(), TASK_ID, "blackbox-runner", "orchestrator-1"));
         assertThat(apiClient.completeCalls).singleElement().satisfies(call -> {
             assertThat(call.taskId()).isEqualTo(TASK_ID);
             assertThat(call.actor()).isEqualTo("blackbox-runner");
             assertThat(call.source()).isEqualTo("cli");
             assertThat(call.clientSessionId()).isEqualTo("blackbox-runner-run-" + TASK_ID);
-            assertThat(call.summary())
-                    .isEqualTo("Work committed locally only: repo config push is not true");
-            assertThat(call.nextAction()).isEqualTo("Run the manual commands to push/PR/merge, "
-                    + "or re-run the runner once the gate is fixed.");
+            assertThat(call.summary()).isEqualTo("Work committed locally only: repo config push is not true");
+            assertThat(call.nextAction())
+                    .isEqualTo("Run the manual commands to push/PR/merge, "
+                            + "or re-run the runner once the gate is fixed.");
         });
     }
 
@@ -324,8 +371,8 @@ class RunExecutorIntegrationTest {
         RealProcessRunner processRunner = new RealProcessRunner();
         Path repo = initializeRepo(processRunner);
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
-        apiClient.taskSnapshots = List.of(
-                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.DONE).snapshot());
+        apiClient.taskSnapshots = List.of(taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.DONE)
+                .snapshot());
         apiClient.setTaskEvents(
                 PLAN_TASK_ID,
                 List.of(
@@ -333,8 +380,7 @@ class RunExecutorIntegrationTest {
                         approvalEvent(PLAN_TASK_ID, "approve", "plan")));
         TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        RunExecutor executor = executor(
-                apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
+        RunExecutor executor = executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
 
         executor.execute(
                 taskChange(repo, TASK_ID, "auto", "sdlc", TaskStatus.IN_PROGRESS),
@@ -345,26 +391,26 @@ class RunExecutorIntegrationTest {
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(TASK_ID));
         String branch = expectedBranch(TASK_ID);
         assertThat(worktree).isDirectory();
-        assertThat(run(processRunner, worktree, "git", "branch", "--show-current").stdout().strip())
+        assertThat(run(processRunner, worktree, "git", "branch", "--show-current")
+                        .stdout()
+                        .strip())
                 .isEqualTo(branch);
         assertThat(run(processRunner, worktree, "git", "log", "-1", "--oneline").stdout())
                 .contains("fake worker test commit");
-        assertThat(apiClient.annotationCalls).contains(
-                new FakeBlackBoxApiClient.AnnotationCall(
+        assertThat(apiClient.annotationCalls)
+                .contains(new FakeBlackBoxApiClient.AnnotationCall(
                         TASK_ID,
                         "blackbox-runner",
                         "progress",
                         "SDLC build verified and committed; shipping is deferred until review approval.",
                         Map.of(
-                                "branch", branch,
-                                "worktree", worktree.toAbsolutePath().toString())));
-        assertThat(apiClient.enqueueCalls).containsExactly(
-                new FakeBlackBoxApiClient.EnqueueCall(
-                        "spec-1",
-                        "Implement worker's result",
-                        "sdlc:review",
-                        10,
-                        "blackbox-runner"));
+                                "branch",
+                                branch,
+                                "worktree",
+                                worktree.toAbsolutePath().toString())));
+        assertThat(apiClient.enqueueCalls)
+                .containsExactly(new FakeBlackBoxApiClient.EnqueueCall(
+                        "spec-1", "Implement worker's result", "sdlc:review", 10, "blackbox-runner"));
         verifyNoInteractions(shipExecutor);
     }
 
@@ -375,8 +421,7 @@ class RunExecutorIntegrationTest {
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
         TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        RunExecutor executor = executor(
-                apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
+        RunExecutor executor = executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
 
         executor.execute(
                 taskChange(repo, TASK_ID, "auto", "sdlc", TaskStatus.IN_PROGRESS),
@@ -384,8 +429,8 @@ class RunExecutorIntegrationTest {
                 "blackbox-runner",
                 "orchestrator-build");
 
-        assertThat(apiClient.statusCalls).containsExactly(
-                new FakeBlackBoxApiClient.StatusCall(
+        assertThat(apiClient.statusCalls)
+                .containsExactly(new FakeBlackBoxApiClient.StatusCall(
                         TASK_ID,
                         "blackbox-runner",
                         "blocked",
@@ -403,23 +448,19 @@ class RunExecutorIntegrationTest {
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
         TestTmuxController tmux = new TestTmuxController(processRunner, apiClient);
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
-        RunExecutor executor = executor(
-                apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
+        RunExecutor executor = executor(apiClient, tmux, processRunner, new GoalPromptBuilder(), shipExecutor);
 
-        new SdlcPlanCycle(executor).execute(
-                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.IN_PROGRESS),
-                config(repo),
-                "blackbox-runner",
-                "orchestrator-plan");
+        new SdlcPlanCycle(executor)
+                .execute(
+                        taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.IN_PROGRESS),
+                        config(repo),
+                        "blackbox-runner",
+                        "orchestrator-plan");
 
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(PLAN_TASK_ID));
-        assertThat(apiClient.annotationCalls).contains(
-                new FakeBlackBoxApiClient.AnnotationCall(
-                        PLAN_TASK_ID,
-                        "blackbox-runner-worker",
-                        "plan",
-                        PLAN_TEXT,
-                        null));
+        assertThat(apiClient.annotationCalls)
+                .contains(new FakeBlackBoxApiClient.AnnotationCall(
+                        PLAN_TASK_ID, "blackbox-runner-worker", "plan", PLAN_TEXT, null));
         assertThat(apiClient.completeCalls).singleElement().satisfies(call -> {
             assertThat(call.taskId()).isEqualTo(PLAN_TASK_ID);
             assertThat(call.summary()).isEqualTo(PLAN_TEXT);
@@ -427,14 +468,9 @@ class RunExecutorIntegrationTest {
         });
         assertThat(gitHead(processRunner, repo)).isEqualTo(originalHead);
         assertThat(worktree).doesNotExist();
-        assertThat(run(
-                        processRunner,
-                        repo,
-                        "git",
-                        "branch",
-                        "--list",
-                        expectedBranch(PLAN_TASK_ID))
-                .stdout()).isBlank();
+        assertThat(run(processRunner, repo, "git", "branch", "--list", expectedBranch(PLAN_TASK_ID))
+                        .stdout())
+                .isBlank();
         verifyNoInteractions(shipExecutor);
     }
 
@@ -448,7 +484,8 @@ class RunExecutorIntegrationTest {
         FakeBlackBoxApiClient apiClient = new FakeBlackBoxApiClient();
         apiClient.taskSnapshots = List.of(
                 taskChange(repo, TASK_ID, "auto", "sdlc", TaskStatus.DONE).snapshot(),
-                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.DONE).snapshot());
+                taskChange(repo, PLAN_TASK_ID, "sdlc:plan", "sdlc", TaskStatus.DONE)
+                        .snapshot());
         apiClient.setTaskEvents(
                 TASK_ID,
                 List.of(annotationEvent(
@@ -457,8 +494,10 @@ class RunExecutorIntegrationTest {
                         "progress",
                         "SDLC build artifact",
                         Map.of(
-                                "branch", buildBranch,
-                                "worktree", buildWorktree.toAbsolutePath().toString()))));
+                                "branch",
+                                buildBranch,
+                                "worktree",
+                                buildWorktree.toAbsolutePath().toString()))));
         apiClient.setTaskEvents(
                 PLAN_TASK_ID,
                 List.of(
@@ -469,31 +508,31 @@ class RunExecutorIntegrationTest {
         ShipExecutor shipExecutor = mock(ShipExecutor.class);
         RunExecutor executor = executor(apiClient, tmux, processRunner, promptBuilder, shipExecutor);
 
-        new SdlcReviewCycle(executor).execute(
-                taskChange(repo, REVIEW_TASK_ID, "sdlc:review", "sdlc", TaskStatus.IN_PROGRESS),
-                config(repo),
-                "blackbox-runner",
-                "orchestrator-review");
+        new SdlcReviewCycle(executor)
+                .execute(
+                        taskChange(repo, REVIEW_TASK_ID, "sdlc:review", "sdlc", TaskStatus.IN_PROGRESS),
+                        config(repo),
+                        "blackbox-runner",
+                        "orchestrator-review");
 
         assertThat(tmux.cwd).isEqualTo(buildWorktree);
         assertThat(promptBuilder.approvedPlan).isEqualTo(PLAN_TEXT);
-        assertThat(apiClient.annotationCalls).contains(
-                new FakeBlackBoxApiClient.AnnotationCall(
-                        REVIEW_TASK_ID,
-                        "blackbox-runner-worker",
-                        "review",
-                        REVIEW_TEXT,
-                        null));
+        assertThat(apiClient.annotationCalls)
+                .contains(new FakeBlackBoxApiClient.AnnotationCall(
+                        REVIEW_TASK_ID, "blackbox-runner-worker", "review", REVIEW_TEXT, null));
         assertThat(apiClient.completeCalls).singleElement().satisfies(call -> {
             assertThat(call.taskId()).isEqualTo(REVIEW_TASK_ID);
             assertThat(call.summary()).isEqualTo(REVIEW_TEXT);
             assertThat(call.nextAction()).isEqualTo("Await human approval of the SDLC review.");
         });
         assertThat(gitHead(processRunner, buildWorktree)).isEqualTo(buildHead);
-        assertThat(run(processRunner, buildWorktree, "git", "status", "--porcelain").stdout())
+        assertThat(run(processRunner, buildWorktree, "git", "status", "--porcelain")
+                        .stdout())
                 .isBlank();
         assertThat(buildWorktree).isDirectory();
-        assertThat(run(processRunner, buildWorktree, "git", "branch", "--show-current").stdout().strip())
+        assertThat(run(processRunner, buildWorktree, "git", "branch", "--show-current")
+                        .stdout()
+                        .strip())
                 .isEqualTo(buildBranch);
         verifyNoInteractions(shipExecutor);
     }
@@ -504,6 +543,7 @@ class RunExecutorIntegrationTest {
             RealProcessRunner processRunner,
             GoalPromptBuilder promptBuilder,
             ShipExecutor shipExecutor) {
+
         return new RunExecutor(
                 apiClient,
                 tmux,
@@ -518,6 +558,7 @@ class RunExecutorIntegrationTest {
     }
 
     private static RunnerConfig config(Path repo) {
+
         return new RunnerConfig(
                 1,
                 List.of(new EngineConfig("fake", null, null, null, null, true)),
@@ -533,11 +574,12 @@ class RunExecutorIntegrationTest {
         Files.writeString(repo.resolve("README.md"), "fixture\n");
         assertSuccess(run(processRunner, repo, "git", "add", "README.md"));
         assertSuccess(run(processRunner, repo, "git", "commit", "-m", "initial fixture"));
+
         return repo;
     }
 
-    private static Path createPreservedBuild(
-            RealProcessRunner processRunner, Path repo, String taskId) throws Exception {
+    private static Path createPreservedBuild(RealProcessRunner processRunner, Path repo, String taskId)
+            throws Exception {
         Path worktree = repo.resolve(RunnerNaming.worktreeDirName(taskId));
         Files.createDirectories(worktree.getParent());
         assertSuccess(run(
@@ -551,42 +593,30 @@ class RunExecutorIntegrationTest {
                 expectedBranch(taskId),
                 "HEAD"));
         Files.writeString(worktree.resolve(".blackbox-fake-worker.log"), "fake worker\n");
-        assertSuccess(run(
-                processRunner,
-                worktree,
-                "git",
-                "add",
-                ".blackbox-fake-worker.log"));
-        assertSuccess(run(
-                processRunner,
-                worktree,
-                "git",
-                "commit",
-                "-m",
-                "fake worker test commit"));
+        assertSuccess(run(processRunner, worktree, "git", "add", ".blackbox-fake-worker.log"));
+        assertSuccess(run(processRunner, worktree, "git", "commit", "-m", "fake worker test commit"));
+
         return worktree;
     }
 
     private static String gitHead(RealProcessRunner processRunner, Path repo) {
         ProcessResult result = run(processRunner, repo, "git", "rev-parse", "HEAD");
         assertSuccess(result);
+
         return result.stdout().strip();
     }
 
     private static String expectedBranch(String taskId) {
+
         return "auto/implement-worker-s-result-" + RunnerNaming.taskShort(taskId);
     }
 
     private static TaskChange taskChange(Path repo) {
+
         return taskChange(repo, TASK_ID, "auto", "full_auto", TaskStatus.IN_PROGRESS);
     }
 
-    private static TaskChange taskChange(
-            Path repo,
-            String taskId,
-            String lane,
-            String mode,
-            TaskStatus status) {
+    private static TaskChange taskChange(Path repo, String taskId, String lane, String mode, TaskStatus status) {
         Task task = new Task(
                 taskId,
                 "spec-1",
@@ -611,12 +641,13 @@ class RunExecutorIntegrationTest {
                 + "---\n"
                 + "# Worker story\n\n"
                 + "## Acceptance criteria\n- A marker commit exists.\n";
-        TaskSpec spec = new TaskSpec(
-                "spec-1", repo.toString(), "Worker story", body, null, null, "test", null, null);
+        TaskSpec spec = new TaskSpec("spec-1", repo.toString(), "Worker story", body, null, null, "test", null, null);
+
         return new TaskChange(new TaskSnapshot(task, spec), null);
     }
 
     private static TaskEvent workerDoneEvent(String taskId) {
+
         return new TaskEvent(
                 "event-done-" + taskId,
                 taskId,
@@ -631,55 +662,37 @@ class RunExecutorIntegrationTest {
                 Instant.now());
     }
 
-    private static TaskEvent annotationEvent(
-            String taskId,
-            String kind,
-            String text,
-            Map<String, Object> dataJson) {
+    private static TaskEvent annotationEvent(String taskId, String kind, String text, Map<String, Object> dataJson) {
+
         return annotationEvent(taskId, "blackbox-runner-worker", kind, text, dataJson);
     }
 
     private static TaskEvent annotationEvent(
-            String taskId,
-            String actor,
-            String kind,
-            String text,
-            Map<String, Object> dataJson) {
+            String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("kind", kind);
         detail.put("text", text);
         if (dataJson != null) {
             detail.put("dataJson", dataJson);
         }
+
         return new TaskEvent(
-                "event-" + kind + "-" + taskId,
-                taskId,
-                TaskEventType.NOTE,
-                actor,
-                null,
-                null,
-                detail,
-                Instant.now());
+                "event-" + kind + "-" + taskId, taskId, TaskEventType.NOTE, actor, null, null, detail, Instant.now());
     }
 
     private static TaskEvent approvalEvent(String taskId, String decision, String stage) {
+
         return annotationEvent(
-                taskId,
-                "nathan",
-                "approval",
-                decision,
-                Map.of("decision", decision, "stage", stage, "feedback", ""));
+                taskId, "nathan", "approval", decision, Map.of("decision", decision, "stage", stage, "feedback", ""));
     }
 
-    private static ProcessResult run(
-            RealProcessRunner processRunner, Path cwd, String... command) {
+    private static ProcessResult run(RealProcessRunner processRunner, Path cwd, String... command) {
+
         return processRunner.run(List.of(command), cwd.toFile(), Duration.ofSeconds(10));
     }
 
     private static void assertSuccess(ProcessResult result) {
-        assertThat(result.exitCode())
-                .as("command stderr: %s", result.stderr())
-                .isZero();
+        assertThat(result.exitCode()).as("command stderr: %s", result.stderr()).isZero();
     }
 
     private static final class TestTmuxController implements TmuxController {
@@ -695,14 +708,14 @@ class RunExecutorIntegrationTest {
         private boolean failKill;
         private String pane = "";
 
-        private TestTmuxController(
-                RealProcessRunner processRunner, FakeBlackBoxApiClient apiClient) {
+        private TestTmuxController(RealProcessRunner processRunner, FakeBlackBoxApiClient apiClient) {
             this.processRunner = processRunner;
             this.apiClient = apiClient;
         }
 
         @Override
         public boolean hasSession(String sessionName) {
+
             return sessionExists;
         }
 
@@ -720,52 +733,37 @@ class RunExecutorIntegrationTest {
 
         @Override
         public void sendKeys(String sessionName, String text) {
-            if (delayFirstWrite) return;
+            if (delayFirstWrite)
+
+                return;
             String taskId = exportedValue(text, "SBA_TASK_ID");
             if (text.contains("SBA_STAGE='plan'") && !crashPlanAfterWriting) {
-                apiClient.annotate(
-                        taskId,
-                        "blackbox-runner-worker",
-                        "plan",
-                        PLAN_TEXT,
-                        null);
+                apiClient.annotate(taskId, "blackbox-runner-worker", "plan", PLAN_TEXT, null);
                 apiClient.setTaskEvents(
-                        taskId,
-                        List.of(
-                                annotationEvent(taskId, "plan", PLAN_TEXT, null),
-                                workerDoneEvent(taskId)));
+                        taskId, List.of(annotationEvent(taskId, "plan", PLAN_TEXT, null), workerDoneEvent(taskId)));
+
                 return;
             }
             if (text.contains("SBA_STAGE='review'")) {
-                apiClient.annotate(
-                        taskId,
-                        "blackbox-runner-worker",
-                        "review",
-                        REVIEW_TEXT,
-                        null);
+                apiClient.annotate(taskId, "blackbox-runner-worker", "review", REVIEW_TEXT, null);
                 apiClient.setTaskEvents(
-                        taskId,
-                        List.of(
-                                annotationEvent(taskId, "review", REVIEW_TEXT, null),
-                                workerDoneEvent(taskId)));
+                        taskId, List.of(annotationEvent(taskId, "review", REVIEW_TEXT, null), workerDoneEvent(taskId)));
+
                 return;
             }
             try {
                 Files.writeString(cwd.resolve(".blackbox-fake-worker.log"), "fake worker\n");
-            }
-            catch (Exception ex) {
+            } catch (Exception ex) {
                 throw new IllegalStateException(ex);
             }
             assertSuccess(run(processRunner, cwd, "git", "add", ".blackbox-fake-worker.log"));
-            assertSuccess(run(
-                    processRunner, cwd, "git", "commit", "-m", "fake worker test commit"));
+            assertSuccess(run(processRunner, cwd, "git", "commit", "-m", "fake worker test commit"));
             if (leaveUnfinishedFiles) {
                 try {
                     Files.writeString(cwd.resolve("README.md"), "unfinished edit\n");
                     Files.writeString(cwd.resolve("untracked.txt"), "recover me\n");
                     Files.writeString(cwd.resolve("worker.log"), "worker evidence\n");
-                }
-                catch (Exception ex) {
+                } catch (Exception ex) {
                     throw new IllegalStateException(ex);
                 }
             }
@@ -774,6 +772,7 @@ class RunExecutorIntegrationTest {
             }
             if (interruptInsteadOfReportingDone) {
                 Thread.currentThread().interrupt();
+
                 return;
             }
             apiClient.setTaskEvents(taskId, List.of(workerDoneEvent(taskId)));
@@ -781,6 +780,7 @@ class RunExecutorIntegrationTest {
 
         @Override
         public String capturePane(String sessionName) {
+
             return pane;
         }
 
@@ -795,6 +795,7 @@ class RunExecutorIntegrationTest {
             if (end < 0) {
                 throw new IllegalStateException("Unterminated " + name + " export in command: " + command);
             }
+
             return command.substring(start, end);
         }
     }
@@ -804,12 +805,9 @@ class RunExecutorIntegrationTest {
         private String approvedPlan;
 
         @Override
-        public String buildReview(
-                String taskId,
-                String storyBody,
-                String resolvedVerify,
-                String approvedPlan) {
+        public String buildReview(String taskId, String storyBody, String resolvedVerify, String approvedPlan) {
             this.approvedPlan = approvedPlan;
+
             return super.buildReview(taskId, storyBody, resolvedVerify, approvedPlan);
         }
     }
@@ -824,19 +822,12 @@ class RunExecutorIntegrationTest {
 
         @Override
         public Optional<String> ingestAndLink(
-                File worktreeDir,
-                String taskId,
-                String actorId,
-                String orchestratorSessionId) {
+                File worktreeDir, String taskId, String actorId, String orchestratorSessionId) {
             call = new IngestCall(worktreeDir, taskId, actorId, orchestratorSessionId);
+
             return Optional.empty();
         }
     }
 
-    private record IngestCall(
-            File worktreeDir,
-            String taskId,
-            String actorId,
-            String orchestratorSessionId) {
-    }
+    private record IngestCall(File worktreeDir, String taskId, String actorId, String orchestratorSessionId) {}
 }

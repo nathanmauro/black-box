@@ -1,5 +1,18 @@
 package dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import dev.nathan.sbaagentic.workflow.SpecStatus;
+import dev.nathan.sbaagentic.workflow.Task;
+import dev.nathan.sbaagentic.workflow.TaskChange;
+import dev.nathan.sbaagentic.workflow.TaskEvent;
+import dev.nathan.sbaagentic.workflow.TaskEventType;
+import dev.nathan.sbaagentic.workflow.TaskQuery;
+import dev.nathan.sbaagentic.workflow.TaskSpec;
+import dev.nathan.sbaagentic.workflow.TaskStatus;
+import dev.nathan.sbaagentic.workflow.internal.domain.TaskUpdate;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -13,39 +26,23 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
 import javax.sql.DataSource;
-
-import dev.nathan.sbaagentic.workflow.SpecStatus;
-import dev.nathan.sbaagentic.workflow.Task;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.TaskEventType;
-import dev.nathan.sbaagentic.workflow.TaskQuery;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-import dev.nathan.sbaagentic.workflow.TaskStatus;
-import dev.nathan.sbaagentic.workflow.internal.domain.TaskUpdate;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
-@SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-repository-test-${random.uuid}.db",
-        "sba.local-ai.enabled=false",
-        "sba.summary.backend=local",
-        "sba.elasticsearch.enabled=false",
-        "sba.memory.embedding.enabled=false"
-})
+@SpringBootTest(
+        properties = {
+            "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-task-repository-test-${random.uuid}.db",
+            "sba.local-ai.enabled=false",
+            "sba.summary.backend=local",
+            "sba.elasticsearch.enabled=false",
+            "sba.memory.embedding.enabled=false"
+        })
 class TaskRepositoryTest {
 
     @Autowired
@@ -77,27 +74,25 @@ class TaskRepositoryTest {
                 "path", "docs/spec.md",
                 "sha", "abc123");
         TaskSpec createdSpec = repository.createSpec(
-                "/repos/black-box",
-                "Shared task queue",
-                "Canonical spec body\nwith exact spacing.",
-                specRef,
-                "codex");
+                "/repos/black-box", "Shared task queue", "Canonical spec body\nwith exact spacing.", specRef, "codex");
 
-        TaskChange created = repository.enqueueTask(
-                createdSpec.id(), "Implement claim", "codex", 17, "claude");
+        TaskChange created = repository.enqueueTask(createdSpec.id(), "Implement claim", "codex", 17, "claude");
 
         assertThat(repository.findSpec(createdSpec.id())).contains(createdSpec);
         assertThat(repository.listTasks(new TaskQuery("/repos/black-box", "codex", TaskStatus.OPEN)))
                 .singleElement()
                 .satisfies(snapshot -> {
-                    assertThat(snapshot.task().id()).isEqualTo(created.snapshot().task().id());
+                    assertThat(snapshot.task().id())
+                            .isEqualTo(created.snapshot().task().id());
                     assertThat(snapshot.task().projectKey()).isEqualTo("/repos/black-box");
                     assertThat(snapshot.task().title()).isEqualTo("Implement claim");
                     assertThat(snapshot.task().lane()).isEqualTo("codex");
                     assertThat(snapshot.task().priority()).isEqualTo(17);
                     assertThat(snapshot.task().createdBy()).isEqualTo("claude");
-                    assertThat(snapshot.task().createdAt()).isEqualTo(created.snapshot().task().createdAt());
-                    assertThat(snapshot.task().updatedAt()).isEqualTo(created.snapshot().task().updatedAt());
+                    assertThat(snapshot.task().createdAt())
+                            .isEqualTo(created.snapshot().task().createdAt());
+                    assertThat(snapshot.task().updatedAt())
+                            .isEqualTo(created.snapshot().task().updatedAt());
                     assertThat(snapshot.spec().body()).isEqualTo("Canonical spec body\nwith exact spacing.");
                     assertThat(snapshot.spec().specRef()).isEqualTo(specRef);
                     assertThat(snapshot.spec().createdBy()).isEqualTo("codex");
@@ -120,7 +115,8 @@ class TaskRepositoryTest {
                 .isThrownBy(() -> repository.createSpec("project", "title", "\n\t", null, "codex"));
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> repository.createSpec("project", "title", "body", null, " "));
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM specs", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM specs", Integer.class))
+                .isZero();
 
         TaskSpec spec = repository.createSpec("project", "title", "body", null, "codex");
         assertThatIllegalArgumentException()
@@ -129,24 +125,36 @@ class TaskRepositoryTest {
                 .isThrownBy(() -> repository.enqueueTask(spec.id(), "task", " ", 0, "codex"));
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> repository.enqueueTask(spec.id(), "task", "codex", 0, " "));
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> repository.claimNextTask(" ", "agent"));
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> repository.claimNextTask("codex", " "));
+        assertThatIllegalArgumentException().isThrownBy(() -> repository.claimNextTask(" ", "agent"));
+        assertThatIllegalArgumentException().isThrownBy(() -> repository.claimNextTask("codex", " "));
         assertThatIllegalArgumentException().isThrownBy(() -> SpecStatus.fromValue("paused"));
         assertThatIllegalArgumentException().isThrownBy(() -> TaskStatus.fromValue("running"));
         assertThatIllegalArgumentException().isThrownBy(() -> TaskEventType.fromValue("task.running"));
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tasks", Integer.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM task_events", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tasks", Integer.class))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM task_events", Integer.class))
+                .isZero();
     }
 
     @Test
     void claimIsLaneScopedThenPriorityAndFifoOrdered() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task old = repository.enqueueTask(spec.id(), "old", "codex", 5, "manual").snapshot().task();
-        Task newer = repository.enqueueTask(spec.id(), "newer", "codex", 5, "manual").snapshot().task();
-        Task highest = repository.enqueueTask(spec.id(), "highest", "codex", 9, "manual").snapshot().task();
-        Task otherLane = repository.enqueueTask(spec.id(), "other lane", "claude", 100, "manual").snapshot().task();
+        Task old = repository
+                .enqueueTask(spec.id(), "old", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        Task newer = repository
+                .enqueueTask(spec.id(), "newer", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        Task highest = repository
+                .enqueueTask(spec.id(), "highest", "codex", 9, "manual")
+                .snapshot()
+                .task();
+        Task otherLane = repository
+                .enqueueTask(spec.id(), "other lane", "claude", 100, "manual")
+                .snapshot()
+                .task();
         jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:00:00Z' WHERE id = ?", old.id());
         jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:01:00Z' WHERE id = ?", newer.id());
         jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:02:00Z' WHERE id = ?", highest.id());
@@ -164,18 +172,23 @@ class TaskRepositoryTest {
                 .extracting(change -> change.snapshot().task().id())
                 .isEqualTo(newer.id());
         assertThat(repository.claimNextTask("codex", "agent-a")).isEmpty();
-        assertThat(repository.findTask(otherLane.id()).orElseThrow().task().status()).isEqualTo(TaskStatus.OPEN);
+        assertThat(repository.findTask(otherLane.id()).orElseThrow().task().status())
+                .isEqualTo(TaskStatus.OPEN);
     }
 
     @Test
     void fifoOrderingNormalizesMixedInstantPrecision() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task earlier = repository.enqueueTask(spec.id(), "earlier", "codex", 5, "manual").snapshot().task();
-        Task later = repository.enqueueTask(spec.id(), "later", "codex", 5, "manual").snapshot().task();
-        jdbcTemplate.update(
-                "UPDATE tasks SET created_at = '2026-07-09T00:00:00.123Z' WHERE id = ?", earlier.id());
-        jdbcTemplate.update(
-                "UPDATE tasks SET created_at = '2026-07-09T00:00:00.123001Z' WHERE id = ?", later.id());
+        Task earlier = repository
+                .enqueueTask(spec.id(), "earlier", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        Task later = repository
+                .enqueueTask(spec.id(), "later", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:00:00.123Z' WHERE id = ?", earlier.id());
+        jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:00:00.123001Z' WHERE id = ?", later.id());
 
         assertThat(repository.listTasks(new TaskQuery(null, "codex", TaskStatus.OPEN)))
                 .extracting(snapshot -> snapshot.task().id())
@@ -193,20 +206,23 @@ class TaskRepositoryTest {
     @Test
     void listTasksExcludesStatusesInSql() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task open = repository.enqueueTask(spec.id(), "open", "codex", 5, "manual").snapshot().task();
-        Task done = repository.enqueueTask(spec.id(), "done", "codex", 5, "manual").snapshot().task();
-        Task cancelled = repository.enqueueTask(spec.id(), "cancelled", "codex", 5, "manual")
-                .snapshot().task();
+        Task open = repository
+                .enqueueTask(spec.id(), "open", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        Task done = repository
+                .enqueueTask(spec.id(), "done", "codex", 5, "manual")
+                .snapshot()
+                .task();
+        Task cancelled = repository
+                .enqueueTask(spec.id(), "cancelled", "codex", 5, "manual")
+                .snapshot()
+                .task();
         jdbcTemplate.update("UPDATE tasks SET status = 'done' WHERE id = ?", done.id());
         jdbcTemplate.update("UPDATE tasks SET status = 'cancelled' WHERE id = ?", cancelled.id());
 
-        assertThat(repository.listTasks(new TaskQuery(
-                        null,
-                        "codex",
-                        null,
-                        List.of(TaskStatus.DONE, TaskStatus.CANCELLED),
-                        10,
-                        0)))
+        assertThat(repository.listTasks(
+                        new TaskQuery(null, "codex", null, List.of(TaskStatus.DONE, TaskStatus.CANCELLED), 10, 0)))
                 .extracting(snapshot -> snapshot.task().id())
                 .containsExactly(open.id());
     }
@@ -216,15 +232,14 @@ class TaskRepositoryTest {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
         List<Task> tasks = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
-            tasks.add(repository.enqueueTask(spec.id(), "task-" + index, "codex", 5, "manual")
-                    .snapshot().task());
+            tasks.add(repository
+                    .enqueueTask(spec.id(), "task-" + index, "codex", 5, "manual")
+                    .snapshot()
+                    .task());
         }
         jdbcTemplate.update("UPDATE tasks SET created_at = '2026-07-09T00:00:00Z'");
 
-        List<String> expected = tasks.stream()
-                .map(Task::id)
-                .sorted()
-                .toList();
+        List<String> expected = tasks.stream().map(Task::id).sorted().toList();
         List<String> actual = new ArrayList<>();
         for (int offset = 0; offset < 7; offset += 3) {
             repository.listTasks(new TaskQuery(null, "codex", null, List.of(), 3, offset)).stream()
@@ -247,8 +262,7 @@ class TaskRepositoryTest {
                 assertThat(pragma(connection, "foreign_keys")).isEqualTo(1);
                 assertThat(pragma(connection, "busy_timeout")).isEqualTo(5000);
             });
-        }
-        finally {
+        } finally {
             for (Connection connection : connections.reversed()) {
                 connection.close();
             }
@@ -272,23 +286,30 @@ class TaskRepositoryTest {
                 """))
                 .isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("FOREIGN KEY constraint failed");
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tasks", Integer.class)).isZero();
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM task_events", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tasks", Integer.class))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM task_events", Integer.class))
+                .isZero();
     }
 
     @Test
     void simultaneousClaimsHaveExactlyOneWinnerAndOneClaimEvent() throws Exception {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task eligible = repository.enqueueTask(spec.id(), "only task", "codex", 1, "manual").snapshot().task();
+        Task eligible = repository
+                .enqueueTask(spec.id(), "only task", "codex", 1, "manual")
+                .snapshot()
+                .task();
         CyclicBarrier barrier = new CyclicBarrier(2);
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
             Future<Optional<TaskChange>> first = executor.submit(() -> {
                 barrier.await();
+
                 return repository.claimNextTask("codex", "agent-a");
             });
             Future<Optional<TaskChange>> second = executor.submit(() -> {
                 barrier.await();
+
                 return repository.claimNextTask("codex", "agent-b");
             });
 
@@ -319,8 +340,15 @@ class TaskRepositoryTest {
     @Test
     void updateRequiresTheExpectedSourceStatus() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task task = repository.enqueueTask(spec.id(), "task", "codex", 1, "manual").snapshot().task();
-        Task claimed = repository.claimNextTask("codex", "agent-a").orElseThrow().snapshot().task();
+        Task task = repository
+                .enqueueTask(spec.id(), "task", "codex", 1, "manual")
+                .snapshot()
+                .task();
+        Task claimed = repository
+                .claimNextTask("codex", "agent-a")
+                .orElseThrow()
+                .snapshot()
+                .task();
         int eventsBefore = repository.eventsForTask(task.id()).size();
 
         Optional<TaskChange> staleUpdate = repository.updateTask(new TaskUpdate(
@@ -342,19 +370,28 @@ class TaskRepositoryTest {
     @Test
     void updateWithExpectedStatusMutatesTaskAndAppendsMatchingEvent() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task task = repository.enqueueTask(spec.id(), "task", "codex", 1, "manual").snapshot().task();
-        Task claimed = repository.claimNextTask("codex", "agent-a").orElseThrow().snapshot().task();
+        Task task = repository
+                .enqueueTask(spec.id(), "task", "codex", 1, "manual")
+                .snapshot()
+                .task();
+        Task claimed = repository
+                .claimNextTask("codex", "agent-a")
+                .orElseThrow()
+                .snapshot()
+                .task();
 
-        TaskChange blocked = repository.updateTask(new TaskUpdate(
-                task.id(),
-                TaskStatus.IN_PROGRESS,
-                TaskStatus.BLOCKED,
-                "agent-a",
-                TaskEventType.BLOCKED,
-                claimed.claimedBy(),
-                "waiting for input",
-                null,
-                Map.of("reason", "waiting for input"))).orElseThrow();
+        TaskChange blocked = repository
+                .updateTask(new TaskUpdate(
+                        task.id(),
+                        TaskStatus.IN_PROGRESS,
+                        TaskStatus.BLOCKED,
+                        "agent-a",
+                        TaskEventType.BLOCKED,
+                        claimed.claimedBy(),
+                        "waiting for input",
+                        null,
+                        Map.of("reason", "waiting for input")))
+                .orElseThrow();
 
         assertThat(blocked.snapshot().task().status()).isEqualTo(TaskStatus.BLOCKED);
         assertThat(blocked.snapshot().task().claimedBy()).isEqualTo("agent-a");
@@ -371,7 +408,10 @@ class TaskRepositoryTest {
     @Test
     void taskMutationAndEventAppendRollBackTogether() {
         TaskSpec spec = repository.createSpec("project", "queue", "body", null, "manual");
-        Task task = repository.enqueueTask(spec.id(), "task", "codex", 1, "manual").snapshot().task();
+        Task task = repository
+                .enqueueTask(spec.id(), "task", "codex", 1, "manual")
+                .snapshot()
+                .task();
         jdbcTemplate.execute("""
                 CREATE TRIGGER fail_task_event_insert
                 BEFORE INSERT ON task_events
@@ -398,9 +438,9 @@ class TaskRepositoryTest {
             if (!result.next()) {
                 throw new AssertionError("PRAGMA " + name + " returned no row");
             }
+
             return result.getInt(1);
-        }
-        catch (SQLException ex) {
+        } catch (SQLException ex) {
             throw new AssertionError("Unable to read PRAGMA " + name, ex);
         }
     }

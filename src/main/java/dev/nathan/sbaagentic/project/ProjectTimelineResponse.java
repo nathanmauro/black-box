@@ -9,5 +9,4 @@ public record ProjectTimelineResponse(
         int limit,
         int offset,
         long count,
-        List<ProjectTimelineBlock> items) {
-}
+        List<ProjectTimelineBlock> items) {}

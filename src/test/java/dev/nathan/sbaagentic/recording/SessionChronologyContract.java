@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.recording;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,11 +11,8 @@ import java.util.UUID;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /** Shared real HTTP/database acceptance for SQLite and PostgreSQL. */
 public final class SessionChronologyContract {
@@ -38,14 +38,23 @@ public final class SessionChronologyContract {
                 assertThat(Instant.parse(session.path("lastSeenAt").asText())).isEqualTo(Instant.parse(times.get(0)));
                 assertThat(Instant.parse(session.path("startedAt").asText())).isEqualTo(Instant.parse(times.get(0)));
                 assertThat(session.path("eventCount").asInt()).isEqualTo(2);
-                assertThat(jdbc.queryForList("SELECT observed_at FROM agent_events WHERE session_id = ?", String.class, sessionId)
-                        .stream().map(Instant::parse)).containsExactlyInAnyOrder(Instant.parse(times.get(0)), Instant.parse(times.get(1)));
+                assertThat(jdbc
+                                .queryForList(
+                                        "SELECT observed_at FROM agent_events WHERE session_id = ?",
+                                        String.class,
+                                        sessionId)
+                                .stream()
+                                .map(Instant::parse))
+                        .containsExactlyInAnyOrder(Instant.parse(times.get(0)), Instant.parse(times.get(1)));
                 if (keyed) {
-                    Map<String, Object> before = jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", sessionId);
+                    Map<String, Object> before =
+                            jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", sessionId);
                     JsonNode replay = post(http, base, true, oldKey, older);
-                    assertThat(replay.path("eventId").asText()).isEqualTo(second.path("eventId").asText());
+                    assertThat(replay.path("eventId").asText())
+                            .isEqualTo(second.path("eventId").asText());
                     assertThat(replay.path("replayed").asBoolean()).isTrue();
-                    assertThat(jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", sessionId)).isEqualTo(before);
+                    assertThat(jdbc.queryForMap("SELECT * FROM agent_sessions WHERE id = ?", sessionId))
+                            .isEqualTo(before);
                 }
             }
         }
@@ -62,27 +71,51 @@ public final class SessionChronologyContract {
                     var body = event(client, latest.minusNanos(i).toString());
                     results.add(workers.submit(() -> {
                         barrier.await();
+
                         return post(http, base, keyed, UUID.randomUUID().toString(), body);
                     }));
                 }
                 for (var result : results) result.get(20, TimeUnit.SECONDS);
             }
-            assertThat(Instant.parse(jdbc.queryForObject("SELECT last_seen_at FROM agent_sessions WHERE client_session_id = ?", String.class, client)))
+            assertThat(Instant.parse(jdbc.queryForObject(
+                            "SELECT last_seen_at FROM agent_sessions WHERE client_session_id = ?",
+                            String.class,
+                            client)))
                     .isEqualTo(latest);
-            assertThat(jdbc.queryForObject("SELECT event_count FROM agent_sessions WHERE client_session_id = ?", Integer.class, client)).isEqualTo(8);
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_events WHERE client_session_id = ?", Integer.class, client)).isEqualTo(8);
+            assertThat(jdbc.queryForObject(
+                            "SELECT event_count FROM agent_sessions WHERE client_session_id = ?",
+                            Integer.class,
+                            client))
+                    .isEqualTo(8);
+            assertThat(jdbc.queryForObject(
+                            "SELECT count(*) FROM agent_events WHERE client_session_id = ?", Integer.class, client))
+                    .isEqualTo(8);
         }
     }
 
     private static Map<String, Object> event(String client, String observedAt) {
-        return Map.of("source", "codex", "clientSessionId", client, "eventType", "Observation",
-                "text", "Synthetic delayed capture", "observedAt", observedAt);
+
+        return Map.of(
+                "source",
+                "codex",
+                "clientSessionId",
+                client,
+                "eventType",
+                "Observation",
+                "text",
+                "Synthetic delayed capture",
+                "observedAt",
+                observedAt);
     }
 
-    private static JsonNode post(TestRestTemplate http, String base, boolean keyed, String key, Map<String, Object> event) {
-        var response = http.postForEntity(base + (keyed ? "/api/events/idempotent" : "/api/events"),
-                keyed ? Map.of("captureId", key, "event", event) : event, JsonNode.class);
+    private static JsonNode post(
+            TestRestTemplate http, String base, boolean keyed, String key, Map<String, Object> event) {
+        var response = http.postForEntity(
+                base + (keyed ? "/api/events/idempotent" : "/api/events"),
+                keyed ? Map.of("captureId", key, "event", event) : event,
+                JsonNode.class);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
+
         return response.getBody();
     }
 }

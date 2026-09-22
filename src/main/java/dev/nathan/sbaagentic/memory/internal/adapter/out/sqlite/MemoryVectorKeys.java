@@ -4,14 +4,15 @@ import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore.Sto
 
 final class MemoryVectorKeys {
 
-    private MemoryVectorKeys() {
-    }
+    private MemoryVectorKeys() {}
 
     static String key(StoredEmbedding embedding) {
+
         return key(embedding.targetKind(), embedding.targetId());
     }
 
     static String key(String targetKind, String targetId) {
+
         return targetKind + ":" + targetId;
     }
 }

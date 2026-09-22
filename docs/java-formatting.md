@@ -6,8 +6,8 @@ It uses no Eclipse formatter. The formatter has been exercised on JDK 21.0.12. A
 required by the additional syntax-aware return-spacing step.
 
 No formatting goal is bound to the normal Maven lifecycle. `mvn test`, `mvn verify`, and ordinary
-builds do not acquire a formatting gate. This setup change leaves existing application and test
-Java sources unchanged; the source-formatting run is a separate action.
+builds do not acquire a formatting gate. The project-wide source pass includes the optional Cortex module; see the
+[rollout record](superpowers/plans/2026-09-22-java-formatting-integration.md).
 
 ## Commands
 
@@ -30,7 +30,7 @@ glob. The `.*` prefix and escaped `.java` suffix in these commands are intention
 argument so the shell does not expand it. Spotless documents this matching rule in its
 [Maven file-selection instructions](https://github.com/diffplug/spotless/blob/main/plugin-maven/README.md#can-i-apply-spotless-to-specific-files).
 
-For a deliberate later project-wide pass:
+For an explicitly requested project-wide pass:
 
 ```bash
 mvn -Pjava-format spotless:check
@@ -103,8 +103,8 @@ after to prove that verification did not format application or test sources.
 Backend CI runs these disposable fixture contracts. It does not run a formatting check or apply
 against the repository's application/test Java sources.
 
-Use this disposable regression command for CI coverage of the formatter setup. A CI job must not
-replace it with a repository-wide `spotless:check` while the source-formatting rollout is deferred.
+Use this disposable regression command for CI coverage of the formatter setup. Source formatting
+remains opt-in; the completed rollout does not introduce a new CI formatting gate.
 
 Palantir's layout and Java 21 support are described in its
 [official documentation](https://github.com/palantir/palantir-java-format); Spotless's pinned engine

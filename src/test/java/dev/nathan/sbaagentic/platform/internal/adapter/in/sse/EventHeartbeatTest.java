@@ -1,5 +1,9 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
+
 import jakarta.servlet.AsyncEvent;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -14,10 +18,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 
 /** Exercise actual emitter serialization and servlet lifecycle callbacks without a timer or database. */
 class EventHeartbeatTest {
@@ -43,9 +43,13 @@ class EventHeartbeatTest {
 
     @Test
     void completionTimeoutAndErrorEachRemoveTheirEmitterBeforeTheNextHeartbeat() throws Exception {
-        for (String signal : new String[]{"complete", "timeout", "error"}) {
+        for (String signal : new String[] {"complete", "timeout", "error"}) {
             var checks = new AtomicInteger();
-            var stream = open(() -> { checks.incrementAndGet(); return true; });
+            var stream = open(() -> {
+                checks.incrementAndGet();
+
+                return true;
+            });
             var context = (MockAsyncContext) stream.getRequest().getAsyncContext();
             var event = new AsyncEvent(context, new IOException("fixture disconnect"));
             for (var listener : context.getListeners()) {
@@ -58,7 +62,9 @@ class EventHeartbeatTest {
             int before = checks.get();
             assertThat(broadcaster.subscriberCount()).as(signal).isZero();
             broadcaster.heartbeat();
-            assertThat(checks.get()).as(signal + " leaves no stale heartbeat subscriber").isEqualTo(before);
+            assertThat(checks.get())
+                    .as(signal + " leaves no stale heartbeat subscriber")
+                    .isEqualTo(before);
         }
     }
 
@@ -67,6 +73,7 @@ class EventHeartbeatTest {
         var broken = new AtomicBoolean(false);
         var failed = open(() -> {
             if (broken.get()) throw new IllegalStateException("fixture invalid session");
+
             return true;
         });
         var healthy = open(() -> true);
@@ -80,7 +87,11 @@ class EventHeartbeatTest {
     @Test
     void shutdownCompletesStreamsAndLeavesNoHeartbeatRecipients() throws Exception {
         var checks = new AtomicInteger();
-        var stream = open(() -> { checks.incrementAndGet(); return true; });
+        var stream = open(() -> {
+            checks.incrementAndGet();
+
+            return true;
+        });
         broadcaster.closeAll();
         assertThat(stream.getAsyncResult(1000)).isNull();
         assertThat(broadcaster.subscriberCount()).isZero();
@@ -90,8 +101,12 @@ class EventHeartbeatTest {
     }
 
     private MvcResult open(BooleanSupplier allowed) throws Exception {
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FixtureController(broadcaster, allowed)).build();
-        return mvc.perform(get("/fixture-stream")).andExpect(request().asyncStarted()).andReturn();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new FixtureController(broadcaster, allowed))
+                .build();
+
+        return mvc.perform(get("/fixture-stream"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
     }
 
     @RestController
@@ -106,6 +121,7 @@ class EventHeartbeatTest {
 
         @GetMapping("/fixture-stream")
         SseEmitter stream() {
+
             return broadcaster.register(allowed);
         }
     }

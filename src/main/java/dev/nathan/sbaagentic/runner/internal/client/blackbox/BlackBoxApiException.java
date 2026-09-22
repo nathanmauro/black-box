@@ -18,10 +18,12 @@ public class BlackBoxApiException extends RuntimeException {
     }
 
     public int statusCode() {
+
         return statusCode;
     }
 
     public String responseBody() {
+
         return responseBody;
     }
 }

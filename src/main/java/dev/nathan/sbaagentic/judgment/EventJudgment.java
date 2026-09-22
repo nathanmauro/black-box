@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.judgment;
 
-import java.time.Instant;
-
 import com.fasterxml.jackson.databind.JsonNode;
+import java.time.Instant;
 
 public record EventJudgment(
         String eventId,
@@ -12,5 +11,4 @@ public record EventJudgment(
         String model,
         String version,
         JsonNode answers,
-        Instant judgedAt) {
-}
+        Instant judgedAt) {}

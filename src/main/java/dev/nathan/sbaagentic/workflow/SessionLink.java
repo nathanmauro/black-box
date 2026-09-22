@@ -8,5 +8,4 @@ public record SessionLink(
         String childSessionId,
         LinkType linkType,
         String taskId,
-        Instant createdAt) {
-}
+        Instant createdAt) {}

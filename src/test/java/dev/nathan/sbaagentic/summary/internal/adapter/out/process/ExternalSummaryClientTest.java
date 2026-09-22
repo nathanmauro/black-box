@@ -1,12 +1,10 @@
 package dev.nathan.sbaagentic.summary.internal.adapter.out.process;
 
-import java.util.Optional;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.summary.SummaryProperties;
-
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ExternalSummaryClientTest {
 

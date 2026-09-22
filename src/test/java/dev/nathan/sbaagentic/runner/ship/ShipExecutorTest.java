@@ -1,48 +1,41 @@
 package dev.nathan.sbaagentic.runner.ship;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.runner.RepoConfig;
+import dev.nathan.sbaagentic.runner.RunnerNaming;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
+import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner;
+import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
+import dev.nathan.sbaagentic.runner.process.TmuxController;
+import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
 import java.io.File;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.BlackBoxApiClient;
-import dev.nathan.sbaagentic.runner.RepoConfig;
-import dev.nathan.sbaagentic.runner.RunnerNaming;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner;
-import dev.nathan.sbaagentic.runner.process.ProcessRunner.ProcessResult;
-import dev.nathan.sbaagentic.runner.process.TmuxController;
-import dev.nathan.sbaagentic.runner.ship.ShipExecutor.ShipResult;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskAnnotation;
-import dev.nathan.sbaagentic.runner.internal.client.blackbox.TaskChange;
-
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ShipExecutorTest {
 
     private static final File REPO = new File("/tmp/ship-executor-repo");
     private static final File WORKTREE = new File("/tmp/ship-executor-worktree");
-    private static final RepoConfig REPO_CONFIG =
-            new RepoConfig(REPO.getAbsolutePath(), true, true, "mvn test", "");
+    private static final RepoConfig REPO_CONFIG = new RepoConfig(REPO.getAbsolutePath(), true, true, "mvn test", "");
 
     @Test
     void parsesMergedResultFromLastStdoutLine() {
         RecordingApiClient apiClient = new RecordingApiClient();
-        FakeProcessRunner processRunner = new FakeProcessRunner(jsonResult(
-                "merged", "checks green", "https://example.test/pr/1", "merged", List.of()));
+        FakeProcessRunner processRunner = new FakeProcessRunner(
+                jsonResult("merged", "checks green", "https://example.test/pr/1", "merged", List.of()));
         ShipExecutor executor = executor(apiClient, processRunner, new FakeTmuxController(false));
 
         ShipResult result = ship(executor);
 
-        assertThat(result).isEqualTo(new ShipResult(
-                "merged",
-                "checks green",
-                "https://example.test/pr/1",
-                "merged",
-                List.of()));
+        assertThat(result)
+                .isEqualTo(new ShipResult("merged", "checks green", "https://example.test/pr/1", "merged", List.of()));
         assertThat(processRunner.commands.getFirst())
                 .containsExactly(
                         RunnerNaming.scriptPath("scripts/runner/ship.sh"),
@@ -57,8 +50,9 @@ class ShipExecutorTest {
                         "Worker summary");
         assertThat(processRunner.workingDirs.getFirst()).isEqualTo(REPO);
         assertThat(processRunner.timeouts.getFirst()).isEqualTo(Duration.ofMinutes(35));
-        assertThat(apiClient.annotations).singleElement().satisfies(annotation ->
-                assertThat(annotation.dataJson()).isNull());
+        assertThat(apiClient.annotations)
+                .singleElement()
+                .satisfies(annotation -> assertThat(annotation.dataJson()).isNull());
     }
 
     @Test
@@ -78,8 +72,7 @@ class ShipExecutorTest {
 
         assertThat(result.status()).isEqualTo("pr-open");
         assertThat(result.prUrl()).isEqualTo("https://example.test/pr/2");
-        assertThat(result.manualCommands()).containsExactly(
-                "gh pr merge https://example.test/pr/2 --squash");
+        assertThat(result.manualCommands()).containsExactly("gh pr merge https://example.test/pr/2 --squash");
     }
 
     @Test
@@ -88,11 +81,7 @@ class ShipExecutorTest {
         ShipExecutor executor = executor(
                 apiClient,
                 new FakeProcessRunner(jsonResult(
-                        "local-only",
-                        "repo config push is not true",
-                        null,
-                        null,
-                        List.of("git push", "gh pr create"))),
+                        "local-only", "repo config push is not true", null, null, List.of("git push", "gh pr create"))),
                 new FakeTmuxController(false));
 
         ShipResult result = ship(executor);
@@ -105,20 +94,11 @@ class ShipExecutorTest {
     @Test
     void leavesBlockedAfterOneRepairWaitWithoutANewCommit() {
         RecordingApiClient apiClient = new RecordingApiClient();
-        FakeProcessRunner processRunner = new FakeProcessRunner(jsonResult(
-                "blocked",
-                "checks red: unit-tests",
-                "https://example.test/pr/3",
-                "checks-red",
-                List.of()));
+        FakeProcessRunner processRunner = new FakeProcessRunner(
+                jsonResult("blocked", "checks red: unit-tests", "https://example.test/pr/3", "checks-red", List.of()));
         FakeTmuxController tmux = new FakeTmuxController(true);
         ShipExecutor executor = new ShipExecutor(
-                apiClient,
-                processRunner,
-                tmux,
-                new ObjectMapper(),
-                Duration.ofMillis(5),
-                Duration.ofMillis(1));
+                apiClient, processRunner, tmux, new ObjectMapper(), Duration.ofMillis(5), Duration.ofMillis(1));
 
         ShipResult result = ship(executor);
 
@@ -134,12 +114,8 @@ class ShipExecutorTest {
     @Test
     void sdlcShipRecordsStructuralResultWithoutRepairing() {
         RecordingApiClient apiClient = new RecordingApiClient();
-        FakeProcessRunner processRunner = new FakeProcessRunner(jsonResult(
-                "blocked",
-                "checks red: unit-tests",
-                "https://example.test/pr/4",
-                "checks-red",
-                List.of()));
+        FakeProcessRunner processRunner = new FakeProcessRunner(
+                jsonResult("blocked", "checks red: unit-tests", "https://example.test/pr/4", "checks-red", List.of()));
         FakeTmuxController tmux = new FakeTmuxController(true);
         ShipExecutor executor = executor(apiClient, processRunner, tmux);
 
@@ -172,8 +148,8 @@ class ShipExecutorTest {
     @Test
     void unparseableOutputDegradesToLocalOnly() {
         RecordingApiClient apiClient = new RecordingApiClient();
-        FakeProcessRunner processRunner = new FakeProcessRunner(
-                new ProcessResult(1, "progress\nnot-json\n", "shell failed", false));
+        FakeProcessRunner processRunner =
+                new FakeProcessRunner(new ProcessResult(1, "progress\nnot-json\n", "shell failed", false));
         ShipExecutor executor = executor(apiClient, processRunner, new FakeTmuxController(false));
 
         ShipResult result = ship(executor);
@@ -186,19 +162,14 @@ class ShipExecutorTest {
     }
 
     private static ShipExecutor executor(
-            BlackBoxApiClient apiClient,
-            ProcessRunner processRunner,
-            TmuxController tmux) {
+            BlackBoxApiClient apiClient, ProcessRunner processRunner, TmuxController tmux) {
+
         return new ShipExecutor(
-                apiClient,
-                processRunner,
-                tmux,
-                new ObjectMapper(),
-                Duration.ofMillis(5),
-                Duration.ofMillis(1));
+                apiClient, processRunner, tmux, new ObjectMapper(), Duration.ofMillis(5), Duration.ofMillis(1));
     }
 
     private static ShipResult ship(ShipExecutor executor) {
+
         return executor.ship(
                 "task-1",
                 "runner-1",
@@ -211,17 +182,13 @@ class ShipExecutorTest {
     }
 
     private static ProcessResult jsonResult(
-            String status,
-            String reason,
-            String prUrl,
-            String mergeStatus,
-            List<String> manualCommands) {
+            String status, String reason, String prUrl, String mergeStatus, List<String> manualCommands) {
         try {
-            String json = new ObjectMapper().writeValueAsString(
-                    new ShipResult(status, reason, prUrl, mergeStatus, manualCommands));
+            String json = new ObjectMapper()
+                    .writeValueAsString(new ShipResult(status, reason, prUrl, mergeStatus, manualCommands));
+
             return new ProcessResult(0, "diagnostic stdout is ignored\n" + json + "\n", "", false);
-        }
-        catch (Exception ex) {
+        } catch (Exception ex) {
             throw new IllegalStateException(ex);
         }
     }
@@ -246,9 +213,11 @@ class ShipExecutorTest {
             if (!command.isEmpty()
                     && RunnerNaming.scriptPath("scripts/runner/ship.sh").equals(command.getFirst())) {
                 shipInvocations++;
+
                 return shipResult;
             }
             if (command.contains("--format=%H")) {
+
                 return new ProcessResult(0, "abc123\n", "", false);
             }
             throw new AssertionError("Unexpected command: " + command);
@@ -267,12 +236,9 @@ class ShipExecutorTest {
 
         @Override
         public TaskAnnotation annotate(
-                String taskId,
-                String actor,
-                String kind,
-                String text,
-                Map<String, Object> dataJson) {
+                String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {
             annotations.add(new AnnotationCall(taskId, actor, kind, text, dataJson));
+
             return null;
         }
 
@@ -286,24 +252,20 @@ class ShipExecutorTest {
                 List<String> openLoops,
                 String nextAction) {
             completeCalls++;
+
             return null;
         }
 
         @Override
-        public TaskChange updateTaskStatus(
-                String taskId, String actor, String status, String blockedReason) {
+        public TaskChange updateTaskStatus(String taskId, String actor, String status, String blockedReason) {
             statusCalls++;
+
             return null;
         }
     }
 
     private record AnnotationCall(
-            String taskId,
-            String actor,
-            String kind,
-            String text,
-            Map<String, Object> dataJson) {
-    }
+            String taskId, String actor, String kind, String text, Map<String, Object> dataJson) {}
 
     private static final class FakeTmuxController implements TmuxController {
 
@@ -316,16 +278,15 @@ class ShipExecutorTest {
 
         @Override
         public boolean hasSession(String sessionName) {
+
             return sessionExists;
         }
 
         @Override
-        public void killSession(String sessionName) {
-        }
+        public void killSession(String sessionName) {}
 
         @Override
-        public void newSession(String sessionName, File cwd, int width, int height) {
-        }
+        public void newSession(String sessionName, File cwd, int width, int height) {}
 
         @Override
         public void sendKeys(String sessionName, String text) {
@@ -334,6 +295,7 @@ class ShipExecutorTest {
 
         @Override
         public String capturePane(String sessionName) {
+
             return "";
         }
     }

@@ -10,6 +10,5 @@ public interface GateAdvisor {
 
     GateAdvisorNote advise(String storyBody, List<String> deterministicFindings);
 
-    record GateAdvisorNote(String feedback, boolean blocking) {
-    }
+    record GateAdvisorNote(String feedback, boolean blocking) {}
 }

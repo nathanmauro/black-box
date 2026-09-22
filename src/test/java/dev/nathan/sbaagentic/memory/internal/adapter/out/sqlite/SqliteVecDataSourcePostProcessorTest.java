@@ -1,12 +1,10 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
-import com.zaxxer.hikari.HikariDataSource;
-
-import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
-
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
+
+import com.zaxxer.hikari.HikariDataSource;
+import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
+import org.junit.jupiter.api.Test;
 
 class SqliteVecDataSourcePostProcessorTest {
 

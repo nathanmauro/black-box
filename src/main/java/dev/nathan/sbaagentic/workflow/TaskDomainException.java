@@ -8,11 +8,7 @@ public class TaskDomainException extends RuntimeException {
     private final TaskStatus targetStatus;
 
     public TaskDomainException(
-            TaskErrorCode code,
-            String message,
-            String taskId,
-            TaskStatus currentStatus,
-            TaskStatus targetStatus) {
+            TaskErrorCode code, String message, String taskId, TaskStatus currentStatus, TaskStatus targetStatus) {
         super(message);
         this.code = code;
         this.taskId = taskId;
@@ -35,18 +31,22 @@ public class TaskDomainException extends RuntimeException {
     }
 
     public TaskErrorCode code() {
+
         return code;
     }
 
     public String taskId() {
+
         return taskId;
     }
 
     public TaskStatus currentStatus() {
+
         return currentStatus;
     }
 
     public TaskStatus targetStatus() {
+
         return targetStatus;
     }
 }

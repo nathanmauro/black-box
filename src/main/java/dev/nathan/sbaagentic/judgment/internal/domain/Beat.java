@@ -13,11 +13,13 @@ public record Beat(
         String text) {
 
     public List<String> eventIds() {
+
         return events.stream().map(BeatEvent::id).toList();
     }
 
     public String title() {
         String line = lines.isEmpty() ? "" : lines.get(0);
+
         return line.length() <= 72 ? line : line.substring(0, 69) + "...";
     }
 }

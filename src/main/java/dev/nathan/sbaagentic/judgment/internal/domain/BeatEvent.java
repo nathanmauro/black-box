@@ -1,9 +1,8 @@
 package dev.nathan.sbaagentic.judgment.internal.domain;
 
+import dev.nathan.sbaagentic.recording.AgentEvent;
 import java.time.Instant;
 import java.util.Map;
-
-import dev.nathan.sbaagentic.recording.AgentEvent;
 
 public record BeatEvent(
         String id,
@@ -18,6 +17,7 @@ public record BeatEvent(
         Instant observedAt) {
 
     public static BeatEvent from(AgentEvent event) {
+
         return new BeatEvent(
                 event.id(),
                 event.sessionId(),

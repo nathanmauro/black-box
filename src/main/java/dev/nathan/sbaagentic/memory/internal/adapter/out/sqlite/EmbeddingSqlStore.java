@@ -1,16 +1,14 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
+import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore;
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-
-import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore;
-import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -22,9 +20,7 @@ public class EmbeddingSqlStore implements EmbeddingStore {
     private final ObjectProvider<SqliteVecVectorStore> sqliteVecVectorStore;
 
     @Autowired
-    public EmbeddingSqlStore(
-            JdbcTemplate jdbcTemplate,
-            ObjectProvider<SqliteVecVectorStore> sqliteVecVectorStore) {
+    public EmbeddingSqlStore(JdbcTemplate jdbcTemplate, ObjectProvider<SqliteVecVectorStore> sqliteVecVectorStore) {
         this.jdbcTemplate = jdbcTemplate;
         this.sqliteVecVectorStore = sqliteVecVectorStore;
     }
@@ -37,7 +33,8 @@ public class EmbeddingSqlStore implements EmbeddingStore {
     @Override
     public void upsert(StoredEmbedding embedding) {
         StoredEmbedding normalized = normalize(embedding);
-        jdbcTemplate.update("""
+        jdbcTemplate.update(
+                """
                 INSERT INTO memory_embeddings (
                     target_kind, target_id, model, dimensions, vector, content_hash, embedded_at
                 )
@@ -64,14 +61,15 @@ public class EmbeddingSqlStore implements EmbeddingStore {
     @Override
     public Optional<String> findHash(String targetKind, String targetId) {
         try {
+
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
                     SELECT content_hash
                       FROM memory_embeddings
                      WHERE target_kind = ?
                        AND target_id = ?
                     """, String.class, targetKind, targetId));
-        }
-        catch (EmptyResultDataAccessException ex) {
+        } catch (EmptyResultDataAccessException ex) {
+
             return Optional.empty();
         }
     }
@@ -88,11 +86,13 @@ public class EmbeddingSqlStore implements EmbeddingStore {
                    AND model = ?
                    AND dimensions = ?
                 """, Long.class, targetKind, targetId, contentHash, model, dimensions);
+
         return count != null && count > 0;
     }
 
     @Override
     public List<StoredEmbedding> loadAll(String model, int dimensions) {
+
         return jdbcTemplate.query("""
                 SELECT target_kind, target_id, model, vector, content_hash, embedded_at
                   FROM memory_embeddings
@@ -117,13 +117,13 @@ public class EmbeddingSqlStore implements EmbeddingStore {
     @Override
     public long count() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_embeddings", Long.class);
+
         return count == null ? 0L : count;
     }
 
     private StoredEmbedding mapEmbedding(ResultSet rs, int rowNum) throws SQLException {
-        EmbeddingVector vector = EmbeddingVector.fromBlob(
-                rs.getString("model"),
-                rs.getBytes("vector"));
+        EmbeddingVector vector = EmbeddingVector.fromBlob(rs.getString("model"), rs.getBytes("vector"));
+
         return new StoredEmbedding(
                 rs.getString("target_kind"),
                 rs.getString("target_id"),
@@ -133,6 +133,7 @@ public class EmbeddingSqlStore implements EmbeddingStore {
     }
 
     private static StoredEmbedding normalize(StoredEmbedding embedding) {
+
         return new StoredEmbedding(
                 embedding.targetKind(),
                 embedding.targetId(),

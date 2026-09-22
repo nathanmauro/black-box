@@ -1,5 +1,11 @@
 package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 
+import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
+import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
+import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore.StoredEmbedding;
+import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
+import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
+import jakarta.annotation.PostConstruct;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -7,26 +13,14 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
-
 import javax.sql.DataSource;
-
-import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
-import dev.nathan.sbaagentic.memory.MemoryVectorProperties;
-import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore.StoredEmbedding;
-import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
-import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
-
-import jakarta.annotation.PostConstruct;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,10 +34,8 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(SqliteVecVectorStore.class);
     private static final int OVERFETCH_MULTIPLIER = 4;
     private static final int MIN_FILTERED_FETCH = 32;
-    private static final Comparator<ScoredKey> BEST_FIRST = Comparator
-            .comparingDouble(ScoredKey::score)
-            .reversed()
-            .thenComparing(ScoredKey::key);
+    private static final Comparator<ScoredKey> BEST_FIRST =
+            Comparator.comparingDouble(ScoredKey::score).reversed().thenComparing(ScoredKey::key);
 
     private final JdbcTemplate jdbcTemplate;
     private final DataSource dataSource;
@@ -70,16 +62,17 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
         Optional<Path> extensionPath = SqliteVecSupport.configuredExistingPath(vectorProperties);
         if (extensionPath.isEmpty()) {
             available.set(false);
+
             return;
         }
         if (createTable(false)) {
             available.set(true);
+
             return;
         }
         if (SqliteVecSupport.load(dataSource, extensionPath.get()) && createTable(true)) {
             available.set(true);
-        }
-        else {
+        } else {
             available.set(false);
         }
     }
@@ -90,13 +83,14 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
                     CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec
                     USING vec0(key TEXT PRIMARY KEY, embedding float[%d])
                     """.formatted(embeddingProperties.getDimensions()));
+
             return true;
-        }
-        catch (DataAccessException ex) {
+        } catch (DataAccessException ex) {
             if (logFailure) {
-                SqliteVecSupport.logUnavailableOnce("sqlite-vec memory_vec table could not be created; "
-                        + "using brute-force memory vectors", ex);
+                SqliteVecSupport.logUnavailableOnce(
+                        "sqlite-vec memory_vec table could not be created; " + "using brute-force memory vectors", ex);
             }
+
             return false;
         }
     }
@@ -106,14 +100,17 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(keyFilter, "keyFilter");
         if (k <= 0) {
+
             return List.of();
         }
         if (!available.get()) {
+
             return fallback.knn(query, k, keyFilter);
         }
         try {
             int vectorCount = vectorCount();
             if (vectorCount == 0) {
+
                 return List.of();
             }
             int fetchLimit = initialFetchLimit(k, vectorCount);
@@ -125,14 +122,15 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
                         .limit(k)
                         .toList();
                 if (filtered.size() == k || matches.size() < fetchLimit || fetchLimit >= vectorCount) {
+
                     return filtered;
                 }
                 fetchLimit = growFetchLimit(fetchLimit, vectorCount);
             }
-        }
-        catch (DataAccessException ex) {
+        } catch (DataAccessException ex) {
             available.set(false);
             LOGGER.info("sqlite-vec query failed; using brute-force memory vectors", ex);
+
             return fallback.knn(query, k, keyFilter);
         }
     }
@@ -141,11 +139,10 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
     public Map<String, EmbeddingVector> fetchVectors(Collection<String> keys, String model, int dimensions) {
         Objects.requireNonNull(keys, "keys");
         Objects.requireNonNull(model, "model");
-        List<String> distinctKeys = keys.stream()
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
+        List<String> distinctKeys =
+                keys.stream().filter(Objects::nonNull).distinct().toList();
         if (distinctKeys.isEmpty()) {
+
             return Map.of();
         }
 
@@ -154,7 +151,8 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
         args.add(model);
         args.add(dimensions);
         args.addAll(distinctKeys);
-        List<Map.Entry<String, EmbeddingVector>> rows = jdbcTemplate.query("""
+        List<Map.Entry<String, EmbeddingVector>> rows = jdbcTemplate.query(
+                """
                 SELECT target_kind, target_id, model, vector
                   FROM memory_embeddings
                  WHERE model = ?
@@ -168,22 +166,28 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
                 args.toArray());
         Map<String, EmbeddingVector> vectors = new LinkedHashMap<>();
         rows.forEach(row -> vectors.put(row.getKey(), row.getValue()));
+
         return vectors;
     }
 
     private int vectorCount() {
         Long count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM memory_vec", Long.class);
         if (count == null || count <= 0) {
+
             return 0;
         }
         if (count > Integer.MAX_VALUE) {
+
             return Integer.MAX_VALUE;
         }
+
         return count.intValue();
     }
 
     private List<ScoredKey> queryNearest(EmbeddingVector query, int fetchLimit) {
-        return jdbcTemplate.query("""
+
+        return jdbcTemplate.query(
+                """
                 SELECT key, distance
                   FROM memory_vec
                  WHERE embedding MATCH ?
@@ -197,31 +201,35 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
 
     private static double cosineFromL2Distance(double distance) {
         double cosine = 1.0 - (distance * distance) / 2.0;
+
         return Math.max(-1.0, Math.min(1.0, cosine));
     }
 
     private static int initialFetchLimit(int k, int vectorCount) {
         long requested = Math.max((long) k, (long) k * OVERFETCH_MULTIPLIER);
         requested = Math.max(requested, MIN_FILTERED_FETCH);
+
         return (int) Math.min(vectorCount, requested);
     }
 
     private static int growFetchLimit(int fetchLimit, int vectorCount) {
         long next = Math.max((long) fetchLimit + 1L, (long) fetchLimit * 2L);
+
         return (int) Math.min(vectorCount, next);
     }
 
     void upsert(StoredEmbedding embedding) {
         if (!available.get()) {
+
             return;
         }
         try {
-            jdbcTemplate.update("""
+            jdbcTemplate.update(
+                    """
                     INSERT OR REPLACE INTO memory_vec(key, embedding)
                     VALUES (?, ?)
                     """, MemoryVectorKeys.key(embedding), embedding.vector().toBlob());
-        }
-        catch (DataAccessException ex) {
+        } catch (DataAccessException ex) {
             available.set(false);
             LOGGER.info("sqlite-vec upsert failed; using brute-force memory vectors", ex);
         }
@@ -229,18 +237,19 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
 
     void deleteFor(String targetKind, String targetId) {
         if (!available.get()) {
+
             return;
         }
         try {
             jdbcTemplate.update("DELETE FROM memory_vec WHERE key = ?", MemoryVectorKeys.key(targetKind, targetId));
-        }
-        catch (DataAccessException ex) {
+        } catch (DataAccessException ex) {
             available.set(false);
             LOGGER.info("sqlite-vec delete failed; using brute-force memory vectors", ex);
         }
     }
 
     boolean available() {
+
         return available.get();
     }
 }

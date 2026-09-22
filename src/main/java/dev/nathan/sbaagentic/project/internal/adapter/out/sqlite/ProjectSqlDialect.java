@@ -2,9 +2,11 @@ package dev.nathan.sbaagentic.project.internal.adapter.out.sqlite;
 
 /** SQL differences only; canonical timestamp text retains nanosecond precision on both engines. */
 enum ProjectSqlDialect {
-    SQLITE, POSTGRES;
+    SQLITE,
+    POSTGRES;
 
     static ProjectSqlDialect from(String backend) {
+
         return switch (backend) {
             case "sqlite" -> SQLITE;
             case "postgres" -> POSTGRES;
@@ -14,6 +16,7 @@ enum ProjectSqlDialect {
 
     String sortableInstant(String column) {
         String position = this == POSTGRES ? "strpos" : "instr";
+
         return """
                 CASE
                     WHEN %2$s(%1$s, '.') = 0
@@ -27,10 +30,15 @@ enum ProjectSqlDialect {
     }
 
     String predicate(String sqlitePredicate) {
-        if (this == SQLITE) return sqlitePredicate;
+        if (this == SQLITE)
+
+            return sqlitePredicate;
+
         // These are internal constant CASE expressions, never user SQL. PostgreSQL has real
         // booleans, whereas SQLite represents the predicate arms as 1/0.
-        return sqlitePredicate.replace("THEN 1", "THEN TRUE").replace("ELSE 0", "ELSE FALSE")
+        return sqlitePredicate
+                .replace("THEN 1", "THEN TRUE")
+                .replace("ELSE 0", "ELSE FALSE")
                 .replace("WHEN e.metadata_json LIKE", "WHEN lower(e.metadata_json) LIKE");
     }
 }

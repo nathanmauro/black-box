@@ -1,10 +1,9 @@
 package dev.nathan.sbaagentic.workflow.internal.application.port;
 
-import java.util.List;
-import java.util.Map;
-
 import dev.nathan.sbaagentic.workflow.LinkType;
 import dev.nathan.sbaagentic.workflow.SessionLink;
+import java.util.List;
+import java.util.Map;
 
 public interface SessionLinkStore {
 

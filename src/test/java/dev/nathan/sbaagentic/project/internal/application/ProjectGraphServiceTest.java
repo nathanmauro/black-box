@@ -1,11 +1,6 @@
 package dev.nathan.sbaagentic.project.internal.application;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.project.ProjectAliasSnapshot;
 import dev.nathan.sbaagentic.project.ProjectKey;
@@ -16,10 +11,13 @@ import dev.nathan.sbaagentic.project.TrajectoryCapture;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.TaskRow;
-
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 class ProjectGraphServiceTest {
 
@@ -30,23 +28,17 @@ class ProjectGraphServiceTest {
         StubGraphStore store = new StubGraphStore();
         Instant base = Instant.parse("2026-08-05T12:00:00Z");
         store.captures = IntStream.range(0, 130)
-                .mapToObj(index -> event(
-                        "event-" + index,
-                        "Observation",
-                        Map.of("kind", "observation"),
-                        base.plusSeconds(index)))
+                .mapToObj(index ->
+                        event("event-" + index, "Observation", Map.of("kind", "observation"), base.plusSeconds(index)))
                 .toList();
         store.tasks = IntStream.range(0, 130)
-                .mapToObj(index -> new TaskRow(
-                        "task-" + index,
-                        "Task " + index,
-                        "open",
-                        index,
-                        base.plusSeconds(index)))
+                .mapToObj(
+                        index -> new TaskRow("task-" + index, "Task " + index, "open", index, base.plusSeconds(index)))
                 .toList();
         store.totalCaptures = 130;
 
-        ProjectTrajectoryResponse response = service(store).graph(ProjectKey.of(CANONICAL).encoded());
+        ProjectTrajectoryResponse response =
+                service(store).graph(ProjectKey.of(CANONICAL).encoded());
 
         assertThat(store.captureLimit).isEqualTo(120);
         assertThat(store.taskLimit).isEqualTo(120);
@@ -61,40 +53,60 @@ class ProjectGraphServiceTest {
     void graphMapsStructuredCaptureMetadataIntoWireKinds() {
         StubGraphStore store = new StubGraphStore();
         store.captures = List.of(
-                event("decision", "AgentThought", Map.of(
-                        "kind", "decision",
-                        "decision", "Keep the backend thin",
-                        "rationale", "The frontend owns graph semantics.",
-                        "alternatives", List.of("Assemble graph server-side"),
-                        "confidence", 0.91,
-                        "openLoops", List.of("Add frontend view")),
+                event(
+                        "decision",
+                        "AgentThought",
+                        Map.of(
+                                "kind",
+                                "decision",
+                                "decision",
+                                "Keep the backend thin",
+                                "rationale",
+                                "The frontend owns graph semantics.",
+                                "alternatives",
+                                List.of("Assemble graph server-side"),
+                                "confidence",
+                                0.91,
+                                "openLoops",
+                                List.of("Add frontend view")),
                         Instant.parse("2026-08-05T12:00:00Z")),
-                event("handoff", "AgentThought", Map.of(
-                        "kind", "handoff",
-                        "contextSummary", "Feed is ready for the UI.",
-                        "toAgent", "frontend",
-                        "openLoops", List.of("Render futures"),
-                        "nextAction", "Build TrajectoryView"),
+                event(
+                        "handoff",
+                        "AgentThought",
+                        Map.of(
+                                "kind", "handoff",
+                                "contextSummary", "Feed is ready for the UI.",
+                                "toAgent", "frontend",
+                                "openLoops", List.of("Render futures"),
+                                "nextAction", "Build TrajectoryView"),
                         Instant.parse("2026-08-05T12:01:00Z")),
-                event("observation", "AgentThought", Map.of("kind", "observation"),
+                event(
+                        "observation",
+                        "AgentThought",
+                        Map.of("kind", "observation"),
                         Instant.parse("2026-08-05T12:02:00Z")),
-                event("projection", "AgentThought", Map.of(
-                        "kind", "projection",
-                        "paths", List.of(Map.of(
-                                "title", "Ship graph tab",
-                                "description", "Wire the Project page tab switcher.",
-                                "confidence", 0.64))),
+                event(
+                        "projection",
+                        "AgentThought",
+                        Map.of(
+                                "kind",
+                                "projection",
+                                "paths",
+                                List.of(Map.of(
+                                        "title", "Ship graph tab",
+                                        "description", "Wire the Project page tab switcher.",
+                                        "confidence", 0.64))),
                         Instant.parse("2026-08-05T12:03:00Z")),
-                event("event-type-handoff", "Handoff", Map.of(
-                        "contextSummary", "Event type alone marks this as a handoff."),
+                event(
+                        "event-type-handoff",
+                        "Handoff",
+                        Map.of("contextSummary", "Event type alone marks this as a handoff."),
                         Instant.parse("2026-08-05T12:04:00Z")),
-                event("unknown-event", "AssistantMessage", Map.of(),
-                        Instant.parse("2026-08-05T12:05:00Z")));
+                event("unknown-event", "AssistantMessage", Map.of(), Instant.parse("2026-08-05T12:05:00Z")));
 
-        Map<String, TrajectoryCapture> captures = service(store).graph(ProjectKey.of(CANONICAL).encoded())
-                .captures()
-                .stream()
-                .collect(Collectors.toMap(TrajectoryCapture::id, capture -> capture));
+        Map<String, TrajectoryCapture> captures =
+                service(store).graph(ProjectKey.of(CANONICAL).encoded()).captures().stream()
+                        .collect(Collectors.toMap(TrajectoryCapture::id, capture -> capture));
 
         TrajectoryCapture decision = captures.get("decision");
         assertThat(decision.kind()).isEqualTo("decision");
@@ -132,8 +144,7 @@ class ProjectGraphServiceTest {
     void graphKeepsMeldsInNewestFirstCaptureOrder() {
         StubGraphStore store = new StubGraphStore();
         store.captures = List.of(
-                event("older", "Decision", Map.of("kind", "decision"),
-                        Instant.parse("2026-08-05T12:00:00Z")),
+                event("older", "Decision", Map.of("kind", "decision"), Instant.parse("2026-08-05T12:00:00Z")),
                 new CaptureRow(
                         "meld-1",
                         "saved_meld",
@@ -146,13 +157,12 @@ class ProjectGraphServiceTest {
                         "The durable synthesis body.",
                         Map.of(),
                         Instant.parse("2026-08-05T12:01:00Z")),
-                event("newer", "Handoff", Map.of("kind", "handoff"),
-                        Instant.parse("2026-08-05T12:02:00Z")));
+                event("newer", "Handoff", Map.of("kind", "handoff"), Instant.parse("2026-08-05T12:02:00Z")));
 
-        ProjectTrajectoryResponse response = service(store).graph(ProjectKey.of(CANONICAL).encoded());
+        ProjectTrajectoryResponse response =
+                service(store).graph(ProjectKey.of(CANONICAL).encoded());
 
-        assertThat(response.captures()).extracting(TrajectoryCapture::id)
-                .containsExactly("newer", "meld-1", "older");
+        assertThat(response.captures()).extracting(TrajectoryCapture::id).containsExactly("newer", "meld-1", "older");
         assertThat(response.captures().get(1).kind()).isEqualTo("meld");
         assertThat(response.captures().get(1).headline()).isEqualTo("Saved synthesis");
     }
@@ -161,38 +171,48 @@ class ProjectGraphServiceTest {
     void graphSendsAllProjectionCapturesNewestFirstForClientLatestSetSelection() {
         StubGraphStore store = new StubGraphStore();
         store.captures = List.of(
-                event("older-projection", "Projection", Map.of(
-                        "kind", "projection",
-                        "paths", List.of(Map.of(
-                                "title", "Older projection",
-                                "description", "The client should supersede this set.",
-                                "confidence", 0.31))),
+                event(
+                        "older-projection",
+                        "Projection",
+                        Map.of(
+                                "kind",
+                                "projection",
+                                "paths",
+                                List.of(Map.of(
+                                        "title", "Older projection",
+                                        "description", "The client should supersede this set.",
+                                        "confidence", 0.31))),
                         Instant.parse("2026-08-05T12:00:00Z")),
-                event("newer-projection", "Projection", Map.of(
-                        "kind", "projection",
-                        "paths", List.of(Map.of(
-                                "title", "Newer projection",
-                                "description", "The client treats this as the latest set.",
-                                "confidence", 0.82))),
+                event(
+                        "newer-projection",
+                        "Projection",
+                        Map.of(
+                                "kind",
+                                "projection",
+                                "paths",
+                                List.of(Map.of(
+                                        "title", "Newer projection",
+                                        "description", "The client treats this as the latest set.",
+                                        "confidence", 0.82))),
                         Instant.parse("2026-08-05T12:01:00Z")));
 
-        ProjectTrajectoryResponse response = service(store).graph(ProjectKey.of(CANONICAL).encoded());
+        ProjectTrajectoryResponse response =
+                service(store).graph(ProjectKey.of(CANONICAL).encoded());
 
-        assertThat(response.captures()).extracting(TrajectoryCapture::id)
+        assertThat(response.captures())
+                .extracting(TrajectoryCapture::id)
                 .containsExactly("newer-projection", "older-projection");
-        assertThat(response.captures()).extracting(TrajectoryCapture::kind)
-                .containsExactly("projection", "projection");
-        assertThat(response.captures().getFirst().paths().getFirst().title())
-                .isEqualTo("Newer projection");
-        assertThat(response.captures().getLast().paths().getFirst().title())
-                .isEqualTo("Older projection");
+        assertThat(response.captures()).extracting(TrajectoryCapture::kind).containsExactly("projection", "projection");
+        assertThat(response.captures().getFirst().paths().getFirst().title()).isEqualTo("Newer projection");
+        assertThat(response.captures().getLast().paths().getFirst().title()).isEqualTo("Older projection");
     }
 
     @Test
     void graphReturnsAnEmptyFeedForProjectsWithoutFacts() {
         StubGraphStore store = new StubGraphStore();
 
-        ProjectTrajectoryResponse response = service(store).graph(ProjectKey.of(CANONICAL).encoded());
+        ProjectTrajectoryResponse response =
+                service(store).graph(ProjectKey.of(CANONICAL).encoded());
 
         assertThat(response.projectKey()).isEqualTo(ProjectKey.of(CANONICAL).encoded());
         assertThat(response.canonicalKey()).isEqualTo(CANONICAL);
@@ -204,14 +224,12 @@ class ProjectGraphServiceTest {
     }
 
     private static ProjectGraphService service(StubGraphStore store) {
+
         return new ProjectGraphService(store, new AliasStub());
     }
 
-    private static CaptureRow event(
-            String id,
-            String eventType,
-            Map<String, Object> metadata,
-            Instant observedAt) {
+    private static CaptureRow event(String id, String eventType, Map<String, Object> metadata, Instant observedAt) {
+
         return new CaptureRow(
                 id,
                 "raw_event",
@@ -237,6 +255,7 @@ class ProjectGraphServiceTest {
         public List<CaptureRow> recentCaptures(String canonicalKey, int limit) {
             assertThat(canonicalKey).isEqualTo(CANONICAL);
             captureLimit = limit;
+
             return captures;
         }
 
@@ -244,12 +263,14 @@ class ProjectGraphServiceTest {
         public List<TaskRow> openTasks(String canonicalKey, int limit) {
             assertThat(canonicalKey).isEqualTo(CANONICAL);
             taskLimit = limit;
+
             return tasks;
         }
 
         @Override
         public long totalCaptures(String canonicalKey) {
             assertThat(canonicalKey).isEqualTo(CANONICAL);
+
             return totalCaptures;
         }
     }
@@ -259,16 +280,19 @@ class ProjectGraphServiceTest {
         @Override
         public String resolve(String scope) {
             assertThat(scope).isEqualTo(CANONICAL);
+
             return CANONICAL;
         }
 
         @Override
         public List<String> scopesFor(String scope) {
+
             return List.of(scope);
         }
 
         @Override
         public List<ProjectScope> projectScopesFor(String scope) {
+
             return List.of();
         }
 

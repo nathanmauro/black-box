@@ -1,7 +1,7 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web.security;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -10,8 +10,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
-import org.springframework.boot.web.server.Cookie;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.web.server.Cookie;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.boot.web.servlet.server.ConfigurableServletWebServerFactory;
 import org.springframework.boot.web.servlet.server.Session;
@@ -44,16 +44,22 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 public class WebSecurityConfiguration {
     @Bean
     AuthSettings authSettings(Environment environment) {
+
         return new AuthSettings(environment);
     }
 
     @Bean
     UserDetailsService authenticationUsers(AuthSettings settings) {
-        if (!settings.enabled()) return new InMemoryUserDetailsManager();
+        if (!settings.enabled())
+
+            return new InMemoryUserDetailsManager();
+
         var encoder = Pbkdf2PasswordEncoder.defaultsForSpringSecurity_v5_8();
+
         return new InMemoryUserDetailsManager(User.withUsername(settings.username())
                 .password("{pbkdf2@SpringSecurity_v5_8}" + encoder.encode(settings.password()))
-                .roles("USER").build());
+                .roles("USER")
+                .build());
     }
 
     @Bean
@@ -69,23 +75,29 @@ public class WebSecurityConfiguration {
                 .csrf(csrf -> csrf.disable())
                 .logout(logout -> logout.disable())
                 .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
-                .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) -> unauthorized(response)))
-                .oauth2ResourceServer(resource -> resource
-                        .withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
-                            @Override
-                            public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
-                                filter.setSecurityContextRepository(requestContexts);
-                                return filter;
-                            }
-                        })
+                .exceptionHandling(errors ->
+                        errors.authenticationEntryPoint((request, response, exception) -> unauthorized(response)))
+                .oauth2ResourceServer(resource -> resource.withObjectPostProcessor(
+                                new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
+                                    @Override
+                                    public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+                                        filter.setSecurityContextRepository(requestContexts);
+
+                                        return filter;
+                                    }
+                                })
                         .authenticationEntryPoint((request, response, exception) -> unauthorized(response))
                         .opaqueToken(opaque -> opaque.introspector(token -> {
                             if (!MessageDigest.isEqual(expected, digest(token))) {
                                 throw new BadOpaqueTokenException("Invalid API token");
                             }
-                            return new DefaultOAuth2AuthenticatedPrincipal(settings.username(),
-                                    Map.of("sub", settings.username()), AuthorityUtils.createAuthorityList("ROLE_USER"));
+
+                            return new DefaultOAuth2AuthenticatedPrincipal(
+                                    settings.username(),
+                                    Map.of("sub", settings.username()),
+                                    AuthorityUtils.createAuthorityList("ROLE_USER"));
                         })));
+
         return http.build();
     }
 
@@ -93,50 +105,70 @@ public class WebSecurityConfiguration {
     @Order(2)
     SecurityFilterChain browserSecurity(HttpSecurity http, AuthSettings settings) throws Exception {
         var csrfRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
-        csrfRepository.setCookieCustomizer(cookie -> cookie.path("/").sameSite("Lax").secure(settings.secureCookies()));
+        csrfRepository.setCookieCustomizer(
+                cookie -> cookie.path("/").sameSite("Lax").secure(settings.secureCookies()));
         http.securityMatcher(request -> settings.enabled())
                 .authorizeHttpRequests(authorize -> authorize
                         // The initial stream request authenticates normally; completion must also
                         // run after logout. EventBroadcaster rechecks the session before each send.
                         .requestMatchers(request -> request.getDispatcherType() == DispatcherType.ASYNC
-                                && request.getServletPath().equals("/api/stream")).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness").permitAll()
-                        .anyRequest().authenticated())
-                .csrf(csrf -> csrf.csrfTokenRepository(csrfRepository).csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
+                                && request.getServletPath().equals("/api/stream"))
+                        .permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/actuator/health",
+                                "/actuator/health/liveness",
+                                "/actuator/health/readiness")
+                        .permitAll()
+                        .anyRequest()
+                        .authenticated())
+                .csrf(csrf -> csrf.csrfTokenRepository(csrfRepository)
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler()))
                 .requestCache(cache -> cache.disable())
                 .formLogin(form -> form.permitAll()
                         .successHandler((request, response, authentication) -> redirect(response, "/"))
                         .failureHandler((request, response, exception) -> redirect(response, "/login?error")))
-                .logout(logout -> logout
-                        .deleteCookies("JSESSIONID")
-                        .logoutSuccessHandler((request, response, authentication) -> redirect(response, "/login?logout")))
-                .exceptionHandling(errors -> errors
-                        .defaultAuthenticationEntryPointFor((request, response, exception) -> {
-                            if (isApi(request)) unauthorized(response);
-                            else redirect(response, "/login");
-                        }, request -> true)
+                .logout(logout -> logout.deleteCookies("JSESSIONID")
+                        .logoutSuccessHandler(
+                                (request, response, authentication) -> redirect(response, "/login?logout")))
+                .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
+                                (request, response, exception) -> {
+                                    if (isApi(request)) unauthorized(response);
+                                    else redirect(response, "/login");
+                                },
+                                request -> true)
                         .accessDeniedHandler((request, response, exception) -> {
-                            var authentication = SecurityContextHolder.getContext().getAuthentication();
-                            if (isApi(request) && (authentication == null || authentication instanceof AnonymousAuthenticationToken)) {
+                            var authentication =
+                                    SecurityContextHolder.getContext().getAuthentication();
+                            if (isApi(request)
+                                    && (authentication == null
+                                            || authentication instanceof AnonymousAuthenticationToken)) {
                                 unauthorized(response);
                             } else {
                                 jsonError(response, 403, "Forbidden");
                             }
                         }));
+
         return http.build();
     }
 
     @Bean
     @Order(3)
     SecurityFilterChain localSecurity(HttpSecurity http) throws Exception {
+
         return http.csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll()).build();
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
+                .build();
     }
 
     @Bean
     WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> authenticatedSessionCookies(AuthSettings settings) {
+
         return factory -> {
-            if (!settings.enabled()) return;
+            if (!settings.enabled())
+
+                return;
+
             var session = new Session();
             session.setTimeout(Duration.ofMinutes(30));
             session.setTrackingModes(Set.of(Session.SessionTrackingMode.COOKIE));
@@ -150,8 +182,13 @@ public class WebSecurityConfiguration {
 
     private static boolean isApi(HttpServletRequest request) {
         String path = request.getServletPath();
-        return path.equals("/api") || path.startsWith("/api/") || path.equals("/mcp")
-                || path.startsWith("/mcp/") || path.equals("/actuator") || path.startsWith("/actuator/");
+
+        return path.equals("/api")
+                || path.startsWith("/api/")
+                || path.equals("/mcp")
+                || path.startsWith("/mcp/")
+                || path.equals("/actuator")
+                || path.startsWith("/actuator/");
     }
 
     private static void redirect(HttpServletResponse response, String path) {
@@ -172,6 +209,7 @@ public class WebSecurityConfiguration {
 
     private static byte[] digest(String value) {
         try {
+
             return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("SHA-256 unavailable", impossible);

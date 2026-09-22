@@ -10,5 +10,4 @@ public record AskCitation(
         String clientSessionId,
         String timestamp,
         String snippet,
-        double score) {
-}
+        double score) {}
