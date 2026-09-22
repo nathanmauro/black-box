@@ -34,7 +34,7 @@ class PackageArchitectureTest {
      */
     private static final Set<String> FULLY_MIGRATED_MODULES =
             Set.of("ask", "memory", "platform", "project", "query", "recording", "runner", "summary",
-                    "workflow");
+                    "workflow", "judgment");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())

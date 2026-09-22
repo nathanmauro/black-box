@@ -40,12 +40,13 @@ flowchart LR
     subgraph Core["Black Box modules"]
         WORKFLOW["workflow<br/>lifecycle and Handoff completion"]
         MEMORY["memory<br/>structured recall and search"]
+        JUDGMENT["judgment<br/>optional cortex judgments"]
         RECORDING["recording<br/>canonical event writes"]
         PROJECT["project<br/>catalog and secure code navigation"]
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
-    DB[("Canonical relational store (SQLite default)<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>memory_embeddings<br/>session_links · project_aliases")]
+    DB[("Canonical relational store (SQLite default)<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>event_judgments<br/>memory_embeddings<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
@@ -60,12 +61,15 @@ flowchart LR
     REST --> WORKFLOW & MEMORY & RECORDING & PROJECT
     WORKFLOW -->|"complete: capture normal Handoff"| RECORDING
     MEMORY --> RECORDING
+    JUDGMENT --> RECORDING
     PROJECT --> DB
     PROJECT -. "validated CodeReference" .-> EDITOR
     RECORDING --> DB
+    JUDGMENT --> DB
     WORKFLOW --> DB
     WORKFLOW -. "after durable mutation" .-> BROADCAST
     RECORDING -. "event recorded; see transaction note" .-> BROADCAST
+    JUDGMENT -. "after beat judgment" .-> BROADCAST
     BROADCAST --> STREAM
     STREAM -. "refresh or try claim" .-> AGENTS & RUNNER & UI
     MEMORY -. "new event mirror when enabled" .-> ES
@@ -86,7 +90,7 @@ clients recover by fetching `GET /api/tasks`.
 
 ## Java module graph
 
-The application is one deployable Spring Boot jar with eight Spring Modulith modules. Each feature
+The application is one deployable Spring Boot jar with nine Spring Modulith modules. Each feature
 owns its REST and MCP adapters, application services, domain rules, and outbound adapters beneath
 its module root. `platform` is the composition edge for bootstrap, CLI dispatch, generic web errors,
 SPA routing, SSE transport, configuration registration, and aggregation of feature-owned MCP tool
@@ -96,12 +100,15 @@ does not import server implementation types.
 ```mermaid
 flowchart LR
     PLATFORM["platform"] --> ASK["ask"]
+    PLATFORM --> JUDGMENT["judgment"]
     PLATFORM --> MEMORY["memory"]
     PLATFORM --> RECORDING["recording"]
     PLATFORM --> RUNNER["runner"]
     PLATFORM --> SUMMARY["summary"]
     PLATFORM --> WORKFLOW["workflow"]
     ASK --> MEMORY
+    JUDGMENT --> RECORDING
+    JUDGMENT --> WORKFLOW
     MEMORY --> PROJECT["project"]
     MEMORY --> RECORDING
     PROJECT --> RECORDING
@@ -120,6 +127,10 @@ SSE is a hint and Elasticsearch is rebuildable; neither is authoritative evidenc
 See `EventIngestService.ingest`, `TaskService.completeInTransaction`, and `EventBroadcaster`.
 The stable package rules and contributor guidance live in
 [`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
+
+The optional `judgment` module owns the cortex stage described in [`docs/cortex.md`](cortex.md):
+folding events into beats, asking the shared `orbit-jev-v1` question set when enabled, persisting
+typed answers, and publishing `judgment.appended` as an advisory stream update.
 
 The `project` module also owns local file navigation. `GET /api/projects/code-scopes` projects only
 session-backed catalog scopes that exist beneath a filesystem-verified Git root. The UI derives an
@@ -212,10 +223,14 @@ available to existing recall without adding a second continuity system.
 
 `GET /api/stream` carries the existing `event.appended` and `session.updated` frames plus
 `task.created`, `task.claimed`, `task.blocked`, `task.completed`, `task.reset`, `task.cancelled`, and
-`task.note`. Lifecycle task frames contain the current task plus a transition id, transition type,
-and timestamp; `task.note` contains `{task, annotation, observedAt}`. The annotation frame is
-additive and does not change any existing frame's payload shape. Task frames deliberately omit the
-frozen spec body.
+`task.note`. The cortex stage adds `judgment.appended` when `sba.judge.enabled=true`.
+`event.appended` also includes `role`, `textPreview`, and `parentSessionId`; `session.updated`
+includes `spawnedBy` and `linkTypes`. `GET /api/stream?since=<ISO-8601>` replays up to 2000
+`event.appended` frames oldest-first before following live, and `Last-Event-ID` resumes from the
+exclusive cursor `<observedAt>|<id>`. Lifecycle task frames contain the current task plus a
+transition id, transition type, and timestamp; `task.note` contains `{task, annotation, observedAt}`.
+These frames are additive and do not change existing consumers' required fields. Task frames
+deliberately omit the frozen spec body.
 
 The frontend task store loads authoritative task/spec snapshots over REST, applies newer lifecycle
 frames idempotently, ignores duplicate or older transitions, and performs a bounded refresh after a

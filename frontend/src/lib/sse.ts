@@ -8,6 +8,9 @@ export type EventAppended = {
   source: string;
   eventType: string;
   toolName?: string | null;
+  role?: string | null;
+  textPreview?: string | null;
+  parentSessionId?: string | null;
   cwd?: string | null;
   title?: string | null;
   observedAt: string;
@@ -20,6 +23,8 @@ export type SessionUpdated = {
   cwd?: string | null;
   eventCount?: number;
   lastSeenAt?: string | null;
+  spawnedBy?: string | null;
+  linkTypes?: string[];
 };
 
 export type LiveStore = {

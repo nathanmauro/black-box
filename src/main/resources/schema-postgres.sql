@@ -69,6 +69,23 @@ CREATE TABLE IF NOT EXISTS event_capture_receipts (
     FOREIGN KEY (event_id) REFERENCES agent_events(id) ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS event_judgments (
+    event_id TEXT PRIMARY KEY REFERENCES agent_events(id),
+    session_id TEXT NOT NULL,
+    beat_id TEXT NOT NULL,
+    judge TEXT NOT NULL,
+    model TEXT,
+    version TEXT NOT NULL,
+    answers_json TEXT NOT NULL,
+    judged_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_judgments_session_judged
+    ON event_judgments (session_id, judged_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_event_judgments_beat
+    ON event_judgments (beat_id);
+
 CREATE TABLE IF NOT EXISTS memory_embeddings (
     target_kind  TEXT NOT NULL,          -- 'event' | 'session_summary'
     target_id    TEXT NOT NULL,          -- agent_events.id | agent_sessions.id
