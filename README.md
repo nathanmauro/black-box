@@ -93,6 +93,10 @@ mvn spring-boot:run                        # run it directly
 
 Black Box speaks MCP over Streamable HTTP at `http://localhost:8766/mcp`.
 
+For ChatGPT Work, use the [restricted MCP gateway and Secure MCP Tunnel setup](docs/chatgpt-mcp.md).
+It exposes search, full-record retrieval, bounded project context, and idempotent explicit captures
+without exposing the broader coordination tools or automatically syncing conversations.
+
 ```bash
 codex mcp add sba-agentic --url http://localhost:8766/mcp
 claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
