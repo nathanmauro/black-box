@@ -19,4 +19,22 @@ final class LoadFailurePolicyTests: XCTestCase {
         // concern, not a reason to reload the whole shell.
         XCTAssertFalse(LoadFailurePolicy.isFailureResponse(statusCode: 500, isMainFrame: false))
     }
+
+    func testIgnoresACancelledNavigationError() {
+        // reloadNow() cancelling a load already in flight (a manual Reload, or the shell's own
+        // capped retry firing again) surfaces as NSURLErrorCancelled; that is the shell cancelling
+        // itself on purpose, not a real failure.
+        let cancelled = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        XCTAssertTrue(LoadFailurePolicy.isIgnorableError(cancelled))
+    }
+
+    func testDoesNotIgnoreOtherNSURLErrors() {
+        let timedOut = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        XCTAssertFalse(LoadFailurePolicy.isIgnorableError(timedOut))
+    }
+
+    func testDoesNotIgnoreAnErrorWithTheSameCodeInADifferentDomain() {
+        let lookalike = NSError(domain: "SomeOtherDomain", code: NSURLErrorCancelled)
+        XCTAssertFalse(LoadFailurePolicy.isIgnorableError(lookalike))
+    }
 }

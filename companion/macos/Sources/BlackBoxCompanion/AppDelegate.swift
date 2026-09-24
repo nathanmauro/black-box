@@ -211,14 +211,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // ever updates from a bridge `state` message the page never got to send) both looked fine while
     // being silently dead, recoverable only by quitting and relaunching.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        handleNavigationError()
+        handleNavigationError(error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        handleNavigationError()
+        handleNavigationError(error)
     }
 
-    private func handleNavigationError() {
+    private func handleNavigationError(_ error: Error) {
         if didRejectCurrentNavigationResponse {
             // Already handled explicitly by decidePolicyFor navigationResponse above; WebKit's own
             // failure callback for that same cancelled navigation (if it delivers one at all) must
@@ -226,6 +226,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             didRejectCurrentNavigationResponse = false
             return
         }
+        // reloadNow() cancelling a load already in flight (a manual Reload, or the retry timer
+        // firing again before a slow prior attempt settled) surfaces here as NSURLErrorCancelled —
+        // the shell cancelling itself on purpose, not a real failure. Flipping to disconnected and
+        // scheduling another retry for it would be wrong on both counts.
+        if LoadFailurePolicy.isIgnorableError(error) { return }
         handleLoadFailure()
     }
 

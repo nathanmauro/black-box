@@ -10,4 +10,14 @@ enum LoadFailurePolicy {
     static func isFailureResponse(statusCode: Int, isMainFrame: Bool) -> Bool {
         isMainFrame && !(200...299).contains(statusCode)
     }
+
+    /// True for a navigation error that is the shell cancelling its own in-flight load on purpose
+    /// (reloadNow() superseding a load already in progress — a manual Reload, or the capped retry
+    /// firing again before a slow prior attempt settled) rather than a real failure. WebKit reports
+    /// that as NSURLErrorCancelled; treating it as a failure would flip the menubar to disconnected
+    /// and schedule a redundant retry for a load the shell itself chose to abandon.
+    static func isIgnorableError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
 }
