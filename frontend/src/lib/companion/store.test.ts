@@ -234,6 +234,32 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("keeps a persisted project view after a failed first load instead of rewriting it to the river", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      await createRoot(async (dispose) => {
+        const storage = new MemoryStorage();
+        storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA", projectName: "a" } }));
+        const getProjects = vi.fn(async () => [projectA]).mockRejectedValueOnce(new Error("500"));
+        const { live } = fakeLive();
+        const store = createCompanionStore(live, deps({ storage, getProjects }));
+        await settled(store.loading, (loading) => !loading);
+        expect(store.error()).not.toBeNull();
+        // The failed first load left the model empty; the persisted view must survive untouched
+        // rather than being rewritten to the river because no project card matched.
+        expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
+
+        vi.advanceTimersByTime(TICK_MS);
+        await settled(store.error, (error) => error === null);
+        await settled(store.loading, (loading) => !loading);
+        expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
+        dispose();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("marks items seen once loaded into a persisted river view after relaunch", async () => {
     await createRoot(async (dispose) => {
       const storage = new MemoryStorage();

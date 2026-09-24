@@ -335,9 +335,13 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   // A persisted expanded view (relaunch, or a project that aged out mid-session before this ran)
   // can name a project no longer in the catalog, or (older persisted data) carry no name at all;
   // correct it once the first load resolves instead of opening on a blank/generic "Project" view.
+  // A failed first load (transient 500, auth redirect) must leave the persisted view alone rather
+  // than validating it against an empty model and permanently rewriting it to the river; wait for
+  // a load that actually succeeded, which the tick's error-triggered retry above will eventually
+  // produce.
   let didValidateInitialView = false;
   createEffect(() => {
-    if (didValidateInitialView || loading()) return;
+    if (didValidateInitialView || loading() || error() !== null) return;
     didValidateInitialView = true;
     const view = expanded();
     if (view.kind !== "project") return;
