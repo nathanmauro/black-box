@@ -138,16 +138,25 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     });
   }
 
+  // Spec 3.4: opened equals seen. Whatever landed in the currently open view — a live event merged
+  // in, or a batch loaded by refresh() into a view that was already open (e.g. a persisted expanded
+  // view restored on relaunch) — is marked seen once it is visible there.
+  function markVisibleSeen(ids: Iterable<string>): void {
+    if (mode() !== "expanded") return;
+    const view = expanded();
+    const current = model();
+    const visible =
+      view.kind === "river" ? new Set(current.river.map((item) => item.id)) : new Set(current.projects.find((project) => project.key === view.projectKey)?.items.map((item) => item.id) ?? []);
+    const toMark = [...ids].filter((id) => visible.has(id));
+    if (toMark.length) deps.seen.markAll(toMark);
+  }
+
   function addEvent(item: EventFeedItem): void {
     setEvents((map) => {
       map.set(item.id, item);
       return map;
     });
-    const view = expanded();
-    if (mode() !== "expanded") return;
-    const card = model().projects.find((project) => project.items.some((entry) => entry.id === item.id));
-    if (!card) return;
-    if (view.kind === "river" || view.projectKey === card.key) deps.seen.markAll([item.id]);
+    markVisibleSeen([item.id]);
   }
 
   let catalogFetchedAt = Number.NEGATIVE_INFINITY;
@@ -185,6 +194,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
         for (const item of feed.items) map.set(item.id, item);
         return map;
       });
+      markVisibleSeen(feed.items.map((item) => item.id));
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

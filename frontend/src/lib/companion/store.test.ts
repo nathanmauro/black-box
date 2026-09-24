@@ -138,6 +138,33 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("marks items seen once loaded into a persisted expanded project view after relaunch", async () => {
+    await createRoot(async (dispose) => {
+      const storage = new MemoryStorage();
+      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } }));
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps({ storage }));
+      await settled(store.loading, (loading) => !loading);
+      expect(store.mode()).toBe("expanded");
+      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA" });
+      expect(store.model().river).toHaveLength(1);
+      expect(store.model().unseenTotal).toBe(0);
+      dispose();
+    });
+  });
+
+  it("marks items seen once loaded into a persisted river view after relaunch", async () => {
+    await createRoot(async (dispose) => {
+      const storage = new MemoryStorage();
+      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "river" } }));
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps({ storage }));
+      await settled(store.loading, (loading) => !loading);
+      expect(store.model().unseenTotal).toBe(0);
+      dispose();
+    });
+  });
+
   it("refetches after reconnect", async () => {
     await createRoot(async (dispose) => {
       const { live, setStatus } = fakeLive();
