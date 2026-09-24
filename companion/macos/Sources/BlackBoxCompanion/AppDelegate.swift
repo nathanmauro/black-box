@@ -3,13 +3,19 @@ import WebKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     private let options: Options
+    private let sizeStore: PanelSizeStore
     private var statusItem: NSStatusItem!
     private var panel: CompanionPanel!
     private var webView: WKWebView!
     private var toggleItem: NSMenuItem!
+    private var currentMode = "mini"
+    // Set while a bridge mode message is driving the panel's frame, so the resize notification it
+    // triggers is not mistaken for — and does not overwrite — a manual resize.
+    private var isApplyingProgrammaticResize = false
 
-    init(options: Options) {
+    init(options: Options, sizeStore: PanelSizeStore = UserDefaultsPanelSizeStore()) {
         self.options = options
+        self.sizeStore = sizeStore
         super.init()
     }
 
@@ -25,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
         panel = CompanionPanel(contentSize: NSSize(width: 132, height: 36))
         panel.contentView = webView
+        NotificationCenter.default.addObserver(self, selector: #selector(panelDidResize), name: NSWindow.didResizeNotification, object: panel)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = StatusTitle.render(pulse: .connecting, unseen: 0)
@@ -65,11 +72,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         switch parsed {
         case let .state(pulse, unseen):
             statusItem.button?.title = StatusTitle.render(pulse: pulse, unseen: unseen)
-        case let .mode(_, width, height):
-            let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
-            let frame = PanelGeometry.frame(resizing: panel.frame, to: CGSize(width: width, height: height), within: screen)
-            panel.setFrame(frame, display: true, animate: true)
+        case let .mode(name, width, height):
+            applyMode(name: name, pageDefault: CGSize(width: width, height: height))
         }
+    }
+
+    // Prefers the user's remembered manual size for `name` over the page's own default, so a hand
+    // resize survives the next level change.
+    private func applyMode(name: String, pageDefault: CGSize) {
+        currentMode = name
+        let target = PanelSizeMemory.resolvedSize(mode: name, pageDefault: pageDefault, store: sizeStore)
+        let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        let frame = PanelGeometry.frame(resizing: panel.frame, to: target, within: screen)
+        isApplyingProgrammaticResize = true
+        panel.setFrame(frame, display: true, animate: true)
+        // setFrame(animate: true) resizes over a short animation; hold the guard past it so the
+        // notifications it fires are not recorded as a manual resize.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.isApplyingProgrammaticResize = false
+        }
+    }
+
+    @objc private func panelDidResize(_ notification: Notification) {
+        PanelSizeMemory.recordResize(panel.frame.size, forMode: currentMode, programmatic: isApplyingProgrammaticResize, store: sizeStore)
     }
 
     // target="_blank" links open in the default browser instead of inside the panel. Only
