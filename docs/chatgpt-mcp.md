@@ -70,9 +70,11 @@ For voice captures, an explicit destination wins. Otherwise, use a verified full
 for work genuinely owned by that repository; a passing topic mention does not establish ownership.
 For projectless voice context, omit `project` and declare `origin` as `codex_voice`, `chatgpt_voice`,
 or `chatgpt_work_voice`. Use `voice_unknown` only when voice intent is clear but its surface cannot
-be verified. All four use the **same** existing canonical voice project
-`/Users/nathan/Documents/Codex/2026-09-15/realtime-voice-chat`, with origin retained separately
-as caller-declared metadata. This avoids three competing project histories. The source label
+be verified. All four use the **same** canonical voice project, which the operator configures on
+the gateway with `./scripts/chatgpt-mcp configure-voice-project <path>` (stored as `voice_project`
+in the runtime `config.json`; e.g. `~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat`), with origin
+retained separately as caller-declared metadata. Without that setting a projectless voice capture
+fails closed. This avoids three competing project histories. The source label
 `chatgpt-work` identifies this gateway and does not authenticate ChatGPT Work as the caller.
 Omitted origin plus omitted project fails closed; old clients with an explicit project remain
 compatible. Include `original_cwd` when known and a real conversation/session ID in
@@ -89,9 +91,8 @@ paths. The alias can be removed with `DELETE /api/project-aliases?aliasKey=voice
 project and its dated aliases remain. A fresh installation must inspect its catalog for a `voice`
 collision before adding such an alias through `PUT /api/project-aliases`.
 
-On this Mac the Black Box launchd service sets
-`SBA_PROJECTS_VOICE_CANONICAL_SCOPE=/Users/nathan/Documents/Codex/2026-09-15/realtime-voice-chat`.
-The resolver accepts only exact dated `~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]`
+The Black Box launchd service sets `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` to that same canonical voice
+project. The resolver accepts only exact dated `~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]`
 and `~/Documents/Codex/YYYY-MM-DD-new-realtime-voice-chat` scopes. Historical matching scopes
 are discovered at startup and new ones on ingestion. To reverse automatic grouping, remove the
 environment setting from the Black Box launchd job and restart Black Box, then inspect
@@ -123,8 +124,15 @@ health/admin uses 8768. Configuration lives outside the repository in `config.js
 
 ```sh
 ./scripts/chatgpt-mcp install
+./scripts/chatgpt-mcp configure-voice-project ~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat
 ./scripts/chatgpt-mcp status
 ```
+
+`configure-voice-project` is optional: it stores the canonical voice project as `voice_project` in
+`config.json` so captures that declare a voice `origin` without a `project` have a destination.
+Use the same exact path as the Black Box server's `SBA_PROJECTS_VOICE_CANONICAL_SCOPE`, and re-run
+`update` (or `restart gateway`) after changing it. Without it, such captures fail closed; remove the
+key from `config.json` and restart to disable the fallback again.
 
 1. Open [Platform tunnel settings](https://platform.openai.com/settings/organization/tunnels).
    Create **Black Box Context**, associate the intended Platform organization **and the target

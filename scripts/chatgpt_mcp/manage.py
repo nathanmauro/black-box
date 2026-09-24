@@ -136,7 +136,7 @@ def probe(port, path):
 def status():
     config = load_config()
     out = {"local_mcp_url": "http://127.0.0.1:%d/mcp" % config["port"],
-           "tunnel_id": config.get("tunnel_id"), "authentication": "Secure MCP Tunnel workspace access; local Bearer from owner-only runtime file"}
+           "tunnel_id": config.get("tunnel_id"), "voice_project": config.get("voice_project"), "authentication": "Secure MCP Tunnel workspace access; local Bearer from owner-only runtime file"}
     for component, port in (("gateway", config["port"]), ("tunnel", config["tunnel_health_port"])):
         result = launchctl("print", target(component))
         pid = re.search(r"\bpid = (\d+)", result.stdout)
@@ -203,6 +203,16 @@ def install():
         install_plist("tunnel")
         start("tunnel")
     print("Installed local runtime. Run status; tunnel requires a real tunnel ID and runtime key.")
+
+
+def configure_voice_project(path):
+    value = path.strip()
+    if not os.path.isabs(value) or any(c in value for c in '"\r\n'):
+        raise RuntimeError("Use the absolute recorded path of the canonical voice project, without quotes")
+    config = load_config()
+    config["voice_project"] = value
+    save_config(config)
+    print("Voice project configured. Restart the gateway (restart gateway, or update) to apply it.")
 
 
 def configure_tunnel(tunnel_id):
@@ -286,7 +296,7 @@ def serve():
     import uvicorn
     from gateway import BlackBox, create_app
     config = load_config()
-    backend = BlackBox(config["upstream"], ROOT / "receipts.sqlite3")
+    backend = BlackBox(config["upstream"], ROOT / "receipts.sqlite3", voice_project=config.get("voice_project"))
     token = os.environ["BLACKBOX_GATEWAY_AUTH"].removeprefix("Bearer ")
     uvicorn.run(create_app(backend, token), host="127.0.0.1", port=config["port"],
                 access_log=False, log_level="critical", proxy_headers=False)
@@ -300,6 +310,7 @@ def main():
     for command in ("start", "stop", "restart"):
         sub.add_parser(command).add_argument("component", choices=["gateway", "tunnel", "all"], default="all", nargs="?")
     sub.add_parser("configure-tunnel").add_argument("tunnel_id")
+    sub.add_parser("configure-voice-project").add_argument("path")
     sub.add_parser("set-secret").add_argument("account", choices=["tunnel"])
     sub.add_parser("supervise").add_argument("component", choices=["gateway", "tunnel"])
     args = parser.parse_args()
@@ -307,6 +318,8 @@ def main():
         install()
     elif args.command == "configure-tunnel":
         configure_tunnel(args.tunnel_id)
+    elif args.command == "configure-voice-project":
+        configure_voice_project(args.path)
     elif args.command == "set-secret":
         value = getpass.getpass("Tunnel runtime API key (hidden; stored only in Keychain): ")
         if len(value) < 32 or any(c.isspace() for c in value):

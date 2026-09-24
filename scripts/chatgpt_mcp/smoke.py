@@ -23,7 +23,7 @@ VOICE_TEST_TEXT = "[INTEGRATION TEST] Unified voice-project routing with declare
 logging.disable(logging.CRITICAL)
 
 
-async def smoke(url, token, project, write_test=False, write_voice_test=False):
+async def smoke(url, token, project, write_test=False, write_voice_test=False, voice_project=None):
     headers = {"Authorization": "Bearer " + token}
     async with httpx.AsyncClient(headers=headers, timeout=40, trust_env=False) as http:
         async with streamable_http_client(url, http_client=http) as (read, write, _):
@@ -75,7 +75,7 @@ async def smoke(url, token, project, write_test=False, write_voice_test=False):
                     stored = await call("fetch_record", {"event_id": first["event_id"]})
                     assert stored["record"]["text"] == VOICE_TEST_TEXT
                     assert stored["record"]["metadata"]["declaredVoiceOrigin"] == "chatgpt_work_voice"
-                    assert stored["project"] == "/Users/nathan/Documents/Codex/2026-09-15/realtime-voice-chat"
+                    assert stored["project"] == voice_project  # The operator-configured canonical voice project.
                     report["voice_capture"] = {"event_id": first["event_id"], "retry_same_id": True,
                                                "first_was_replay": first["replayed"],
                                                "origin_is_caller_declared": True}
@@ -95,9 +95,13 @@ if __name__ == "__main__":
     parser.add_argument("--write-voice-test", action="store_true")
     args = parser.parse_args()
     config = load_config()
+    if args.write_voice_test and not config.get("voice_project"):
+        print("Voice write test needs a configured voice project: run configure-voice-project first", file=sys.stderr)
+        sys.exit(2)
     try:
         report = asyncio.run(smoke("http://127.0.0.1:%d/mcp" % config["port"],
-                                   gateway_token(), args.project, args.write_test, args.write_voice_test))
+                                   gateway_token(), args.project, args.write_test, args.write_voice_test,
+                                   config.get("voice_project")))
         print(json.dumps(report, indent=2))
         (ROOT / "last-smoke.json").write_text(json.dumps(report, indent=2) + "\n")
     except BaseException as error:

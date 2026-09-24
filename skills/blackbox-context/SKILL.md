@@ -36,8 +36,9 @@ full canonical repository path when the conversation concerns concrete work owne
 a passing mention is not ownership. If it is conversation-wide or projectless voice context,
 omit `project` and declare `origin`: `codex_voice`, `chatgpt_voice`, or `chatgpt_work_voice` when
 the surface is known. Use `voice_unknown` only when it is known to be voice but the surface cannot
-be verified. The gateway routes these to the existing canonical Black Box voice project
-`/Users/nathan/Documents/Codex/2026-09-15/realtime-voice-chat` while retaining origin metadata.
+be verified. The gateway routes these to its operator-configured canonical Black Box voice project
+(`configure-voice-project`, e.g. `~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat`) while retaining
+origin metadata; if none is configured the capture fails closed and you must supply a project.
 Do not infer the surface from the gateway's fixed `chatgpt-work` source label, which identifies the
 integration. If neither project nor voice intent is known, ask for the destination. Supply the
 real conversation/session ID, original working directory through `original_cwd` when known, and

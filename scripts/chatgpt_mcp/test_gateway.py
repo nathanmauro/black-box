@@ -13,7 +13,8 @@ from mcp.client.streamable_http import streamable_http_client
 import pytest
 import uvicorn
 
-from gateway import BlackBox, GatewayError, VOICE_PROJECT, canonical, create_app
+from gateway import BlackBox, GatewayError, canonical, create_app
+import manage
 from manage import tunnel_command
 
 
@@ -71,7 +72,9 @@ def upstream(tmp_path):
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    backend = BlackBox("http://127.0.0.1:%d" % server.server_port, tmp_path / "receipts.db")
+    voice_project = str(tmp_path / "Documents/Codex/2026-01-01/realtime-voice-chat")  # Example, never a real path.
+    backend = BlackBox("http://127.0.0.1:%d" % server.server_port, tmp_path / "receipts.db",
+                       voice_project=voice_project)
     yield backend, items, requests
     backend.http.close()
     server.shutdown()
@@ -137,7 +140,7 @@ def test_known_voice_origin_uses_one_project_with_separate_provenance(upstream, 
     assert backend.append(*args, origin=origin, original_cwd="/original/voice/location") == {
         **first, "replayed": True}
     saved = items[0]
-    assert saved["cwd"] == VOICE_PROJECT
+    assert saved["cwd"] == backend.voice_project
     assert saved["source"] == "chatgpt-work"  # Gateway provenance, not the declared voice surface.
     assert saved["metadata"]["declaredVoiceOrigin"] == origin
     assert saved["metadata"]["originalCwd"] == "/original/voice/location"
@@ -157,6 +160,39 @@ def test_explicit_project_wins_and_unknown_origin_never_guesses(upstream):
         backend.append("unknown-origin-key", "conversation-fixture", None, "[TEST] unknown origin")
     with pytest.raises(GatewayError, match="Unknown voice origin"):
         backend.append("invented-origin-key", "conversation-fixture", None, "[TEST] unknown", origin="guess")
+
+
+def test_voice_capture_without_configured_voice_project_fails_closed(upstream, tmp_path):
+    backend, items, requests = upstream
+    unconfigured = BlackBox(str(backend.http.base_url), tmp_path / "unconfigured.db")
+    assert unconfigured.voice_project is None
+    before = len(items)
+    with pytest.raises(GatewayError, match="No canonical voice project is configured"):
+        unconfigured.append("no-voice-project-key", "conversation-fixture", None,
+                            "[TEST] projectless voice capture", origin="chatgpt_voice")
+    assert len(items) == before and not [request for request in requests if request[0] == "POST"]
+    with unconfigured.db() as db:
+        assert db.execute("SELECT count(*) FROM receipts").fetchone()[0] == 0  # No reservation, nothing to replay.
+    unconfigured.append("explicit-project-key", "conversation-fixture", "/fixture/verified-repo",
+                        "[TEST] explicit project still works", origin="chatgpt_voice")
+    assert items[0]["cwd"] == "/fixture/verified-repo"
+    with pytest.raises(ValueError, match="voice project"):
+        BlackBox(str(backend.http.base_url), tmp_path / "bad.db", voice_project='bad "quoted" path')
+    unconfigured.http.close()
+
+
+def test_configure_voice_project_validates_and_saves(tmp_path, monkeypatch):
+    monkeypatch.setattr(manage, "ROOT", tmp_path / "runtime")
+    monkeypatch.setattr(manage, "CONFIG", tmp_path / "runtime/config.json")
+    manage.save_config({"upstream": "http://127.0.0.1:8766", "port": 8767})
+    for bad in ("relative/voice/path", '/quoted/"path"', ""):
+        with pytest.raises(RuntimeError, match="absolute recorded path"):
+            manage.configure_voice_project(bad)
+    assert "voice_project" not in manage.load_config()
+    example = str(tmp_path / "Documents/Codex/2026-01-01/realtime-voice-chat")
+    manage.configure_voice_project(example + "\n")
+    saved = manage.load_config()
+    assert saved["voice_project"] == example and saved["port"] == 8767  # Existing keys preserved.
 
 
 def test_oversized_metadata_does_not_hide_context(upstream):
@@ -271,7 +307,7 @@ def test_real_mcp_protocol_auth_and_tools(upstream):
                                       "text": "[TEST] Projectless voice capture", "origin": "voice_unknown"}
                         voice = await session.call_tool("append_capture", voice_args)
                         assert not voice.isError
-                        assert items[0]["cwd"] == VOICE_PROJECT
+                        assert items[0]["cwd"] == backend.voice_project
                         assert items[0]["metadata"]["declaredVoiceOrigin"] == "voice_unknown"
         asyncio.run(exercise())
     finally:
