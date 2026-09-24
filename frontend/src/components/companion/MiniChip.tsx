@@ -1,13 +1,30 @@
-import { Show } from "solid-js";
+import { onCleanup, onMount, Show } from "solid-js";
 import type { PulseState } from "../../lib/companion/model";
 
 export const PULSE_LABEL: Record<PulseState, string> = { connecting: "connecting", live: "live", idle: "idle", disconnected: "offline" };
 
-type MiniChipProps = { pulse: PulseState; unseen: number; onExpand: () => void };
+type MiniChipProps = { pulse: PulseState; unseen: number; onExpand: () => void; onSize?: (width: number) => void };
 
 export default function MiniChip(props: MiniChipProps) {
+  let ref: HTMLButtonElement | undefined;
+
+  // The shell panel is only as wide as the fixed default unless told otherwise; report this chip's
+  // real rendered width so a long pulse label plus a two-digit unseen count is never clipped.
+  const report = () => {
+    if (ref) props.onSize?.(ref.getBoundingClientRect().width);
+  };
+
+  onMount(() => {
+    report();
+    if (typeof ResizeObserver === "undefined" || !ref) return;
+    const observer = new ResizeObserver(report);
+    observer.observe(ref);
+    onCleanup(() => observer.disconnect());
+  });
+
   return (
     <button
+      ref={ref}
       type="button"
       class={`companion-chip companion-chip--${props.pulse}`}
       aria-label={`Black Box companion: ${PULSE_LABEL[props.pulse]}, ${props.unseen} unseen`}

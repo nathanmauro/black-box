@@ -23,4 +23,11 @@ describe("MiniChip", () => {
     render(() => <MiniChip pulse="disconnected" unseen={0} onExpand={() => {}} />);
     expect(screen.getByRole("button", { name: "Black Box companion: offline, 0 unseen" })).toBeInTheDocument();
   });
+
+  it("reports its own rendered width on mount so the shell can size the panel to fit", () => {
+    const onSize = vi.fn();
+    render(() => <MiniChip pulse="connecting" unseen={42} onExpand={() => {}} onSize={onSize} />);
+    expect(onSize).toHaveBeenCalledTimes(1);
+    expect(onSize).toHaveBeenCalledWith(expect.any(Number));
+  });
 });

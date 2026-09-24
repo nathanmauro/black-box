@@ -44,6 +44,7 @@ export type CompanionStore = {
   toggleExpandedView(): void;
   stepDown(): void;
   refresh(): Promise<void>;
+  reportMiniWidth(width: number): void;
 };
 
 export function defaultDeps(): CompanionDeps {
@@ -99,6 +100,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const persisted = loadMode(deps.storage);
   const [mode, setModeSignal] = createSignal<CompanionMode>(persisted.mode);
   const [expanded, setExpanded] = createSignal<ExpandedViewState>(persisted.expanded);
+  const [miniWidth, setMiniWidth] = createSignal<number | null>(null);
   const [lastProjectKey, setLastProjectKey] = createSignal<string | null>(persisted.expanded.kind === "project" ? persisted.expanded.projectKey : null);
 
   // Items only change with events, the catalog, seen-state, or the window; activity frames reuse them,
@@ -259,7 +261,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     postToShell({ type: "state", pulse: state.pulse, unseen: state.unseen });
   });
   createEffect(() => {
-    postToShell(modeMessage(mode()));
+    postToShell(modeMessage(mode(), mode() === "mini" ? (miniWidth() ?? undefined) : undefined));
   });
   createEffect(() => {
     persistMode(deps.storage, { mode: mode(), expanded: expanded() });
@@ -288,6 +290,14 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     openRiver();
   }
 
+  // The mini chip's own width (its content, not the fixed default) is what keeps "connecting" plus
+  // a two-digit unseen count from being clipped by the shell panel; see modeMessage in bridge.ts.
+  function reportMiniWidth(width: number): void {
+    if (!Number.isFinite(width) || width <= 0) return;
+    const rounded = Math.ceil(width);
+    if (rounded !== miniWidth()) setMiniWidth(rounded);
+  }
+
   function stepDown(): void {
     if (mode() === "expanded") setModeSignal("compact");
     else if (mode() === "compact") setModeSignal("mini");
@@ -295,5 +305,5 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
 
   void refresh();
 
-  return { model, mode, expanded, loading, error, setMode: setModeSignal, openProject, openRiver, toggleExpandedView, stepDown, refresh };
+  return { model, mode, expanded, loading, error, setMode: setModeSignal, openProject, openRiver, toggleExpandedView, stepDown, refresh, reportMiniWidth };
 }

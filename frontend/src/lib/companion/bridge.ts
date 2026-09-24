@@ -23,6 +23,18 @@ export function postToShell(message: ShellMessage, target: unknown = typeof wind
   }
 }
 
-export function modeMessage(mode: CompanionMode): ShellMessage {
-  return { type: "mode", mode, ...MODE_SIZES[mode] };
+/**
+ * The mini chip's width is content-dependent ("connecting" plus a two-digit unseen count is wider
+ * than the fixed default), so the page measures its own rendered width and passes it here. The
+ * shell width is the larger of the default and that measurement, and a missing or invalid
+ * measurement (not finite, zero, or negative) falls back to the default — the chip never gets
+ * clipped and never shrinks below its usual size. Only mini uses this; compact and expanded keep
+ * their fixed sizes.
+ */
+export function modeMessage(mode: CompanionMode, measuredMiniWidth?: number): ShellMessage {
+  const base = MODE_SIZES[mode];
+  if (mode !== "mini" || measuredMiniWidth == null || !Number.isFinite(measuredMiniWidth) || measuredMiniWidth <= 0) {
+    return { type: "mode", mode, ...base };
+  }
+  return { type: "mode", mode, width: Math.max(base.width, Math.ceil(measuredMiniWidth)), height: base.height };
 }

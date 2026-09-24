@@ -224,6 +224,27 @@ describe("createCompanionStore", () => {
     }
   });
 
+  it("reports a measured mini width to the shell without shrinking below the default", async () => {
+    const postMessage = vi.fn();
+    const shellWindow = window as unknown as { webkit?: unknown };
+    shellWindow.webkit = { messageHandlers: { companion: { postMessage } } };
+    try {
+      await createRoot(async (dispose) => {
+        const { live } = fakeLive();
+        const store = createCompanionStore(live, deps());
+        await settled(store.loading, (loading) => !loading);
+        expect(postMessage).toHaveBeenCalledWith({ type: "mode", mode: "mini", width: 132, height: 36 });
+        store.reportMiniWidth(168);
+        expect(postMessage).toHaveBeenLastCalledWith({ type: "mode", mode: "mini", width: 168, height: 36 });
+        store.reportMiniWidth(90);
+        expect(postMessage).toHaveBeenLastCalledWith({ type: "mode", mode: "mini", width: 132, height: 36 });
+        dispose();
+      });
+    } finally {
+      delete shellWindow.webkit;
+    }
+  });
+
   it("keeps item identity and skips shell state posts across tool-call frames", async () => {
     const postMessage = vi.fn();
     const shellWindow = window as unknown as { webkit?: unknown };
