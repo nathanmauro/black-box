@@ -14,7 +14,8 @@ enum BridgeMessage: Equatable {
         case "mode":
             guard let name = dict["mode"] as? String,
                   let width = (dict["width"] as? NSNumber)?.doubleValue,
-                  let height = (dict["height"] as? NSNumber)?.doubleValue else { return nil }
+                  let height = (dict["height"] as? NSNumber)?.doubleValue,
+                  width.isFinite, width >= 0, height.isFinite, height >= 0 else { return nil }
             return .mode(name: name, width: width, height: height)
         default:
             return nil

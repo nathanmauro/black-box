@@ -17,4 +17,13 @@ final class BridgeMessageTests: XCTestCase {
         XCTAssertNil(BridgeMessage.parse(["type": "state", "pulse": "weird", "unseen": 1]))
         XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact"]))
     }
+
+    func testRejectsNonFiniteOrNegativeModeSize() {
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": Double.nan, "height": 420]))
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": 340, "height": Double.nan]))
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": Double.infinity, "height": 420]))
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": 340, "height": -Double.infinity]))
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": -1, "height": 420]))
+        XCTAssertNil(BridgeMessage.parse(["type": "mode", "mode": "compact", "width": 340, "height": -1]))
+    }
 }
