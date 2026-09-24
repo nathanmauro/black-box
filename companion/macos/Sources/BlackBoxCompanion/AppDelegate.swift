@@ -39,6 +39,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // the next successful navigation.
     private var retryAttempt = 0
     private var pendingRetry: DispatchWorkItem?
+    // Whether the page has sent a bridge `state` message since its most recent load; a load can
+    // didFinish (2xx main-frame response) while never actually rendering (broken JS bundle, blank
+    // error page), so readinessCheck below still needs to catch it after a grace period.
+    private var readiness = PageReadinessTracker()
+    private var readinessCheck: DispatchWorkItem?
+    private static let readinessTimeout: TimeInterval = 10
+    // Set right before rejecting a non-2xx main-frame response in decidePolicyFor navigationResponse,
+    // which already calls handleLoadFailure() itself; consumed by the next didFail/
+    // didFailProvisionalNavigation so that callback's own error (if WebKit delivers one for the same
+    // cancelled navigation) does not schedule a second, redundant retry.
+    private var didRejectCurrentNavigationResponse = false
 
     init(options: Options, environment: ShellEnvironment = .live()) {
         self.options = options
@@ -108,6 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         defer { environment.onBridgeMessage?(parsed) }
         switch parsed {
         case let .state(pulse, unseen):
+            readiness.receivedState()
+            readinessCheck?.cancel()
+            readinessCheck = nil
             statusItem.button?.title = StatusTitle.render(pulse: pulse, unseen: unseen)
         case let .mode(name, width, height):
             applyMode(name: name, pageDefault: CGSize(width: width, height: height))
@@ -154,10 +168,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         decisionHandler(.cancel)
     }
 
+    // WebKit treats an HTTP error response as a *successful* navigation — didFinish fires below, not
+    // didFail — so a 500 for /companion (server down at launch, or mid `mvn package` /
+    // `launchctl kickstart` restart) or a failed JS asset otherwise left the panel blank and the
+    // menubar stuck on "connecting" forever. Reject a non-2xx main-frame response here instead.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if let http = navigationResponse.response as? HTTPURLResponse,
+           LoadFailurePolicy.isFailureResponse(statusCode: http.statusCode, isMainFrame: navigationResponse.isForMainFrame) {
+            didRejectCurrentNavigationResponse = true
+            decisionHandler(.cancel)
+            handleLoadFailure()
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         retryAttempt = 0
         pendingRetry?.cancel()
         pendingRetry = nil
+        scheduleReadinessCheck()
+    }
+
+    // Even a genuine 2xx main-frame response can render nothing (a broken JS bundle, a blank error
+    // page from a proxy in front of the server): didFinish fires and the bridge never sends a
+    // `state` message. Give the page a grace period to prove itself alive before treating a
+    // silently-blank load the same as a real failure.
+    private func scheduleReadinessCheck() {
+        readinessCheck?.cancel()
+        readiness.loadStarted()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.readiness.isStale else { return }
+            self.handleLoadFailure()
+        }
+        readinessCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.readinessTimeout, execute: work)
     }
 
     // The server can be down at launch, or return 500s for the SPA's own assets mid `mvn package` /
@@ -166,10 +211,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // ever updates from a bridge `state` message the page never got to send) both looked fine while
     // being silently dead, recoverable only by quitting and relaunching.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        handleLoadFailure()
+        handleNavigationError()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        handleNavigationError()
+    }
+
+    private func handleNavigationError() {
+        if didRejectCurrentNavigationResponse {
+            // Already handled explicitly by decidePolicyFor navigationResponse above; WebKit's own
+            // failure callback for that same cancelled navigation (if it delivers one at all) must
+            // not schedule a second, redundant retry.
+            didRejectCurrentNavigationResponse = false
+            return
+        }
         handleLoadFailure()
     }
 
@@ -182,6 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     private func handleLoadFailure() {
+        readinessCheck?.cancel()
+        readinessCheck = nil
         statusItem.button?.title = StatusTitle.render(pulse: .disconnected, unseen: 0)
         scheduleRetry()
     }
@@ -198,6 +256,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     @objc private func reloadNow() {
         pendingRetry?.cancel()
         pendingRetry = nil
+        readinessCheck?.cancel()
+        readinessCheck = nil
+        didRejectCurrentNavigationResponse = false
         webView.load(URLRequest(url: options.url))
     }
 }
