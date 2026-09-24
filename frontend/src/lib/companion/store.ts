@@ -155,15 +155,24 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     });
   }
 
+  function visibleItemIds(): string[] {
+    const view = expanded();
+    const current = model();
+    return view.kind === "river" ? current.river.map((item) => item.id) : current.projects.find((project) => project.key === view.projectKey)?.items.map((item) => item.id) ?? [];
+  }
+
+  // A hidden panel or a backgrounded tab must never look like quiet: "expanded" alone does not mean
+  // the view is actually being looked at, so pageVisible also gates on document.visibilityState.
+  function pageVisible(): boolean {
+    return typeof document === "undefined" || document.visibilityState !== "hidden";
+  }
+
   // Spec 3.4: opened equals seen. Whatever landed in the currently open view — a live event merged
   // in, or a batch loaded by refresh() into a view that was already open (e.g. a persisted expanded
   // view restored on relaunch) — is marked seen once it is visible there.
   function markVisibleSeen(ids: Iterable<string>): void {
-    if (mode() !== "expanded") return;
-    const view = expanded();
-    const current = model();
-    const visible =
-      view.kind === "river" ? new Set(current.river.map((item) => item.id)) : new Set(current.projects.find((project) => project.key === view.projectKey)?.items.map((item) => item.id) ?? []);
+    if (mode() !== "expanded" || !pageVisible()) return;
+    const visible = new Set(visibleItemIds());
     const toMark = [...ids].filter((id) => visible.has(id));
     if (toMark.length) deps.seen.markAll(toMark);
   }
@@ -275,6 +284,13 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
       setNow(current);
     });
   }, TICK_MS);
+  function handleVisibilityChange(): void {
+    if (pageVisible()) markVisibleSeen(visibleItemIds());
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    onCleanup(() => document.removeEventListener("visibilitychange", handleVisibilityChange));
+  }
   onCleanup(() => {
     stopEvents();
     stopSessions();

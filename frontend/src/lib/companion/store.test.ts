@@ -183,6 +183,25 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("does not mark a live item seen while the page is hidden, and catches it up on becoming visible", async () => {
+    await createRoot(async (dispose) => {
+      const { live, setStatus, emitEvent } = fakeLive();
+      const store = createCompanionStore(live, deps());
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      store.openProject("keyA");
+      expect(store.model().unseenTotal).toBe(0);
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      emitEvent({ id: "h2", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(500), cwd: "/repo/a" });
+      await settled(() => store.model().river.length, (length) => length === 2);
+      expect(store.model().unseenTotal).toBe(1);
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(store.model().unseenTotal).toBe(0);
+      dispose();
+    });
+  });
+
   it("marks items seen when a project is opened and when items arrive while it is open", async () => {
     await createRoot(async (dispose) => {
       const { live, setStatus, emitEvent } = fakeLive();
