@@ -20,7 +20,7 @@ const model: CompanionModel = {
 describe("ExpandedView", () => {
   it("renders one project's items with links, next action and open loops", () => {
     const onBack = vi.fn();
-    render(() => <ExpandedView model={model} view={{ kind: "project", projectKey: "keyA" }} onBack={onBack} onToggleView={() => {}} onCollapse={() => {}} />);
+    render(() => <ExpandedView model={model} view={{ kind: "project", projectKey: "keyA", projectName: "a" }} onBack={onBack} onToggleView={() => {}} onCollapse={() => {}} />);
     expect(screen.getByText("a")).toBeInTheDocument();
     expect(screen.getByText(/1 live/)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Wired the bridge/ });
@@ -32,6 +32,13 @@ describe("ExpandedView", () => {
     expect(screen.queryByText("Pick B")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back to projects" }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a project's real name and an active strip once its card has aged out of the model", () => {
+    render(() => <ExpandedView model={model} view={{ kind: "project", projectKey: "keyC", projectName: "gone-project" }} onBack={() => {}} onToggleView={() => {}} onCollapse={() => {}} />);
+    expect(screen.getByText("gone-project")).toBeInTheDocument();
+    expect(screen.queryByText("Project")).not.toBeInTheDocument();
+    expect(screen.getByText(/0 live · activity none · capture none/)).toBeInTheDocument();
   });
 
   it("renders the river across projects with a project prefix and a toggle", () => {

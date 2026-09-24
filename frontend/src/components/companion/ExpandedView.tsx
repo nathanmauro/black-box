@@ -21,7 +21,9 @@ export default function ExpandedView(props: ExpandedViewProps) {
     return view.kind === "project" ? props.model.projects.find((project) => project.key === view.projectKey) ?? null : null;
   });
   const items = createMemo(() => (props.view.kind === "river" ? props.model.river : card()?.items ?? []));
-  const title = () => (props.view.kind === "river" ? "River" : card()?.name ?? "Project");
+  // The view carries its own projectName (set once, when opened) so a project whose card ages out of
+  // the model while its view stays open keeps a real title and strip instead of "Project" with none.
+  const title = () => (props.view.kind === "river" ? "River" : props.view.projectName);
 
   return (
     <div class="companion-panel companion-panel--expanded">
@@ -37,12 +39,10 @@ export default function ExpandedView(props: ExpandedViewProps) {
           –
         </button>
       </header>
-      <Show when={card()}>
-        {(current) => (
-          <p class="companion-strip">
-            {current().liveSessions} live · activity {ago(current().lastActivityAt)} · capture {ago(current().lastCaptureAt)}
-          </p>
-        )}
+      <Show when={props.view.kind === "project"}>
+        <p class="companion-strip">
+          {card()?.liveSessions ?? 0} live · activity {ago(card()?.lastActivityAt ?? null)} · capture {ago(card()?.lastCaptureAt ?? null)}
+        </p>
       </Show>
       <Show when={items().length > 0} fallback={<p class="companion-empty">Nothing meaningful in the last 24h.</p>}>
         <ul class="companion-items">

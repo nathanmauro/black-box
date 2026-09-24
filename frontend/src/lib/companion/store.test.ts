@@ -210,7 +210,7 @@ describe("createCompanionStore", () => {
       setStatus("live");
       store.openProject("keyA");
       expect(store.mode()).toBe("expanded");
-      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA" });
+      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
       expect(store.model().unseenTotal).toBe(0);
       emitEvent({ id: "h2", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(500), cwd: "/repo/a" });
       await settled(() => store.model().river.length, (length) => length === 2);
@@ -227,7 +227,7 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
       expect(store.mode()).toBe("expanded");
-      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA" });
+      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
       expect(store.model().river).toHaveLength(1);
       expect(store.model().unseenTotal).toBe(0);
       dispose();
@@ -255,7 +255,7 @@ describe("createCompanionStore", () => {
       const setItemSpy = vi.spyOn(storage, "setItem");
       store.openProject("keyA");
       expect(setItemSpy).toHaveBeenCalledTimes(1);
-      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } });
+      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA", projectName: "a" } });
       dispose();
     });
   });
@@ -465,7 +465,7 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
       // The persisted view names a project no longer in the model; it must not open blank.
-      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA" });
+      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
 
       // toggleExpandedView must also not reopen a stale lastProjectKey when no project is active.
       const empty = owned(() =>
@@ -482,6 +482,27 @@ describe("createCompanionStore", () => {
       empty.dispose();
       dispose();
     });
+  });
+
+  it("keeps a project's real name in the expanded view after its card ages out of the model", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      let clock = NOW;
+      await createRoot(async (dispose) => {
+        const store = createCompanionStore(fakeLive().live, deps({ now: () => clock }));
+        await settled(store.loading, (loading) => !loading);
+        store.openProject("keyA");
+        expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
+        clock = NOW + 24 * 3_600_000; // ages the item out; keyA also has no live session by then
+        vi.advanceTimersByTime(TICK_MS);
+        expect(store.model().projects.find((project) => project.key === "keyA")).toBeUndefined();
+        // The view was never told to leave keyA and still carries its real name.
+        expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
+        dispose();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("steps down one level at a time", async () => {

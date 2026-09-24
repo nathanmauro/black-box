@@ -6,7 +6,11 @@ export type PulseState = "connecting" | "live" | "idle" | "disconnected";
 export type ConnectionState = "connecting" | "live" | "down";
 export type MeaningfulKind = "decision" | "handoff" | "observation";
 export type CompanionMode = "mini" | "compact" | "expanded";
-export type ExpandedViewState = { kind: "project"; projectKey: string } | { kind: "river" };
+// projectName travels with the view (set once, when it is opened) instead of being looked up from
+// the live model on every render, so a project whose card ages out of the model while its view is
+// still open (no live session, last item past the 24h window) keeps a real title and strip instead
+// of falling back to the generic "Project".
+export type ExpandedViewState = { kind: "project"; projectKey: string; projectName: string } | { kind: "river" };
 
 export const MEANINGFUL_EVENT_TYPES: Readonly<Record<string, MeaningfulKind>> = {
   Decision: "decision",

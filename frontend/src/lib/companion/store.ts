@@ -83,11 +83,20 @@ function loadMode(storage: Storage | null): PersistedMode {
   const fallback: PersistedMode = { mode: "mini", expanded: { kind: "river" } };
   if (!storage) return fallback;
   try {
-    const parsed = JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "null") as { mode?: unknown; expanded?: { kind?: unknown; projectKey?: unknown } } | null;
+    const parsed = JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "null") as {
+      mode?: unknown;
+      expanded?: { kind?: unknown; projectKey?: unknown; projectName?: unknown };
+    } | null;
     if (!parsed || !MODES.includes(parsed.mode as CompanionMode)) return fallback;
     const expanded: ExpandedViewState =
       parsed.expanded?.kind === "project" && typeof parsed.expanded.projectKey === "string"
-        ? { kind: "project", projectKey: parsed.expanded.projectKey }
+        ? {
+            kind: "project",
+            projectKey: parsed.expanded.projectKey,
+            // Older persisted data has no projectName; the initial-view validation effect below
+            // resolves a real one from the catalog once the first load completes.
+            projectName: typeof parsed.expanded.projectName === "string" ? parsed.expanded.projectName : parsed.expanded.projectKey,
+          }
         : { kind: "river" };
     return { mode: parsed.mode as CompanionMode, expanded };
   } catch {
@@ -324,8 +333,8 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   });
 
   // A persisted expanded view (relaunch, or a project that aged out mid-session before this ran)
-  // can name a project no longer in the catalog; correct it once the first load resolves instead of
-  // opening on a blank "Project" with no activity strip.
+  // can name a project no longer in the catalog, or (older persisted data) carry no name at all;
+  // correct it once the first load resolves instead of opening on a blank/generic "Project" view.
   let didValidateInitialView = false;
   createEffect(() => {
     if (didValidateInitialView || loading()) return;
@@ -333,21 +342,25 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     const view = expanded();
     if (view.kind !== "project") return;
     const key = resolveProjectKey(view.projectKey);
-    if (key === view.projectKey) return;
+    if (!key) {
+      setExpanded({ kind: "river" });
+      return;
+    }
+    const projectName = model().projects.find((project) => project.key === key)?.name ?? view.projectName;
+    if (key === view.projectKey && projectName === view.projectName) return;
     batch(() => {
-      if (key) {
-        setExpanded({ kind: "project", projectKey: key });
-        setLastProjectKey(key);
-      } else {
-        setExpanded({ kind: "river" });
-      }
+      setExpanded({ kind: "project", projectKey: key, projectName });
+      setLastProjectKey(key);
     });
   });
 
   function openProject(projectKey: string): void {
     const card = model().projects.find((project) => project.key === projectKey);
+    // The name travels with the view so it survives the card aging out of the model later (finding:
+    // "Expanded project view whose card disappears shows a generic 'Project' title").
+    const projectName = card?.name ?? projectKey;
     batch(() => {
-      setExpanded({ kind: "project", projectKey });
+      setExpanded({ kind: "project", projectKey, projectName });
       setLastProjectKey(projectKey);
       setModeSignal("expanded");
       if (card) deps.seen.markAll(card.items.map((item) => item.id));
