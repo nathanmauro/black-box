@@ -165,6 +165,20 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("batches openProject's state writes into a single persisted write", async () => {
+    await createRoot(async (dispose) => {
+      const storage = new MemoryStorage();
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps({ storage }));
+      await settled(store.loading, (loading) => !loading);
+      const setItemSpy = vi.spyOn(storage, "setItem");
+      store.openProject("keyA");
+      expect(setItemSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } });
+      dispose();
+    });
+  });
+
   it("refetches after reconnect", async () => {
     await createRoot(async (dispose) => {
       const { live, setStatus } = fakeLive();

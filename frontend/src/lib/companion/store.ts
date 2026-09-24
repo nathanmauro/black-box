@@ -268,11 +268,13 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   });
 
   function openProject(projectKey: string): void {
-    setExpanded({ kind: "project", projectKey });
-    setLastProjectKey(projectKey);
-    setModeSignal("expanded");
     const card = model().projects.find((project) => project.key === projectKey);
-    if (card) deps.seen.markAll(card.items.map((item) => item.id));
+    batch(() => {
+      setExpanded({ kind: "project", projectKey });
+      setLastProjectKey(projectKey);
+      setModeSignal("expanded");
+      if (card) deps.seen.markAll(card.items.map((item) => item.id));
+    });
   }
 
   function openRiver(): void {
