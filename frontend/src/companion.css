@@ -40,6 +40,8 @@ body:has(.companion--embedded) {
   border-radius: 50%;
   background: #6b6b6b;
 }
+.companion-chip--warn { border-color: var(--red, #e5484d); }
+.companion-chip--warn .companion-dot { background: var(--red, #e5484d); }
 .companion-chip--live .companion-dot { background: var(--green, #26c054); }
 .companion-chip--idle .companion-dot { background: var(--text-faint, #8a8a8a); }
 .companion-chip--connecting .companion-dot { background: var(--yellow, #e0b341); }

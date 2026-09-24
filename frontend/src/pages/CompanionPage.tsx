@@ -24,7 +24,7 @@ export default function CompanionPage() {
     <section class={`companion companion--${store.mode()}${embedded ? " companion--embedded" : ""}`} data-mode={store.mode()}>
       <Switch>
         <Match when={store.mode() === "mini"}>
-          <MiniChip pulse={store.model().pulse} unseen={store.model().unseenTotal} onExpand={() => store.setMode("compact")} onSize={store.reportMiniWidth} />
+          <MiniChip pulse={store.model().pulse} unseen={store.model().unseenTotal} onExpand={() => store.setMode("compact")} onSize={store.reportMiniWidth} hasError={store.error() !== null} />
         </Match>
         <Match when={store.mode() === "compact"}>
           <CompactList model={store.model()} loading={store.loading()} onOpenProject={store.openProject} onOpenRiver={store.openRiver} onCollapse={() => store.setMode("mini")} />

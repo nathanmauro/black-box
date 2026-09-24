@@ -24,6 +24,12 @@ describe("MiniChip", () => {
     expect(screen.getByRole("button", { name: "Black Box companion: offline, 0 unseen" })).toBeInTheDocument();
   });
 
+  it("surfaces a failed load through the chip itself, not just the clipped error paragraph", () => {
+    render(() => <MiniChip pulse="live" unseen={0} onExpand={() => {}} hasError />);
+    const chip = screen.getByRole("button", { name: /could not load/i });
+    expect(chip).toHaveClass("companion-chip--warn");
+  });
+
   it("reports its own rendered width on mount so the shell can size the panel to fit", () => {
     const onSize = vi.fn();
     render(() => <MiniChip pulse="connecting" unseen={42} onExpand={() => {}} onSize={onSize} />);

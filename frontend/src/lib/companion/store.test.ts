@@ -287,6 +287,25 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("retries a failed load on the next tick while the stream stays live", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      await createRoot(async (dispose) => {
+        const getProjects = vi.fn().mockRejectedValueOnce(new Error("500")).mockResolvedValue([projectA]);
+        const { live } = fakeLive();
+        const store = createCompanionStore(live, deps({ getProjects }));
+        await settled(store.loading, (loading) => !loading);
+        expect(store.error()).toBe("500");
+        await vi.advanceTimersByTimeAsync(TICK_MS);
+        expect(store.error()).toBeNull();
+        expect(store.model().projects).toHaveLength(1);
+        dispose();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("refetches after reconnect", async () => {
     await createRoot(async (dispose) => {
       const { live, setStatus } = fakeLive();

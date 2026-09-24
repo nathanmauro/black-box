@@ -285,6 +285,10 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
       prune(current);
       setNow(current);
     });
+    // A failed initial/backfill load (transient 500, auth redirect) is otherwise only retried on a
+    // live→down→live SSE transition, which never happens if the stream connects cleanly — leaving
+    // the companion stuck quiet-looking with a red error line. Retry it on every tick instead.
+    if (error() !== null) void refresh();
   }, TICK_MS);
   function handleVisibilityChange(): void {
     if (pageVisible()) markVisibleSeen(visibleItemIds());
