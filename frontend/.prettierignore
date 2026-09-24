@@ -1,0 +1,7 @@
+# Generated or vendored; never hand-formatted.
+node_modules/
+dist/
+test-results/
+playwright-report/
+public/
+package-lock.json
