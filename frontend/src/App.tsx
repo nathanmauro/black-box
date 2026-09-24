@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, type JSX } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
@@ -22,6 +22,7 @@ const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; ico
 export default function App(props: AppProps) {
   const live = createLiveStore();
   const location = useLocation();
+  const bare = () => location.pathname === "/companion";
   const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
@@ -40,7 +41,8 @@ export default function App(props: AppProps) {
   return (
     <LiveStoreContext.Provider value={live}>
       <CodeNavigationProvider>
-        <div class="app-shell">
+        <div class={bare() ? "app-shell app-shell--bare" : "app-shell"}>
+          <Show when={!bare()}>
           <header class="app-utility-bar" aria-label="Black Box utility bar">
           <div class="utility-cluster">
             <A href="/" class="brand utility-brand" aria-label="Black Box overview">
@@ -105,8 +107,11 @@ export default function App(props: AppProps) {
             </button>
           </div>
           </header>
+          </Show>
           <main class="app-main">{props.children}</main>
-          <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+          <Show when={!bare()}>
+            <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+          </Show>
         </div>
       </CodeNavigationProvider>
     </LiveStoreContext.Provider>
