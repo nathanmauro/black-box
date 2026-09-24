@@ -54,7 +54,10 @@ export default function CompactList(props: CompactListProps) {
           –
         </button>
       </header>
-      <Show when={!props.loading} fallback={<p class="companion-empty">Loading…</p>}>
+      {/* Loading only replaces the list before the first load has ever produced a project; a later
+          refresh (reconnect live->down->live, the 30s error-retry tick) with rows already on screen
+          must keep them mounted instead of unmounting into "Loading…" and dropping focus to body. */}
+      <Show when={!(props.loading && props.model.projects.length === 0)} fallback={<p class="companion-empty">Loading…</p>}>
         <Show when={props.model.projects.length > 0} fallback={<p class="companion-empty">Quiet. No active projects in the last 24h.</p>}>
           <ul class="companion-projects">
             <Index each={props.model.projects}>

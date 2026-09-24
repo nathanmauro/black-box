@@ -52,6 +52,19 @@ describe("CompactList", () => {
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps rows mounted through a refresh that already has projects, instead of flashing Loading…", () => {
+    const [loading, setLoading] = createSignal(false);
+    render(() => <CompactList model={model} loading={loading()} onOpenProject={() => {}} onOpenRiver={() => {}} onCollapse={() => {}} />);
+    const row = screen.getByRole("button", { name: /a: 2 live, 1 unseen/ });
+    row.focus();
+    // A refresh (reconnect live->down->live, or the 30s error-retry tick) sets loading back to true
+    // while the previous model (still with projects) is showing.
+    setLoading(true);
+    expect(screen.getByRole("button", { name: /a: 2 live, 1 unseen/ })).toBe(row);
+    expect(document.activeElement).toBe(row);
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+  });
+
   it("shows a neutral loading state instead of the quiet empty state before the first load finishes", () => {
     render(() => (
       <CompactList
