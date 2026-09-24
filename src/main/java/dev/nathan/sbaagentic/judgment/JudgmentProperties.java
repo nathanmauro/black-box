@@ -6,6 +6,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class JudgmentProperties {
 
     private boolean enabled = false;
+    private boolean payloadTelemetryEnabled = false;
+
+    public boolean isPayloadTelemetryEnabled() {
+
+        return payloadTelemetryEnabled;
+    }
+
+    public void setPayloadTelemetryEnabled(boolean enabled) {
+        payloadTelemetryEnabled = enabled;
+    }
+
     private String provider = "jev";
     private int maxOthers = 8;
     private long timeoutMs = 12_000;

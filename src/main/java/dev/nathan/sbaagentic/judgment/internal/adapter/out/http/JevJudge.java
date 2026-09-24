@@ -10,7 +10,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.UnaryOperator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +30,7 @@ public class JevJudge implements Judge {
     private final JevRequestBuilder requestBuilder;
     private final JevAnswerValidator validator;
     private final Clock clock;
+    private final JevTelemetry telemetry;
     private final AtomicLong calls = new AtomicLong();
     private final AtomicLong failures = new AtomicLong();
     private volatile Long lastLatencyMs;
@@ -39,7 +42,28 @@ public class JevJudge implements Judge {
             JevTransport transport,
             JudgeQuestionSet questions,
             Clock clock) {
-        this(apiKey, ENDPOINT, timeout, objectMapper, transport, questions, clock);
+        this(
+                apiKey,
+                ENDPOINT,
+                timeout,
+                objectMapper,
+                transport,
+                questions,
+                clock,
+                JevTelemetry.noop(),
+                UnaryOperator.identity());
+    }
+
+    public JevJudge(
+            String apiKey,
+            Duration timeout,
+            ObjectMapper objectMapper,
+            JevTransport transport,
+            JudgeQuestionSet questions,
+            Clock clock,
+            JevTelemetry telemetry,
+            UnaryOperator<String> sanitize) {
+        this(apiKey, ENDPOINT, timeout, objectMapper, transport, questions, clock, telemetry, sanitize);
     }
 
     JevJudge(
@@ -49,13 +73,16 @@ public class JevJudge implements Judge {
             ObjectMapper objectMapper,
             JevTransport transport,
             JudgeQuestionSet questions,
-            Clock clock) {
+            Clock clock,
+            JevTelemetry telemetry,
+            UnaryOperator<String> sanitize) {
+        this.telemetry = telemetry;
         this.apiKey = apiKey;
         this.endpoint = endpoint;
         this.timeout = timeout;
         this.objectMapper = objectMapper;
         this.transport = transport;
-        this.requestBuilder = new JevRequestBuilder(questions);
+        this.requestBuilder = new JevRequestBuilder(questions, sanitize);
         this.validator = new JevAnswerValidator(questions);
         this.clock = clock;
     }
@@ -68,17 +95,26 @@ public class JevJudge implements Judge {
         }
         Instant start = clock.instant();
         calls.incrementAndGet();
+        String requestId = UUID.randomUUID().toString();
         try {
             String body = objectMapper.writeValueAsString(requestBuilder.build(state));
+            telemetry.requested(requestId, state, clock.instant(), body, apiKey);
             String response = transport.post(endpoint, apiKey, body, timeout);
             long latency = Duration.between(start, clock.instant()).toMillis();
             lastLatencyMs = latency;
             JsonNode json = objectMapper.readTree(response);
 
-            return Optional.of(validator.validate(json, state, clock.instant(), latency));
+            Judgment judgment = validator.validate(json, state, clock.instant(), latency);
+            telemetry.completed(requestId, state, clock.instant(), latency, judgment, null);
+
+            return Optional.of(judgment);
         } catch (Exception ex) {
             failures.incrementAndGet();
-            log.warn("Jev judgment failed", ex);
+            long latency = Duration.between(start, clock.instant()).toMillis();
+            lastLatencyMs = latency;
+            telemetry.completed(requestId, state, clock.instant(), latency, null, ex);
+            // Provider exception messages can contain private response content.
+            log.warn("Jev judgment failed ({})", ex.getClass().getSimpleName());
 
             return Optional.empty();
         }
