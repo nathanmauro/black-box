@@ -1,3 +1,4 @@
+import { For } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -44,9 +45,7 @@ function MetadataList(props: { title: string; items: string[] }) {
     <div class="metadata-list">
       <span>{props.title}</span>
       <ul>
-        {props.items.map((item) => (
-          <li>{truncatePath(item)}</li>
-        ))}
+        <For each={props.items}>{(item) => <li>{truncatePath(item)}</li>}</For>
       </ul>
     </div>
   );

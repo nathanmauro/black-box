@@ -33,6 +33,7 @@ export function prepareProjectFixture(tempDir: string): void {
   } catch (error) {
     throw new Error(
       `Refusing to replace pre-existing E2E project path ${E2E_PROJECT_CWD}: ${error instanceof Error ? error.message : error}`,
+      { cause: error },
     );
   }
 }

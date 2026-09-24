@@ -20,7 +20,6 @@ import {
   type AnnotationKind,
   type ProjectSummary,
   type TaskAnnotation,
-  type TaskChange,
   type TaskEvent,
   type TaskFilters,
   type TaskSnapshot,

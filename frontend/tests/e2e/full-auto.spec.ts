@@ -26,7 +26,7 @@ test("full-auto runner promotes, executes, links, and hands off a real story", a
   const runId = randomUUID();
   const title = `${PREFIX} prove the loop ${runId.slice(0, 8)}`;
   let scratchDir = "";
-  let scratchRepoPath = "";
+  let scratchRepoPath: string;
   let runnerConfigPath = "";
   let runnerDaemon: ChildProcess | undefined;
   let autoTaskId = "";

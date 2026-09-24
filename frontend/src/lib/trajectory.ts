@@ -23,7 +23,6 @@ export const TRAJECTORY_MIN_HEIGHT = 260;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const TRAIL_START_X = 64;
-const TRAIL_TOP_PADDING = 60;
 const TRAIL_BOTTOM_PADDING = 78;
 const FUTURE_BASE_X = 134;
 const FUTURE_ARC_STEP = 42;

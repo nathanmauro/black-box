@@ -170,7 +170,7 @@ test("rejecting an SDLC plan records feedback and enqueues nothing else", async 
   if (!baseURL) throw new Error("Playwright baseURL is required for the SDLC E2E");
 
   const harness = createHarness("reject");
-  let specId = "";
+  let specId: string;
 
   try {
     const gate = await createSdlcStory(page, request, baseURL, harness);

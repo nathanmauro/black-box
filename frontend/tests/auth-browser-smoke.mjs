@@ -36,7 +36,7 @@ try {
   let ready = false;
   for (let attempt = 0; attempt < 150; attempt++) {
     if (server.exitCode !== null) throw new Error('Fixture server exited; inspect its server.log');
-    try { if ((await fetch(`${base}/actuator/health`)).ok) { ready = true; break; } } catch {}
+    try { if ((await fetch(`${base}/actuator/health`)).ok) { ready = true; break; } } catch { /* not listening yet */ }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   assert(ready, 'fixture server becomes healthy');

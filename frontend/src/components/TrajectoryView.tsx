@@ -1,7 +1,6 @@
 import { createMemo, For, onMount, Show } from "solid-js";
 import {
   layoutTrajectory,
-  type TrajectoryEdgeType,
   type TrajectoryGraph,
   type TrajectoryLayoutEdge,
   type TrajectoryLayoutNode,

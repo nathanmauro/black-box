@@ -199,8 +199,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
         requestedFilters,
       ), requestedFilters));
     })();
-    let tracked: Promise<void>;
-    tracked = operation.finally(() => {
+    const tracked: Promise<void> = operation.finally(() => {
       if (refreshInFlight === tracked) refreshInFlight = null;
     });
     refreshInFlight = tracked;
@@ -239,8 +238,7 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     const operation = Promise.resolve().then(runRecoveryLoop).catch(() => {
       if (!closed) setStatus("down");
     });
-    let tracked: Promise<void>;
-    tracked = operation.finally(() => {
+    const tracked: Promise<void> = operation.finally(() => {
       if (recoveryLoop !== tracked) return;
       recoveryLoop = null;
       if (!closed && recoveredGeneration < recoveryGeneration) ensureRecoveryLoop();

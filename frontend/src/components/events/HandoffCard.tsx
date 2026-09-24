@@ -1,3 +1,4 @@
+import { For } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -40,9 +41,7 @@ function OpenLoops(props: { loops: string[] }) {
     <div class="metadata-list">
       <span>open loops</span>
       <ul>
-        {props.loops.map((item) => (
-          <li>{truncatePath(item)}</li>
-        ))}
+        <For each={props.loops}>{(item) => <li>{truncatePath(item)}</li>}</For>
       </ul>
     </div>
   );
