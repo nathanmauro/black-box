@@ -1,6 +1,12 @@
 import AppKit
 
-let options = Options.parse(Array(CommandLine.arguments.dropFirst()), env: ProcessInfo.processInfo.environment)
+let options: Options
+do {
+    options = try Options.parse(Array(CommandLine.arguments.dropFirst()), env: ProcessInfo.processInfo.environment)
+} catch {
+    FileHandle.standardError.write("\(error)\n".data(using: .utf8)!)
+    exit(2)
+}
 if let output = options.selfTestOutput {
     SelfTest.run(url: options.url, output: output)
 }
