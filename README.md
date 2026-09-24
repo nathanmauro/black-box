@@ -279,6 +279,7 @@ Deeper reading:
 - [Architecture](docs/architecture.md) and [package conventions](docs/architecture/package-conventions.md)
 - [Authentication](docs/authentication.md), [PostgreSQL backend](docs/postgres-backend.md),
   [Recall observability](docs/recall-observability.md), [Managed AWS prototype](docs/lightsail-prototype.md)
+- [Cross-environment capture](docs/cross-environment-capture.md): origins, minimum schema, handoff template, scope classes
 - [Evolution](docs/evolution.md) and [Futures](docs/futures.md)
 
 ## License
