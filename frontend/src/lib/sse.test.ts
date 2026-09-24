@@ -1,14 +1,16 @@
 import { createRoot } from "solid-js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLiveStore } from "./sse";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
+  url: string;
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   private listeners = new Map<string, Array<(event: Event) => void>>();
 
-  constructor(_url: string) {
+  constructor(url: string) {
+    this.url = url;
     FakeEventSource.instances.push(this);
   }
 
@@ -49,6 +51,46 @@ describe("Activity live store isolation", () => {
 
       expect(store.events()).toHaveLength(1);
       expect(store.events()[0]?.id).toBe("event-1");
+      dispose();
+    });
+  });
+});
+
+describe("createLiveStore", () => {
+  beforeEach(() => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+
+  it("notifies event listeners and tracks status", () => {
+    createRoot((dispose) => {
+      const store = createLiveStore();
+      const seen = vi.fn();
+      store.onEventAppended(seen);
+      const source = FakeEventSource.instances[0]!;
+      expect(source.url).toBe("/api/stream");
+      source.onopen?.(new Event("open"));
+      expect(store.status()).toBe("live");
+      const payload = { id: "e1", sessionId: "s1", source: "claude", eventType: "Decision", observedAt: "2026-09-24T12:00:00Z" };
+      source.emit("event.appended", JSON.stringify(payload));
+      expect(seen).toHaveBeenCalledWith(payload);
+      expect(store.events()[0]).toEqual(payload);
+      source.onerror?.(new Event("error"));
+      expect(store.status()).toBe("down");
+      dispose();
+    });
+  });
+
+  it("stops notifying after unsubscribe", () => {
+    createRoot((dispose) => {
+      const store = createLiveStore();
+      const seen = vi.fn();
+      const stop = store.onEventAppended(seen);
+      stop();
+      FakeEventSource.instances[0]!.emit(
+        "event.appended",
+        JSON.stringify({ id: "e2", sessionId: "s1", source: "codex", eventType: "Handoff", observedAt: "2026-09-24T12:00:00Z" }),
+      );
+      expect(seen).not.toHaveBeenCalled();
       dispose();
     });
   });

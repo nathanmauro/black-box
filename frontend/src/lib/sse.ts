@@ -30,6 +30,7 @@ export type SessionUpdated = {
 export type LiveStore = {
   status: () => LiveStatus;
   events: () => EventAppended[];
+  onEventAppended: (callback: (event: EventAppended) => void) => () => void;
   onSessionUpdated: (callback: (event: SessionUpdated) => void) => () => void;
 };
 
@@ -38,6 +39,7 @@ export const LiveStoreContext = createContext<LiveStore>();
 export function createLiveStore(): LiveStore {
   const [status, setStatus] = createSignal<LiveStatus>("connecting");
   const [events, setEvents] = createSignal<EventAppended[]>([]);
+  const eventListeners = new Set<(event: EventAppended) => void>();
   const sessionListeners = new Set<(event: SessionUpdated) => void>();
 
   if (typeof EventSource === "undefined") {
@@ -45,6 +47,10 @@ export function createLiveStore(): LiveStore {
     return {
       status,
       events,
+      onEventAppended: (callback) => {
+        eventListeners.add(callback);
+        return () => eventListeners.delete(callback);
+      },
       onSessionUpdated: (callback) => {
         sessionListeners.add(callback);
         return () => sessionListeners.delete(callback);
@@ -60,6 +66,7 @@ export function createLiveStore(): LiveStore {
     const payload = parseSseData<EventAppended>(message);
     if (!payload) return;
     setEvents((current) => [payload, ...current].slice(0, 50));
+    for (const listener of eventListeners) listener(payload);
   });
   source.addEventListener("session.updated", (message) => {
     const payload = parseSseData<SessionUpdated>(message);
@@ -72,6 +79,10 @@ export function createLiveStore(): LiveStore {
   return {
     status,
     events,
+    onEventAppended: (callback) => {
+      eventListeners.add(callback);
+      return () => eventListeners.delete(callback);
+    },
     onSessionUpdated: (callback) => {
       sessionListeners.add(callback);
       return () => sessionListeners.delete(callback);
