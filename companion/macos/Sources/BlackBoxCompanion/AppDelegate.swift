@@ -52,7 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = environment.websiteDataStore
         configuration.userContentController.add(self, name: "companion")
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        // DraggableWebView (not plain WKWebView) so isMovableByWindowBackground below actually works;
+        // see its doc comment.
+        webView = DraggableWebView(frame: .zero, configuration: configuration)
         webView.uiDelegate = self
         webView.navigationDelegate = self
         WebViewTransparency.apply(to: webView)
