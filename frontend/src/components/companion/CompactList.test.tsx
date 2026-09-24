@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { CompanionModel, MeaningfulItem } from "../../lib/companion/model";
 import CompactList from "./CompactList";
@@ -23,6 +24,14 @@ describe("CompactList", () => {
     fireEvent.click(row);
     expect(onOpenProject).toHaveBeenCalledWith("keyA");
     expect(screen.getByText(/Live · last event/)).toBeInTheDocument();
+  });
+
+  it("keeps the row element when a card updates in place", () => {
+    const [current, setCurrent] = createSignal(model);
+    render(() => <CompactList model={current()} onOpenProject={() => {}} onOpenRiver={() => {}} onCollapse={() => {}} />);
+    const row = screen.getByRole("button", { name: "a: 1 unseen, 2 live" });
+    setCurrent({ ...model, projects: [{ ...model.projects[0], liveSessions: 3 }] });
+    expect(screen.getByRole("button", { name: "a: 1 unseen, 3 live" })).toBe(row);
   });
 
   it("shows the quiet empty state and the river and collapse controls", () => {

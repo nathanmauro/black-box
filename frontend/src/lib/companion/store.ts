@@ -4,13 +4,15 @@ import type { EventAppended, LiveStore, SessionUpdated } from "../sse";
 import { modeMessage, postToShell } from "./bridge";
 import {
   ACTIVE_SESSION_WINDOW_MS,
-  deriveModel,
+  composeModel,
+  deriveItems,
   MEANINGFUL_EVENT_TYPES,
   MEANINGFUL_QUERY,
   MEANINGFUL_WINDOW_MS,
   type CompanionMode,
   type CompanionModel,
   type ExpandedViewState,
+  type MeaningfulItem,
   type SessionLiveness,
 } from "./model";
 import { createSeenStore, safeStorage, type SeenStore } from "./seen";
@@ -55,6 +57,10 @@ function timestamp(iso: string | null | undefined): number {
   return Number.isNaN(value) ? 0 : value;
 }
 
+function sameElements<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function loadMode(storage: Storage | null): PersistedMode {
   const fallback: PersistedMode = { mode: "mini", expanded: { kind: "river" } };
   if (!storage) return fallback;
@@ -93,16 +99,27 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const [expanded, setExpanded] = createSignal<ExpandedViewState>(persisted.expanded);
   const [lastProjectKey, setLastProjectKey] = createSignal<string | null>(persisted.expanded.kind === "project" ? persisted.expanded.projectKey : null);
 
+  // Items only change with events, the catalog, seen-state, or the window; activity frames reuse them,
+  // so rows keep their identity (and their DOM) while tool calls stream in.
+  const items = createMemo<MeaningfulItem[]>(
+    (previous) => deriveItems({ now: now(), projects: projects(), events: [...events().values()], seen: deps.seen.seen() }, previous),
+    [],
+    { equals: sameElements },
+  );
   const model = createMemo(() =>
-    deriveModel({
+    composeModel({
       now: now(),
       connection: live.status(),
       lastEventAt: lastEventAt(),
       projects: projects(),
       sessions: [...sessions().values()],
-      events: [...events().values()],
-      seen: deps.seen.seen(),
+      items: items(),
     }),
+  );
+  const shellState = createMemo(
+    () => ({ pulse: model().pulse, unseen: model().unseenTotal }),
+    undefined,
+    { equals: (previous, next) => previous.pulse === next.pulse && previous.unseen === next.unseen },
   );
 
   function bumpLastEvent(iso: string | null | undefined): void {
@@ -206,8 +223,8 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     ),
   );
   createEffect(() => {
-    const current = model();
-    postToShell({ type: "state", pulse: current.pulse, unseen: current.unseenTotal });
+    const state = shellState();
+    postToShell({ type: "state", pulse: state.pulse, unseen: state.unseen });
   });
   createEffect(() => {
     postToShell(modeMessage(mode()));

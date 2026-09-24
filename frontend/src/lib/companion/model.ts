@@ -130,15 +130,45 @@ export function pulseOf(connection: ConnectionState, lastEventAt: string | null,
   return lastEventAt && now - timestamp(lastEventAt) <= LIVE_WINDOW_MS ? "live" : "idle";
 }
 
-export function deriveModel(input: DeriveInput): CompanionModel {
+export type ItemsInput = Pick<DeriveInput, "now" | "projects" | "events" | "seen">;
+export type ComposeInput = Omit<DeriveInput, "events" | "seen"> & { items: MeaningfulItem[] };
+
+function sameItem(a: MeaningfulItem, b: MeaningfulItem): boolean {
+  return (
+    a.seen === b.seen &&
+    a.projectKey === b.projectKey &&
+    a.projectName === b.projectName &&
+    a.observedAt === b.observedAt &&
+    a.headline === b.headline &&
+    a.nextAction === b.nextAction &&
+    a.openLoops.length === b.openLoops.length
+  );
+}
+
+/**
+ * Meaningful items inside the window, deduplicated by id, newest first. Items whose content is
+ * unchanged reuse their `previous` object, so keyed lists keep their rows across recomputes.
+ */
+export function deriveItems(input: ItemsInput, previous: readonly MeaningfulItem[] = []): MeaningfulItem[] {
+  const prior = new Map(previous.map((item) => [item.id, item]));
   const byId = new Map<string, MeaningfulItem>();
   for (const event of input.events) {
     if (input.now - timestamp(event.observedAt) > MEANINGFUL_WINDOW_MS) continue;
     const item = toMeaningfulItem(event, input.projects, input.seen);
-    if (item) byId.set(item.id, item);
+    if (!item) continue;
+    const kept = prior.get(item.id);
+    byId.set(item.id, kept && sameItem(kept, item) ? kept : item);
   }
-  const items = [...byId.values()].sort((a, b) => timestamp(b.observedAt) - timestamp(a.observedAt));
+  return [...byId.values()].sort((a, b) => timestamp(b.observedAt) - timestamp(a.observedAt));
+}
 
+export function deriveModel(input: DeriveInput): CompanionModel {
+  return composeModel({ ...input, items: deriveItems(input) });
+}
+
+/** Cards and pulse over already-derived items; cheap enough to rerun on every activity frame. */
+export function composeModel(input: ComposeInput): CompanionModel {
+  const items = input.items;
   const cards = new Map<string, ProjectCard>();
   const ensure = (key: string, name: string): ProjectCard => {
     let card = cards.get(key);

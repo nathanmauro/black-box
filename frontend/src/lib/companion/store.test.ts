@@ -196,6 +196,32 @@ describe("createCompanionStore", () => {
     }
   });
 
+  it("keeps item identity and skips shell state posts across tool-call frames", async () => {
+    const postMessage = vi.fn();
+    const shellWindow = window as unknown as { webkit?: unknown };
+    shellWindow.webkit = { messageHandlers: { companion: { postMessage } } };
+    try {
+      await createRoot(async (dispose) => {
+        const { live, setStatus, emitEvent } = fakeLive();
+        const store = createCompanionStore(live, deps());
+        await settled(store.loading, (loading) => !loading);
+        setStatus("live");
+        const item = store.model().river[0];
+        const posts = postMessage.mock.calls.length;
+        emitEvent({ id: "t1", sessionId: "s1", source: "codex", eventType: "PostToolUse", observedAt: iso(0), cwd: "/repo/a" });
+        expect(store.model().lastEventAt).toBe(iso(0));
+        expect(store.model().river[0]).toBe(item);
+        expect(postMessage).toHaveBeenCalledTimes(posts);
+        emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
+        await settled(() => store.model().river.length, (length) => length === 2);
+        expect(store.model().river.find((entry) => entry.id === "d1")).toBe(item);
+        dispose();
+      });
+    } finally {
+      delete shellWindow.webkit;
+    }
+  });
+
   it("ages items out of the 24h window on the tick", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {

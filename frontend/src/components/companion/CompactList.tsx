@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { Index, Show } from "solid-js";
 import type { CompanionModel } from "../../lib/companion/model";
 import { timeAgo } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -37,22 +37,22 @@ export default function CompactList(props: CompactListProps) {
       </header>
       <Show when={props.model.projects.length > 0} fallback={<p class="companion-empty">Quiet. No active projects in the last 24h.</p>}>
         <ul class="companion-projects">
-          <For each={props.model.projects}>
+          <Index each={props.model.projects}>
             {(card) => (
               <li>
                 <button
                   type="button"
                   class="companion-project-row"
-                  aria-label={`${card.name}: ${card.unseen} unseen, ${card.liveSessions} live`}
-                  onClick={() => props.onOpenProject(card.key)}
+                  aria-label={`${card().name}: ${card().unseen} unseen, ${card().liveSessions} live`}
+                  onClick={() => props.onOpenProject(card().key)}
                 >
-                  <span class={`companion-live-dot${card.liveSessions > 0 ? " companion-live-dot--on" : ""}`} aria-hidden="true" />
-                  <span class="companion-project-name">{card.name}</span>
-                  <span class="companion-project-meta">{card.liveSessions > 0 ? `${card.liveSessions} live` : "quiet"}</span>
-                  <Show when={card.unseen > 0}>
-                    <span class="companion-count">{card.unseen}</span>
+                  <span class={`companion-live-dot${card().liveSessions > 0 ? " companion-live-dot--on" : ""}`} aria-hidden="true" />
+                  <span class="companion-project-name">{card().name}</span>
+                  <span class="companion-project-meta">{card().liveSessions > 0 ? `${card().liveSessions} live` : "quiet"}</span>
+                  <Show when={card().unseen > 0}>
+                    <span class="companion-count">{card().unseen}</span>
                   </Show>
-                  <Show when={card.latest}>
+                  <Show when={card().latest}>
                     {(latest) => (
                       <span class="companion-project-latest">
                         <KindBadge kind={latest().eventType} />
@@ -64,7 +64,7 @@ export default function CompactList(props: CompactListProps) {
                 </button>
               </li>
             )}
-          </For>
+          </Index>
         </ul>
       </Show>
       <footer class={`companion-footer companion-footer--${props.model.pulse}`}>{pulseText(props.model)}</footer>
