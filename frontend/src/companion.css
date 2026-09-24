@@ -1,5 +1,6 @@
-/* Companion surface only. Uses theme tokens when present. */
-.app-shell--bare {
+/* Companion surface only. Uses theme tokens when present. This sheet loads before theme.css,
+   so the bare-shell override doubles its class to outrank `.app-shell`. */
+.app-shell.app-shell--bare {
   display: block;
   background: transparent;
   min-height: 0;
