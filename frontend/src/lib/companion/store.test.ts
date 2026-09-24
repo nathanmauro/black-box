@@ -62,6 +62,7 @@ function deps(overrides: Partial<CompanionDeps> = {}): CompanionDeps {
     seen: createSeenStore(null),
     storage: null,
     now: () => NOW,
+    sleep: async () => {},
     ...overrides,
   };
 }
@@ -102,6 +103,67 @@ describe("createCompanionStore", () => {
       expect(d.getEvent).toHaveBeenCalledWith("h1");
       expect(store.model().river[0]).toMatchObject({ id: "h1", headline: "wired", nextAction: "verify", projectKey: "keyA" });
       expect(store.model().unseenTotal).toBe(2);
+      dispose();
+    });
+  });
+
+  it("retries a failed live event fetch before giving up", async () => {
+    await createRoot(async (dispose) => {
+      const { live, setStatus, emitEvent } = fakeLive();
+      const getEvent = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("404"))
+        .mockRejectedValueOnce(new Error("404"))
+        .mockResolvedValueOnce({ id: "h1", sessionId: "s1", source: "claude", clientSessionId: "c1", eventType: "Handoff", text: "wired", metadata: {}, observedAt: iso(1_000) } satisfies AgentEvent);
+      const store = createCompanionStore(live, deps({ getEvent, sleep: async () => {} }));
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
+      await settled(() => store.model().river.length, (length) => length === 2);
+      expect(getEvent).toHaveBeenCalledTimes(3);
+      dispose();
+    });
+  });
+
+  it("gives up on a live event fetch after exhausting its retries", async () => {
+    await createRoot(async (dispose) => {
+      const { live, setStatus, emitEvent } = fakeLive();
+      const getEvent = vi.fn().mockRejectedValue(new Error("404"));
+      const store = createCompanionStore(live, deps({ getEvent, sleep: async () => {} }));
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
+      await vi.waitFor(() => expect(getEvent).toHaveBeenCalledTimes(3));
+      expect(store.model().river).toHaveLength(1);
+      dispose();
+    });
+  });
+
+  it("waits for an in-flight catalog refresh before attributing a live item", async () => {
+    await createRoot(async (dispose) => {
+      const projectB: ProjectSummary = {
+        ...projectA,
+        projectKey: "keyB",
+        canonicalKey: "/repo/b",
+        label: "/repo/b",
+        scopes: [{ projectKey: "keyB", canonicalKey: "/repo/b", label: "/repo/b", primary: true }],
+      };
+      const getProjects = vi.fn(async (): Promise<ProjectSummary[]> => [projectA]);
+      let resolveProjects!: (value: ProjectSummary[]) => void;
+      let clock = NOW;
+      const { live, setStatus, emitEvent } = fakeLive();
+      const store = createCompanionStore(live, deps({ getProjects, now: () => clock }));
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      store.openProject("keyB"); // no card yet; just parks the view for the assertion below
+      clock = NOW + 61_000; // past the catalog refresh throttle
+      getProjects.mockImplementation(() => new Promise((resolve) => { resolveProjects = resolve; }));
+      emitEvent({ id: "h1", sessionId: "s2", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/b" });
+      // The event's getEvent() resolves well before the catalog fetch does; attribution must still wait.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(store.model().river.find((item) => item.id === "h1")).toBeUndefined();
+      resolveProjects([projectA, projectB]);
+      await settled(() => store.model().river.find((item) => item.id === "h1")?.projectKey, (key) => key === "keyB");
       dispose();
     });
   });

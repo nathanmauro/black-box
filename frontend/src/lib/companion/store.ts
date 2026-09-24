@@ -30,6 +30,7 @@ export type CompanionDeps = {
   seen: SeenStore;
   storage: Storage | null;
   now: () => number;
+  sleep: (ms: number) => Promise<void>;
 };
 
 export type CompanionStore = {
@@ -49,8 +50,22 @@ export type CompanionStore = {
 
 export function defaultDeps(): CompanionDeps {
   const storage = safeStorage();
-  return { getProjects, getSessions, getEventFeed, getEvent, seen: createSeenStore(storage), storage, now: () => Date.now() };
+  return {
+    getProjects,
+    getSessions,
+    getEventFeed,
+    getEvent,
+    seen: createSeenStore(storage),
+    storage,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  };
 }
+
+// A completion Handoff's SSE frame can beat the transaction that made it visible (docs/architecture.md);
+// a handful of short retries covers that window instead of silently dropping the item.
+const EVENT_FETCH_ATTEMPTS = 3;
+const EVENT_FETCH_RETRY_DELAY_MS = 600;
 
 type PersistedMode = { mode: CompanionMode; expanded: ExpandedViewState };
 const MODES: CompanionMode[] = ["mini", "compact", "expanded"];
@@ -164,18 +179,36 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   let catalogFetchedAt = Number.NEGATIVE_INFINITY;
 
   // New repos and worktrees join the catalog server-side; refetch it, at most once a minute, when
-  // live activity names a cwd the cached catalog cannot resolve.
-  function refreshCatalogFor(cwd: string | null | undefined): void {
-    if (!cwd || findProjectByIdentifier(projects(), cwd)) return;
+  // live activity names a cwd the cached catalog cannot resolve. Returns the in-flight fetch so a
+  // caller attributing an event to a project can wait for it instead of racing it.
+  function refreshCatalogFor(cwd: string | null | undefined): Promise<void> {
+    if (!cwd || findProjectByIdentifier(projects(), cwd)) return Promise.resolve();
     const current = deps.now();
-    if (current - catalogFetchedAt < CATALOG_REFRESH_MS) return;
+    if (current - catalogFetchedAt < CATALOG_REFRESH_MS) return Promise.resolve();
     catalogFetchedAt = current;
-    void deps
+    return deps
       .getProjects()
-      .then(setProjects)
+      .then((next) => {
+        setProjects(next);
+      })
       .catch(() => {
         // Keep the cached catalog; the next unknown cwd after the throttle retries.
       });
+  }
+
+  // Retries a live event's fetch a few times before giving up, so a Handoff whose SSE frame beat
+  // the transaction that made it visible (docs/architecture.md) is not silently dropped.
+  async function fetchEventWithRetry(id: string): Promise<AgentEvent> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < EVENT_FETCH_ATTEMPTS; attempt++) {
+      try {
+        return await deps.getEvent(id);
+      } catch (cause) {
+        lastError = cause;
+        if (attempt < EVENT_FETCH_ATTEMPTS - 1) await deps.sleep(EVENT_FETCH_RETRY_DELAY_MS);
+      }
+    }
+    throw lastError;
   }
 
   async function refresh(): Promise<void> {
@@ -208,13 +241,14 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const stopEvents = live.onEventAppended((event: EventAppended) => {
     bumpLastEvent(event.observedAt);
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.observedAt });
-    refreshCatalogFor(event.cwd);
+    const catalogReady = refreshCatalogFor(event.cwd);
     if (!isMeaningfulEventType(event.eventType)) return;
-    void deps
-      .getEvent(event.id)
-      .then((full) => addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }))
+    // Wait for both: the full event body (retried) and any in-flight catalog refresh for its cwd,
+    // so a brand-new worktree's first item is attributed to its real project, not Unassigned.
+    void Promise.all([fetchEventWithRetry(event.id), catalogReady])
+      .then(([full]) => addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }))
       .catch(() => {
-        // The next refresh (reconnect or reload) backfills anything missed here.
+        // Retries exhausted; the next full refresh (reconnect or reload) backfills this item.
       });
   });
   const stopSessions = live.onSessionUpdated((event: SessionUpdated) => {
