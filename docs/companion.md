@@ -49,14 +49,14 @@ menubar title tracks the page's pulse and unseen count. It writes `mini.png`, `c
 touches the real shell's saved position, sizes, or seen-state. Point it at an isolated Black Box
 seeded with a Decision or Handoff and a recent tool call, never the live instance on port 8766.
 
-The menubar menu offers Show/Hide Companion, Open Black Box, and Quit. The panel resizes as the
+The menubar menu offers Show/Hide Companion, Open Black Box, Reload, and Quit. The panel resizes as the
 page changes level and remembers its position; a manual resize of the expanded panel is remembered
 per mode and preferred over the page's own default size the next time that mode is entered. Links
 open in the default browser. With `?embedded=1` the page paints no background, so only the chip or
 card shows in the clear panel.
 
 The shell assumes Black Box authentication is disabled on `127.0.0.1` (the default; see
-[Authentication](docs/authentication.md)). Its `WKWebView` carries no credentials, so if
+[Authentication](authentication.md)). Its `WKWebView` carries no credentials, so if
 authentication is enabled the panel's requests to `/companion` and the APIs it reads will fail
 (redirected to a login page, or 401) until authentication is turned off again or the shell is
 extended to carry a token.
