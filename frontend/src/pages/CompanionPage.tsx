@@ -43,7 +43,13 @@ export default function CompanionPage() {
   );
 
   return (
-    <section class={`companion companion--${store.mode()}${embedded ? " companion--embedded" : ""}`} data-mode={store.mode()}>
+    // data-pulse lets an external checker (the macOS --self-test) tell a genuinely-ready page apart
+    // from one that rendered .companion but is still connecting or behind a failed initial load.
+    <section
+      class={`companion companion--${store.mode()}${embedded ? " companion--embedded" : ""}`}
+      data-mode={store.mode()}
+      data-pulse={store.model().pulse}
+    >
       <Switch>
         <Match when={store.mode() === "mini"}>
           <MiniChip

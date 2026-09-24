@@ -1,12 +1,16 @@
 import AppKit
 import WebKit
 
-/// Loads the companion route in a real panel, waits for `.companion`, writes a PNG, exits 0.
-final class SelfTest: NSObject, WKNavigationDelegate {
+/// Loads the companion route in a real panel, waits for it to be genuinely ready (see
+/// `SelfTestChecks`), writes a PNG, exits 0.
+final class SelfTest: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     private let url: URL
     private let output: String
     private var panel: CompanionPanel!
     private var webView: WKWebView!
+    // The state/mode bridge is the shell's only real integration point; require it to have fired at
+    // least once before declaring the page ready, so a page that never wires it up cannot pass.
+    private var receivedBridgeMessage = false
 
     static func run(url: URL, output: String) -> Never {
         let app = NSApplication.shared
@@ -23,8 +27,10 @@ final class SelfTest: NSObject, WKNavigationDelegate {
     }
 
     private func start() {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "companion")
         panel = CompanionPanel(contentSize: NSSize(width: 340, height: 420))
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 340, height: 420))
+        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 340, height: 420), configuration: configuration)
         webView.navigationDelegate = self
         panel.contentView = webView
         panel.orderFrontRegardless()
@@ -40,26 +46,53 @@ final class SelfTest: NSObject, WKNavigationDelegate {
     private static let pollInterval: TimeInterval = 0.1
     private static let pollTimeout: TimeInterval = 10
 
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        if BridgeMessage.parse(message.body) != nil { receivedBridgeMessage = true }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pollForCompanion(deadline: Date().addingTimeInterval(Self.pollTimeout))
     }
 
-    // The page mounts asynchronously (module load, first fetch); poll for `.companion` instead of
-    // guessing a fixed delay, so the self-test is neither flaky on a slow load nor needlessly slow
-    // on a fast one.
+    // The page mounts .companion synchronously, before its data loads and before the bridge has said
+    // anything — polling for that element alone would report ok for a page stuck behind a failed API
+    // call or a dead bridge. Poll until SelfTestChecks says it is actually ready instead.
     private func pollForCompanion(deadline: Date) {
-        webView.evaluateJavaScript("(document.querySelector('.companion') || {}).getAttribute ? document.querySelector('.companion').getAttribute('data-mode') : null") { [self] result, _ in
-            if let mode = result as? String {
-                captureSnapshot(mode: mode)
+        let script = """
+        (function () {
+          var el = document.querySelector('.companion');
+          if (!el) return null;
+          return {
+            mode: el.getAttribute('data-mode'),
+            pulse: el.getAttribute('data-pulse'),
+            hasError: !!document.querySelector('.companion-error'),
+          };
+        })()
+        """
+        webView.evaluateJavaScript(script) { [self] result, _ in
+            let dict = result as? [String: Any]
+            let mode = dict?["mode"] as? String
+            let pulse = dict?["pulse"] as? String
+            let hasError = dict?["hasError"] as? Bool ?? false
+            if SelfTestChecks.isReady(mode: mode, hasError: hasError, pulse: pulse, receivedBridgeMessage: receivedBridgeMessage) {
+                captureSnapshot(mode: mode!)
                 return
             }
             if Date() >= deadline {
-                SelfTest.fail(".companion not rendered")
+                SelfTest.fail(notReadyReason(mode: mode, pulse: pulse, hasError: hasError))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.pollInterval) { [self] in
                 pollForCompanion(deadline: deadline)
             }
         }
+    }
+
+    private func notReadyReason(mode: String?, pulse: String?, hasError: Bool) -> String {
+        if mode == nil || mode == "" { return ".companion not rendered" }
+        if hasError { return "page shows .companion-error" }
+        if pulse == nil || pulse == "connecting" { return "pulse stuck at \(pulse ?? "missing")" }
+        if !receivedBridgeMessage { return "no bridge message received from the page" }
+        return "not ready"
     }
 
     private func captureSnapshot(mode: String) {

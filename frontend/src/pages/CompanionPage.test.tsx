@@ -44,6 +44,9 @@ describe("CompanionPage", () => {
     ));
     const chip = await screen.findByRole("button", { name: /Black Box companion/ });
     await waitFor(() => expect(chip).toHaveAccessibleName("Black Box companion: idle, 1 unseen"));
+    // The macOS self-test reads this attribute to tell a genuinely-ready page apart from one still
+    // stuck on "connecting" behind a working SPA shell.
+    expect(document.querySelector(".companion")).toHaveAttribute("data-pulse", "idle");
     fireEvent.click(chip);
     const row = await screen.findByRole("button", { name: /^a: 1 live, 1 unseen/ });
     // Every level change must hand focus to that level's primary control, not drop it to <body>
