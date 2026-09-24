@@ -2,6 +2,7 @@ import { createRoot, createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentSession, EventFeedItem, ProjectSummary } from "../api";
 import type { EventAppended, LiveStatus, LiveStore, SessionUpdated } from "../sse";
+import { UNASSIGNED_KEY } from "./model";
 import { createSeenStore } from "./seen";
 import { createCompanionStore, MODE_STORAGE_KEY, TICK_MS, type CompanionDeps } from "./store";
 
@@ -220,6 +221,32 @@ describe("createCompanionStore", () => {
     } finally {
       delete shellWindow.webkit;
     }
+  });
+
+  it("refreshes the project catalog for an unknown cwd at most once a minute", async () => {
+    await createRoot(async (dispose) => {
+      let clock = NOW;
+      const projectB: ProjectSummary = {
+        ...projectA,
+        projectKey: "keyB",
+        canonicalKey: "/repo/b",
+        label: "/repo/b",
+        scopes: [{ projectKey: "keyB", canonicalKey: "/repo/b", label: "/repo/b", primary: true }],
+      };
+      const getProjects = vi.fn(async (): Promise<ProjectSummary[]> => [projectA]);
+      const { live, setStatus, emitEvent } = fakeLive();
+      const store = createCompanionStore(live, deps({ getProjects, now: () => clock }));
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      getProjects.mockImplementation(async () => [projectA, projectB]);
+      clock = NOW + 61_000;
+      emitEvent({ id: "t2", sessionId: "s7", source: "codex", eventType: "PostToolUse", observedAt: new Date(clock).toISOString(), cwd: "/repo/b" });
+      await settled(() => store.model().projects.map((card) => card.key), (keys) => keys.includes("keyB"));
+      expect(store.model().projects.some((card) => card.key === UNASSIGNED_KEY)).toBe(false);
+      emitEvent({ id: "t3", sessionId: "s8", source: "codex", eventType: "PostToolUse", observedAt: new Date(clock).toISOString(), cwd: "/repo/c" });
+      expect(getProjects).toHaveBeenCalledTimes(2);
+      dispose();
+    });
   });
 
   it("ages items out of the 24h window on the tick", async () => {

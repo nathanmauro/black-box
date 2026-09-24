@@ -1,5 +1,6 @@
 import { batch, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
 import { getEvent, getEventFeed, getProjects, getSessions, type AgentEvent, type AgentSession, type EventFeedItem, type ProjectSummary } from "../api";
+import { findProjectByIdentifier } from "../projects";
 import type { EventAppended, LiveStore, SessionUpdated } from "../sse";
 import { modeMessage, postToShell } from "./bridge";
 import {
@@ -19,6 +20,7 @@ import { createSeenStore, safeStorage, type SeenStore } from "./seen";
 
 export const MODE_STORAGE_KEY = "blackbox.companion.mode.v1";
 export const TICK_MS = 30_000;
+export const CATALOG_REFRESH_MS = 60_000;
 
 export type CompanionDeps = {
   getProjects: () => Promise<ProjectSummary[]>;
@@ -148,8 +150,26 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     if (view.kind === "river" || view.projectKey === card.key) deps.seen.markAll([item.id]);
   }
 
+  let catalogFetchedAt = Number.NEGATIVE_INFINITY;
+
+  // New repos and worktrees join the catalog server-side; refetch it, at most once a minute, when
+  // live activity names a cwd the cached catalog cannot resolve.
+  function refreshCatalogFor(cwd: string | null | undefined): void {
+    if (!cwd || findProjectByIdentifier(projects(), cwd)) return;
+    const current = deps.now();
+    if (current - catalogFetchedAt < CATALOG_REFRESH_MS) return;
+    catalogFetchedAt = current;
+    void deps
+      .getProjects()
+      .then(setProjects)
+      .catch(() => {
+        // Keep the cached catalog; the next unknown cwd after the throttle retries.
+      });
+  }
+
   async function refresh(): Promise<void> {
     setLoading(true);
+    catalogFetchedAt = deps.now();
     try {
       const [projectList, sessionList, feed] = await Promise.all([
         deps.getProjects(),
@@ -176,6 +196,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const stopEvents = live.onEventAppended((event: EventAppended) => {
     bumpLastEvent(event.observedAt);
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.observedAt });
+    refreshCatalogFor(event.cwd);
     if (!(event.eventType in MEANINGFUL_EVENT_TYPES)) return;
     void deps
       .getEvent(event.id)
@@ -187,6 +208,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const stopSessions = live.onSessionUpdated((event: SessionUpdated) => {
     if (!event.lastSeenAt) return;
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.lastSeenAt });
+    refreshCatalogFor(event.cwd);
     bumpLastEvent(event.lastSeenAt);
   });
   // The tick ages the model; pruning keeps both maps bounded by their windows in a long-running shell.
