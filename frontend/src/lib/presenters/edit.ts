@@ -17,8 +17,19 @@ export function editPresenter(event: AgentEvent): Presentation {
   return {
     kindPill: { label: "Edit", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "edit" },
     headline: [{ kind: "fileLink", label: truncatePath(pathValue), file }],
-    blocks: [{ kind: "diff", file, oldText, newText, label: `Diff (${oldText.length} → ${newText.length} chars)` }],
-    sizes: { inputChars: event.toolInputJson?.length ?? 0, outputChars: event.toolOutputJson?.length ?? 0 },
+    blocks: [
+      {
+        kind: "diff",
+        file,
+        oldText,
+        newText,
+        label: `Diff (${oldText.length} → ${newText.length} chars)`,
+      },
+    ],
+    sizes: {
+      inputChars: event.toolInputJson?.length ?? 0,
+      outputChars: event.toolOutputJson?.length ?? 0,
+    },
     refs: [file],
   };
 }

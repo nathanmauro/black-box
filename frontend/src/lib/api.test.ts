@@ -49,7 +49,10 @@ import {
 } from "./api";
 
 function stubJson<T>(payload: T) {
-  const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(payload), { status: 200 }));
+  const fetchMock = vi.fn(
+    async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(JSON.stringify(payload), { status: 200 }),
+  );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
@@ -65,14 +68,20 @@ describe("browser CSRF credentials", () => {
     document.cookie = "XSRF-TOKEN=first%20token; path=/";
     await createSpec({ projectKey: "black-box", title: "Spec", body: "Frozen", actor: "planner" });
     await mergeProjectAlias("alias", "canonical");
-    await updateTaskStatus("task", { actor: "worker", status: "blocked", blockedReason: "dependency" });
+    await updateTaskStatus("task", {
+      actor: "worker",
+      status: "blocked",
+      blockedReason: "dependency",
+    });
     await deleteProjectAlias("alias");
     for (const [, init] of fetchMock.mock.calls) {
       expect(init?.headers).toMatchObject({ "X-XSRF-TOKEN": "first token" });
     }
     document.cookie = "XSRF-TOKEN=rotated-token; path=/";
     await claimNextTask({ lane: "codex", agent: "worker" });
-    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toMatchObject({ "X-XSRF-TOKEN": "rotated-token" });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toMatchObject({
+      "X-XSRF-TOKEN": "rotated-token",
+    });
     await getSpec("spec");
     expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).not.toHaveProperty("X-XSRF-TOKEN");
   });
@@ -88,7 +97,10 @@ describe("Phase 2 API helpers", () => {
     const fetchMock = stubJson(payload);
     const controller = new AbortController();
 
-    const counts = await getEventFacets({ q: " kind:Decision ", meaningful: true }, controller.signal);
+    const counts = await getEventFacets(
+      { q: " kind:Decision ", meaningful: true },
+      controller.signal,
+    );
 
     expect(counts).toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith("/api/events/facets?q=kind%3ADecision&meaningful=true", {
@@ -144,11 +156,13 @@ describe("Phase 2 API helpers", () => {
     };
     const fetchMock = stubJson(payload);
 
-    await expect(getSessionTranscript("session/old", {
-      limit: 100,
-      before: "2026-08-30T14:01:00Z|event/2",
-      q: "  read vite.config  ",
-    })).resolves.toEqual(payload);
+    await expect(
+      getSessionTranscript("session/old", {
+        limit: 100,
+        before: "2026-08-30T14:01:00Z|event/2",
+        q: "  read vite.config  ",
+      }),
+    ).resolves.toEqual(payload);
 
     const requestPath = String(fetchMock.mock.calls[0]?.[0]);
     const url = new URL(requestPath, "http://blackbox.test");
@@ -239,7 +253,9 @@ describe("Phase 2 API helpers", () => {
     };
     const fetchMock = stubJson(payload);
 
-    await expect(mergeProjectAlias(payload.aliasKey, payload.canonicalKey)).resolves.toEqual(payload);
+    await expect(mergeProjectAlias(payload.aliasKey, payload.canonicalKey)).resolves.toEqual(
+      payload,
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/project-aliases",
       expect.objectContaining({
@@ -250,7 +266,9 @@ describe("Phase 2 API helpers", () => {
   });
 
   it("deletes a manual project alias by its raw scope", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(deleteProjectAlias("/tmp/worktree/black box")).resolves.toBeUndefined();
@@ -387,7 +405,12 @@ describe("task API helpers", () => {
     expect(url.searchParams.getAll("limit")).toEqual(["40"]);
     expect(url.search).not.toContain("undefined");
 
-    await listTasks({ projectKey: undefined, lane: undefined, status: undefined, limit: undefined });
+    await listTasks({
+      projectKey: undefined,
+      lane: undefined,
+      status: undefined,
+      limit: undefined,
+    });
     expect(String(fetchMock.mock.calls[1]?.[0])).toBe("/api/tasks");
   });
 
@@ -399,20 +422,32 @@ describe("task API helpers", () => {
   });
 
   it("surfaces typed API error messages and HTTP status", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      error: {
-        status: 409,
-        type: "claimant_mismatch",
-        message: "Task is owned by another agent",
-      },
-    }), {
-      status: 409,
-      statusText: "Conflict",
-      headers: { "Content-Type": "application/json" },
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                status: 409,
+                type: "claimant_mismatch",
+                message: "Task is owned by another agent",
+              },
+            }),
+            {
+              status: 409,
+              statusText: "Conflict",
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+      ),
+    );
 
-    const error = await updateTaskStatus("task/1", { actor: "intruder", status: "blocked", blockedReason: "waiting" })
-      .catch((caught: unknown) => caught);
+    const error = await updateTaskStatus("task/1", {
+      actor: "intruder",
+      status: "blocked",
+      blockedReason: "waiting",
+    }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({
@@ -425,11 +460,27 @@ describe("task API helpers", () => {
   it("uses the seven REST task contract routes and typed bodies", async () => {
     const fetchMock = stubJson(change);
 
-    await createSpec({ projectKey: "black-box", title: "Spec", body: "Frozen", specRef: null, actor: "planner" });
+    await createSpec({
+      projectKey: "black-box",
+      title: "Spec",
+      body: "Frozen",
+      specRef: null,
+      actor: "planner",
+    });
     await getSpec("spec/1");
-    await enqueueTask({ specId: "spec-1", title: "Task", lane: "codex", priority: 7, actor: "planner" });
+    await enqueueTask({
+      specId: "spec-1",
+      title: "Task",
+      lane: "codex",
+      priority: 7,
+      actor: "planner",
+    });
     await claimNextTask({ lane: "codex", agent: "worker" });
-    await updateTaskStatus("task/1", { actor: "worker", status: "blocked", blockedReason: "dependency" });
+    await updateTaskStatus("task/1", {
+      actor: "worker",
+      status: "blocked",
+      blockedReason: "dependency",
+    });
     await completeTask("task/1", {
       actor: "worker",
       source: "codex",
@@ -458,10 +509,10 @@ describe("task API helpers", () => {
   });
 
   it("narrows manual updates and requires a completion next action", () => {
-    expectTypeOf<UpdateTaskStatusRequest["status"]>()
-      .toEqualTypeOf<"blocked" | "open" | "cancelled">();
-    expectTypeOf<CompleteTaskRequest>()
-      .toMatchTypeOf<{ nextAction: string }>();
+    expectTypeOf<UpdateTaskStatusRequest["status"]>().toEqualTypeOf<
+      "blocked" | "open" | "cancelled"
+    >();
+    expectTypeOf<CompleteTaskRequest>().toMatchTypeOf<{ nextAction: string }>();
   });
 
   it("posts task annotations to the encoded task route", async () => {
@@ -491,16 +542,18 @@ describe("task API helpers", () => {
   });
 
   it("gets the full event timeline from the encoded task route", async () => {
-    const payload: TaskEvent[] = [{
-      id: "event-1",
-      taskId: "task/1",
-      type: "task.note",
-      actor: "worker-1",
-      fromStatus: null,
-      toStatus: null,
-      detail: { kind: "note", text: "Checking in", dataJson: null },
-      observedAt: "2026-07-15T18:00:00Z",
-    }];
+    const payload: TaskEvent[] = [
+      {
+        id: "event-1",
+        taskId: "task/1",
+        type: "task.note",
+        actor: "worker-1",
+        fromStatus: null,
+        toStatus: null,
+        detail: { kind: "note", text: "Checking in", dataJson: null },
+        observedAt: "2026-07-15T18:00:00Z",
+      },
+    ];
     const fetchMock = stubJson(payload);
 
     await expect(getTaskEvents("task/1")).resolves.toEqual(payload);
@@ -547,7 +600,9 @@ describe("task API helpers", () => {
 
   it("gets a task DAG from the encoded task route", async () => {
     const payload: DagResponse = {
-      nodes: [{ id: "task:task/1", type: "task", label: "Build Board", status: "open", ref: "task/1" }],
+      nodes: [
+        { id: "task:task/1", type: "task", label: "Build Board", status: "open", ref: "task/1" },
+      ],
       edges: [],
     };
     const fetchMock = stubJson(payload);
@@ -593,9 +648,13 @@ describe("subagent lineage API helpers", () => {
   it("batches child counts through the session-links child-counts endpoint", async () => {
     const fetchMock = stubJson<Record<string, number>>({ "session-1": 2 });
 
-    await expect(getSessionChildCounts(["session-1", "session/2"])).resolves.toEqual({ "session-1": 2 });
+    await expect(getSessionChildCounts(["session-1", "session/2"])).resolves.toEqual({
+      "session-1": 2,
+    });
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/session-links/child-counts?ids=session-1,session%2F2");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/session-links/child-counts?ids=session-1,session%2F2",
+    );
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
   });
 

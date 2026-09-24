@@ -18,11 +18,15 @@ function patchEvent(command: string): AgentEvent {
 
 describe("applyPatchPresenter", () => {
   it("headlines the first patched file and counts the rest", () => {
-    const command = "*** Begin Patch\n*** Update File: /Users/nathan/Developer/proj/x/a.ts\n@@\n+x\n*** Add File: /tmp/b.txt\n+y\n*** End Patch";
+    const command =
+      "*** Begin Patch\n*** Update File: /Users/nathan/Developer/proj/x/a.ts\n@@\n+x\n*** Add File: /tmp/b.txt\n+y\n*** End Patch";
     const presentation = applyPatchPresenter(patchEvent(command));
     expect(presentation.kindPill).toEqual({ label: "Patch", tone: "write" });
     expect(headlineText(presentation)).toBe("Patch ~/Developer/proj/x/a.ts +1 more");
-    expect(presentation.refs).toEqual([{ path: "/Users/nathan/Developer/proj/x/a.ts" }, { path: "/tmp/b.txt" }]);
+    expect(presentation.refs).toEqual([
+      { path: "/Users/nathan/Developer/proj/x/a.ts" },
+      { path: "/tmp/b.txt" },
+    ]);
     const [block] = presentation.blocks;
     expect(block.kind).toBe("patch");
     if (block.kind === "patch") {

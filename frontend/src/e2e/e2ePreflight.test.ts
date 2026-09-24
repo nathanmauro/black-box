@@ -33,7 +33,9 @@ describe("E2E storage ownership preflight", () => {
 
     preflightE2eStorage(tempDir, dbPath, token);
 
-    expect(readFileSync(path.join(tempDir, ".black-box-saga-e2e-owned"), "utf8").trim()).toBe(token);
+    expect(readFileSync(path.join(tempDir, ".black-box-saga-e2e-owned"), "utf8").trim()).toBe(
+      token,
+    );
     expect(cleanupOwnedE2eStorage(tempDir, dbPath, token)).toBe(true);
     expect(cleanupOwnedE2eStorage(tempDir, dbPath, token)).toBe(false);
   });
@@ -57,7 +59,9 @@ describe("E2E storage ownership preflight", () => {
 
     rmSync(dbPath);
     writeFileSync(`${dbPath}-wal`, "not ours", "utf8");
-    expect(() => assertDatabaseArtifactsAbsent(tempDir, dbPath)).toThrow(/pre-existing SQLite entry/);
+    expect(() => assertDatabaseArtifactsAbsent(tempDir, dbPath)).toThrow(
+      /pre-existing SQLite entry/,
+    );
   });
 
   it("propagates mkdir failure before creating any database artifact", () => {
@@ -73,7 +77,9 @@ describe("E2E storage ownership preflight", () => {
     const tempDir = path.join(os.homedir(), `black-box-saga-e2e-${randomUUID()}`);
     const dbPath = path.join(tempDir, "black-box-saga-e2e.db");
 
-    expect(() => preflightE2eStorage(tempDir, dbPath, randomUUID())).toThrow(/real system temp root/);
+    expect(() => preflightE2eStorage(tempDir, dbPath, randomUUID())).toThrow(
+      /real system temp root/,
+    );
     expect(existsSync(tempDir)).toBe(false);
   });
 
@@ -81,7 +87,9 @@ describe("E2E storage ownership preflight", () => {
     const { tempDir, dbPath } = isolatedPaths();
     preflightE2eStorage(tempDir, dbPath, "owner-token");
 
-    expect(() => cleanupOwnedE2eStorage(tempDir, dbPath, "other-token")).toThrow(/matching ownership/);
+    expect(() => cleanupOwnedE2eStorage(tempDir, dbPath, "other-token")).toThrow(
+      /matching ownership/,
+    );
     expect(existsSync(tempDir)).toBe(true);
   });
 

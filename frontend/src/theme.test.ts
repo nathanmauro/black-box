@@ -68,7 +68,10 @@ describe("theme conversation navigator contracts", () => {
       "border-bottom: 1px solid var(--border);",
     ]);
     expectRule(".session-transcript-search-actions", ["display: inline-flex;"]);
-    expectRule(".session-transcript-status", ["flex: none;", "border-bottom: 1px solid var(--border);"]);
+    expectRule(".session-transcript-status", [
+      "flex: none;",
+      "border-bottom: 1px solid var(--border);",
+    ]);
     expectRule(".transcript-page-controls", ["display: flex;", "justify-content: center;"]);
     expectRule(".prompt-turn--search-active::before", ["background: var(--green);"]);
   });
@@ -76,10 +79,7 @@ describe("theme conversation navigator contracts", () => {
 
 describe("theme session lineage contracts", () => {
   it("keeps a compact dock in flow while the animated lineage lens floats above the transcript", () => {
-    expectRule(".session-lineage", [
-      "position: relative;",
-      "flex: none;",
-    ]);
+    expectRule(".session-lineage", ["position: relative;", "flex: none;"]);
     expectRule(".lineage-dock", ["min-height: 46px;"]);
     expectRule(".lineage-lens", [
       "position: absolute;",
@@ -109,12 +109,19 @@ describe("theme route overflow contracts", () => {
 
   it("keeps search results and recall cards from widening the document", () => {
     expectRule(".page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
-    expectRule(".activity-workspace > .page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
+    expectRule(".activity-workspace > .page--search", [
+      "min-width: 0;",
+      "max-width: 100%;",
+      "overflow-x: hidden;",
+    ]);
     expectRule(".result-group", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".result-row", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".result-row-body", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".recall-results", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
     expectRule(".recall-card", ["min-width: 0;", "max-width: 100%;", "overflow-wrap: anywhere;"]);
-    expectRule(".recall-rationale,\n.recall-next", ["overflow-wrap: anywhere;", "word-break: break-word;"]);
+    expectRule(".recall-rationale,\n.recall-next", [
+      "overflow-wrap: anywhere;",
+      "word-break: break-word;",
+    ]);
   });
 });

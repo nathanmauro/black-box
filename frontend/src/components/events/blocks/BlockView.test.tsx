@@ -9,7 +9,13 @@ describe("BlockView diff", () => {
       <BlockView
         eventId="evt-1"
         index={0}
-        block={{ kind: "diff", file: { path: "/tmp/a.ts" }, oldText: "const a = 1;", newText: "const a = 2;", label: "Diff (12 → 12 chars)" }}
+        block={{
+          kind: "diff",
+          file: { path: "/tmp/a.ts" },
+          oldText: "const a = 1;",
+          newText: "const a = 2;",
+          label: "Diff (12 → 12 chars)",
+        }}
       />
     ));
     expect(screen.getByText("Diff (12 → 12 chars)")).toBeInTheDocument();
@@ -30,7 +36,14 @@ describe("BlockView bash", () => {
       <BlockView
         eventId="evt-2"
         index={0}
-        block={{ kind: "bash", command: "npm test", cwd: "/tmp/proj", output: "42 tests passed", exitCode: 0, wallTime: "1.2 seconds" }}
+        block={{
+          kind: "bash",
+          command: "npm test",
+          cwd: "/tmp/proj",
+          output: "42 tests passed",
+          exitCode: 0,
+          wallTime: "1.2 seconds",
+        }}
       />
     ));
     expect(screen.getByText("npm test")).toBeInTheDocument();
@@ -49,7 +62,15 @@ describe("BlockView patch", () => {
   it("renders parsed patch hunks per file when opened", () => {
     const command = "*** Begin Patch\n*** Update File: /tmp/a.ts\n@@\n-old\n+new\n*** End Patch";
     const { container } = render(() => (
-      <BlockView eventId="evt-3" index={0} block={{ kind: "patch", command, files: [{ op: "update", path: "/tmp/a.ts", movedTo: null }] }} />
+      <BlockView
+        eventId="evt-3"
+        index={0}
+        block={{
+          kind: "patch",
+          command,
+          files: [{ op: "update", path: "/tmp/a.ts", movedTo: null }],
+        }}
+      />
     ));
     const details = container.querySelector("details") as HTMLDetailsElement;
     details.open = true;
@@ -59,7 +80,8 @@ describe("BlockView patch", () => {
   });
 
   it("gives every absolute patch path and move target the shared file actions", () => {
-    const command = "*** Begin Patch\n*** Update File: /repo/old.ts\n*** Move to: /repo/new.ts\n@@\n-old\n+new\n*** End Patch";
+    const command =
+      "*** Begin Patch\n*** Update File: /repo/old.ts\n*** Move to: /repo/new.ts\n@@\n-old\n+new\n*** End Patch";
     const { container } = render(() => (
       <CodeNavigationContext.Provider
         value={{
@@ -72,7 +94,11 @@ describe("BlockView patch", () => {
         <BlockView
           eventId="evt-move"
           index={0}
-          block={{ kind: "patch", command, files: [{ op: "update", path: "/repo/old.ts", movedTo: "/repo/new.ts" }] }}
+          block={{
+            kind: "patch",
+            command,
+            files: [{ op: "update", path: "/repo/old.ts", movedTo: "/repo/new.ts" }],
+          }}
         />
       </CodeNavigationContext.Provider>
     ));
@@ -88,7 +114,16 @@ describe("BlockView patch", () => {
 describe("BlockView fallback", () => {
   it("renders the existing ToolPayload for fallback blocks", () => {
     render(() => (
-      <BlockView eventId="evt-4" index={0} block={{ kind: "fallback", toolName: "Mystery", inputJson: JSON.stringify({ query: "hello" }), outputJson: null }} />
+      <BlockView
+        eventId="evt-4"
+        index={0}
+        block={{
+          kind: "fallback",
+          toolName: "Mystery",
+          inputJson: JSON.stringify({ query: "hello" }),
+          outputJson: null,
+        }}
+      />
     ));
     expect(screen.getByText("Query")).toBeInTheDocument();
     expect(screen.getByText("hello")).toBeInTheDocument();

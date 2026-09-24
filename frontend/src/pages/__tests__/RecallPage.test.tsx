@@ -11,7 +11,9 @@ const setParams = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string; "aria-label"?: string }) => (
-    <a href={props.href} class={props.class} aria-label={props["aria-label"]}>{props.children}</a>
+    <a href={props.href} class={props.class} aria-label={props["aria-label"]}>
+      {props.children}
+    </a>
   ),
   useSearchParams: () => [params, setParams],
 }));
@@ -35,7 +37,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
           repo: null,
           observedAt: "2026-06-16T20:00:00Z",
           headline: "Use the Hybrid Storyline timeline",
-          rationale: "It keeps meaningful project blocks first while preserving raw trace archaeology.",
+          rationale:
+            "It keeps meaningful project blocks first while preserving raw trace archaeology.",
           alternatives: ["Raw chronological feed", "Summary-only timeline"],
           confidence: 0.82,
           openLoops: ["Alias merge seam"],
@@ -58,16 +61,25 @@ describe("RecallPage", () => {
   it.each([
     ["Three months · 90d", 2160],
     ["Six months · 180d", 4320],
-  ])("submits the %s rolling window without changing the selected scope or kinds", async (label, hours) => {
-    render(() => <RecallPage />);
-    fireEvent.input(screen.getByLabelText("Scope"), { target: { value: "/workspace/example-app" } });
-    fireEvent.click(screen.getByRole("radio", { name: label }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Observation" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+  ])(
+    "submits the %s rolling window without changing the selected scope or kinds",
+    async (label, hours) => {
+      render(() => <RecallPage />);
+      fireEvent.input(screen.getByLabelText("Scope"), {
+        target: { value: "/workspace/example-app" },
+      });
+      fireEvent.click(screen.getByRole("radio", { name: label }));
+      fireEvent.click(screen.getByRole("checkbox", { name: "Observation" }));
+      fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
 
-    expect(getRecall).toHaveBeenCalledWith("/workspace/example-app", hours, ["decision", "handoff", "observation"]);
-    expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
-  });
+      expect(getRecall).toHaveBeenCalledWith("/workspace/example-app", hours, [
+        "decision",
+        "handoff",
+        "observation",
+      ]);
+      expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
+    },
+  );
 
   it("offers named help disclosures that close with Escape without submitting recall", () => {
     render(() => <RecallPage />);
@@ -91,14 +103,16 @@ describe("RecallPage", () => {
 
     expect(getRecall).toHaveBeenCalledWith("sba-agentic", 168, ["decision", "handoff"]);
     expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
-    expect(screen.getByText("It keeps meaningful project blocks first while preserving raw trace archaeology.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "It keeps meaningful project blocks first while preserving raw trace archaeology.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Raw chronological feed")).toBeInTheDocument();
     expect(screen.getByText("82%")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Use the Hybrid Storyline timeline in Browse" }))
-      .toHaveAttribute(
-        "href",
-        "/?view=browse&session=session-1&event=evt-1&project=",
-      );
+    expect(
+      screen.getByRole("link", { name: "Open Use the Hybrid Storyline timeline in Browse" }),
+    ).toHaveAttribute("href", "/?view=browse&session=session-1&event=evt-1&project=");
     expect(screen.queryByText(/eventId/)).not.toBeInTheDocument();
     expect(setParams).toHaveBeenCalledWith({ scope: "sba-agentic" });
   });

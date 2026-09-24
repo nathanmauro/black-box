@@ -32,24 +32,33 @@ describe("parseApplyPatch", () => {
   it("parses an update patch into hunks with add/del/context kinds", () => {
     const files = parseApplyPatch(UPDATE_PATCH);
     expect(files).toHaveLength(1);
-    expect(files![0]).toMatchObject({ op: "update", path: "/Users/nathan/Developer/proj/sba-agentic/README.md" });
+    expect(files![0]).toMatchObject({
+      op: "update",
+      path: "/Users/nathan/Developer/proj/sba-agentic/README.md",
+    });
     const kinds = files![0].hunks[0].lines.map((line) => `${line.kind}:${line.text}`);
     expect(kinds).toEqual(["context:intro line", "del:old line", "add:new line"]);
   });
 
   it("parses add-file bodies as additions", () => {
     const files = parseApplyPatch(MULTI_PATCH);
-    expect(files![0].hunks[0].lines).toEqual([{ kind: "add", text: "hello", oldLine: null, newLine: null }]);
+    expect(files![0].hunks[0].lines).toEqual([
+      { kind: "add", text: "hello", oldLine: null, newLine: null },
+    ]);
     expect(files![1].hunks).toEqual([]);
   });
 
   it("captures Move to targets", () => {
-    const moved = parseApplyPatch("*** Begin Patch\n*** Update File: /tmp/old.txt\n*** Move to: /tmp/new.txt\n@@\n+x\n*** End Patch");
+    const moved = parseApplyPatch(
+      "*** Begin Patch\n*** Update File: /tmp/old.txt\n*** Move to: /tmp/new.txt\n@@\n+x\n*** End Patch",
+    );
     expect(moved![0].movedTo).toBe("/tmp/new.txt");
   });
 
   it("returns null for content that is not a patch", () => {
     expect(parseApplyPatch("just some text")).toBeNull();
-    expect(parseApplyPatch("*** Begin Patch\ngarbage before any file header\n*** End Patch")).toBeNull();
+    expect(
+      parseApplyPatch("*** Begin Patch\ngarbage before any file header\n*** End Patch"),
+    ).toBeNull();
   });
 });

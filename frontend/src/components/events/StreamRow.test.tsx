@@ -56,7 +56,11 @@ describe("StreamRow", () => {
 
   it("colors only the failed chatter mark red", () => {
     renderRow(
-      feedItem({ toolName: "Bash", toolInputJson: '{"command":"false"}', toolOutputJson: '{"exit_code":1,"output":"boom"}' }),
+      feedItem({
+        toolName: "Bash",
+        toolInputJson: '{"command":"false"}',
+        toolOutputJson: '{"exit_code":1,"output":"boom"}',
+      }),
     );
 
     expect(document.querySelector(".kind-mark--error")).toHaveTextContent("run");
@@ -99,7 +103,9 @@ describe("StreamRow", () => {
   });
 
   it("shows the row's own cwd inline only when flagged as a run exception", () => {
-    const { unmount } = renderRow(feedItem({ toolName: "Bash", toolInputJson: '{"command":"ls"}' }));
+    const { unmount } = renderRow(
+      feedItem({ toolName: "Bash", toolInputJson: '{"command":"ls"}' }),
+    );
     expect(document.querySelector(".stream-row-cwd")).not.toBeInTheDocument();
     unmount();
 
@@ -112,14 +118,19 @@ describe("StreamRow", () => {
         cwdException
       />
     ));
-    expect(document.querySelector(".stream-row-cwd")).toHaveTextContent("~/Developer/proj/sba-agentic");
+    expect(document.querySelector(".stream-row-cwd")).toHaveTextContent(
+      "~/Developer/proj/sba-agentic",
+    );
   });
 
   it("keeps only the per-event position link on the expanded head", () => {
     renderRow(feedItem({ eventType: "Decision", text: "Chose SQLite" }), true);
 
     const head = document.querySelector(".stream-row-expanded-head") as HTMLElement;
-    expect(screen.getByRole("link", { name: "Open at this event" })).toHaveAttribute("href", "/session");
+    expect(screen.getByRole("link", { name: "Open at this event" })).toHaveAttribute(
+      "href",
+      "/session",
+    );
     // Session title and context-zone actions moved to RunHeader (spec §4.3).
     expect(head.textContent).not.toContain("Ink slice work");
   });

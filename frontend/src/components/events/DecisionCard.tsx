@@ -25,7 +25,9 @@ export default function DecisionCard(props: DecisionCardProps) {
         <strong>{truncatePath(decision())}</strong>
         <span class="event-card-time">{timeAgo(props.event.observedAt)}</span>
       </div>
-      {metadataText(meta().rationale) ? <p class="event-rationale">{truncatePath(metadataText(meta().rationale))}</p> : null}
+      {metadataText(meta().rationale) ? (
+        <p class="event-rationale">{truncatePath(metadataText(meta().rationale))}</p>
+      ) : null}
       <div class="confidence-row">
         <span>confidence</span>
         <meter min="0" max="1" value={confidence()}>

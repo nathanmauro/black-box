@@ -10,7 +10,15 @@ const SOURCE_COLORS: Record<string, string> = {
   manual: "#636363",
 };
 
-export const SOURCES = ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"] as const;
+export const SOURCES = [
+  "claude",
+  "codex",
+  "cursor",
+  "raycast",
+  "cockpit",
+  "cli",
+  "manual",
+] as const;
 
 export type SourceName = (typeof SOURCES)[number];
 

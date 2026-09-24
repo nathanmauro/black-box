@@ -3,7 +3,12 @@ import type { AgentEvent } from "../api";
 import { GENERIC_MARK, kindMarkLabel, kindMarkOf } from "./marks";
 import { presentationOf } from "./registry";
 
-function toolEvent(id: string, toolName: string | null, inputJson: string | null, outputJson: string | null): AgentEvent {
+function toolEvent(
+  id: string,
+  toolName: string | null,
+  inputJson: string | null,
+  outputJson: string | null,
+): AgentEvent {
   return {
     id,
     sessionId: "ses",
@@ -60,7 +65,12 @@ describe("kindMarkOf failure tone (D3)", () => {
 
   it("derives error from is_error:true beyond bash, and only from true", () => {
     const bad = toolEvent("read-bad", "Read", '{"file_path":"/tmp/x"}', '{"is_error":true}');
-    const ok = toolEvent("read-ok", "Read", '{"file_path":"/tmp/x"}', '{"is_error":false,"content":"hi"}');
+    const ok = toolEvent(
+      "read-ok",
+      "Read",
+      '{"file_path":"/tmp/x"}',
+      '{"is_error":false,"content":"hi"}',
+    );
     expect(kindMarkOf(bad).error).toBe(true);
     expect(kindMarkOf(ok).error).toBe(false);
   });
@@ -86,7 +96,12 @@ describe("kindMarkOf failure tone (D3)", () => {
   // loose (CI-safe) — locally this runs in low single-digit milliseconds.
   it("derives marks for 500 rows well inside the frame budget", () => {
     const rows = Array.from({ length: 500 }, (_, index) =>
-      toolEvent(`perf-${index}`, index % 2 ? "Bash" : "Read", '{"command":"npm test","file_path":"/tmp/x"}', '{"exit_code":1,"output":"x"}'),
+      toolEvent(
+        `perf-${index}`,
+        index % 2 ? "Bash" : "Read",
+        '{"command":"npm test","file_path":"/tmp/x"}',
+        '{"exit_code":1,"output":"x"}',
+      ),
     );
     const cold = performance.now();
     rows.forEach((row) => kindMarkOf(row));

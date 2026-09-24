@@ -8,7 +8,15 @@ import patchFixtures from "./__fixtures__/apply_patch.json";
 import { headlineText, normalizeToolName, presentationOf, presenterFor } from "./registry";
 import { genericPresenter } from "./generic";
 
-export function fixtureEvent(row: { toolName: string; eventType: string; toolInputJson: string | null; toolOutputJson: string | null }, index: number): AgentEvent {
+export function fixtureEvent(
+  row: {
+    toolName: string;
+    eventType: string;
+    toolInputJson: string | null;
+    toolOutputJson: string | null;
+  },
+  index: number,
+): AgentEvent {
   return {
     id: `fixture-${row.toolName}-${index}`,
     sessionId: "fixture-session",
@@ -39,12 +47,21 @@ describe("presenterFor", () => {
 
 describe("presentationOf", () => {
   it("caches per event object", () => {
-    const event = fixtureEvent({ toolName: "Nope", eventType: "PostToolUse", toolInputJson: "{}", toolOutputJson: null }, 0);
+    const event = fixtureEvent(
+      { toolName: "Nope", eventType: "PostToolUse", toolInputJson: "{}", toolOutputJson: null },
+      0,
+    );
     expect(presentationOf(event)).toBe(presentationOf(event));
   });
 
   it("never throws across the entire golden corpus and always reports sizes", () => {
-    const corpus = [...bashFixtures, ...editFixtures, ...writeFixtures, ...readFixtures, ...patchFixtures];
+    const corpus = [
+      ...bashFixtures,
+      ...editFixtures,
+      ...writeFixtures,
+      ...readFixtures,
+      ...patchFixtures,
+    ];
     expect(corpus.length).toBeGreaterThan(0);
     corpus.forEach((row, index) => {
       const event = fixtureEvent(row, index);
@@ -58,10 +75,20 @@ describe("presentationOf", () => {
 
 describe("genericPresenter", () => {
   it("emits a single fallback block and an empty headline", () => {
-    const event = fixtureEvent({ toolName: "Mystery", eventType: "PostToolUse", toolInputJson: '{"a":1}', toolOutputJson: null }, 0);
+    const event = fixtureEvent(
+      {
+        toolName: "Mystery",
+        eventType: "PostToolUse",
+        toolInputJson: '{"a":1}',
+        toolOutputJson: null,
+      },
+      0,
+    );
     const presentation = genericPresenter(event);
     expect(presentation.headline).toEqual([]);
-    expect(presentation.blocks).toEqual([{ kind: "fallback", toolName: "Mystery", inputJson: '{"a":1}', outputJson: null }]);
+    expect(presentation.blocks).toEqual([
+      { kind: "fallback", toolName: "Mystery", inputJson: '{"a":1}', outputJson: null },
+    ]);
     expect(headlineText(presentation)).toBe("");
   });
 });
@@ -73,7 +100,15 @@ describe("presentationOf error containment", () => {
     registerPresenter("explosive", () => {
       throw new Error("presenter bug");
     });
-    const event = fixtureEvent({ toolName: "explosive", eventType: "PostToolUse", toolInputJson: "{}", toolOutputJson: null }, 0);
+    const event = fixtureEvent(
+      {
+        toolName: "explosive",
+        eventType: "PostToolUse",
+        toolInputJson: "{}",
+        toolOutputJson: null,
+      },
+      0,
+    );
     expect(presentationOf(event).blocks[0].kind).toBe("fallback");
   });
 });

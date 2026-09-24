@@ -38,7 +38,12 @@ export default function StreamFold(props: StreamFoldProps) {
 
   return (
     <article class="stream-row-wrap">
-      <button type="button" class="stream-row stream-fold" aria-expanded="false" onClick={props.onUnfold}>
+      <button
+        type="button"
+        class="stream-row stream-fold"
+        aria-expanded="false"
+        onClick={props.onUnfold}
+      >
         <span
           classList={{ "kind-mark": true, "kind-mark--error": fold().loudestTone === "error" }}
           aria-hidden="true"
@@ -47,7 +52,9 @@ export default function StreamFold(props: StreamFoldProps) {
         </span>
         <span class="stream-row-headline stream-fold-label">
           {fold().items[0].toolName} ×{count()}
-          <Show when={argSummary()}>{(summary) => <span class="headline-arg"> — {summary()}</span>}</Show>
+          <Show when={argSummary()}>
+            {(summary) => <span class="headline-arg"> — {summary()}</span>}
+          </Show>
         </span>
         <span class="stream-fold-span">{span()}</span>
       </button>

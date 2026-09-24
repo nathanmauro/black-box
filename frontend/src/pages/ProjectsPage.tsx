@@ -1,5 +1,15 @@
 import { A, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type JSX,
+} from "solid-js";
 import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
@@ -32,7 +42,11 @@ import {
   projectShortName,
   rankProjects,
 } from "../lib/projects";
-import { buildTrajectory, findTrajectoryNodeForCapture, type TrajectoryGraphNode } from "../lib/trajectory";
+import {
+  buildTrajectory,
+  findTrajectoryNodeForCapture,
+  type TrajectoryGraphNode,
+} from "../lib/trajectory";
 
 const TIMELINE_LIMIT = 250;
 const SESSION_LIMIT = 20;
@@ -53,14 +67,19 @@ export default function ProjectsPage() {
   });
   const projectList = createMemo(() => (projects.error ? [] : projects()));
   const routeProject = createMemo(() => findProjectByIdentifier(projectList(), params.projectKey));
-  const selectedProject = createMemo(() => routeProject() || (!params.projectKey ? projectList()[0] : undefined));
+  const selectedProject = createMemo(
+    () => routeProject() || (!params.projectKey ? projectList()[0] : undefined),
+  );
   const selectedKey = createMemo(() => selectedProject()?.projectKey || null);
   const projectCandidates = createMemo(() =>
     projectList().filter(
-      (project) => project.projectKey !== selectedProject()?.projectKey && !isProtectedProject(project),
+      (project) =>
+        project.projectKey !== selectedProject()?.projectKey && !isProtectedProject(project),
     ),
   );
-  const selectedMergeTarget = createMemo(() => findProjectByIdentifier(projectCandidates(), mergeTargetKey()));
+  const selectedMergeTarget = createMemo(() =>
+    findProjectByIdentifier(projectCandidates(), mergeTargetKey()),
+  );
   const [sessions, { refetch: refetchSessions }] = createResource(
     selectedKey,
     async (key) => (key ? getProjectSessions(key, SESSION_LIMIT) : []),
@@ -92,12 +111,14 @@ export default function ProjectsPage() {
     const focus = searchParams.focus;
     if (!focus) return null;
     if (focus.startsWith("capture:")) {
-      return findTrajectoryNodeForCapture(trajectoryGraph(), focus.slice("capture:".length))?.id ?? null;
+      return (
+        findTrajectoryNodeForCapture(trajectoryGraph(), focus.slice("capture:".length))?.id ?? null
+      );
     }
     return focus;
   });
-  const selectedTrajectoryNode = createMemo(() =>
-    trajectoryGraph().nodes.find((node) => node.id === selectedTrajectoryNodeId()) ?? null,
+  const selectedTrajectoryNode = createMemo(
+    () => trajectoryGraph().nodes.find((node) => node.id === selectedTrajectoryNodeId()) ?? null,
   );
   const meldList = createMemo(() => (melds.error ? [] : melds()));
   const storylineCount = createMemo(() =>
@@ -112,17 +133,20 @@ export default function ProjectsPage() {
     navigate(projectHref(project), { replace: true });
   });
 
-  createEffect((previousKey: string | null | undefined) => {
-    const key = selectedKey();
-    setMergeTargetKey(undefined);
-    setCurationError(null);
-    // Clear the focus selection only on a real project switch — never on the initial catalog
-    // resolve (null → key), which would wipe a deep-linked ?focus= before it ever rendered.
-    if (previousKey != null && key != null && previousKey !== key && searchParams.focus) {
-      setSearchParams({ focus: undefined }, { replace: true });
-    }
-    return key;
-  }, undefined as string | null | undefined);
+  createEffect(
+    (previousKey: string | null | undefined) => {
+      const key = selectedKey();
+      setMergeTargetKey(undefined);
+      setCurationError(null);
+      // Clear the focus selection only on a real project switch — never on the initial catalog
+      // resolve (null → key), which would wipe a deep-linked ?focus= before it ever rendered.
+      if (previousKey != null && key != null && previousKey !== key && searchParams.focus) {
+        setSearchParams({ focus: undefined }, { replace: true });
+      }
+      return key;
+    },
+    undefined as string | null | undefined,
+  );
 
   const clearTrajectorySelection = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -197,7 +221,8 @@ export default function ProjectsPage() {
           <span>{projectList().length.toLocaleString()}</span>
         </header>
         <p class="project-catalog-intro">
-          Group recorded working directories into durable project identities without rewriting history.
+          Group recorded working directories into durable project identities without rewriting
+          history.
         </p>
         <ProjectPicker
           projects={projectList()}
@@ -213,21 +238,41 @@ export default function ProjectsPage() {
           <span class="eyebrow">Project catalog</span>
           <span>{projectList().length.toLocaleString()} observed</span>
         </div>
-        <Show when={!projects.loading} fallback={<WorkspaceState title="Loading project catalog" detail="Reading observed working directories…" />}>
+        <Show
+          when={!projects.loading}
+          fallback={
+            <WorkspaceState
+              title="Loading project catalog"
+              detail="Reading observed working directories…"
+            />
+          }
+        >
           <Show
             when={!projects.error}
             fallback={
               <WorkspaceState
                 tone="error"
                 title="Project catalog unavailable"
-                detail={errorMessage(projects.error, "Black Box could not load project identities.")}
-                action={<button type="button" onClick={() => void refetchProjects()}>Retry</button>}
+                detail={errorMessage(
+                  projects.error,
+                  "Black Box could not load project identities.",
+                )}
+                action={
+                  <button type="button" onClick={() => void refetchProjects()}>
+                    Retry
+                  </button>
+                }
               />
             }
           >
             <Show
               when={projectList().length}
-              fallback={<WorkspaceState title="No observed projects" detail="Projects appear after Black Box records a working directory." />}
+              fallback={
+                <WorkspaceState
+                  title="No observed projects"
+                  detail="Projects appear after Black Box records a working directory."
+                />
+              }
             >
               <nav class="project-catalog-list" aria-label="Project catalog">
                 <For each={rankProjects(projectList(), "")}>
@@ -236,7 +281,8 @@ export default function ProjectsPage() {
                       type="button"
                       classList={{
                         "project-catalog-row": true,
-                        "project-catalog-row--active": project.projectKey === selectedProject()?.projectKey,
+                        "project-catalog-row--active":
+                          project.projectKey === selectedProject()?.projectKey,
                       }}
                       onClick={() => selectProject(project.projectKey)}
                     >
@@ -272,7 +318,12 @@ export default function ProjectsPage() {
           >
             <Show
               when={selectedProject()}
-              fallback={<WorkspaceState title="Select a project" detail="Choose a catalog entry to inspect its recorded storyline." />}
+              fallback={
+                <WorkspaceState
+                  title="Select a project"
+                  detail="Choose a catalog entry to inspect its recorded storyline."
+                />
+              }
             >
               {(project) => (
                 <>
@@ -284,7 +335,11 @@ export default function ProjectsPage() {
                           <span id="project-storyline-title" class="eyebrow">
                             {storyView() === "trajectory" ? "Trajectory" : "Hybrid storyline"}
                           </span>
-                          <div class="project-storyline-toggle" role="group" aria-label="Project storyline view">
+                          <div
+                            class="project-storyline-toggle"
+                            role="group"
+                            aria-label="Project storyline view"
+                          >
                             <button
                               type="button"
                               aria-pressed={storyView() === "trajectory"}
@@ -305,19 +360,35 @@ export default function ProjectsPage() {
                       </div>
                       <Show
                         when={storyView() === "trajectory"}
-                        fallback={(
+                        fallback={
                           <div class="project-timeline">
                             <Show
                               when={!timeline.loading}
-                              fallback={<WorkspaceState title="Loading storyline" detail="Combining raw events and saved melds…" />}
+                              fallback={
+                                <WorkspaceState
+                                  title="Loading storyline"
+                                  detail="Combining raw events and saved melds…"
+                                />
+                              }
                             >
                               <Show
                                 when={!timeline.error}
-                                fallback={<WorkspaceState tone="error" title="Storyline unavailable" detail={errorMessage(timeline.error)} />}
+                                fallback={
+                                  <WorkspaceState
+                                    tone="error"
+                                    title="Storyline unavailable"
+                                    detail={errorMessage(timeline.error)}
+                                  />
+                                }
                               >
                                 <Show
                                   when={timelineValue().items.length}
-                                  fallback={<WorkspaceState title={`No recorded storyline for ${projectShortName(project())}`} detail="This project identity has no timeline blocks yet." />}
+                                  fallback={
+                                    <WorkspaceState
+                                      title={`No recorded storyline for ${projectShortName(project())}`}
+                                      detail="This project identity has no timeline blocks yet."
+                                    />
+                                  }
                                 >
                                   <For each={timelineValue().items}>
                                     {(block) => <TimelineBlock block={block} project={project()} />}
@@ -326,20 +397,36 @@ export default function ProjectsPage() {
                               </Show>
                             </Show>
                           </div>
-                        )}
+                        }
                       >
                         <div class="project-trajectory">
                           <Show
                             when={!trajectory.loading}
-                            fallback={<WorkspaceState title="Loading trajectory" detail="Assembling bursts, head, and futures…" />}
+                            fallback={
+                              <WorkspaceState
+                                title="Loading trajectory"
+                                detail="Assembling bursts, head, and futures…"
+                              />
+                            }
                           >
                             <Show
                               when={!trajectory.error}
-                              fallback={<WorkspaceState tone="error" title="Trajectory unavailable" detail={errorMessage(trajectory.error)} />}
+                              fallback={
+                                <WorkspaceState
+                                  tone="error"
+                                  title="Trajectory unavailable"
+                                  detail={errorMessage(trajectory.error)}
+                                />
+                              }
                             >
                               <Show
                                 when={trajectoryGraph().nodes.length}
-                                fallback={<WorkspaceState title="No trajectory captures yet" detail="Timeline tab still reachable." />}
+                                fallback={
+                                  <WorkspaceState
+                                    title="No trajectory captures yet"
+                                    detail="Timeline tab still reachable."
+                                  />
+                                }
                               >
                                 <TrajectoryView
                                   graph={trajectoryGraph()}
@@ -367,8 +454,18 @@ export default function ProjectsPage() {
                         onMerge={() => void mergeCandidate()}
                         onUndo={(scope) => void undoScope(scope)}
                       />
-                      <RecentSessionsPanel project={project()} sessions={sessionList()} loading={sessions.loading} error={sessions.error} />
-                      <SavedMeldsPanel project={project()} melds={meldList()} loading={melds.loading} error={melds.error} />
+                      <RecentSessionsPanel
+                        project={project()}
+                        sessions={sessionList()}
+                        loading={sessions.loading}
+                        error={sessions.error}
+                      />
+                      <SavedMeldsPanel
+                        project={project()}
+                        melds={meldList()}
+                        loading={melds.loading}
+                        error={melds.error}
+                      />
                     </aside>
                   </div>
                 </>
@@ -410,16 +507,19 @@ function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: Proje
   const sourceCapture = () => props.node.sourceCapture;
   const sourceSessionId = () => props.node.sessionId || sourceCapture()?.sessionId;
   return (
-    <section class="project-rail-panel trajectory-detail-card" aria-labelledby="trajectory-detail-title">
+    <section
+      class="project-rail-panel trajectory-detail-card"
+      aria-labelledby="trajectory-detail-title"
+    >
       <div class="pane-head">
-        <span id="trajectory-detail-title" class="eyebrow">Trajectory detail</span>
+        <span id="trajectory-detail-title" class="eyebrow">
+          Trajectory detail
+        </span>
         <span>{kindLabel(props.node.kind)}</span>
       </div>
       <div class="project-rail-body trajectory-detail-body">
         <strong>{props.node.label}</strong>
-        <Show when={props.node.eyebrow}>
-          {(eyebrow) => <small>{eyebrow()}</small>}
-        </Show>
+        <Show when={props.node.eyebrow}>{(eyebrow) => <small>{eyebrow()}</small>}</Show>
         <p>{props.node.fullText || props.node.label}</p>
 
         <Show when={sourceCapture()}>
@@ -445,7 +545,8 @@ function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: Proje
         <Show when={sourceSessionId()}>
           {(sessionId) => (
             <A class="trajectory-detail-link" href={sessionHref(props.project, sessionId())}>
-              Session {sourceCapture()?.sessionTitle || sourceCapture()?.clientSessionId || sessionId()}
+              Session{" "}
+              {sourceCapture()?.sessionTitle || sourceCapture()?.clientSessionId || sessionId()}
             </A>
           )}
         </Show>
@@ -488,9 +589,7 @@ function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: Proje
           <div class="trajectory-detail-list">
             <span>Alternatives</span>
             <ul>
-              <For each={props.node.alternatives}>
-                {(alternative) => <li>{alternative}</li>}
-              </For>
+              <For each={props.node.alternatives}>{(alternative) => <li>{alternative}</li>}</For>
             </ul>
           </div>
         </Show>
@@ -528,9 +627,14 @@ function ProjectIdentityPanel(props: {
   const scopes = createMemo(() => projectScopes(props.project));
   const variants = createMemo(() => scopes().filter((scope) => !scope.primary));
   return (
-    <section class="project-rail-panel project-identity-panel" aria-labelledby="project-identity-title">
+    <section
+      class="project-rail-panel project-identity-panel"
+      aria-labelledby="project-identity-title"
+    >
       <div class="pane-head">
-        <span id="project-identity-title" class="eyebrow">Identity &amp; scopes</span>
+        <span id="project-identity-title" class="eyebrow">
+          Identity &amp; scopes
+        </span>
         <span>{scopes().length.toLocaleString()}</span>
       </div>
       <div class="project-rail-body">
@@ -541,7 +645,9 @@ function ProjectIdentityPanel(props: {
         </div>
         <Show
           when={variants().length}
-          fallback={<p class="project-rail-empty">No variant scopes are grouped into this project.</p>}
+          fallback={
+            <p class="project-rail-empty">No variant scopes are grouped into this project.</p>
+          }
         >
           <ul class="project-scope-list">
             <For each={variants()}>
@@ -550,7 +656,12 @@ function ProjectIdentityPanel(props: {
                   <span>
                     <strong>{projectScopeDisplayName(scope)}</strong>
                     <code>{scope.canonicalKey}</code>
-                    <small classList={{ "project-scope-origin": true, "project-scope-origin--manual": scope.source === "manual" }}>
+                    <small
+                      classList={{
+                        "project-scope-origin": true,
+                        "project-scope-origin--manual": scope.source === "manual",
+                      }}
+                    >
                       {projectScopeOrigin(scope)}
                     </small>
                   </span>
@@ -572,12 +683,17 @@ function ProjectIdentityPanel(props: {
 
         <Show
           when={!isProtectedProject(props.project)}
-          fallback={<p class="project-rail-empty project-curation-note">Protected system scopes cannot be merged.</p>}
+          fallback={
+            <p class="project-rail-empty project-curation-note">
+              Protected system scopes cannot be merged.
+            </p>
+          }
         >
           <details class="project-curation">
             <summary>Merge another catalog entry</summary>
             <p>
-              Treat another observed scope as this project. This changes grouping only; raw sessions and event history stay untouched.
+              Treat another observed scope as this project. This changes grouping only; raw sessions
+              and event history stay untouched.
             </p>
             <ProjectPicker
               projects={props.candidates}
@@ -595,7 +711,13 @@ function ProjectIdentityPanel(props: {
             </button>
           </details>
         </Show>
-        <Show when={props.error}>{(message) => <p class="inline-error" role="alert">{message()}</p>}</Show>
+        <Show when={props.error}>
+          {(message) => (
+            <p class="inline-error" role="alert">
+              {message()}
+            </p>
+          )}
+        </Show>
       </div>
     </section>
   );
@@ -603,22 +725,43 @@ function ProjectIdentityPanel(props: {
 
 function RecentSessionsPanel(props: {
   project: ProjectSummary;
-  sessions: Array<{ id: string; source: string; clientSessionId: string; title: string; eventCount: number; lastSeenAt: string }>;
+  sessions: Array<{
+    id: string;
+    source: string;
+    clientSessionId: string;
+    title: string;
+    eventCount: number;
+    lastSeenAt: string;
+  }>;
   loading: boolean;
   error: unknown;
 }) {
   return (
     <section class="project-rail-panel" aria-labelledby="recent-project-sessions-title">
       <div class="pane-head">
-        <span id="recent-project-sessions-title" class="eyebrow">Recent sessions</span>
+        <span id="recent-project-sessions-title" class="eyebrow">
+          Recent sessions
+        </span>
         <span>{props.sessions.length.toLocaleString()}</span>
       </div>
       <div class="project-rail-body">
-        <Show when={!props.loading} fallback={<p class="project-rail-empty">Loading project sessions…</p>}>
-          <Show when={!props.error} fallback={<p class="inline-error" role="alert">{errorMessage(props.error, "Sessions unavailable.")}</p>}>
+        <Show
+          when={!props.loading}
+          fallback={<p class="project-rail-empty">Loading project sessions…</p>}
+        >
+          <Show
+            when={!props.error}
+            fallback={
+              <p class="inline-error" role="alert">
+                {errorMessage(props.error, "Sessions unavailable.")}
+              </p>
+            }
+          >
             <Show
               when={props.sessions.length}
-              fallback={<p class="project-rail-empty">No sessions have been recorded for this project.</p>}
+              fallback={
+                <p class="project-rail-empty">No sessions have been recorded for this project.</p>
+              }
             >
               <ul class="project-session-list">
                 <For each={props.sessions}>
@@ -628,7 +771,11 @@ function RecentSessionsPanel(props: {
                         <SourceDot source={session.source} />
                         <span>
                           <strong>{session.title || session.clientSessionId}</strong>
-                          <small>{session.eventCount.toLocaleString()} {session.eventCount === 1 ? "event" : "events"} · {timeAgo(session.lastSeenAt)}</small>
+                          <small>
+                            {session.eventCount.toLocaleString()}{" "}
+                            {session.eventCount === 1 ? "event" : "events"} ·{" "}
+                            {timeAgo(session.lastSeenAt)}
+                          </small>
                         </span>
                       </A>
                     </li>
@@ -643,16 +790,33 @@ function RecentSessionsPanel(props: {
   );
 }
 
-function SavedMeldsPanel(props: { project: ProjectSummary; melds: ProjectMeld[]; loading: boolean; error: unknown }) {
+function SavedMeldsPanel(props: {
+  project: ProjectSummary;
+  melds: ProjectMeld[];
+  loading: boolean;
+  error: unknown;
+}) {
   return (
     <section class="project-rail-panel" aria-labelledby="saved-project-melds-title">
       <div class="pane-head">
-        <span id="saved-project-melds-title" class="eyebrow">Saved melds</span>
+        <span id="saved-project-melds-title" class="eyebrow">
+          Saved melds
+        </span>
         <span>{props.melds.length.toLocaleString()}</span>
       </div>
       <div class="project-rail-body">
-        <Show when={!props.loading} fallback={<p class="project-rail-empty">Loading saved melds…</p>}>
-          <Show when={!props.error} fallback={<p class="inline-error" role="alert">{errorMessage(props.error, "Saved melds unavailable.")}</p>}>
+        <Show
+          when={!props.loading}
+          fallback={<p class="project-rail-empty">Loading saved melds…</p>}
+        >
+          <Show
+            when={!props.error}
+            fallback={
+              <p class="inline-error" role="alert">
+                {errorMessage(props.error, "Saved melds unavailable.")}
+              </p>
+            }
+          >
             <Show
               when={props.melds.length}
               fallback={<p class="project-rail-empty">No saved melds for this project.</p>}
@@ -662,7 +826,9 @@ function SavedMeldsPanel(props: { project: ProjectSummary; melds: ProjectMeld[];
                   {(meld) => (
                     <article class="saved-meld-row">
                       <strong>{meld.title}</strong>
-                      <small>{meld.provider} · {meld.model} · {timeAgo(meld.createdAt)}</small>
+                      <small>
+                        {meld.provider} · {meld.model} · {timeAgo(meld.createdAt)}
+                      </small>
                       <p>{meld.body}</p>
                       <SourceSessionLinks project={props.project} sessions={meld.sessions || []} />
                     </article>
@@ -683,7 +849,9 @@ function TimelineBlock(props: { block: ProjectTimelineBlock; project: ProjectSum
     <div class="project-timeline-row">
       <div class="timeline-block-label">
         <span>{blockLabel()}</span>
-        <span>{props.block.sessionTitle || props.block.clientSessionId || props.block.headline}</span>
+        <span>
+          {props.block.sessionTitle || props.block.clientSessionId || props.block.headline}
+        </span>
         <time>{timeAgo(props.block.observedAt)}</time>
       </div>
       <TimelineBlockCard block={props.block} project={props.project} />
@@ -695,7 +863,10 @@ function TimelineBlockCard(props: { block: ProjectTimelineBlock; project: Projec
   if (props.block.sourceType === "saved_meld") {
     return <SavedMeldTimelineCard block={props.block} project={props.project} />;
   }
-  if (normalizeEventType(props.block.eventType || props.block.blockType || props.block.sourceType) === "Projection") {
+  if (
+    normalizeEventType(props.block.eventType || props.block.blockType || props.block.sourceType) ===
+    "Projection"
+  ) {
     return <ProjectionTimelineCard block={props.block} />;
   }
   return <EventRenderer event={timelineBlockToEvent(props.block)} />;
@@ -705,7 +876,9 @@ function ProjectionTimelineCard(props: { block: ProjectTimelineBlock }) {
   const metadata = createMemo(() => metadataRecord(props.block.metadata));
   const paths = createMemo(() => projectionPaths(metadata().paths));
   const basis = createMemo(() => metadataValue(metadata(), "basis", ""));
-  const headline = createMemo(() => props.block.headline || paths()[0]?.title || "Projected futures");
+  const headline = createMemo(
+    () => props.block.headline || paths()[0]?.title || "Projected futures",
+  );
   return (
     <article class="event-card">
       <div class="event-card-head">
@@ -714,10 +887,11 @@ function ProjectionTimelineCard(props: { block: ProjectTimelineBlock }) {
         <strong>{truncatePath(headline())}</strong>
         <span class="event-card-time">{timeAgo(props.block.observedAt)}</span>
       </div>
-      <Show when={basis()}>
-        {(text) => <p class="event-rationale">{truncatePath(text())}</p>}
-      </Show>
-      <Show when={paths().length} fallback={props.block.text ? <p class="reader-text">{props.block.text}</p> : null}>
+      <Show when={basis()}>{(text) => <p class="event-rationale">{truncatePath(text())}</p>}</Show>
+      <Show
+        when={paths().length}
+        fallback={props.block.text ? <p class="reader-text">{props.block.text}</p> : null}
+      >
         <div class="metadata-list">
           <span>paths</span>
           <ul>
@@ -762,16 +936,31 @@ function SourceSessionLinks(props: { project: ProjectSummary; sessions: ProjectM
       <div class="meld-source-links">
         <span>source sessions</span>
         <For each={props.sessions}>
-          {(session) => <A href={sessionHref(props.project, session.id)}>{session.title || session.clientSessionId}</A>}
+          {(session) => (
+            <A href={sessionHref(props.project, session.id)}>
+              {session.title || session.clientSessionId}
+            </A>
+          )}
         </For>
       </div>
     </Show>
   );
 }
 
-function WorkspaceState(props: { title: string; detail: string; tone?: "error"; action?: JSX.Element }) {
+function WorkspaceState(props: {
+  title: string;
+  detail: string;
+  tone?: "error";
+  action?: JSX.Element;
+}) {
   return (
-    <div classList={{ "project-workspace-state": true, "project-workspace-state--error": props.tone === "error" }} role={props.tone === "error" ? "alert" : undefined}>
+    <div
+      classList={{
+        "project-workspace-state": true,
+        "project-workspace-state--error": props.tone === "error",
+      }}
+      role={props.tone === "error" ? "alert" : undefined}
+    >
       <strong>{props.title}</strong>
       <p>{props.detail}</p>
       {props.action}
@@ -780,7 +969,12 @@ function WorkspaceState(props: { title: string; detail: string; tone?: "error"; 
 }
 
 function Metric(props: { label: string; value: number }) {
-  return <span><strong>{props.value.toLocaleString()}</strong> {props.value === 1 ? props.label : `${props.label}s`}</span>;
+  return (
+    <span>
+      <strong>{props.value.toLocaleString()}</strong>{" "}
+      {props.value === 1 ? props.label : `${props.label}s`}
+    </span>
+  );
 }
 
 function projectHref(project: ProjectSummary): string {
@@ -809,7 +1003,11 @@ function activityHref(project: ProjectSummary, view: "browse"): string {
 }
 
 function sessionHref(project: ProjectSummary, sessionId: string): string {
-  const query = new URLSearchParams({ view: "browse", project: project.projectKey, session: sessionId });
+  const query = new URLSearchParams({
+    view: "browse",
+    project: project.projectKey,
+    session: sessionId,
+  });
   return `/?${query.toString()}`;
 }
 
@@ -826,7 +1024,9 @@ function recallHref(project: ProjectSummary): string {
 function newestFirst(response: ProjectTimelineResponse): ProjectTimelineResponse {
   return {
     ...response,
-    items: [...response.items].sort((left, right) => timestampValue(right.observedAt) - timestampValue(left.observedAt)),
+    items: [...response.items].sort(
+      (left, right) => timestampValue(right.observedAt) - timestampValue(left.observedAt),
+    ),
   };
 }
 
@@ -845,11 +1045,27 @@ async function getLatestProjectTimeline(projectKey: string): Promise<ProjectTime
 }
 
 function emptyTimeline(): ProjectTimelineResponse {
-  return { projectKey: "", canonicalKey: "", label: "", limit: TIMELINE_LIMIT, offset: 0, count: 0, items: [] };
+  return {
+    projectKey: "",
+    canonicalKey: "",
+    label: "",
+    limit: TIMELINE_LIMIT,
+    offset: 0,
+    count: 0,
+    items: [],
+  };
 }
 
 function emptyTrajectory(): ProjectTrajectoryResponse {
-  return { projectKey: "", canonicalKey: "", label: "", generatedAt: "", totalCaptures: 0, captures: [], tasks: [] };
+  return {
+    projectKey: "",
+    canonicalKey: "",
+    label: "",
+    generatedAt: "",
+    totalCaptures: 0,
+    captures: [],
+    tasks: [],
+  };
 }
 
 function loadProjectStoryView(): ProjectStoryView {
@@ -877,7 +1093,9 @@ function errorMessage(error: unknown, fallback = "Unable to load this project da
 }
 
 function metadataRecord(metadata: unknown): Record<string, unknown> {
-  return metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {};
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : {};
 }
 
 function metadataValue(metadata: Record<string, unknown>, key: string, fallback: string): string {
@@ -927,8 +1145,10 @@ function timelineMetadata(block: ProjectTimelineBlock): unknown {
     if (!metadata.decision && block.headline) metadata.decision = block.headline;
     if (!metadata.rationale && block.text) metadata.rationale = block.text;
   }
-  if (eventType === "Handoff" && !metadata.contextSummary && block.text) metadata.contextSummary = block.text;
-  if (eventType === "Observation" && !metadata.observation && block.text) metadata.observation = block.text;
+  if (eventType === "Handoff" && !metadata.contextSummary && block.text)
+    metadata.contextSummary = block.text;
+  if (eventType === "Observation" && !metadata.observation && block.text)
+    metadata.observation = block.text;
   return Object.keys(metadata).length ? metadata : block.metadata;
 }
 
@@ -941,19 +1161,23 @@ function normalizeEventType(value: string | null | undefined): string {
   return value || "Timeline";
 }
 
-function projectionPaths(value: unknown): Array<{ title: string; description?: string; confidence?: number }> {
+function projectionPaths(
+  value: unknown,
+): Array<{ title: string; description?: string; confidence?: number }> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((path) => {
     if (!path || typeof path !== "object" || Array.isArray(path)) return [];
     const record = path as Record<string, unknown>;
     const title = typeof record.title === "string" ? record.title.trim() : "";
     if (!title) return [];
-    const description = typeof record.description === "string" && record.description.trim()
-      ? record.description.trim()
-      : undefined;
-    const confidence = typeof record.confidence === "number" && Number.isFinite(record.confidence)
-      ? Math.max(0, Math.min(1, record.confidence))
-      : undefined;
+    const description =
+      typeof record.description === "string" && record.description.trim()
+        ? record.description.trim()
+        : undefined;
+    const confidence =
+      typeof record.confidence === "number" && Number.isFinite(record.confidence)
+        ? Math.max(0, Math.min(1, record.confidence))
+        : undefined;
     return [{ title, description, confidence }];
   });
 }

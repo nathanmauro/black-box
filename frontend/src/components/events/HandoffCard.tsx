@@ -27,7 +27,9 @@ export default function HandoffCard(props: HandoffCardProps) {
       </div>
       <div class="event-card-meta">
         {metadataText(meta().toAgent) ? <span>to {metadataText(meta().toAgent)}</span> : null}
-        {metadataText(meta().nextAction) ? <span>next: {truncatePath(metadataText(meta().nextAction))}</span> : null}
+        {metadataText(meta().nextAction) ? (
+          <span>next: {truncatePath(metadataText(meta().nextAction))}</span>
+        ) : null}
       </div>
       <HandoffContext text={summary()} />
       <OpenLoops loops={metadataList(meta().openLoops)} />

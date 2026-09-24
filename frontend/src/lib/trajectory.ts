@@ -132,7 +132,10 @@ type Burst = {
 };
 
 type SolidCandidate = TrajectoryFutureItem & {
-  kind: Exclude<TrajectoryNodeKind, "deep-past" | "burst" | "head" | "future-ghost" | "future-more" | "stub">;
+  kind: Exclude<
+    TrajectoryNodeKind,
+    "deep-past" | "burst" | "head" | "future-ghost" | "future-more" | "stub"
+  >;
   sortMs: number;
 };
 
@@ -151,14 +154,18 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
 
   const bursts = buildBursts(captures);
   const newestBurst = bursts[bursts.length - 1];
-  const headCapture = latestHandoff(newestBurst.captures) ?? newestBurst.captures[newestBurst.captures.length - 1];
+  const headCapture =
+    latestHandoff(newestBurst.captures) ?? newestBurst.captures[newestBurst.captures.length - 1];
   const headMs = timestampValue(headCapture.observedAt);
   const stale = headMs > 0 && nowMs - headMs > STALE_DAYS * DAY_MS;
 
   const nodes: TrajectoryGraphNode[] = [];
   const edges: TrajectoryGraphEdge[] = [];
   const historicalBursts = bursts.slice(0, -1);
-  const collapsedBursts = historicalBursts.slice(0, Math.max(0, historicalBursts.length - SPINE_MAX));
+  const collapsedBursts = historicalBursts.slice(
+    0,
+    Math.max(0, historicalBursts.length - SPINE_MAX),
+  );
   const visibleBursts = historicalBursts.slice(Math.max(0, historicalBursts.length - SPINE_MAX));
   if (hiddenCount > 0 && visibleBursts.length) {
     collapsedBursts.push(visibleBursts.shift()!);
@@ -178,7 +185,10 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
         : `+${collapsedBursts.length} earlier · ${collapsedCaptures.length} ${plural("capture", collapsedCaptures.length)}`,
       eyebrow: capped
         ? `before ${dateRangeLabel(firstVisibleStartMs, firstVisibleStartMs)}`
-        : dateRangeLabel(collapsedBursts[0].startMs, collapsedBursts[collapsedBursts.length - 1].endMs),
+        : dateRangeLabel(
+            collapsedBursts[0].startMs,
+            collapsedBursts[collapsedBursts.length - 1].endMs,
+          ),
       fullText: capped
         ? `${memberCount} older trajectory ${plural("capture", memberCount)} collapsed into the deep past. ${hiddenCount} older ${plural("capture", hiddenCount)} ${hiddenCount === 1 ? "lies" : "lie"} beyond the feed cap.`
         : `${collapsedCaptures.length} older trajectory ${plural("capture", collapsedCaptures.length)} collapsed into the deep past.`,
@@ -188,7 +198,10 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
       hasDecision: collapsedCaptures.some((capture) => capture.kind === "decision"),
       members: collapsedCaptures,
       ...(collapsedBursts.length
-        ? { startMs: collapsedBursts[0].startMs, endMs: collapsedBursts[collapsedBursts.length - 1].endMs }
+        ? {
+            startMs: collapsedBursts[0].startMs,
+            endMs: collapsedBursts[collapsedBursts.length - 1].endMs,
+          }
         : {}),
     });
     spineIndex += 1;
@@ -222,7 +235,9 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
     observedAt: headCapture.observedAt,
   });
 
-  const spineNodes = nodes.filter((node) => node.spineIndex !== undefined).sort((left, right) => (left.spineIndex ?? 0) - (right.spineIndex ?? 0));
+  const spineNodes = nodes
+    .filter((node) => node.spineIndex !== undefined)
+    .sort((left, right) => (left.spineIndex ?? 0) - (right.spineIndex ?? 0));
   for (let index = 1; index < spineNodes.length; index += 1) {
     edges.push({
       id: `trail:${spineNodes[index - 1].id}:${spineNodes[index].id}`,
@@ -297,9 +312,14 @@ export function buildTrajectory(feed: ProjectTrajectoryResponse, nowMs: number):
  * CONTAINS the capture — deep-past/burst/head membership first, falling back to a node merely
  * sourced from it (futures, stubs). Null when the capture is not represented in the graph.
  */
-export function findTrajectoryNodeForCapture(graph: TrajectoryGraph, eventId: string): TrajectoryGraphNode | null {
+export function findTrajectoryNodeForCapture(
+  graph: TrajectoryGraph,
+  eventId: string,
+): TrajectoryGraphNode | null {
   if (!eventId) return null;
-  const containing = graph.nodes.find((node) => node.members?.some((capture) => capture.id === eventId));
+  const containing = graph.nodes.find((node) =>
+    node.members?.some((capture) => capture.id === eventId),
+  );
   if (containing) return containing;
   return graph.nodes.find((node) => node.sourceCapture?.id === eventId) ?? null;
 }
@@ -335,7 +355,11 @@ export function layoutTrajectory(graph: TrajectoryGraph): TrajectoryLayout {
     const shellOffset = node.kind === "future-ghost" ? GHOST_SHELL_OFFSET : 0;
     positions.set(node.id, {
       ...node,
-      x: (head?.x ?? TRAIL_START_X) + FUTURE_BASE_X + (centerSlot - distanceFromCenter) * FUTURE_ARC_STEP + shellOffset,
+      x:
+        (head?.x ?? TRAIL_START_X) +
+        FUTURE_BASE_X +
+        (centerSlot - distanceFromCenter) * FUTURE_ARC_STEP +
+        shellOffset,
       y: spineY - index * FUTURE_ROW,
     });
   });
@@ -356,7 +380,9 @@ export function layoutTrajectory(graph: TrajectoryGraph): TrajectoryLayout {
     }
   }
 
-  const positionedNodes = graph.nodes.map((node) => positions.get(node.id)).filter(Boolean) as PositionedNode[];
+  const positionedNodes = graph.nodes
+    .map((node) => positions.get(node.id))
+    .filter(Boolean) as PositionedNode[];
   const minLabelLeft = Math.min(...positionedNodes.map((node) => node.x - labelHalfWidth(node)));
   const xOffset = Math.max(0, Math.ceil(-minLabelLeft));
   const nodes = positionedNodes.map((node) => withLabelExtents(node, xOffset));
@@ -446,7 +472,11 @@ function rankedFutures(
   headBurst: Burst,
   headCapture: TrajectoryCapture,
   nowMs: number,
-): { visible: Array<SolidCandidate | GhostCandidate>; overflow: TrajectoryFutureItem[]; rankById: Map<string, number> } {
+): {
+  visible: Array<SolidCandidate | GhostCandidate>;
+  overflow: TrajectoryFutureItem[];
+  rankById: Map<string, number>;
+} {
   const frontier = frontierHandoffs(captures, headBurst, headCapture);
   const nextActions = dedupeNewest(
     frontier
@@ -486,12 +516,7 @@ function rankedFutures(
     ),
   );
 
-  const solids = dedupeRanked([
-    ...nextActions,
-    ...blockedTasks,
-    ...activeTasks,
-    ...openLoops,
-  ]);
+  const solids = dedupeRanked([...nextActions, ...blockedTasks, ...activeTasks, ...openLoops]);
   const ghosts = ghostCandidates(captures, nowMs, solids);
   const ranked = [...solids, ...ghosts];
   const rankById = new Map(ranked.map((candidate, index) => [candidate.id, index]));
@@ -512,7 +537,11 @@ function rankedFutures(
   return { visible, overflow, rankById };
 }
 
-function frontierHandoffs(captures: TrajectoryCapture[], headBurst: Burst, headCapture: TrajectoryCapture): TrajectoryCapture[] {
+function frontierHandoffs(
+  captures: TrajectoryCapture[],
+  headBurst: Burst,
+  headCapture: TrajectoryCapture,
+): TrajectoryCapture[] {
   const headBurstIds = new Set(headBurst.captures.map((capture) => capture.id));
   const headMs = timestampValue(headCapture.observedAt);
   const bySession = new Map<string, TrajectoryCapture>();
@@ -529,7 +558,9 @@ function frontierHandoffs(captures: TrajectoryCapture[], headBurst: Burst, headC
     }
   }
 
-  return [...bySession.values()].sort((left, right) => timestampValue(right.observedAt) - timestampValue(left.observedAt));
+  return [...bySession.values()].sort(
+    (left, right) => timestampValue(right.observedAt) - timestampValue(left.observedAt),
+  );
 }
 
 function rankedTasks(tasks: TrajectoryTask[], tiers: RankedTaskTier[]): SolidCandidate[] {
@@ -542,7 +573,8 @@ function rankedTasks(tasks: TrajectoryTask[], tiers: RankedTaskTier[]): SolidCan
   return tasks
     .filter((task) => statusOrder.has(task.status))
     .sort((left, right) => {
-      const statusDelta = (statusOrder.get(left.status) ?? 99) - (statusOrder.get(right.status) ?? 99);
+      const statusDelta =
+        (statusOrder.get(left.status) ?? 99) - (statusOrder.get(right.status) ?? 99);
       if (statusDelta !== 0) return statusDelta;
       const priorityDelta = right.priority - left.priority;
       if (priorityDelta !== 0) return priorityDelta;
@@ -559,7 +591,11 @@ function rankedTasks(tasks: TrajectoryTask[], tiers: RankedTaskTier[]): SolidCan
     }));
 }
 
-function ghostCandidates(captures: TrajectoryCapture[], nowMs: number, solids: SolidCandidate[]): GhostCandidate[] {
+function ghostCandidates(
+  captures: TrajectoryCapture[],
+  nowMs: number,
+  solids: SolidCandidate[],
+): GhostCandidate[] {
   let latestProjection: TrajectoryCapture | undefined;
   for (let index = captures.length - 1; index >= 0; index -= 1) {
     const capture = captures[index];
@@ -589,7 +625,14 @@ function ghostCandidates(captures: TrajectoryCapture[], nowMs: number, solids: S
         sortMs: observedMs,
       };
     })
-    .filter((ghost) => !solids.some((solid) => jaccard(ghost.text, solid.text) >= JACCARD_THRESHOLD || jaccard(ghost.label, solid.text) >= JACCARD_THRESHOLD))
+    .filter(
+      (ghost) =>
+        !solids.some(
+          (solid) =>
+            jaccard(ghost.text, solid.text) >= JACCARD_THRESHOLD ||
+            jaccard(ghost.label, solid.text) >= JACCARD_THRESHOLD,
+        ),
+    )
     .slice(0, GHOST_MAX);
 }
 
@@ -651,7 +694,12 @@ function jaccard(left: string, right: string): number {
 }
 
 function tokens(value: string): Set<string> {
-  return new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  return new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean),
+  );
 }
 
 function withLabelExtents(node: PositionedNode, xOffset: number): TrajectoryLayoutNode {
@@ -689,7 +737,8 @@ function shapeHalfWidth(kind: TrajectoryNodeKind): number {
 
 function renderedLabel(node: TrajectoryGraphNode): string {
   if (node.kind === "future-task") return clampText(node.label, 16);
-  if (node.kind.startsWith("future-") && node.kind !== "future-more") return clampText(node.label, 24);
+  if (node.kind.startsWith("future-") && node.kind !== "future-more")
+    return clampText(node.label, 24);
   if (node.kind === "head") return clampText(node.label, 28);
   return node.label;
 }
@@ -720,7 +769,9 @@ function dateParts(ms: number): { year: number; month: number; day: number; mont
     year: date.getUTCFullYear(),
     month,
     day: date.getUTCDate(),
-    monthName: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][month],
+    monthName: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+      month
+    ],
   };
 }
 

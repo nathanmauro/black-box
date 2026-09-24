@@ -56,7 +56,9 @@ test("SDLC story waits at both approvals, builds, reviews, and ships locally", a
 
     await page.goto(boardLaneUrl(baseURL, "gate"));
     await test.step("Gate starts open and promotes the story to the plan lane", async () => {
-      await expect(taskInColumn(page, "Open", harness.title, "Open")).toBeVisible({ timeout: 15_000 });
+      await expect(taskInColumn(page, "Open", harness.title, "Open")).toBeVisible({
+        timeout: 15_000,
+      });
       await page.screenshot({ path: `${SHOT_DIR}/sdlc-gate-open.png`, fullPage: true });
 
       harness.runner = startRunner(harness, baseURL);
@@ -73,12 +75,16 @@ test("SDLC story waits at both approvals, builds, reviews, and ships locally", a
       const plan = await waitForTaskStatus(request, "sdlc:plan", harness.title, "done");
       expect(plan.task.resultHandoffId).toBeTruthy();
       const detail = page.getByLabel("Task detail");
-      await expect(detail.locator(".board-annotation-row--plan .board-annotation-document"))
-        .toContainText("## Approach", { timeout: 30_000 });
+      await expect(
+        detail.locator(".board-annotation-row--plan .board-annotation-document"),
+      ).toContainText("## Approach", { timeout: 30_000 });
       await expect(detail.getByText("Awaiting approval", { exact: true }).first()).toBeVisible();
       await expect(detail.getByLabel("Plan approval")).toBeVisible();
       expect(await findTaskBySpec(request, "auto", specId)).toBeUndefined();
-      await page.screenshot({ path: `${SHOT_DIR}/sdlc-plan-awaiting-approval.png`, fullPage: true });
+      await page.screenshot({
+        path: `${SHOT_DIR}/sdlc-plan-awaiting-approval.png`,
+        fullPage: true,
+      });
     });
 
     await test.step("Plan approval enqueues the build exactly at the human gate", async () => {
@@ -93,20 +99,29 @@ test("SDLC story waits at both approvals, builds, reviews, and ships locally", a
     await test.step("Build commits, defers shipping, and preserves its worktree for review", async () => {
       const build = await waitForTaskStatus(request, "auto", harness.title, "done");
       expect(build.task.resultHandoffId).toBeTruthy();
-      const buildState = await waitForEvent(request, build.task.id, (event) => (
-        event.detail?.kind === "progress"
-        && typeof event.detail.dataJson?.branch === "string"
-        && typeof event.detail.dataJson?.worktree === "string"
-      ));
+      const buildState = await waitForEvent(
+        request,
+        build.task.id,
+        (event) =>
+          event.detail?.kind === "progress" &&
+          typeof event.detail.dataJson?.branch === "string" &&
+          typeof event.detail.dataJson?.worktree === "string",
+      );
       buildWorktree = String(buildState.detail?.dataJson?.worktree || "");
       expect(buildWorktree).not.toBe("");
       expect(fs.existsSync(path.join(buildWorktree, ".blackbox-fake-worker.log"))).toBe(true);
 
       await page.goto(boardLaneUrl(baseURL, "auto"));
-      await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({ timeout: 30_000 });
+      await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({
+        timeout: 30_000,
+      });
       await taskInColumn(page, "Done", harness.title, "Done").click();
-      await expect(page.getByLabel("Task detail").locator(".board-annotation-list")
-        .getByText(/shipping is deferred until review approval/i)).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page
+          .getByLabel("Task detail")
+          .locator(".board-annotation-list")
+          .getByText(/shipping is deferred until review approval/i),
+      ).toBeVisible({ timeout: 30_000 });
       await page.screenshot({ path: `${SHOT_DIR}/sdlc-build-done.png`, fullPage: true });
     });
 
@@ -116,15 +131,21 @@ test("SDLC story waits at both approvals, builds, reviews, and ships locally", a
       expect(fs.existsSync(buildWorktree)).toBe(true);
 
       await page.goto(boardLaneUrl(baseURL, "sdlc:review"));
-      await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({ timeout: 30_000 });
+      await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({
+        timeout: 30_000,
+      });
       await taskInColumn(page, "Done", harness.title, "Done").click();
       const detail = page.getByLabel("Task detail");
-      await expect(detail.locator(".board-annotation-row--review .board-annotation-document"))
-        .toContainText("## Review findings", { timeout: 30_000 });
+      await expect(
+        detail.locator(".board-annotation-row--review .board-annotation-document"),
+      ).toContainText("## Review findings", { timeout: 30_000 });
       await expect(detail.getByText("Awaiting approval", { exact: true }).first()).toBeVisible();
       await expect(detail.getByLabel("Review approval")).toBeVisible();
       expect(hasSdlcMarker(await taskEvents(request, review.task.id), "shipped")).toBe(false);
-      await page.screenshot({ path: `${SHOT_DIR}/sdlc-review-awaiting-approval.png`, fullPage: true });
+      await page.screenshot({
+        path: `${SHOT_DIR}/sdlc-review-awaiting-approval.png`,
+        fullPage: true,
+      });
     });
 
     await test.step("Review approval ships through the existing gates and leaves the chain Done", async () => {
@@ -134,26 +155,34 @@ test("SDLC story waits at both approvals, builds, reviews, and ships locally", a
       await expect(approval.getByText(/Approved by nathan at/)).toBeVisible({ timeout: 15_000 });
 
       const review = await taskBySpec(request, "sdlc:review", specId);
-      const shipEvent = await waitForEvent(request, review.task.id, (event) => (
-        event.detail?.kind === "progress" && event.detail.dataJson?.sdlc === "shipped"
-      ));
+      const shipEvent = await waitForEvent(
+        request,
+        review.task.id,
+        (event) => event.detail?.kind === "progress" && event.detail.dataJson?.sdlc === "shipped",
+      );
       expect(shipEvent.detail?.dataJson).toMatchObject({
         status: "local-only",
         reason: "no origin remote configured",
       });
-      await expect(detail.locator(".board-annotation-list")
-        .getByText(/Ship result: status=local-only, reason=no origin remote configured/))
-        .toBeVisible({ timeout: 30_000 });
+      await expect(
+        detail
+          .locator(".board-annotation-list")
+          .getByText(/Ship result: status=local-only, reason=no origin remote configured/),
+      ).toBeVisible({ timeout: 30_000 });
 
       const chain = await tasksForSpec(request, specId);
       expect(chain.map((snapshot) => snapshot.task.lane).sort()).toEqual([...STORY_LANES].sort());
       for (const snapshot of chain) {
         expect(snapshot.task.status, `${snapshot.task.lane} should be done`).toBe("done");
-        expect(snapshot.task.resultHandoffId, `${snapshot.task.lane} should link a Handoff`).toBeTruthy();
+        expect(
+          snapshot.task.resultHandoffId,
+          `${snapshot.task.lane} should link a Handoff`,
+        ).toBeTruthy();
       }
       expect(fs.existsSync(buildWorktree)).toBe(true);
-      await expect(detail.locator(`.board-handoff#handoff-${review.task.resultHandoffId}`))
-        .toBeVisible({ timeout: 30_000 });
+      await expect(
+        detail.locator(`.board-handoff#handoff-${review.task.resultHandoffId}`),
+      ).toBeVisible({ timeout: 30_000 });
       await page.screenshot({ path: `${SHOT_DIR}/sdlc-shipped-local-only.png`, fullPage: true });
     });
   } finally {
@@ -182,7 +211,9 @@ test("rejecting an SDLC plan records feedback and enqueues nothing else", async 
     expect(await findTaskBySpec(request, "auto", specId)).toBeUndefined();
 
     await page.goto(boardLaneUrl(baseURL, "sdlc:plan"));
-    await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({ timeout: 30_000 });
+    await expect(taskInColumn(page, "Done", harness.title, "Done")).toBeVisible({
+      timeout: 30_000,
+    });
     await taskInColumn(page, "Done", harness.title, "Done").click();
     const detail = page.getByLabel("Task detail");
     const approval = detail.getByLabel("Plan approval");
@@ -193,24 +224,31 @@ test("rejecting an SDLC plan records feedback and enqueues nothing else", async 
     await expect(approval.getByText(/Rejected by nathan at/)).toBeVisible({ timeout: 15_000 });
     await expect(approval.getByText(feedback, { exact: true })).toBeVisible();
 
-    const approvalEvent = await waitForEvent(request, plan.task.id, (event) => (
-      event.detail?.kind === "approval"
-      && event.detail.dataJson?.decision === "reject"
-      && event.detail.dataJson?.stage === "plan"
-    ));
-    const rejection = await waitForEvent(request, plan.task.id, (event) => (
-      event.detail?.kind === "progress"
-      && event.detail.dataJson?.sdlc === "rejection_recorded"
-    ));
+    const approvalEvent = await waitForEvent(
+      request,
+      plan.task.id,
+      (event) =>
+        event.detail?.kind === "approval" &&
+        event.detail.dataJson?.decision === "reject" &&
+        event.detail.dataJson?.stage === "plan",
+    );
+    const rejection = await waitForEvent(
+      request,
+      plan.task.id,
+      (event) =>
+        event.detail?.kind === "progress" && event.detail.dataJson?.sdlc === "rejection_recorded",
+    );
     expect(rejection.detail?.dataJson).toMatchObject({
       approvalId: approvalEvent.id,
       decision: "reject",
       stage: "plan",
       feedback,
     });
-    await expect(detail.locator(".board-annotation-list")
-      .getByText(`SDLC plan rejected: ${feedback}`, { exact: true }))
-      .toBeVisible({ timeout: 30_000 });
+    await expect(
+      detail
+        .locator(".board-annotation-list")
+        .getByText(`SDLC plan rejected: ${feedback}`, { exact: true }),
+    ).toBeVisible({ timeout: 30_000 });
 
     await page.waitForTimeout(2_000);
     const chain = await tasksForSpec(request, specId);
@@ -237,11 +275,19 @@ function createHarness(scenario: string): StoryHarness {
   execFileSync("git", ["commit", "-m", "seed"], { cwd: scratchDir });
 
   const runnerConfigPath = path.join(os.tmpdir(), `${PREFIX}-runner-${runId}.json`);
-  fs.writeFileSync(runnerConfigPath, `${JSON.stringify({
-    concurrency: 1,
-    engines: [{ id: "fake", model: "fake", effort: "n/a", enabled: true }],
-    repos: [{ path: scratchDir, push: true, auto_merge: false, verify: "", danger: "" }],
-  }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  fs.writeFileSync(
+    runnerConfigPath,
+    `${JSON.stringify(
+      {
+        concurrency: 1,
+        engines: [{ id: "fake", model: "fake", effort: "n/a", enabled: true }],
+        repos: [{ path: scratchDir, push: true, auto_merge: false, verify: "", danger: "" }],
+      },
+      null,
+      2,
+    )}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
   return { title, scratchDir, runnerConfigPath };
 }
 
@@ -252,12 +298,15 @@ async function createSdlcStory(
   harness: StoryHarness,
 ): Promise<TaskSnapshot> {
   await page.goto(`${baseURL}/board`);
-  await expect(page.getByRole("heading", { name: "Coordination board" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Coordination board" })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByRole("button", { name: "New story" }).click();
   await page.getByLabel("Title").fill(harness.title);
   await page.getByLabel("Repo path").fill(harness.scratchDir);
   await page.getByLabel("Goal").fill("Prove the gated SDLC runner flow through the real Board UI.");
-  await page.getByLabel("Acceptance criteria")
+  await page
+    .getByLabel("Acceptance criteria")
     .fill("Plan, build, review, and local-only ship all complete with linked Handoffs.");
   await page.getByLabel("Verify command").fill("true");
   await page.getByRole("radio", { name: "SDLC", exact: true }).check();
@@ -302,10 +351,15 @@ async function waitForTask(
   title: string,
 ): Promise<TaskSnapshot> {
   let found: TaskSnapshot | undefined;
-  await expect.poll(async () => {
-    found = await findTaskByTitle(request, lane, title);
-    return found?.task.id || "";
-  }, { timeout: 90_000 }).not.toBe("");
+  await expect
+    .poll(
+      async () => {
+        found = await findTaskByTitle(request, lane, title);
+        return found?.task.id || "";
+      },
+      { timeout: 90_000 },
+    )
+    .not.toBe("");
   return found!;
 }
 
@@ -316,10 +370,15 @@ async function waitForTaskStatus(
   status: string,
 ): Promise<TaskSnapshot> {
   let found: TaskSnapshot | undefined;
-  await expect.poll(async () => {
-    found = await findTaskByTitle(request, lane, title);
-    return found?.task.status || "missing";
-  }, { timeout: 90_000 }).toBe(status);
+  await expect
+    .poll(
+      async () => {
+        found = await findTaskByTitle(request, lane, title);
+        return found?.task.status || "missing";
+      },
+      { timeout: 90_000 },
+    )
+    .toBe(status);
   return found!;
 }
 
@@ -338,7 +397,10 @@ async function findTaskByTitle(
   lane: string,
   title: string,
 ): Promise<TaskSnapshot | undefined> {
-  const tasks = await getJson<TaskSnapshot[]>(request, `/api/tasks?lane=${encodeURIComponent(lane)}&limit=250`);
+  const tasks = await getJson<TaskSnapshot[]>(
+    request,
+    `/api/tasks?lane=${encodeURIComponent(lane)}&limit=250`,
+  );
   return tasks.find((snapshot) => snapshot.task.title === title);
 }
 
@@ -347,7 +409,10 @@ async function findTaskBySpec(
   lane: string,
   specId: string,
 ): Promise<TaskSnapshot | undefined> {
-  const tasks = await getJson<TaskSnapshot[]>(request, `/api/tasks?lane=${encodeURIComponent(lane)}&limit=250`);
+  const tasks = await getJson<TaskSnapshot[]>(
+    request,
+    `/api/tasks?lane=${encodeURIComponent(lane)}&limit=250`,
+  );
   return tasks.find((snapshot) => snapshot.task.specId === specId);
 }
 
@@ -366,10 +431,15 @@ async function waitForEvent(
   predicate: (event: TaskEvent) => boolean,
 ): Promise<TaskEvent> {
   let found: TaskEvent | undefined;
-  await expect.poll(async () => {
-    found = (await taskEvents(request, taskId)).find(predicate);
-    return found?.id || "";
-  }, { timeout: 90_000 }).not.toBe("");
+  await expect
+    .poll(
+      async () => {
+        found = (await taskEvents(request, taskId)).find(predicate);
+        return found?.id || "";
+      },
+      { timeout: 90_000 },
+    )
+    .not.toBe("");
   return found!;
 }
 
@@ -380,9 +450,12 @@ function hasSdlcMarker(events: TaskEvent[], marker: string): boolean {
 async function getJson<T>(request: APIRequestContext, endpoint: string): Promise<T> {
   const response = await request.get(endpoint);
   if (!response.ok()) {
-    expect(response.ok(), `GET ${endpoint}: ${response.status()} ${await response.text()}`).toBeTruthy();
+    expect(
+      response.ok(),
+      `GET ${endpoint}: ${response.status()} ${await response.text()}`,
+    ).toBeTruthy();
   }
-  return await response.json() as T;
+  return (await response.json()) as T;
 }
 
 async function cleanupHarness(request: APIRequestContext, harness: StoryHarness): Promise<void> {
@@ -401,11 +474,17 @@ async function cleanupHarness(request: APIRequestContext, harness: StoryHarness)
     await cleanupStep(`tmux session ${taskId}`, () => {
       const sessionName = `bb-run-${taskId.slice(0, 8)}`;
       try {
-        execFileSync("tmux", ["has-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
+        execFileSync("tmux", ["has-session", "-t", sessionName], {
+          stdio: "ignore",
+          env: privateTmuxEnv(),
+        });
       } catch {
         return;
       }
-      execFileSync("tmux", ["kill-session", "-t", sessionName], { stdio: "ignore", env: privateTmuxEnv() });
+      execFileSync("tmux", ["kill-session", "-t", sessionName], {
+        stdio: "ignore",
+        env: privateTmuxEnv(),
+      });
     });
     await cleanupStep(`synthetic rollout ${taskId}`, () => {
       fs.rmSync(path.join(os.homedir(), ".codex", "sessions", "blackbox-e2e", `${taskId}.jsonl`), {

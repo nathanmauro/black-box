@@ -19,21 +19,26 @@ function toolEvent(toolName: string, inputJson: string): AgentEvent {
 
 describe("editPresenter", () => {
   it("emits a lazy diff block carrying the raw old and new strings", () => {
-    const event = toolEvent("Edit", JSON.stringify({
-      file_path: "/Users/nathan/Developer/proj/x/a.ts",
-      old_string: "const a = 1;",
-      new_string: "const a = 2;",
-    }));
+    const event = toolEvent(
+      "Edit",
+      JSON.stringify({
+        file_path: "/Users/nathan/Developer/proj/x/a.ts",
+        old_string: "const a = 1;",
+        new_string: "const a = 2;",
+      }),
+    );
     const presentation = editPresenter(event);
     expect(presentation.kindPill).toEqual({ label: "Edit", tone: "edit" });
     expect(headlineText(presentation)).toBe("~/Developer/proj/x/a.ts");
-    expect(presentation.blocks).toEqual([{
-      kind: "diff",
-      file: { path: "/Users/nathan/Developer/proj/x/a.ts" },
-      oldText: "const a = 1;",
-      newText: "const a = 2;",
-      label: "Diff (12 → 12 chars)",
-    }]);
+    expect(presentation.blocks).toEqual([
+      {
+        kind: "diff",
+        file: { path: "/Users/nathan/Developer/proj/x/a.ts" },
+        oldText: "const a = 1;",
+        newText: "const a = 2;",
+        label: "Diff (12 → 12 chars)",
+      },
+    ]);
     expect(presentation.refs).toEqual([{ path: "/Users/nathan/Developer/proj/x/a.ts" }]);
   });
 
@@ -45,16 +50,21 @@ describe("editPresenter", () => {
 
 describe("writePresenter", () => {
   it("emits an all-additions diff block (empty oldText)", () => {
-    const event = toolEvent("Write", JSON.stringify({ file_path: "/tmp/new.txt", content: "hello\nworld" }));
+    const event = toolEvent(
+      "Write",
+      JSON.stringify({ file_path: "/tmp/new.txt", content: "hello\nworld" }),
+    );
     const presentation = writePresenter(event);
     expect(presentation.kindPill).toEqual({ label: "Write", tone: "write" });
-    expect(presentation.blocks).toEqual([{
-      kind: "diff",
-      file: { path: "/tmp/new.txt" },
-      oldText: "",
-      newText: "hello\nworld",
-      label: "New file (11 chars)",
-    }]);
+    expect(presentation.blocks).toEqual([
+      {
+        kind: "diff",
+        file: { path: "/tmp/new.txt" },
+        oldText: "",
+        newText: "hello\nworld",
+        label: "New file (11 chars)",
+      },
+    ]);
   });
 
   it("falls back to generic without content", () => {

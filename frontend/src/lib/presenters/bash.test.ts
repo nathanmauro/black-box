@@ -19,7 +19,10 @@ function bashEvent(overrides: Partial<AgentEvent>): AgentEvent {
 describe("bashPresenter", () => {
   it("headlines the first non-comment line with a +N lines suffix", () => {
     const event = bashEvent({
-      toolInputJson: JSON.stringify({ command: "# setup\nnpm test\nnpm run build", cwd: "/tmp/proj" }),
+      toolInputJson: JSON.stringify({
+        command: "# setup\nnpm test\nnpm run build",
+        cwd: "/tmp/proj",
+      }),
     });
     const presentation = bashPresenter(event);
     expect(headlineText(presentation)).toBe("npm test +2 lines");
@@ -32,7 +35,14 @@ describe("bashPresenter", () => {
       toolOutputJson: JSON.stringify("Exit code: 0\nWall time: 0.1 seconds\nOutput:\nfile.txt"),
     });
     const [block] = bashPresenter(event).blocks;
-    expect(block).toEqual({ kind: "bash", command: "ls", cwd: "/tmp", output: "file.txt", exitCode: 0, wallTime: "0.1 seconds" });
+    expect(block).toEqual({
+      kind: "bash",
+      command: "ls",
+      cwd: "/tmp",
+      output: "file.txt",
+      exitCode: 0,
+      wallTime: "0.1 seconds",
+    });
   });
 
   it("turns non-zero exits into the error tone", () => {

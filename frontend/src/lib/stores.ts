@@ -37,11 +37,9 @@ export function createSessionsResource(limit = 250) {
 }
 
 export function createSearchResource(query: () => string, limit = 80) {
-  return createResource(
-    query,
-    async (q): Promise<SearchResponse> =>
-      q.trim()
-        ? search(q, limit)
-        : { query: "", local: [], elastic: [], elasticHealth: { enabled: false, available: false } },
+  return createResource(query, async (q): Promise<SearchResponse> =>
+    q.trim()
+      ? search(q, limit)
+      : { query: "", local: [], elastic: [], elasticHealth: { enabled: false, available: false } },
   );
 }

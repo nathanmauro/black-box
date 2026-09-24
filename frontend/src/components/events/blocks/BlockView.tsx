@@ -12,13 +12,26 @@ import LazyDetails from "./LazyDetails";
  * A block value is immutable for a given event, so a plain switch (not <Switch>)
  * is safe: no prop path here is reactive.
  */
-export default function BlockView(props: { block: DetailBlock; eventId: string; index: number }): JSX.Element {
+export default function BlockView(props: {
+  block: DetailBlock;
+  eventId: string;
+  index: number;
+}): JSX.Element {
   const block = props.block;
   switch (block.kind) {
     case "bash":
       return <BashBlock block={block} />;
     case "diff":
-      return <DiffBlock eventId={props.eventId} index={props.index} file={block.file} oldText={block.oldText} newText={block.newText} label={block.label} />;
+      return (
+        <DiffBlock
+          eventId={props.eventId}
+          index={props.index}
+          file={block.file}
+          oldText={block.oldText}
+          newText={block.newText}
+          label={block.label}
+        />
+      );
     case "patch":
       return <PatchBlock command={block.command} files={block.files} />;
     case "code":
@@ -38,17 +51,27 @@ export default function BlockView(props: { block: DetailBlock; eventId: string; 
     case "json":
     case "plan": // JSON view until slice 5 ships the plan component
       return (
-        <LazyDetails summary={block.kind === "json" ? block.label : "Plan"} class="detail-block detail-block--json">
+        <LazyDetails
+          summary={block.kind === "json" ? block.label : "Plan"}
+          class="detail-block detail-block--json"
+        >
           <pre class="detail-pre">{safeStringify(block.kind === "json" ? block.value : block)}</pre>
         </LazyDetails>
       );
     case "fallback":
-      return <ToolPayload toolName={block.toolName} inputJson={block.inputJson} outputJson={block.outputJson} />;
+      return (
+        <ToolPayload
+          toolName={block.toolName}
+          inputJson={block.inputJson}
+          outputJson={block.outputJson}
+        />
+      );
   }
 }
 
 function PatchBlock(props: { command: string; files: PatchFileStub[] }) {
-  const summary = () => `Patch — ${props.files.length || "?"} file${props.files.length === 1 ? "" : "s"} (${props.command.length.toLocaleString("en-US")} chars)`;
+  const summary = () =>
+    `Patch — ${props.files.length || "?"} file${props.files.length === 1 ? "" : "s"} (${props.command.length.toLocaleString("en-US")} chars)`;
   return (
     <LazyDetails summary={summary()} class="detail-block detail-block--diff">
       <PatchBody command={props.command} />

@@ -36,10 +36,14 @@ export default function StoryForm(props: StoryFormProps) {
   const initial = props.initialInput;
   const initialProject = findProjectByIdentifier(props.projects, initial?.repo);
   const [title, setTitle] = createSignal(initial?.title ?? "");
-  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(initialProject?.projectKey);
+  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(
+    initialProject?.projectKey,
+  );
   const [repo, setRepo] = createSignal(initial?.repo ?? "");
   const [goal, setGoal] = createSignal(initial?.goal ?? "");
-  const [acceptanceCriteria, setAcceptanceCriteria] = createSignal(initial?.acceptanceCriteria ?? "");
+  const [acceptanceCriteria, setAcceptanceCriteria] = createSignal(
+    initial?.acceptanceCriteria ?? "",
+  );
   const [constraints, setConstraints] = createSignal(initial?.constraints ?? "");
   const [verify, setVerify] = createSignal(initial?.verify ?? "");
   const [priority, setPriority] = createSignal(initial?.priority ?? 10);
@@ -60,9 +64,9 @@ export default function StoryForm(props: StoryFormProps) {
     priority: priority(),
   }));
   const gateHints = createMemo(() => evaluateGateHints(currentInput()));
-  const requiredFieldsMissing = createMemo(() => (
-    !title().trim() || !repo().trim() || !goal().trim() || !Number.isFinite(priority())
-  ));
+  const requiredFieldsMissing = createMemo(
+    () => !title().trim() || !repo().trim() || !goal().trim() || !Number.isFinite(priority()),
+  );
   const submitLabel = createMemo(() => {
     if (submitting()) return createdResult() ? "Cancelling old task…" : "Creating…";
     if (createdResult()) return "Retry cancelling old task";
@@ -86,7 +90,7 @@ export default function StoryForm(props: StoryFormProps) {
     try {
       const existingResult = createdResult();
       if (existingResult) {
-        if (!props.replacesTaskId || await cancelReplacedTask(existingResult, actor)) {
+        if (!props.replacesTaskId || (await cancelReplacedTask(existingResult, actor))) {
           setCreatedResult(undefined);
           props.onCreated(existingResult);
         }
@@ -113,7 +117,7 @@ export default function StoryForm(props: StoryFormProps) {
       setCreatedSpec(undefined);
       const result = { spec, taskChange };
       setCreatedResult(result);
-      if (!props.replacesTaskId || await cancelReplacedTask(result, actor)) {
+      if (!props.replacesTaskId || (await cancelReplacedTask(result, actor))) {
         setCreatedResult(undefined);
         props.onCreated(result);
       }
@@ -134,7 +138,9 @@ export default function StoryForm(props: StoryFormProps) {
       return true;
     } catch (error) {
       const message = errorMessage(error);
-      setSubmitError(`New story created and kept, but the old gate task could not be cancelled: ${message}`);
+      setSubmitError(
+        `New story created and kept, but the old gate task could not be cancelled: ${message}`,
+      );
       props.onCleanupFailed?.(result, message);
       return false;
     }
@@ -277,18 +283,22 @@ export default function StoryForm(props: StoryFormProps) {
 
         <Show when={gateHints().length > 0}>
           <ul class="story-form-hints story-form-field--wide" aria-label="Gate hints">
-            <For each={gateHints()}>
-              {(hint) => <li data-hint={hint.id}>{hint.message}</li>}
-            </For>
+            <For each={gateHints()}>{(hint) => <li data-hint={hint.id}>{hint.message}</li>}</For>
           </ul>
         </Show>
 
         <Show when={submitError()}>
-          {(message) => <p class="story-form-error story-form-field--wide" role="alert">{message()}</p>}
+          {(message) => (
+            <p class="story-form-error story-form-field--wide" role="alert">
+              {message()}
+            </p>
+          )}
         </Show>
 
         <div class="story-form-actions story-form-field--wide">
-          <button type="button" class="story-form-cancel" onClick={props.onCancel}>Cancel</button>
+          <button type="button" class="story-form-cancel" onClick={props.onCancel}>
+            Cancel
+          </button>
           <button
             type="submit"
             class="story-form-submit"

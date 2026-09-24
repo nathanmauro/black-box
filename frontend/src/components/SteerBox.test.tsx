@@ -22,7 +22,12 @@ describe("SteerBox", () => {
 
   it("renders the disabled hint without a textarea when steering is unavailable", () => {
     render(() => (
-      <SteerBox taskId="task-1" actor="board" enabled={false} disabledHint="Wait for an active worker." />
+      <SteerBox
+        taskId="task-1"
+        actor="board"
+        enabled={false}
+        disabledHint="Wait for an active worker."
+      />
     ));
 
     expect(screen.getByText("Wait for an active worker.")).toBeInTheDocument();
@@ -46,18 +51,22 @@ describe("SteerBox", () => {
     fireEvent.input(textarea, { target: { value: "  Focus the verification path.  " } });
     fireEvent.click(screen.getByRole("button", { name: "Send steer" }));
 
-    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-1", {
-      actor: "board",
-      kind: "steer",
-      text: "Focus the verification path.",
-    }));
+    await waitFor(() =>
+      expect(createAnnotation).toHaveBeenCalledWith("task-1", {
+        actor: "board",
+        kind: "steer",
+        text: "Focus the verification path.",
+      }),
+    );
     await waitFor(() => expect(textarea).toHaveValue(""));
     expect(onSteered).toHaveBeenCalledWith(annotation);
   });
 
   it("does not submit empty or whitespace-only text", () => {
     const createAnnotation = vi.fn(async () => annotation);
-    render(() => <SteerBox taskId="task-1" actor="board" enabled createAnnotation={createAnnotation} />);
+    render(() => (
+      <SteerBox taskId="task-1" actor="board" enabled createAnnotation={createAnnotation} />
+    ));
 
     const textarea = screen.getByRole("textbox", { name: "Steer this run" });
     fireEvent.input(textarea, { target: { value: "   " } });
@@ -70,7 +79,9 @@ describe("SteerBox", () => {
     const createAnnotation = vi.fn(async () => {
       throw new Error("worker is unavailable");
     });
-    render(() => <SteerBox taskId="task-1" actor="board" enabled createAnnotation={createAnnotation} />);
+    render(() => (
+      <SteerBox taskId="task-1" actor="board" enabled createAnnotation={createAnnotation} />
+    ));
 
     const textarea = screen.getByRole("textbox", { name: "Steer this run" });
     fireEvent.input(textarea, { target: { value: "Try the smaller fixture." } });

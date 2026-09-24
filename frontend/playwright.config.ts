@@ -11,8 +11,8 @@ assertSafeSeedBaseUrl(baseURL);
 const appUrl = new URL(baseURL);
 const port = appUrl.port || (appUrl.protocol === "https:" ? "443" : "80");
 const host = appUrl.hostname === "localhost" ? "127.0.0.1" : appUrl.hostname;
-const tempDir = process.env.SBA_E2E_TEMP_DIR
-  || path.join(os.tmpdir(), `black-box-saga-e2e-${randomUUID()}`);
+const tempDir =
+  process.env.SBA_E2E_TEMP_DIR || path.join(os.tmpdir(), `black-box-saga-e2e-${randomUUID()}`);
 const dbPath = process.env.SBA_E2E_DB_PATH || path.join(tempDir, "black-box-saga-e2e.db");
 const editorPath = path.join(tempDir, "fake-editor");
 const editorLogPath = path.join(tempDir, "editor-argv.bin");
@@ -27,8 +27,8 @@ process.env.SBA_E2E_RUN_TOKEN = runToken;
 // The run's whole tmux world lives on a private server so harness env never becomes the
 // shared default tmux server's global environment. Unix socket paths cap at ~104 bytes on
 // macOS, so the socket dir is a short sibling of the run temp dir, not inside it.
-const tmuxTmpDir = process.env.SBA_E2E_TMUX_TMPDIR
-  || path.join(os.tmpdir(), `bb-tmux-${runToken.slice(0, 8)}`);
+const tmuxTmpDir =
+  process.env.SBA_E2E_TMUX_TMPDIR || path.join(os.tmpdir(), `bb-tmux-${runToken.slice(0, 8)}`);
 process.env.SBA_E2E_TMUX_TMPDIR = tmuxTmpDir;
 mkdirSync(tmuxTmpDir, { recursive: true, mode: 0o700 });
 const serverCommand = [
@@ -36,29 +36,33 @@ const serverCommand = [
   "set -eu; child=; owned=0; ",
   "cleanup() { ",
   "  code=$?; trap - EXIT INT TERM; ",
-  "  if [ -n \"$child\" ] && kill -0 \"$child\" 2>/dev/null; then kill \"$child\" 2>/dev/null || true; wait \"$child\" 2>/dev/null || true; fi; ",
-  "  TMUX_TMPDIR=\"$SBA_E2E_TMUX_TMPDIR\" tmux kill-server 2>/dev/null || true; ",
-  "  if [ \"$owned\" = 1 ]; then node frontend/src/e2e/e2ePreflight.mjs cleanup || code=$?; fi; ",
-  "  exit \"$code\"; ",
+  '  if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi; ',
+  '  TMUX_TMPDIR="$SBA_E2E_TMUX_TMPDIR" tmux kill-server 2>/dev/null || true; ',
+  '  if [ "$owned" = 1 ]; then node frontend/src/e2e/e2ePreflight.mjs cleanup || code=$?; fi; ',
+  '  exit "$code"; ',
   "}; ",
   "trap cleanup EXIT INT TERM; ",
   "node frontend/src/e2e/e2ePreflight.mjs prepare; owned=1; ",
-  "printf \"BLACK_BOX_E2E_DB=%s\\n\" \"$SBA_E2E_DB_PATH\"; ",
+  'printf "BLACK_BOX_E2E_DB=%s\\n" "$SBA_E2E_DB_PATH"; ',
   "mvn -q -Pfrontend -DskipTests package; ",
-  "java -jar target/sba-agentic-0.2.0.jar & child=$!; wait \"$child\"",
+  'java -jar target/sba-agentic-0.2.0.jar & child=$!; wait "$child"',
   "'",
 ].join("");
 
 function assertSafeE2ePaths(candidateTempDir: string, candidateDbPath: string): void {
   const relativeTemp = path.relative(path.resolve(os.tmpdir()), path.resolve(candidateTempDir));
   if (!relativeTemp || relativeTemp.startsWith("..") || path.isAbsolute(relativeTemp)) {
-    throw new Error(`Refusing E2E temp directory outside the system temp root: ${candidateTempDir}`);
+    throw new Error(
+      `Refusing E2E temp directory outside the system temp root: ${candidateTempDir}`,
+    );
   }
   if (!path.basename(candidateTempDir).startsWith("black-box-saga-e2e-")) {
     throw new Error(`Refusing unrecognized E2E temp directory: ${candidateTempDir}`);
   }
-  if (path.resolve(path.dirname(candidateDbPath)) !== path.resolve(candidateTempDir)
-    || path.basename(candidateDbPath) !== "black-box-saga-e2e.db") {
+  if (
+    path.resolve(path.dirname(candidateDbPath)) !== path.resolve(candidateTempDir) ||
+    path.basename(candidateDbPath) !== "black-box-saga-e2e.db"
+  ) {
     throw new Error(`Refusing non-isolated E2E database path: ${candidateDbPath}`);
   }
 }

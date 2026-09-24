@@ -14,7 +14,13 @@ export function outputLooksFailed(raw: string | null | undefined): boolean {
     if (value.is_error === true || value.isError === true) return true;
     const exit = value.exit_code ?? value.exitCode;
     if (typeof exit === "number" && exit !== 0) return true;
-    if (typeof exit === "string" && exit.trim() !== "" && Number.isFinite(Number(exit)) && Number(exit) !== 0) return true;
+    if (
+      typeof exit === "string" &&
+      exit.trim() !== "" &&
+      Number.isFinite(Number(exit)) &&
+      Number(exit) !== 0
+    )
+      return true;
     if (typeof value.error === "string" && value.error.trim()) return true;
     if (value.status === "error" || value.status === "failed") return true;
     return false;

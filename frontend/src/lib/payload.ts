@@ -26,7 +26,9 @@ export function payloadText(raw: string | null | undefined): string | null {
 export function parseToolResult(raw: string | null | undefined): unknown | null {
   const value = parsePayload(raw);
   if (typeof value !== "string") return value;
-  const match = /^Exit code:\s*([^\n]+)\nWall time:\s*([^\n]+)\nOutput:\s*\n?([\s\S]*)$/u.exec(value.trim());
+  const match = /^Exit code:\s*([^\n]+)\nWall time:\s*([^\n]+)\nOutput:\s*\n?([\s\S]*)$/u.exec(
+    value.trim(),
+  );
   if (!match) return value;
   return {
     exit_code: numericOrText(match[1].trim()),
@@ -36,9 +38,11 @@ export function parseToolResult(raw: string | null | undefined): unknown | null 
 }
 
 function looksSerialized(value: string): boolean {
-  return (value.startsWith("{") && value.endsWith("}"))
-    || (value.startsWith("[") && value.endsWith("]"))
-    || (value.startsWith('"') && value.endsWith('"'));
+  return (
+    (value.startsWith("{") && value.endsWith("}")) ||
+    (value.startsWith("[") && value.endsWith("]")) ||
+    (value.startsWith('"') && value.endsWith('"'))
+  );
 }
 
 function numericOrText(value: string): number | string {
@@ -49,14 +53,19 @@ function numericOrText(value: string): number | string {
 export function looksLikeJson(value: string | null | undefined): boolean {
   if (!value) return false;
   const trimmed = value.trim();
-  return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
 }
 
 export function parseJsonObject(value: string | null | undefined): Record<string, unknown> | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }

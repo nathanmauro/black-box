@@ -39,7 +39,9 @@ export default function SourceChips() {
       return;
     }
     const current = querySources();
-    const next = isSelected(source) ? current.filter((value) => value.toLowerCase() !== source) : [...current, source];
+    const next = isSelected(source)
+      ? current.filter((value) => value.toLowerCase() !== source)
+      : [...current, source];
     setParams({ q: setFacet(params.q ?? "", "source", next.length ? next : null) || undefined });
   }
 

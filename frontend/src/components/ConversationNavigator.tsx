@@ -45,12 +45,16 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
     const turns = props.turns;
     if (!turns.length || typeof IntersectionObserver === "undefined") return;
 
-    const root = navigator?.closest(".detail-body")?.querySelector<HTMLElement>(".timeline-pane") ?? null;
+    const root =
+      navigator?.closest(".detail-body")?.querySelector<HTMLElement>(".timeline-pane") ?? null;
     const observer = new IntersectionObserver(
       (entries) => {
         const visible = entries
           .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top));
+          .sort(
+            (left, right) =>
+              Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top),
+          );
         const next = visible[0]?.target.id;
         if (!next) return;
         setActiveId(next);
@@ -115,7 +119,10 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
         <span>turns</span>
         <strong>{props.turns.length.toLocaleString()}</strong>
       </div>
-      <Show when={props.turns.length} fallback={<p class="conversation-navigator-empty">No prompts</p>}>
+      <Show
+        when={props.turns.length}
+        fallback={<p class="conversation-navigator-empty">No prompts</p>}
+      >
         <ol class="conversation-navigator-list">
           <For each={props.turns}>
             {(turn, index) => {
@@ -130,7 +137,9 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
                   data-preview={previewIndex() === index() ? "true" : undefined}
                 >
                   <a
-                    ref={(element) => { links[index()] = element; }}
+                    ref={(element) => {
+                      links[index()] = element;
+                    }}
                     href={`#${turn.id}`}
                     class="conversation-navigator-link"
                     aria-label={`Turn ${index() + 1}: ${previewText(turn.prompt.text, 92) || "User prompt"}`}
@@ -164,7 +173,10 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
               </header>
               <div class="conversation-preview-message conversation-preview-message--user">
                 <strong>You</strong>
-                <p>{previewText(preview().turn.prompt.text, PREVIEW_CHARS) || "Prompt text was not captured."}</p>
+                <p>
+                  {previewText(preview().turn.prompt.text, PREVIEW_CHARS) ||
+                    "Prompt text was not captured."}
+                </p>
               </div>
               <Show
                 when={response()}
@@ -173,7 +185,10 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
                 {(event) => (
                   <div class="conversation-preview-message conversation-preview-message--assistant">
                     <strong>{sourceLabel(event().source)} response</strong>
-                    <p>{previewText(event().text, PREVIEW_CHARS) || "Response text was not captured."}</p>
+                    <p>
+                      {previewText(event().text, PREVIEW_CHARS) ||
+                        "Response text was not captured."}
+                    </p>
                   </div>
                 )}
               </Show>
@@ -186,13 +201,17 @@ export default function ConversationNavigator(props: ConversationNavigatorProps)
 }
 
 function previewText(value: string | null | undefined, maxLength: number): string {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  const text = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined"
-    && typeof window.matchMedia === "function"
-    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
 }

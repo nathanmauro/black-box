@@ -6,15 +6,32 @@ import { genericPresenter } from "./generic";
 import type { Presentation } from "./types";
 
 const LANGS: Record<string, string> = {
-  ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx", mjs: "javascript",
-  java: "java", py: "python", rb: "ruby", go: "go", rs: "rust", sh: "shell", zsh: "shell",
-  css: "css", html: "html", json: "json", yml: "yaml", yaml: "yaml", md: "markdown",
-  sql: "sql", xml: "xml", toml: "toml",
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  mjs: "javascript",
+  java: "java",
+  py: "python",
+  rb: "ruby",
+  go: "go",
+  rs: "rust",
+  sh: "shell",
+  zsh: "shell",
+  css: "css",
+  html: "html",
+  json: "json",
+  yml: "yaml",
+  yaml: "yaml",
+  md: "markdown",
+  sql: "sql",
+  xml: "xml",
+  toml: "toml",
 };
 
 export function langForPath(path: string): string | null {
   const extension = /\.([a-z0-9]+)$/i.exec(path)?.[1]?.toLowerCase();
-  return extension ? LANGS[extension] ?? null : null;
+  return extension ? (LANGS[extension] ?? null) : null;
 }
 
 export function readPresenter(event: AgentEvent): Presentation {
@@ -31,9 +48,20 @@ export function readPresenter(event: AgentEvent): Presentation {
     kindPill: { label: "Read", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "read" },
     headline: [{ kind: "fileLink", label: `${truncatePath(pathValue)}${range}`, file }],
     blocks: content
-      ? [{ kind: "code", lang: langForPath(pathValue), text: content, file, label: `Content (${content.length.toLocaleString("en-US")} chars)` }]
+      ? [
+          {
+            kind: "code",
+            lang: langForPath(pathValue),
+            text: content,
+            file,
+            label: `Content (${content.length.toLocaleString("en-US")} chars)`,
+          },
+        ]
       : [],
-    sizes: { inputChars: event.toolInputJson?.length ?? 0, outputChars: event.toolOutputJson?.length ?? 0 },
+    sizes: {
+      inputChars: event.toolInputJson?.length ?? 0,
+      outputChars: event.toolOutputJson?.length ?? 0,
+    },
     refs: [file],
   };
 }

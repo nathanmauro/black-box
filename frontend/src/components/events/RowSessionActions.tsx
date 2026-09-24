@@ -36,7 +36,9 @@ export default function RowSessionActions(props: RowSessionActionsProps) {
       <button type="button" class="row-session-action" title={props.streamLink} onClick={copyLink}>
         Copy link
       </button>
-      <span class="row-session-actions-status" aria-live="polite">{message()}</span>
+      <span class="row-session-actions-status" aria-live="polite">
+        {message()}
+      </span>
     </span>
   );
 }

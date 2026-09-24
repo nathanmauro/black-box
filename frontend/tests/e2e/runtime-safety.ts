@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readlinkSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -22,17 +29,23 @@ export function assertIsolatedDatabase(dbPath: string, tempDir: string): void {
   if (!path.basename(resolvedTemp).startsWith("black-box-saga-e2e-")) {
     throw new Error(`Refusing unrecognized E2E temp directory: ${resolvedTemp}`);
   }
-  if (resolvedDbDirectory !== resolvedTemp || path.basename(resolvedDb) !== "black-box-saga-e2e.db") {
+  if (
+    resolvedDbDirectory !== resolvedTemp ||
+    path.basename(resolvedDb) !== "black-box-saga-e2e.db"
+  ) {
     throw new Error(`Refusing non-isolated E2E database path: ${resolvedDb}`);
   }
 }
 
-export function captureProtectedRuntime(explicitDatabasePath?: string | null): ProtectedRuntimeSnapshot {
+export function captureProtectedRuntime(
+  explicitDatabasePath?: string | null,
+): ProtectedRuntimeSnapshot {
   const listenerPids = listenerPidsOnPort(8766);
-  const databasePath = explicitDatabasePath
-    || process.env.SBA_PRODUCTION_DB_PATH
-    || discoverDatabasePath(listenerPids)
-    || null;
+  const databasePath =
+    explicitDatabasePath ||
+    process.env.SBA_PRODUCTION_DB_PATH ||
+    discoverDatabasePath(listenerPids) ||
+    null;
   return {
     listenerPids,
     databasePath,
@@ -46,18 +59,25 @@ export function assertProtectedRuntimeUnchanged(
   after: ProtectedRuntimeSnapshot,
 ): void {
   if (before.listenerPids.join(",") !== after.listenerPids.join(",")) {
-    throw new Error(`Production port 8766 listener changed during E2E: ${before.listenerPids} -> ${after.listenerPids}`);
+    throw new Error(
+      `Production port 8766 listener changed during E2E: ${before.listenerPids} -> ${after.listenerPids}`,
+    );
   }
-  if (before.databasePath !== after.databasePath || before.databaseIdentity !== after.databaseIdentity) {
-    throw new Error(`Production database identity changed during E2E: ${before.databasePath || "unknown"}`);
+  if (
+    before.databasePath !== after.databasePath ||
+    before.databaseIdentity !== after.databaseIdentity
+  ) {
+    throw new Error(
+      `Production database identity changed during E2E: ${before.databasePath || "unknown"}`,
+    );
   }
   // A null count means the measurement itself failed, not that rows appeared —
   // reporting it as a leak sends whoever reads the failure hunting for phantom rows.
   const measuredBoth = before.syntheticEventRows !== null && after.syntheticEventRows !== null;
   if ((before.syntheticEventRows === null) !== (after.syntheticEventRows === null)) {
     throw new Error(
-      `Could not verify the production database against synthetic E2E leaks: `
-        + `row count unmeasurable on one side (${before.syntheticEventRows} -> ${after.syntheticEventRows})`,
+      `Could not verify the production database against synthetic E2E leaks: ` +
+        `row count unmeasurable on one side (${before.syntheticEventRows} -> ${after.syntheticEventRows})`,
     );
   }
   if (measuredBoth && before.syntheticEventRows !== after.syntheticEventRows) {
@@ -99,7 +119,12 @@ function listenerPidsOnPort(port: number): number[] {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return output.split(/\s+/).filter(Boolean).map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+    return output
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(Number)
+      .filter(Number.isInteger)
+      .sort((a, b) => a - b);
   } catch {
     return [];
   }
@@ -122,7 +147,12 @@ function processCwd(pid: number): string | null {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     });
-    return output.split("\n").find((line) => line.startsWith("n"))?.slice(1) || null;
+    return (
+      output
+        .split("\n")
+        .find((line) => line.startsWith("n"))
+        ?.slice(1) || null
+    );
   } catch {
     return null;
   }
@@ -140,7 +170,12 @@ function syntheticEventRows(databasePath: string): number | null {
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) execFileSync("sleep", ["0.3"]);
     try {
-      const output = execFileSync("sqlite3", ["-readonly", databasePath, `
+      const output = execFileSync(
+        "sqlite3",
+        [
+          "-readonly",
+          databasePath,
+          `
         SELECT count(*)
         FROM agent_events
         WHERE client_session_id IN (
@@ -150,10 +185,13 @@ function syntheticEventRows(databasePath: string): number | null {
           'black-box-e2e-codex-release-worktree',
           'black-box-saga-e2e-completion-session'
         );
-      `], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      });
+      `,
+        ],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
       const count = Number(output.trim());
       if (Number.isInteger(count)) return count;
     } catch {

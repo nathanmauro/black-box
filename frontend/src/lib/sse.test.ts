@@ -19,7 +19,8 @@ class FakeEventSource {
   close() {}
 
   emit(type: string, data: string) {
-    for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data }));
+    for (const listener of this.listeners.get(type) ?? [])
+      listener(new MessageEvent(type, { data }));
   }
 }
 
@@ -39,13 +40,16 @@ describe("Activity live store isolation", () => {
       source.emit("task.created", "{not-json");
       source.emit("task.unknown", JSON.stringify({ task: { id: "task-1" } }));
       source.emit("event.appended", "{not-json");
-      source.emit("event.appended", JSON.stringify({
-        id: "event-1",
-        sessionId: "session-1",
-        source: "codex",
-        eventType: "assistant",
-        observedAt: "2026-07-10T00:00:00Z",
-      }));
+      source.emit(
+        "event.appended",
+        JSON.stringify({
+          id: "event-1",
+          sessionId: "session-1",
+          source: "codex",
+          eventType: "assistant",
+          observedAt: "2026-07-10T00:00:00Z",
+        }),
+      );
 
       expect(store.events()).toHaveLength(1);
       expect(store.events()[0]?.id).toBe("event-1");

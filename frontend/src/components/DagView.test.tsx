@@ -11,9 +11,27 @@ const { default: DagView, layoutDag, layoutLineageDag } = await import("./DagVie
 
 const fixture: DagResponse = {
   nodes: [
-    { id: "spec-1", type: "spec", label: "Ship the full-auto runner", status: "active", ref: "spec-ref-1" },
-    { id: "task-1", type: "task", label: "Validate the story", status: "in_progress", ref: "task-ref-1" },
-    { id: "task-2", type: "task", label: "Run the implementation", status: "open", ref: "task-ref-2" },
+    {
+      id: "spec-1",
+      type: "spec",
+      label: "Ship the full-auto runner",
+      status: "active",
+      ref: "spec-ref-1",
+    },
+    {
+      id: "task-1",
+      type: "task",
+      label: "Validate the story",
+      status: "in_progress",
+      ref: "task-ref-1",
+    },
+    {
+      id: "task-2",
+      type: "task",
+      label: "Run the implementation",
+      status: "open",
+      ref: "task-ref-2",
+    },
     { id: "session:session-1", type: "session", label: "Gate worker", ref: "session-1" },
     { id: "session:session-2", type: "session", label: "Implementation worker", ref: "session-2" },
     { id: "session:session-3", type: "session", label: "Continued verification", ref: "session-3" },
@@ -50,9 +68,15 @@ describe("layoutDag", () => {
 
     expect(layout.nodes).toHaveLength(6);
     expect(layout.edges).toHaveLength(5);
-    expect(layout.nodes.filter((node) => node.type === "spec").every((node) => node.column === 0)).toBe(true);
-    expect(layout.nodes.filter((node) => node.type === "task").every((node) => node.column === 1)).toBe(true);
-    expect(layout.nodes.filter((node) => node.type === "session").every((node) => node.column === 2)).toBe(true);
+    expect(
+      layout.nodes.filter((node) => node.type === "spec").every((node) => node.column === 0),
+    ).toBe(true);
+    expect(
+      layout.nodes.filter((node) => node.type === "task").every((node) => node.column === 1),
+    ).toBe(true);
+    expect(
+      layout.nodes.filter((node) => node.type === "session").every((node) => node.column === 2),
+    ).toBe(true);
 
     for (const type of ["task", "session"] as const) {
       const yPositions = layout.nodes.filter((node) => node.type === type).map((node) => node.y);
@@ -64,7 +88,9 @@ describe("layoutDag", () => {
     expect(continued?.from).toBe(layout.nodes.find((node) => node.id === "session:session-2"));
     expect(continued?.to).toBe(layout.nodes.find((node) => node.id === "session:session-3"));
 
-    const worker = layout.edges.find((edge) => edge.type === "worker_session" && edge.from.id === "task-1");
+    const worker = layout.edges.find(
+      (edge) => edge.type === "worker_session" && edge.from.id === "task-1",
+    );
     expect(worker?.from.id).toBe("task-1");
     expect(worker?.to.id).toBe("session:session-1");
     expect(layout.edges.some((edge) => edge.from.id === "missing-task")).toBe(false);
@@ -118,7 +144,9 @@ describe("DagView", () => {
     expect(sessionNode).toHaveAttribute("data-node-href", "/sessions/session-1");
     expect(screen.getByText("Ship the full-auto runner")).toBeInTheDocument();
     expect(container.querySelector('[data-node-id="task-1"]')).toHaveClass("dag-node--current");
-    expect(container.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
+    expect(container.querySelector('[data-node-id="session:session-1"]')).toHaveClass(
+      "dag-node--current",
+    );
 
     fireEvent.click(taskNode);
     expect(navigateSpy).toHaveBeenCalledWith("/board?task=task-1");
@@ -144,7 +172,9 @@ describe("DagView", () => {
       />
     ));
 
-    expect(screen.getByRole("region", { name: "Agent lineage DAG" })).toHaveClass("dag-stage--lineage");
+    expect(screen.getByRole("region", { name: "Agent lineage DAG" })).toHaveClass(
+      "dag-stage--lineage",
+    );
     expect(container.querySelectorAll(".dag-edges path")).toHaveLength(3);
     fireEvent.click(screen.getByRole("link", { name: "Open session: Reviewer" }));
     expect(selectSession).toHaveBeenCalledWith("reviewer");

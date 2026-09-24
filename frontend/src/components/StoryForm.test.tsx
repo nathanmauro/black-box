@@ -19,12 +19,14 @@ const projects: ProjectSummary[] = [
     sessionCount: 4,
     eventCount: 120,
     savedMeldCount: 0,
-    scopes: [{
-      projectKey: "sba-key",
-      canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
-      label: "~/Developer/proj/sba-agentic",
-      primary: true,
-    }],
+    scopes: [
+      {
+        projectKey: "sba-key",
+        canonicalKey: "/Users/nathan/Developer/proj/sba-agentic",
+        label: "~/Developer/proj/sba-agentic",
+        primary: true,
+      },
+    ],
   },
   {
     projectKey: "cockpit-key",
@@ -107,7 +109,8 @@ describe("StoryForm", () => {
 
   it("updates the acceptance-criteria gate hint as the user types", () => {
     renderStoryForm();
-    const message = "Acceptance criteria is empty — the gate will block the story until at least one criterion is listed.";
+    const message =
+      "Acceptance criteria is empty — the gate will block the story until at least one criterion is listed.";
 
     expect(screen.getByText(message)).toBeInTheDocument();
     fireEvent.input(screen.getByRole("textbox", { name: "Acceptance criteria" }), {
@@ -139,10 +142,18 @@ describe("StoryForm", () => {
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(prefilledInput.title);
     expect(screen.getByRole("textbox", { name: "Repo path" })).toHaveValue(prefilledInput.repo);
     expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue(prefilledInput.goal);
-    expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(prefilledInput.acceptanceCriteria);
-    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue(prefilledInput.constraints);
-    expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue(prefilledInput.verify);
-    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(prefilledInput.priority);
+    expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(
+      prefilledInput.acceptanceCriteria,
+    );
+    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue(
+      prefilledInput.constraints,
+    );
+    expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue(
+      prefilledInput.verify,
+    );
+    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(
+      prefilledInput.priority,
+    );
     expect(screen.getByRole("radio", { name: "SDLC" })).toBeChecked();
     expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(
       "Acceptance criteria must name the cancellation behavior.",
@@ -156,35 +167,51 @@ describe("StoryForm", () => {
     const onCreated = vi.fn();
     renderStoryForm({ create, enqueue, onCreated });
 
-    fireEvent.input(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Run the board story" } });
+    fireEvent.input(screen.getByRole("textbox", { name: "Title" }), {
+      target: { value: "Run the board story" },
+    });
     fireEvent.input(screen.getByRole("textbox", { name: "Repo path" }), {
       target: { value: "/Users/nathan/Developer/proj/sba-agentic/" },
     });
-    fireEvent.input(screen.getByRole("textbox", { name: "Goal" }), { target: { value: "Ship the full-auto loop." } });
+    fireEvent.input(screen.getByRole("textbox", { name: "Goal" }), {
+      target: { value: "Ship the full-auto loop." },
+    });
     fireEvent.input(screen.getByRole("textbox", { name: "Acceptance criteria" }), {
       target: { value: "Gate accepts the story.\nRunner claims the task." },
     });
-    fireEvent.input(screen.getByRole("textbox", { name: "Constraints" }), { target: { value: "Preserve local changes." } });
-    fireEvent.input(screen.getByRole("textbox", { name: "Verify command" }), { target: { value: "npm test" } });
-    fireEvent.input(screen.getByRole("spinbutton", { name: "Priority" }), { target: { value: "23" } });
+    fireEvent.input(screen.getByRole("textbox", { name: "Constraints" }), {
+      target: { value: "Preserve local changes." },
+    });
+    fireEvent.input(screen.getByRole("textbox", { name: "Verify command" }), {
+      target: { value: "npm test" },
+    });
+    fireEvent.input(screen.getByRole("spinbutton", { name: "Priority" }), {
+      target: { value: "23" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Create story" }));
 
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      title: "Run the board story",
-      projectKey: "/Users/nathan/Developer/proj/sba-agentic",
-      actor: "board",
-      specRef: null,
-      body: expect.stringContaining("## Goal\n\nShip the full-auto loop."),
-    }));
-    expect(create.mock.calls[0]?.[0].body).toContain("## Acceptance criteria\n\n- Gate accepts the story.\n- Runner claims the task.");
-    await waitFor(() => expect(enqueue).toHaveBeenCalledWith({
-      specId: "spec-1",
-      title: "Run the board story",
-      lane: "gate",
-      priority: 23,
-      actor: "board",
-    }));
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Run the board story",
+        projectKey: "/Users/nathan/Developer/proj/sba-agentic",
+        actor: "board",
+        specRef: null,
+        body: expect.stringContaining("## Goal\n\nShip the full-auto loop."),
+      }),
+    );
+    expect(create.mock.calls[0]?.[0].body).toContain(
+      "## Acceptance criteria\n\n- Gate accepts the story.\n- Runner claims the task.",
+    );
+    await waitFor(() =>
+      expect(enqueue).toHaveBeenCalledWith({
+        specId: "spec-1",
+        title: "Run the board story",
+        lane: "gate",
+        priority: 23,
+        actor: "board",
+      }),
+    );
     expect(onCreated).toHaveBeenCalledWith({ spec, taskChange });
   });
 
@@ -217,10 +244,12 @@ describe("StoryForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith("task-blocked-gate", {
-      actor: "board",
-      status: "cancelled",
-    }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith("task-blocked-gate", {
+        actor: "board",
+        status: "cancelled",
+      }),
+    );
     expect(create).toHaveBeenCalledOnce();
     expect(enqueue).toHaveBeenCalledOnce();
     expect(create.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[0]!);
@@ -231,7 +260,8 @@ describe("StoryForm", () => {
   it("keeps the new story when old-task cancellation fails and retries only the cleanup", async () => {
     const create = vi.fn(async (_request: CreateSpecRequest) => spec);
     const enqueue = vi.fn(async (_request: EnqueueTaskRequest) => taskChange);
-    const update = vi.fn()
+    const update = vi
+      .fn()
       .mockRejectedValueOnce(new Error("Cancellation unavailable"))
       .mockResolvedValueOnce(taskChange);
     const onCreated = vi.fn();
@@ -284,7 +314,8 @@ describe("StoryForm", () => {
 
   it("retries enqueueing an already-created spec without creating a duplicate", async () => {
     const create = vi.fn(async (_request: CreateSpecRequest) => spec);
-    const enqueue = vi.fn()
+    const enqueue = vi
+      .fn()
       .mockRejectedValueOnce(new Error("Task enqueue failed"))
       .mockResolvedValueOnce(taskChange);
     const onCreated = vi.fn();
@@ -310,7 +341,9 @@ describe("StoryForm", () => {
     renderStoryForm({ create });
     fillRequiredFields();
 
-    fireEvent.input(screen.getByRole("spinbutton", { name: "Priority" }), { target: { value: "" } });
+    fireEvent.input(screen.getByRole("spinbutton", { name: "Priority" }), {
+      target: { value: "" },
+    });
 
     const submit = screen.getByRole("button", { name: "Create story" });
     expect(submit).toBeDisabled();
@@ -332,17 +365,19 @@ describe("StoryForm", () => {
   });
 });
 
-function renderStoryForm(options: {
-  create?: (request: CreateSpecRequest) => Promise<Spec>;
-  enqueue?: (request: EnqueueTaskRequest) => Promise<TaskChange>;
-  update?: (taskId: string, request: UpdateTaskStatusRequest) => Promise<TaskChange>;
-  initialInput?: StoryFormInput;
-  blockedReason?: string;
-  replacesTaskId?: string;
-  onCreated?: (result: { spec: Spec; taskChange: TaskChange }) => void;
-  onCleanupFailed?: (result: { spec: Spec; taskChange: TaskChange }, message: string) => void;
-  onCancel?: () => void;
-} = {}) {
+function renderStoryForm(
+  options: {
+    create?: (request: CreateSpecRequest) => Promise<Spec>;
+    enqueue?: (request: EnqueueTaskRequest) => Promise<TaskChange>;
+    update?: (taskId: string, request: UpdateTaskStatusRequest) => Promise<TaskChange>;
+    initialInput?: StoryFormInput;
+    blockedReason?: string;
+    replacesTaskId?: string;
+    onCreated?: (result: { spec: Spec; taskChange: TaskChange }) => void;
+    onCleanupFailed?: (result: { spec: Spec; taskChange: TaskChange }, message: string) => void;
+    onCancel?: () => void;
+  } = {},
+) {
   return render(() => (
     <StoryForm
       projects={projects}
@@ -360,9 +395,13 @@ function renderStoryForm(options: {
 }
 
 function fillRequiredFields() {
-  fireEvent.input(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Run the board story" } });
+  fireEvent.input(screen.getByRole("textbox", { name: "Title" }), {
+    target: { value: "Run the board story" },
+  });
   fireEvent.input(screen.getByRole("textbox", { name: "Repo path" }), {
     target: { value: "/Users/nathan/Developer/proj/sba-agentic" },
   });
-  fireEvent.input(screen.getByRole("textbox", { name: "Goal" }), { target: { value: "Ship the full-auto loop." } });
+  fireEvent.input(screen.getByRole("textbox", { name: "Goal" }), {
+    target: { value: "Ship the full-auto loop." },
+  });
 }

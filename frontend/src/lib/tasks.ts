@@ -107,7 +107,9 @@ type TaskRecord = {
 export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiveStoreWithNotes {
   const loadTasks = options.loadTasks ?? listTasks;
   const [status, setStatus] = createSignal<LiveStatus>("connecting");
-  const [filters, setFiltersSignal] = createSignal<TaskFilters>(normalizeFilters(options.initialFilters ?? {}));
+  const [filters, setFiltersSignal] = createSignal<TaskFilters>(
+    normalizeFilters(options.initialFilters ?? {}),
+  );
   const [records, setRecords] = createSignal<Map<string, TaskRecord>>(new Map());
   const [noteEpoch, setNoteEpoch] = createSignal(0);
   const seenTransitions = new Set<string>();
@@ -190,14 +192,19 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     const operation = (async () => {
       const snapshot = await loadTasks(requestedFilters);
       if (closed || requestedRevision !== filterRevision) return;
-      setRecords((current) => compactState(mergeSnapshot(
-        snapshot,
-        current,
-        latestVersions,
-        liveMutationSequence,
-        refreshStartedAtMutation,
-        requestedFilters,
-      ), requestedFilters));
+      setRecords((current) =>
+        compactState(
+          mergeSnapshot(
+            snapshot,
+            current,
+            latestVersions,
+            liveMutationSequence,
+            refreshStartedAtMutation,
+            requestedFilters,
+          ),
+          requestedFilters,
+        ),
+      );
     })();
     const tracked: Promise<void> = operation.finally(() => {
       if (refreshInFlight === tracked) refreshInFlight = null;
@@ -225,7 +232,8 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     if (closed) return;
     if (key !== undefined) {
       const pendingGeneration = pendingRecoveryKeys.get(key);
-      if (pendingGeneration !== undefined && pendingGeneration > activeRecoverySnapshotGeneration) return;
+      if (pendingGeneration !== undefined && pendingGeneration > activeRecoverySnapshotGeneration)
+        return;
     }
     setNoteEpoch((value) => value + 1);
     recoveryGeneration += 1;
@@ -235,9 +243,11 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
 
   function ensureRecoveryLoop(): void {
     if (closed || recoveryLoop) return;
-    const operation = Promise.resolve().then(runRecoveryLoop).catch(() => {
-      if (!closed) setStatus("down");
-    });
+    const operation = Promise.resolve()
+      .then(runRecoveryLoop)
+      .catch(() => {
+        if (!closed) setStatus("down");
+      });
     const tracked: Promise<void> = operation.finally(() => {
       if (recoveryLoop !== tracked) return;
       recoveryLoop = null;
@@ -278,9 +288,11 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     const hadFrozenSpec = records().get(frame.task.id)?.spec !== undefined;
     if (!mergeLiveTask(frame.task)) return;
 
-    if (frame.transitionType === "task.created"
-      && !hadFrozenSpec
-      && matchesFilters(frame.task, filters())) {
+    if (
+      frame.transitionType === "task.created" &&
+      !hadFrozenSpec &&
+      matchesFilters(frame.task, filters())
+    ) {
       requestAuthoritativeRecovery("hydrate-created-task");
     }
   }
@@ -292,7 +304,11 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
 
     const existing = annotationsByTask.get(frame.annotation.taskId) ?? [];
     const annotations = insertAnnotation(existing, frame.annotation);
-    touchMap(annotationsByTask, frame.annotation.taskId, annotations.slice(-MAX_ANNOTATIONS_PER_TASK));
+    touchMap(
+      annotationsByTask,
+      frame.annotation.taskId,
+      annotations.slice(-MAX_ANNOTATIONS_PER_TASK),
+    );
     pruneMap(annotationsByTask, new Set([frame.annotation.taskId]), MAX_TRACKED_ANNOTATION_TASKS);
     mergeLiveTask(frame.task);
     setNoteEpoch((value) => value + 1);
@@ -323,9 +339,14 @@ export function createTaskLiveStore(options: TaskLiveStoreOptions = {}): TaskLiv
     return true;
   }
 
-  function compactState(next: Map<string, TaskRecord>, activeFilters: TaskFilters): Map<string, TaskRecord> {
+  function compactState(
+    next: Map<string, TaskRecord>,
+    activeFilters: TaskFilters,
+  ): Map<string, TaskRecord> {
     const limit = taskLimit(activeFilters);
-    const ordered = [...next.values()].sort((left, right) => compareTasks(left.task, right.task)).slice(0, limit);
+    const ordered = [...next.values()]
+      .sort((left, right) => compareTasks(left.task, right.task))
+      .slice(0, limit);
     const compacted = new Map(ordered.map((record) => [record.task.id, record]));
     const protectedIds = new Set(compacted.keys());
     pruneMap(latestVersions, protectedIds, MAX_TRACKED_TASKS);
@@ -420,10 +441,16 @@ function mergeSnapshot(
     if (!snapshotVersion) continue;
     const knownVersion = latestVersions.get(item.task.id);
     const currentRecord = current.get(item.task.id);
-    const changedDuringRefresh = (liveMutationSequence.get(item.task.id) ?? 0) > refreshStartedAtMutation;
-    const knownComparison = knownVersion === undefined ? 0 : compareInstantKeys(knownVersion, snapshotVersion);
-    if (knownVersion !== undefined && (knownComparison > 0 || (knownComparison === 0 && changedDuringRefresh))) {
-      if (currentRecord && matchesFilters(currentRecord.task, filters)) next.set(item.task.id, currentRecord);
+    const changedDuringRefresh =
+      (liveMutationSequence.get(item.task.id) ?? 0) > refreshStartedAtMutation;
+    const knownComparison =
+      knownVersion === undefined ? 0 : compareInstantKeys(knownVersion, snapshotVersion);
+    if (
+      knownVersion !== undefined &&
+      (knownComparison > 0 || (knownComparison === 0 && changedDuringRefresh))
+    ) {
+      if (currentRecord && matchesFilters(currentRecord.task, filters))
+        next.set(item.task.id, currentRecord);
       continue;
     }
     touchMap(latestVersions, item.task.id, snapshotVersion);
@@ -437,7 +464,8 @@ function mergeSnapshot(
       const comparison = compareInstants(incoming.task.updatedAt, record.task.updatedAt);
       if (comparison > 0 || (comparison === 0 && !changedDuringRefresh)) continue;
     }
-    if ((incoming !== undefined || changedDuringRefresh) && matchesFilters(record.task, filters)) next.set(id, record);
+    if ((incoming !== undefined || changedDuringRefresh) && matchesFilters(record.task, filters))
+      next.set(id, record);
   }
   return next;
 }
@@ -447,14 +475,20 @@ function orderTasks(tasks: AgentTask[]): AgentTask[] {
 }
 
 function compareTasks(left: AgentTask, right: AgentTask): number {
-  return right.priority - left.priority
-    || compareInstants(left.createdAt, right.createdAt)
-    || left.id.localeCompare(right.id);
+  return (
+    right.priority - left.priority ||
+    compareInstants(left.createdAt, right.createdAt) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function orderSnapshots(snapshots: TaskSnapshot[]): TaskSnapshot[] {
-  const taskOrder = new Map(orderTasks(snapshots.map(({ task }) => task)).map((task, index) => [task.id, index]));
-  return snapshots.sort((left, right) => (taskOrder.get(left.task.id) ?? 0) - (taskOrder.get(right.task.id) ?? 0));
+  const taskOrder = new Map(
+    orderTasks(snapshots.map(({ task }) => task)).map((task, index) => [task.id, index]),
+  );
+  return snapshots.sort(
+    (left, right) => (taskOrder.get(left.task.id) ?? 0) - (taskOrder.get(right.task.id) ?? 0),
+  );
 }
 
 function normalizeFilters(filters: TaskFilters): TaskFilters {
@@ -467,35 +501,41 @@ function normalizeFilters(filters: TaskFilters): TaskFilters {
 }
 
 function sameFilters(left: TaskFilters, right: TaskFilters): boolean {
-  return left.projectKey === right.projectKey
-    && left.lane === right.lane
-    && left.status === right.status
-    && left.limit === right.limit;
+  return (
+    left.projectKey === right.projectKey &&
+    left.lane === right.lane &&
+    left.status === right.status &&
+    left.limit === right.limit
+  );
 }
 
 function matchesFilters(task: AgentTask, filters: TaskFilters): boolean {
-  return (filters.projectKey === undefined || task.projectKey === filters.projectKey)
-    && (filters.lane === undefined || task.lane === filters.lane)
-    && (filters.status === undefined || task.status === filters.status);
+  return (
+    (filters.projectKey === undefined || task.projectKey === filters.projectKey) &&
+    (filters.lane === undefined || task.lane === filters.lane) &&
+    (filters.status === undefined || task.status === filters.status)
+  );
 }
 
 function isAgentTask(value: unknown): value is AgentTask {
   if (!isRecord(value)) return false;
-  return isNonemptyString(value.id)
-    && isNonemptyString(value.specId)
-    && isNonemptyString(value.projectKey)
-    && isNonemptyString(value.title)
-    && isNonemptyString(value.lane)
-    && typeof value.status === "string"
-    && TASK_STATUSES.has(value.status as TaskStatus)
-    && typeof value.priority === "number"
-    && Number.isFinite(value.priority)
-    && isNonemptyString(value.createdBy)
-    && isNullableString(value.claimedBy)
-    && isNullableString(value.blockedReason)
-    && isNullableString(value.resultHandoffId)
-    && isValidInstant(value.createdAt)
-    && isValidInstant(value.updatedAt);
+  return (
+    isNonemptyString(value.id) &&
+    isNonemptyString(value.specId) &&
+    isNonemptyString(value.projectKey) &&
+    isNonemptyString(value.title) &&
+    isNonemptyString(value.lane) &&
+    typeof value.status === "string" &&
+    TASK_STATUSES.has(value.status as TaskStatus) &&
+    typeof value.priority === "number" &&
+    Number.isFinite(value.priority) &&
+    isNonemptyString(value.createdBy) &&
+    isNullableString(value.claimedBy) &&
+    isNullableString(value.blockedReason) &&
+    isNullableString(value.resultHandoffId) &&
+    isValidInstant(value.createdAt) &&
+    isValidInstant(value.updatedAt)
+  );
 }
 
 function isTaskEventType(value: unknown): value is TaskEventType {
@@ -535,17 +575,26 @@ function instantKey(value: string): string | null {
 
 function isValidUtcSecond(parts: number[]): boolean {
   const [year, month, day, hour, minute, second] = parts;
-  if (year === undefined || month === undefined || day === undefined
-    || hour === undefined || minute === undefined || second === undefined) return false;
+  if (
+    year === undefined ||
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    second === undefined
+  )
+    return false;
   const date = new Date(0);
   date.setUTCFullYear(year, month - 1, day);
   date.setUTCHours(hour, minute, second, 0);
-  return date.getUTCFullYear() === year
-    && date.getUTCMonth() === month - 1
-    && date.getUTCDate() === day
-    && date.getUTCHours() === hour
-    && date.getUTCMinutes() === minute
-    && date.getUTCSeconds() === second;
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day &&
+    date.getUTCHours() === hour &&
+    date.getUTCMinutes() === minute &&
+    date.getUTCSeconds() === second
+  );
 }
 
 function compareInstants(left: string, right: string): number {
@@ -578,7 +627,10 @@ function pruneMap<V>(map: Map<string, V>, protectedIds: Set<string>, maximum: nu
   }
 }
 
-function insertAnnotation(annotations: TaskAnnotation[], annotation: TaskAnnotation): TaskAnnotation[] {
+function insertAnnotation(
+  annotations: TaskAnnotation[],
+  annotation: TaskAnnotation,
+): TaskAnnotation[] {
   const next = [...annotations];
   let index = 0;
   while (index < next.length && compareAnnotations(next[index]!, annotation) <= 0) index += 1;

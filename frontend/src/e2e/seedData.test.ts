@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { E2E_SEED_EVENTS, E2E_SEED_PROJECTION, assertSafeSeedBaseUrl, seedBlackBoxE2e } from "./seedData";
+import {
+  E2E_SEED_EVENTS,
+  E2E_SEED_PROJECTION,
+  assertSafeSeedBaseUrl,
+  seedBlackBoxE2e,
+} from "./seedData";
 
 describe("e2e seed data", () => {
   it("contains the exact deterministic records asserted by smoke.spec.ts", () => {
@@ -30,7 +35,9 @@ describe("e2e seed data", () => {
     const claudePrompt = E2E_SEED_EVENTS.find((event) => event.source === "claude");
     expect(claudePrompt?.text).toContain("Rewrite the UI to match agent-observatory");
 
-    const worktreeHandoff = E2E_SEED_EVENTS.find((event) => event.metadata.title === "Release worktree handoff");
+    const worktreeHandoff = E2E_SEED_EVENTS.find(
+      (event) => event.metadata.title === "Release worktree handoff",
+    );
     expect(worktreeHandoff).toMatchObject({
       eventType: "Handoff",
       cwd: "/tmp/black-box-e2e/.worktrees/release",
@@ -63,10 +70,15 @@ describe("e2e seed data", () => {
     const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
       const url = new URL(input);
       if (url.pathname === "/api/projects") {
-        return new Response(JSON.stringify([{ projectKey: "project-key", canonicalKey: "/tmp/black-box-e2e" }]), { status: 200 });
+        return new Response(
+          JSON.stringify([{ projectKey: "project-key", canonicalKey: "/tmp/black-box-e2e" }]),
+          { status: 200 },
+        );
       }
       if (url.pathname === "/api/projects/project-key/sessions") {
-        return new Response(JSON.stringify([{ id: "session-root" }, { id: "session-worktree" }]), { status: 200 });
+        return new Response(JSON.stringify([{ id: "session-root" }, { id: "session-worktree" }]), {
+          status: 200,
+        });
       }
       if (url.pathname === "/api/melds" && init?.method === "POST") {
         return new Response(JSON.stringify({ id: "meld-id" }), { status: 200 });

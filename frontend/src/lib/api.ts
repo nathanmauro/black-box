@@ -416,14 +416,7 @@ export type TaskEvent = {
 };
 
 export type AnnotationKind =
-  | "note"
-  | "steer"
-  | "progress"
-  | "worker_session"
-  | "engine"
-  | "plan"
-  | "review"
-  | "approval";
+  "note" | "steer" | "progress" | "worker_session" | "engine" | "plan" | "review" | "approval";
 
 export type TaskAnnotation = {
   id: string;
@@ -574,7 +567,9 @@ export function getEvent(id: string): Promise<AgentEvent> {
 }
 
 export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[]> {
-  return getJson(`/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}`);
+  return getJson(
+    `/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}`,
+  );
 }
 
 export function getSessionTranscript(
@@ -613,7 +608,11 @@ export function getEventFacets(
   return getJson(`/api/events/facets${suffix ? `?${suffix}` : ""}`, signal);
 }
 
-export function getRecall(scope: string, withinHours: number, kinds: string[]): Promise<RecallResult> {
+export function getRecall(
+  scope: string,
+  withinHours: number,
+  kinds: string[],
+): Promise<RecallResult> {
   const params = new URLSearchParams({
     withinHours: String(withinHours),
   });
@@ -652,10 +651,16 @@ export async function deleteProjectAlias(aliasKey: string): Promise<void> {
 }
 
 export function getProjectSessions(key: string, limit = 250): Promise<AgentSession[]> {
-  return getJson(`/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}`);
+  return getJson(
+    `/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}`,
+  );
 }
 
-export function getProjectTimeline(key: string, limit = 250, offset = 0): Promise<ProjectTimelineResponse> {
+export function getProjectTimeline(
+  key: string,
+  limit = 250,
+  offset = 0,
+): Promise<ProjectTimelineResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return getJson(`/api/projects/${encodeURIComponent(key)}/timeline?${params.toString()}`);
 }
@@ -668,7 +673,10 @@ export function getProjectMelds(key: string): Promise<ProjectMeld[]> {
   return getJson(`/api/projects/${encodeURIComponent(key)}/melds`);
 }
 
-export function previewProjectMeld(key: string, sessionIds: string[]): Promise<ProjectMeldPreviewResponse> {
+export function previewProjectMeld(
+  key: string,
+  sessionIds: string[],
+): Promise<ProjectMeldPreviewResponse> {
   return postJson(`/api/projects/${encodeURIComponent(key)}/melds/preview`, { sessionIds });
 }
 
@@ -709,7 +717,10 @@ export function enqueueTask(request: EnqueueTaskRequest): Promise<TaskChange> {
   return postJson("/api/tasks", request);
 }
 
-export function createTaskAnnotation(taskId: string, request: CreateAnnotationRequest): Promise<TaskAnnotation> {
+export function createTaskAnnotation(
+  taskId: string,
+  request: CreateAnnotationRequest,
+): Promise<TaskAnnotation> {
   return postJson(`/api/tasks/${encodeURIComponent(taskId)}/annotations`, request);
 }
 
@@ -737,7 +748,11 @@ export async function getSessionChildCounts(ids: string[]): Promise<Record<strin
     batches.push(ids.slice(index, index + CHILD_COUNT_BATCH_SIZE));
   }
   const results = await Promise.all(
-    batches.map((batch) => getJson<Record<string, number>>(`/api/session-links/child-counts?ids=${batch.map(encodeURIComponent).join(",")}`)),
+    batches.map((batch) =>
+      getJson<Record<string, number>>(
+        `/api/session-links/child-counts?ids=${batch.map(encodeURIComponent).join(",")}`,
+      ),
+    ),
   );
   return results.reduce<Record<string, number>>((merged, batch) => ({ ...merged, ...batch }), {});
 }
@@ -760,7 +775,10 @@ export async function claimNextTask(request: ClaimTaskRequest): Promise<TaskChan
   return readJson<TaskChange>(response);
 }
 
-export function updateTaskStatus(taskId: string, request: UpdateTaskStatusRequest): Promise<TaskChange> {
+export function updateTaskStatus(
+  taskId: string,
+  request: UpdateTaskStatusRequest,
+): Promise<TaskChange> {
   return patchJson(`/api/tasks/${encodeURIComponent(taskId)}`, request);
 }
 
@@ -784,7 +802,10 @@ function apiRequest(path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = { ...init.headers } as Record<string, string>;
   if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method) && typeof document !== "undefined") {
-    const cookie = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("XSRF-TOKEN="));
+    const cookie = document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("XSRF-TOKEN="));
     if (cookie) headers["X-XSRF-TOKEN"] = decodeURIComponent(cookie.slice("XSRF-TOKEN=".length));
   }
   return fetch(path, { ...init, headers }); // Fetch defaults to same-origin cookies.
@@ -830,8 +851,12 @@ async function readJson<T>(response: Response): Promise<T> {
     const body = await response.text().catch(() => "");
     try {
       payload = body ? JSON.parse(body) : undefined;
-      const errorBody = payload as { message?: string; error?: string | { message?: string; type?: string } };
-      const nestedError = typeof errorBody.error === "object" ? errorBody.error?.message : errorBody.error;
+      const errorBody = payload as {
+        message?: string;
+        error?: string | { message?: string; type?: string };
+      };
+      const nestedError =
+        typeof errorBody.error === "object" ? errorBody.error?.message : errorBody.error;
       errorType = typeof errorBody.error === "object" ? errorBody.error?.type : undefined;
       detail = errorBody.message || nestedError || detail;
     } catch {

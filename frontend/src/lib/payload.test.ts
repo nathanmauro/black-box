@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeJson, parseJsonObject, parsePayload, parseToolResult, payloadText } from "./payload";
+import {
+  looksLikeJson,
+  parseJsonObject,
+  parsePayload,
+  parseToolResult,
+  payloadText,
+} from "./payload";
 
 describe("parsePayload", () => {
   it("unwraps double-serialized JSON in two passes", () => {
-    expect(parsePayload(JSON.stringify(JSON.stringify({ command: "ls" })))).toEqual({ command: "ls" });
+    expect(parsePayload(JSON.stringify(JSON.stringify({ command: "ls" })))).toEqual({
+      command: "ls",
+    });
   });
   it("returns raw text for non-JSON strings", () => {
     expect(parsePayload("plain text")).toBe("plain text");
@@ -17,7 +25,11 @@ describe("parsePayload", () => {
 describe("parseToolResult", () => {
   it("extracts the Codex exit/wall/output result format into structured fields", () => {
     const raw = JSON.stringify("Exit code: 0\nWall time: 1.2 seconds\nOutput:\n42 tests passed");
-    expect(parseToolResult(raw)).toEqual({ exit_code: 0, wall_time: "1.2 seconds", output: "42 tests passed" });
+    expect(parseToolResult(raw)).toEqual({
+      exit_code: 0,
+      wall_time: "1.2 seconds",
+      output: "42 tests passed",
+    });
   });
   it("passes through strings that do not match the format", () => {
     expect(parseToolResult(JSON.stringify("just output"))).toBe("just output");

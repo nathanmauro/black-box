@@ -128,18 +128,22 @@ type OwnedSections = {
 function parseOwnedSections(lines: string[]): OwnedSections {
   const acceptanceIndex = findLastSectionHeading(lines, "acceptanceCriteria");
   const constraintsIndex = findLastSectionHeading(lines, "constraints", acceptanceIndex + 1);
-  const goalBoundary = acceptanceIndex >= 0
-    ? acceptanceIndex
-    : constraintsIndex >= 0 ? constraintsIndex : lines.length;
-  const goalIndex = lines.findIndex((line, index) => (
-    index < goalBoundary && ownedSectionHeading(line) === "goal"
-  ));
+  const goalBoundary =
+    acceptanceIndex >= 0
+      ? acceptanceIndex
+      : constraintsIndex >= 0
+        ? constraintsIndex
+        : lines.length;
+  const goalIndex = lines.findIndex(
+    (line, index) => index < goalBoundary && ownedSectionHeading(line) === "goal",
+  );
 
   return {
     goal: goalIndex >= 0 ? lines.slice(goalIndex + 1, goalBoundary) : [],
-    acceptanceCriteria: acceptanceIndex >= 0
-      ? lines.slice(acceptanceIndex + 1, constraintsIndex >= 0 ? constraintsIndex : lines.length)
-      : [],
+    acceptanceCriteria:
+      acceptanceIndex >= 0
+        ? lines.slice(acceptanceIndex + 1, constraintsIndex >= 0 ? constraintsIndex : lines.length)
+        : [],
     constraints: constraintsIndex >= 0 ? lines.slice(constraintsIndex + 1) : [],
   };
 }
@@ -167,7 +171,7 @@ function parseListSection(lines: string[]): string {
   return trimBlankEdges(lines)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => line.startsWith("- ") ? line.slice(2) : line)
+    .map((line) => (line.startsWith("- ") ? line.slice(2) : line))
     .join("\n");
 }
 
@@ -207,14 +211,16 @@ export function evaluateGateHints(input: StoryFormInput): GateHint[] {
   if (nonBlankLines(input.acceptanceCriteria).length === 0) {
     hints.push({
       id: "acceptance-criteria-empty",
-      message: "Acceptance criteria is empty — the gate will block the story until at least one criterion is listed.",
+      message:
+        "Acceptance criteria is empty — the gate will block the story until at least one criterion is listed.",
     });
   }
 
   if (!input.verify.trim()) {
     hints.push({
       id: "verify-missing",
-      message: "No verify command set — the gate will try to derive one from repo convention (mvn/npm/make); set one explicitly if that's wrong for this repo.",
+      message:
+        "No verify command set — the gate will try to derive one from repo convention (mvn/npm/make); set one explicitly if that's wrong for this repo.",
     });
   }
 

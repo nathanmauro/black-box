@@ -19,7 +19,10 @@ type TaskRecord = {
 };
 type TaskChange = { snapshot: { task: TaskRecord } };
 
-test("agent coordination loop stays live from Open through Blocked, reset, Done, Handoff, and Recall", async ({ page, request }) => {
+test("agent coordination loop stays live from Open through Blocked, reset, Done, Handoff, and Recall", async ({
+  page,
+  request,
+}) => {
   const spec = await postJson<SpecRecord>(request, "/api/specs", {
     projectKey: PROJECT,
     title: `${PREFIX} frozen queue specification`,
@@ -79,14 +82,18 @@ test("agent coordination loop stays live from Open through Blocked, reset, Done,
       agent: `${PREFIX}-implementer`,
     });
     expect(claimed.snapshot.task.id).toBe(completedTask.id);
-    const completed = await postJson<TaskChange>(request, `/api/tasks/${completedTask.id}/complete`, {
-      actor: `${PREFIX}-implementer`,
-      source: "codex",
-      clientSessionId: `${PREFIX}-completion-session`,
-      summary: HANDOFF_HEADLINE,
-      openLoops: [`${PREFIX} docs remain a separate release task`],
-      nextAction: `${PREFIX} verify the release gates`,
-    });
+    const completed = await postJson<TaskChange>(
+      request,
+      `/api/tasks/${completedTask.id}/complete`,
+      {
+        actor: `${PREFIX}-implementer`,
+        source: "codex",
+        clientSessionId: `${PREFIX}-completion-session`,
+        summary: HANDOFF_HEADLINE,
+        openLoops: [`${PREFIX} docs remain a separate release task`],
+        nextAction: `${PREFIX} verify the release gates`,
+      },
+    );
     handoffId = completed.snapshot.task.resultHandoffId || "";
     expect(handoffId).not.toBe("");
     await expect(taskInColumn(page, "Done", DONE_TITLE, "Done")).toBeVisible();
@@ -99,8 +106,9 @@ test("agent coordination loop stays live from Open through Blocked, reset, Done,
     await expect(handoff).toBeVisible();
     await expect(handoff.locator("code")).toHaveText(handoffId);
     await expect(handoff.getByText(HANDOFF_HEADLINE, { exact: true })).toBeVisible();
-    await expect(handoff.locator(".board-handoff-body p").filter({ hasText: "Next" }))
-      .toContainText(`${PREFIX} verify the release gates`);
+    await expect(
+      handoff.locator(".board-handoff-body p").filter({ hasText: "Next" }),
+    ).toContainText(`${PREFIX} verify the release gates`);
     await page.screenshot({ path: `${SHOT_DIR}/queue-handoff.png`, fullPage: true });
   });
 
@@ -114,8 +122,12 @@ test("agent coordination loop stays live from Open through Blocked, reset, Done,
 
   await test.step("Direct Board navigation restores project and lane filters from the URL", async () => {
     const freshPage = await page.context().newPage();
-    await freshPage.goto(`/board?project=${encodeURIComponent(PROJECT)}&lane=${encodeURIComponent(DONE_LANE)}`);
-    await expect(freshPage.locator(".board-project-filter .project-picker-button")).toContainText(PROJECT);
+    await freshPage.goto(
+      `/board?project=${encodeURIComponent(PROJECT)}&lane=${encodeURIComponent(DONE_LANE)}`,
+    );
+    await expect(freshPage.locator(".board-project-filter .project-picker-button")).toContainText(
+      PROJECT,
+    );
     await expect(freshPage.getByLabel("Lane")).toHaveValue(DONE_LANE);
     await expect(taskInColumn(freshPage, "Done", DONE_TITLE, "Done")).toBeVisible();
     await expect(freshPage.getByText(BLOCK_TITLE)).toHaveCount(0);
@@ -151,15 +163,21 @@ function taskInColumn(page: Page, column: string, title: string, status: string)
 async function postJson<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
   const response = await request.post(path, { data });
   if (!response.ok()) {
-    expect(response.ok(), `POST ${path}: ${response.status()} ${await response.text()}`).toBeTruthy();
+    expect(
+      response.ok(),
+      `POST ${path}: ${response.status()} ${await response.text()}`,
+    ).toBeTruthy();
   }
-  return await response.json() as T;
+  return (await response.json()) as T;
 }
 
 async function patchJson<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
   const response = await request.patch(path, { data });
   if (!response.ok()) {
-    expect(response.ok(), `PATCH ${path}: ${response.status()} ${await response.text()}`).toBeTruthy();
+    expect(
+      response.ok(),
+      `PATCH ${path}: ${response.status()} ${await response.text()}`,
+    ).toBeTruthy();
   }
-  return await response.json() as T;
+  return (await response.json()) as T;
 }

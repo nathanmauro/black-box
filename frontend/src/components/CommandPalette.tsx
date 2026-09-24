@@ -20,8 +20,18 @@ type CommandItem = {
 };
 
 const NAV_ITEMS = [
-  { id: "nav-activity", label: "Activity", path: "/", meta: "filter events, browse sessions, or ask memory" },
-  { id: "nav-projects", label: "Projects", path: "/projects", meta: "inspect grouped project history and storylines" },
+  {
+    id: "nav-activity",
+    label: "Activity",
+    path: "/",
+    meta: "filter events, browse sessions, or ask memory",
+  },
+  {
+    id: "nav-projects",
+    label: "Projects",
+    path: "/projects",
+    meta: "inspect grouped project history and storylines",
+  },
   { id: "nav-board", label: "Board", path: "/board", meta: "inspect the live agent task queue" },
   { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
 ];
@@ -31,9 +41,13 @@ export default function CommandPalette(props: CommandPaletteProps) {
   const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
-  const [sessions] = createResource(() => (props.open ? "open" : ""), async (key) => (key ? getSessions(120) : []), {
-    initialValue: [] as AgentSession[],
-  });
+  const [sessions] = createResource(
+    () => (props.open ? "open" : ""),
+    async (key) => (key ? getSessions(120) : []),
+    {
+      initialValue: [] as AgentSession[],
+    },
+  );
   const [fallback] = createResource(
     () => (props.open && query().trim().length >= 2 ? query().trim() : ""),
     async (q) => (q ? search(q, 8) : null),
@@ -41,7 +55,9 @@ export default function CommandPalette(props: CommandPaletteProps) {
 
   const items = createMemo<CommandItem[]>(() => {
     const q = normalize(query());
-    const nav = NAV_ITEMS.filter((item) => !q || normalize(`${item.label} ${item.meta}`).includes(q)).map((item) => ({
+    const nav = NAV_ITEMS.filter(
+      (item) => !q || normalize(`${item.label} ${item.meta}`).includes(q),
+    ).map((item) => ({
       id: item.id,
       label: item.label,
       meta: item.meta,
@@ -56,17 +72,22 @@ export default function CommandPalette(props: CommandPaletteProps) {
       .slice(0, 7)
       .map((session) => sessionItem(session, navigate, close));
     const remoteEvents =
-      fallback()?.local?.slice(0, 5).map((event) => ({
-        id: `event-${event.id}`,
-        label: event.text && event.text.length < 120 ? event.text : event.toolName || event.eventType,
-        meta: `${sourceLabel(event.source)} · ${timeAgo(event.observedAt)}`,
-        kind: "event" as const,
-        eventKind: event.eventType,
-        run: () => {
-          navigate(`/?view=browse&session=${encodeURIComponent(event.sessionId)}&event=${encodeURIComponent(event.id)}`);
-          close();
-        },
-      })) || [];
+      fallback()
+        ?.local?.slice(0, 5)
+        .map((event) => ({
+          id: `event-${event.id}`,
+          label:
+            event.text && event.text.length < 120 ? event.text : event.toolName || event.eventType,
+          meta: `${sourceLabel(event.source)} · ${timeAgo(event.observedAt)}`,
+          kind: "event" as const,
+          eventKind: event.eventType,
+          run: () => {
+            navigate(
+              `/?view=browse&session=${encodeURIComponent(event.sessionId)}&event=${encodeURIComponent(event.id)}`,
+            );
+            close();
+          },
+        })) || [];
     const searchItem = query().trim()
       ? [
           {
@@ -173,11 +194,20 @@ export default function CommandPalette(props: CommandPaletteProps) {
 
 function PaletteIcon(props: { item: CommandItem }) {
   if (props.item.kind === "event") return <KindBadge kind={props.item.eventKind} />;
-  if (props.item.kind === "session") return <SourceDot source={props.item.meta.split(" · ")[0].toLowerCase()} />;
-  return <span class={`palette-glyph palette-glyph--${props.item.kind}`}>{props.item.kind === "search" ? "⌕" : "↗"}</span>;
+  if (props.item.kind === "session")
+    return <SourceDot source={props.item.meta.split(" · ")[0].toLowerCase()} />;
+  return (
+    <span class={`palette-glyph palette-glyph--${props.item.kind}`}>
+      {props.item.kind === "search" ? "⌕" : "↗"}
+    </span>
+  );
 }
 
-function sessionItem(session: AgentSession, navigate: ReturnType<typeof useNavigate>, close: () => void): CommandItem {
+function sessionItem(
+  session: AgentSession,
+  navigate: ReturnType<typeof useNavigate>,
+  close: () => void,
+): CommandItem {
   return {
     id: `session-${session.id}`,
     label: session.title || session.clientSessionId,
@@ -191,7 +221,9 @@ function sessionItem(session: AgentSession, navigate: ReturnType<typeof useNavig
 }
 
 function fuzzy(session: AgentSession, q: string): boolean {
-  return normalize(`${session.title} ${session.cwd || ""} ${session.source} ${session.clientSessionId}`).includes(q);
+  return normalize(
+    `${session.title} ${session.cwd || ""} ${session.source} ${session.clientSessionId}`,
+  ).includes(q);
 }
 
 function normalize(value: string): string {

@@ -27,7 +27,10 @@ export default function TrajectoryView(props: TrajectoryViewProps) {
   });
 
   return (
-    <Show when={layout().nodes.length > 0} fallback={<p class="traj-empty">No trajectory captures yet</p>}>
+    <Show
+      when={layout().nodes.length > 0}
+      fallback={<p class="traj-empty">No trajectory captures yet</p>}
+    >
       <section ref={stageRef} class="traj-stage" aria-label="Project trajectory graph">
         <svg
           class="traj-svg"
@@ -103,7 +106,14 @@ function TrajectoryNodeShape(props: { node: TrajectoryLayoutNode }) {
         <circle class="traj-node-shape" r={radiusFor(props.node.kind)} />
       )}
       <Show when={props.node.kind === "burst" && props.node.hasDecision}>
-        <rect class="traj-decision-stud" x="-4" y="-18" width="8" height="8" transform="rotate(45)" />
+        <rect
+          class="traj-decision-stud"
+          x="-4"
+          y="-18"
+          width="8"
+          height="8"
+          transform="rotate(45)"
+        />
       </Show>
     </>
   );
@@ -111,37 +121,57 @@ function TrajectoryNodeShape(props: { node: TrajectoryLayoutNode }) {
 
 function TrajectoryNodeLabel(props: { node: TrajectoryLayoutNode }) {
   if (props.node.kind === "future-more") {
-    return <text class="traj-label traj-label--inside" x="0" y="4" text-anchor="middle">{props.node.label}</text>;
+    return (
+      <text class="traj-label traj-label--inside" x="0" y="4" text-anchor="middle">
+        {props.node.label}
+      </text>
+    );
   }
   if (props.node.kind === "future-task") {
     return (
       <>
-        <text class="traj-label traj-label--inside" x="0" y="4" text-anchor="middle">{clamp(props.node.label, 16)}</text>
-        <text class="traj-eyebrow" x="0" y="30" text-anchor="middle">{props.node.eyebrow}</text>
+        <text class="traj-label traj-label--inside" x="0" y="4" text-anchor="middle">
+          {clamp(props.node.label, 16)}
+        </text>
+        <text class="traj-eyebrow" x="0" y="30" text-anchor="middle">
+          {props.node.eyebrow}
+        </text>
       </>
     );
   }
   if (props.node.kind.startsWith("future-")) {
     return (
       <>
-        <text class="traj-label" x="0" y="30" text-anchor="middle">{clamp(props.node.label, 24)}</text>
-        <text class="traj-eyebrow" x="0" y="44" text-anchor="middle">{props.node.eyebrow}</text>
+        <text class="traj-label" x="0" y="30" text-anchor="middle">
+          {clamp(props.node.label, 24)}
+        </text>
+        <text class="traj-eyebrow" x="0" y="44" text-anchor="middle">
+          {props.node.eyebrow}
+        </text>
       </>
     );
   }
   if (props.node.kind === "head") {
     return (
       <>
-        <text class="traj-eyebrow" x="0" y="-24" text-anchor="middle">{props.node.eyebrow}</text>
-        <text class="traj-label traj-label--head" x="0" y="38" text-anchor="middle">{clamp(props.node.label, 28)}</text>
+        <text class="traj-eyebrow" x="0" y="-24" text-anchor="middle">
+          {props.node.eyebrow}
+        </text>
+        <text class="traj-label traj-label--head" x="0" y="38" text-anchor="middle">
+          {clamp(props.node.label, 28)}
+        </text>
       </>
     );
   }
   if (props.node.kind === "stub") {
     return (
       <>
-        <text class="traj-label" x="0" y="23" text-anchor="middle">{props.node.label}</text>
-        <text class="traj-eyebrow" x="0" y="37" text-anchor="middle">{props.node.eyebrow}</text>
+        <text class="traj-label" x="0" y="23" text-anchor="middle">
+          {props.node.label}
+        </text>
+        <text class="traj-eyebrow" x="0" y="37" text-anchor="middle">
+          {props.node.eyebrow}
+        </text>
       </>
     );
   }
@@ -149,8 +179,12 @@ function TrajectoryNodeLabel(props: { node: TrajectoryLayoutNode }) {
   const above = props.node.labelSide !== "below";
   return (
     <>
-      <text class="traj-label" x="0" y={above ? -20 : 30} text-anchor="middle">{props.node.label}</text>
-      <text class="traj-eyebrow" x="0" y={above ? -34 : 44} text-anchor="middle">{props.node.eyebrow}</text>
+      <text class="traj-label" x="0" y={above ? -20 : 30} text-anchor="middle">
+        {props.node.label}
+      </text>
+      <text class="traj-eyebrow" x="0" y={above ? -34 : 44} text-anchor="middle">
+        {props.node.eyebrow}
+      </text>
     </>
   );
 }
@@ -171,7 +205,9 @@ function nodeClass(node: TrajectoryLayoutNode, stale: boolean, selected: boolean
     node.stale ? "traj-node--stale" : "",
     futureStale ? "traj-node--future-stale" : "",
     selected ? "traj-node--selected" : "",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function nodeStyle(node: TrajectoryLayoutNode): Record<string, string> {
