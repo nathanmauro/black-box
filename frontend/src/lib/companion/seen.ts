@@ -1,4 +1,4 @@
-import { createSignal, type Accessor } from "solid-js";
+import { createSignal, onCleanup, type Accessor } from "solid-js";
 
 export const SEEN_STORAGE_KEY = "blackbox.companion.seen.v1";
 export const SEEN_MAX = 2000;
@@ -41,7 +41,13 @@ export function createSeenStore(storage: Storage | null = safeStorage()): SeenSt
       return changed ? next : current;
     });
   }
-  if (typeof window !== "undefined") window.addEventListener("storage", handleStorageEvent);
+  // Each mount of the page that owns this store (CompanionPage, re-mounted on every SPA navigate
+  // back to /companion) adds one listener; without removing it on cleanup they pile up, each
+  // firing on every future storage event.
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", handleStorageEvent);
+    onCleanup(() => window.removeEventListener("storage", handleStorageEvent));
+  }
 
   return {
     seen,

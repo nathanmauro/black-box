@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { createRoot } from "solid-js";
+import { describe, expect, it, vi } from "vitest";
 import { createSeenStore, SEEN_MAX, SEEN_STORAGE_KEY } from "./seen";
 
 class MemoryStorage implements Storage {
@@ -68,5 +69,23 @@ describe("createSeenStore", () => {
     const store = createSeenStore(null);
     window.dispatchEvent(new StorageEvent("storage", { key: "some-other-key", newValue: JSON.stringify(["nope"]) }));
     expect(store.seen().has("nope")).toBe(false);
+  });
+
+  it("removes its window storage listener when the owning root is disposed", () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+    let dispose!: () => void;
+    createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      createSeenStore(null);
+    });
+    const registered = addSpy.mock.calls.find(([type]) => type === "storage");
+    expect(registered).toBeDefined();
+    const handler = registered![1];
+    expect(removeSpy).not.toHaveBeenCalledWith("storage", handler);
+    dispose();
+    expect(removeSpy).toHaveBeenCalledWith("storage", handler);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 });
