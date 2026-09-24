@@ -57,6 +57,10 @@ export default function ExpandedView(props: ExpandedViewProps) {
               <li>
                 <a class={`companion-item${item.seen ? "" : " companion-item--unseen"}`} href={item.href} target="_blank" rel="noreferrer">
                   <span class="companion-item-head">
+                    {/* The unseen border color is a visual-only cue (WCAG 1.4.1); say it too. */}
+                    <Show when={!item.seen}>
+                      <span class="visually-hidden">Unseen</span>
+                    </Show>
                     <KindBadge kind={item.eventType} />
                     <Show when={props.view.kind === "river"}>
                       <span class="companion-item-project">{item.projectName}</span>

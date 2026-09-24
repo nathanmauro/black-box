@@ -27,6 +27,7 @@ describe("ExpandedView", () => {
     expect(link).toHaveAttribute("href", "/?view=browse&session=s1&event=h1&project=keyA");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveClass("companion-item--unseen");
+    expect(link).toHaveTextContent("Unseen"); // conveyed to assistive tech, not just by the border color
     expect(screen.getByText("Next: Run the e2e suite")).toBeInTheDocument();
     expect(screen.getByText("1 open loop")).toBeInTheDocument();
     expect(screen.queryByText("Pick B")).not.toBeInTheDocument();
@@ -50,7 +51,10 @@ describe("ExpandedView", () => {
     const onToggleView = vi.fn();
     render(() => <ExpandedView model={model} view={{ kind: "river" }} onBack={() => {}} onToggleView={onToggleView} onCollapse={() => {}} />);
     expect(screen.getByText("River")).toBeInTheDocument();
-    expect(screen.getAllByRole("link")).toHaveLength(2);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveTextContent("Unseen"); // handoff, unseen
+    expect(links[1]).not.toHaveTextContent("Unseen"); // decision, already seen
     expect(screen.getByText("b")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "By project" }));
     expect(onToggleView).toHaveBeenCalledTimes(1);
