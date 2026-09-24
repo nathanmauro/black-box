@@ -6,6 +6,7 @@ final class OptionsTests: XCTestCase {
         let options = Options.parse([], env: [:])
         XCTAssertEqual(options.url.absoluteString, "http://127.0.0.1:8766/companion?embedded=1")
         XCTAssertNil(options.selfTestOutput)
+        XCTAssertNil(options.clickThroughOutput)
     }
 
     func testEnvironmentOverridesDefaultAndFlagOverridesEnvironment() {
@@ -18,6 +19,13 @@ final class OptionsTests: XCTestCase {
     func testSelfTestFlagCapturesOutputPath() {
         let options = Options.parse(["--self-test", "/tmp/shot.png"], env: [:])
         XCTAssertEqual(options.selfTestOutput, "/tmp/shot.png")
+    }
+
+    func testClickThroughFlagCapturesOutputDirectory() {
+        let options = Options.parse(["--click-through", "/tmp/click", "--url", "http://127.0.0.1:8797/companion?embedded=1"], env: [:])
+        XCTAssertEqual(options.clickThroughOutput, "/tmp/click")
+        XCTAssertNil(options.selfTestOutput)
+        XCTAssertEqual(options.url.absoluteString, "http://127.0.0.1:8797/companion?embedded=1")
     }
 
     func testInvalidUrlFallsBackToDefault() {

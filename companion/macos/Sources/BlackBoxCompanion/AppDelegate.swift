@@ -1,21 +1,43 @@
 import AppKit
 import WebKit
 
+/// What differs between the real shell and the `--click-through` run. Everything else (panel, bridge
+/// handler, UI and navigation delegates) is the same code path.
+struct ShellEnvironment {
+    var sizeStore: PanelSizeStore
+    var panelAutosaveName: String?
+    var websiteDataStore: WKWebsiteDataStore
+    /// Where an http(s) link the shell decided to open externally goes.
+    var openExternal: (URL) -> Void
+    var onLaunched: ((AppDelegate) -> Void)?
+    var onBridgeMessage: ((BridgeMessage) -> Void)?
+
+    static func live() -> ShellEnvironment {
+        ShellEnvironment(
+            sizeStore: UserDefaultsPanelSizeStore(),
+            panelAutosaveName: CompanionPanel.defaultAutosaveName,
+            websiteDataStore: .default(),
+            openExternal: { NSWorkspace.shared.open($0) }
+        )
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     private let options: Options
-    private let sizeStore: PanelSizeStore
-    private var statusItem: NSStatusItem!
-    private var panel: CompanionPanel!
-    private var webView: WKWebView!
+    private let environment: ShellEnvironment
+    private var sizeStore: PanelSizeStore { environment.sizeStore }
+    private(set) var statusItem: NSStatusItem!
+    private(set) var panel: CompanionPanel!
+    private(set) var webView: WKWebView!
     private var toggleItem: NSMenuItem!
     private var currentMode = "mini"
     // Set while a bridge mode message is driving the panel's frame, so the resize notification it
     // triggers is not mistaken for — and does not overwrite — a manual resize.
     private var isApplyingProgrammaticResize = false
 
-    init(options: Options, sizeStore: PanelSizeStore = UserDefaultsPanelSizeStore()) {
+    init(options: Options, environment: ShellEnvironment = .live()) {
         self.options = options
-        self.sizeStore = sizeStore
+        self.environment = environment
         super.init()
     }
 
@@ -23,13 +45,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         NSApp.setActivationPolicy(.accessory)
 
         let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = environment.websiteDataStore
         configuration.userContentController.add(self, name: "companion")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.uiDelegate = self
         webView.navigationDelegate = self
         WebViewTransparency.apply(to: webView)
 
-        panel = CompanionPanel(contentSize: NSSize(width: 132, height: 36))
+        panel = CompanionPanel(contentSize: NSSize(width: 132, height: 36), autosaveName: environment.panelAutosaveName)
         panel.contentView = webView
         NotificationCenter.default.addObserver(self, selector: #selector(panelDidResize), name: NSWindow.didResizeNotification, object: panel)
 
@@ -48,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
         webView.load(URLRequest(url: options.url))
         panel.orderFrontRegardless()
+        environment.onLaunched?(self)
     }
 
     @objc private func togglePanel() {
@@ -64,11 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard var components = URLComponents(url: options.url, resolvingAgainstBaseURL: false) else { return }
         components.path = "/"
         components.query = nil
-        if let url = components.url { NSWorkspace.shared.open(url) }
+        if let url = components.url { environment.openExternal(url) }
     }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let parsed = BridgeMessage.parse(message.body) else { return }
+        defer { environment.onBridgeMessage?(parsed) }
         switch parsed {
         case let .state(pulse, unseen):
             statusItem.button?.title = StatusTitle.render(pulse: pulse, unseen: unseen)
@@ -101,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // http/https ever reach NSWorkspace; anything else is ignored rather than shelled out to.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         let url = navigationAction.request.url
-        if LinkPolicy.isAllowedScheme(url), let url { NSWorkspace.shared.open(url) }
+        if LinkPolicy.isAllowedScheme(url), let url { environment.openExternal(url) }
         return nil
     }
 
@@ -113,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             decisionHandler(.allow)
             return
         }
-        if LinkPolicy.isAllowedScheme(url), let url { NSWorkspace.shared.open(url) }
+        if LinkPolicy.isAllowedScheme(url), let url { environment.openExternal(url) }
         decisionHandler(.cancel)
     }
 }

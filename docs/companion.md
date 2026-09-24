@@ -33,8 +33,20 @@ swift build
 swift run BlackBoxCompanion                      # default: http://127.0.0.1:8766/companion?embedded=1
 swift run BlackBoxCompanion --url http://127.0.0.1:8799/companion?embedded=1
 swift run BlackBoxCompanion --self-test /tmp/companion.png   # loads the page, writes a PNG, exits 0
+swift run BlackBoxCompanion --click-through /tmp/companion-click --url http://127.0.0.1:8797/companion?embedded=1
 swift test
 ```
+
+`--click-through <dir>` runs the real shell (same panel, bridge handler, and delegates) and drives
+it from inside the app, never through your mouse or keyboard: it clicks the chip, the first
+project, and the first row with `element.click()`, sends Escape twice as in-process key events,
+and asserts the bridge resizes the panel to each level, the row link reaches the shell as a
+`/?view=browse&session=…&event=…` URL on the Black Box origin (recorded, not opened), and the
+menubar title tracks the page's pulse and unseen count. It writes `mini.png`, `compact.png`, and
+`expanded.png` to `<dir>`, prints one line per step, and exits 0, or 1 at the first failed step
+(hard timeout 60s). The panel and menubar item show briefly while it runs. It uses a throwaway web data store and in-memory size memory, so it never
+touches the real shell's saved position, sizes, or seen-state. Point it at an isolated Black Box
+seeded with a Decision or Handoff and a recent tool call, never the live instance on port 8766.
 
 The menubar menu offers Show/Hide Companion, Open Black Box, and Quit. The panel resizes as the
 page changes level and remembers its position; a manual resize of the expanded panel is remembered

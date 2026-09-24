@@ -5,6 +5,7 @@ struct Options {
 
     var url: URL
     var selfTestOutput: String?
+    var clickThroughOutput: String?
 
     static func parse(_ args: [String], env: [String: String]) -> Options {
         var options = Options(url: defaultURL, selfTestOutput: nil)
@@ -21,6 +22,9 @@ struct Options {
                 index += 2
             case "--self-test":
                 options.selfTestOutput = value
+                index += 2
+            case "--click-through":
+                options.clickThroughOutput = value
                 index += 2
             default:
                 index += 1
