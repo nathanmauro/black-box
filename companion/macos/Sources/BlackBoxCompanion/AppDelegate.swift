@@ -31,9 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private(set) var webView: WKWebView!
     private var toggleItem: NSMenuItem!
     private var currentMode = "mini"
-    // Set while a bridge mode message is driving the panel's frame, so the resize notification it
-    // triggers is not mistaken for — and does not overwrite — a manual resize.
-    private var isApplyingProgrammaticResize = false
+    // Active while a bridge mode message is driving the panel's frame, so the resize notification it
+    // triggers is not mistaken for — and does not overwrite — a manual resize. A counter (not a
+    // single flag) because two mode messages can overlap within the grace period.
+    private var resizeGuard = ProgrammaticResizeGuard()
     // Counts consecutive failed loads (server down at launch, mid-`mvn package`/`launchctl kickstart`
     // 500s, a WebContent process crash) so retries back off instead of hammering the server; reset on
     // the next successful navigation.
@@ -135,17 +136,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let target = PanelSizeMemory.resolvedSize(mode: name, pageDefault: pageDefault, store: sizeStore)
         let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
         let frame = PanelGeometry.frame(resizing: panel.frame, to: target, within: screen)
-        isApplyingProgrammaticResize = true
+        resizeGuard.begin()
         panel.setFrame(frame, display: true, animate: true)
         // setFrame(animate: true) resizes over a short animation; hold the guard past it so the
-        // notifications it fires are not recorded as a manual resize.
+        // notifications it fires are not recorded as a manual resize. A second mode message that
+        // arrives before this fires holds its own begin()/end() pair, so the guard stays active
+        // until every overlapping animation's grace period has elapsed.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.isApplyingProgrammaticResize = false
+            self?.resizeGuard.end()
         }
     }
 
     @objc private func panelDidResize(_ notification: Notification) {
-        PanelSizeMemory.recordResize(panel.frame.size, forMode: currentMode, programmatic: isApplyingProgrammaticResize, store: sizeStore)
+        PanelSizeMemory.recordResize(panel.frame.size, forMode: currentMode, programmatic: resizeGuard.isActive, store: sizeStore)
     }
 
     // target="_blank" links open in the default browser instead of inside the panel. Only

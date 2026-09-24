@@ -49,4 +49,20 @@ final class PanelSizeMemoryTests: XCTestCase {
         XCTAssertEqual(store.setCalls.count, callsBefore)
         XCTAssertEqual(store.size(forMode: "expanded"), CGSize(width: 500, height: 600))
     }
+
+    // Spec 3.3/3.4: only Expanded is user-resizable; mini and compact always follow the page's own
+    // measured size.
+    func testDoesNotRecordAManualResizeForMiniOrCompact() {
+        let store = FakePanelSizeStore()
+        PanelSizeMemory.recordResize(CGSize(width: 200, height: 40), forMode: "mini", programmatic: false, store: store)
+        PanelSizeMemory.recordResize(CGSize(width: 380, height: 440), forMode: "compact", programmatic: false, store: store)
+        XCTAssertEqual(store.setCalls.count, 0)
+    }
+
+    func testIgnoresARememberedSizeForMiniOrCompactEvenIfOnePersistsFromOlderData() {
+        let store = FakePanelSizeStore()
+        store.setSize(CGSize(width: 200, height: 40), forMode: "mini")
+        let size = PanelSizeMemory.resolvedSize(mode: "mini", pageDefault: CGSize(width: 132, height: 36), store: store)
+        XCTAssertEqual(size, CGSize(width: 132, height: 36))
+    }
 }
