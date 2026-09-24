@@ -1,0 +1,6 @@
+# Mechanical formatting commits that carry no behavior change. Opt in locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub's blame view reads this file automatically.
+
+# Format Frontend Sources With Prettier (2026-09-24)
+2b9fdc9cec63e1d45e110691242d92d3990f42ec

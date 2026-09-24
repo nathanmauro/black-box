@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Enabled with: git config core.hooksPath scripts/git-hooks
+# Skip once with: git commit --no-verify
+#
+# Checks the staged frontend sources with Prettier and ESLint before the commit lands. It reads the
+# working-tree copy of each staged file, so stage the formatted version (npm run format) first.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR -- frontend \
+  | grep -E '\.(ts|tsx|js|mjs|css|json|html)$' \
+  | grep -v '^frontend/package-lock\.json$' || true)"
+[ -z "$staged" ] && exit 0
+
+if [ ! -d frontend/node_modules ]; then
+  echo "pre-commit: frontend/node_modules is missing; run (cd frontend && npm ci) or use --no-verify" >&2
+  exit 1
+fi
+
+relative="$(printf '%s\n' "$staged" | sed 's|^frontend/||')"
+scripts="$(printf '%s\n' "$relative" | grep -E '\.(ts|tsx|js|mjs)$' || true)"
+
+cd frontend
+printf '%s\n' "$relative" | xargs npx prettier --check
+if [ -n "$scripts" ]; then
+  printf '%s\n' "$scripts" | xargs npx eslint
+fi

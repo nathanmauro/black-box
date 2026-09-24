@@ -265,11 +265,17 @@ product usefulness.
 ```bash
 mvn test                       # Java suite
 cd frontend && npm test        # vitest
+cd frontend && npm run lint    # eslint (typescript-eslint + eslint-plugin-solid)
+cd frontend && npm run format  # prettier --write; format:check verifies without writing
 cd frontend && npm run build   # tsc + vite → src/main/resources/static (committed)
 cd frontend && npm run e2e     # Playwright against a packaged jar on an isolated temp DB
 ./scripts/verify.sh            # all of the above except e2e; add --e2e to include it
-git config core.hooksPath scripts/git-hooks   # optional: run verify.sh before every push
+git config core.hooksPath scripts/git-hooks   # optional: lint/format staged frontend files before
+                                              # every commit and run verify.sh before every push
 ```
+
+Frontend lint and formatting conventions are described in
+[Frontend standards](docs/frontend-standards.md).
 
 Deeper reading:
 
