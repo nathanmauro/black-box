@@ -1,4 +1,4 @@
-import { createRoot, createSignal } from "solid-js";
+import { createEffect, createRoot, createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentSession, EventFeedItem, ProjectSummary } from "../api";
 import type { EventAppended, LiveStatus, LiveStore, SessionUpdated } from "../sse";
@@ -256,6 +256,33 @@ describe("createCompanionStore", () => {
       store.openProject("keyA");
       expect(setItemSpy).toHaveBeenCalledTimes(1);
       expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } });
+      dispose();
+    });
+  });
+
+  it("batches refresh()'s session writes into one model recompute", async () => {
+    await createRoot(async (dispose) => {
+      const manySessions: AgentSession[] = Array.from({ length: 50 }, (_, index) => ({
+        id: `s${index}`,
+        source: "claude",
+        clientSessionId: `c${index}`,
+        title: "t",
+        cwd: "/repo/a",
+        startedAt: iso(600_000),
+        lastSeenAt: iso(20_000),
+        eventCount: 1,
+      }));
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps({ getSessions: vi.fn(async () => manySessions) }));
+      let recomputes = 0;
+      createEffect(() => {
+        store.model();
+        recomputes += 1;
+      });
+      await settled(store.loading, (loading) => !loading);
+      // One recompute for the initial empty model plus at most one more for the whole refresh, not
+      // one per session written.
+      expect(recomputes).toBeLessThanOrEqual(2);
       dispose();
     });
   });

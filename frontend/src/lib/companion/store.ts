@@ -229,17 +229,19 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
         deps.getSessions(250, true),
         deps.getEventFeed({ q: MEANINGFUL_QUERY, limit: 200 }),
       ]);
-      setProjects(projectList);
-      for (const session of sessionList) {
-        upsertSession({ id: session.id, cwd: session.cwd ?? null, lastSeenAt: session.lastSeenAt });
-        bumpLastEvent(session.lastSeenAt);
-      }
-      setEvents((map) => {
-        for (const item of feed.items) map.set(item.id, item);
-        return map;
+      batch(() => {
+        setProjects(projectList);
+        for (const session of sessionList) {
+          upsertSession({ id: session.id, cwd: session.cwd ?? null, lastSeenAt: session.lastSeenAt });
+          bumpLastEvent(session.lastSeenAt);
+        }
+        setEvents((map) => {
+          for (const item of feed.items) map.set(item.id, item);
+          return map;
+        });
+        markVisibleSeen(feed.items.map((item) => item.id));
+        setError(null);
       });
-      markVisibleSeen(feed.items.map((item) => item.id));
-      setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
