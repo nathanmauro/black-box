@@ -276,6 +276,7 @@ Deeper reading:
 - [Agent integration](docs/agent-integration.md): tools, hooks, lineage, the full coordination example
 - [Operations](docs/operations.md): services, Docker, configuration, secure file navigation
 - [Runner](docs/runner.md): FULL_AUTO and SDLC modes and their guardrails
+- [Companion](docs/companion.md): the chrome-less `/companion` route and the macOS menubar shell
 - [Architecture](docs/architecture.md) and [package conventions](docs/architecture/package-conventions.md)
 - [Authentication](docs/authentication.md), [PostgreSQL backend](docs/postgres-backend.md),
   [Recall observability](docs/recall-observability.md), [Managed AWS prototype](docs/lightsail-prototype.md)

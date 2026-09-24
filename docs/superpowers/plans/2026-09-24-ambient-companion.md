@@ -17,7 +17,7 @@
 - Any `mvn package` (including `npm run e2e`) overwrites the jar the live service runs from. Immediately after: `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`.
 - `npm run build` emits into `src/main/resources/static/`, which is committed; rebuild and commit it once at the end of the frontend work (Task 9).
 - Meaningful event types are exactly `Decision`, `Handoff`, `Observation`. Task-board transitions are out of scope (the board is being retired in parallel).
-- Backfill query string is exactly `kind:decision OR kind:handoff OR kind:observation last:24h` (verified against the live API on 2026-09-24).
+- Backfill query string is exactly `kind:decision,handoff,observation last:24h` (corrected post-ship: the parser treats a facet as a comma IN-list, so the originally planned `OR` form here parses as a required free-text term and matches nothing; verified against the live API on 2026-09-24).
 - Windows: live pulse 120 000 ms; live session 600 000 ms; headline max 120 chars; seen cap 2000 ids.
 - Panel sizes: mini 132×36, compact 340×420, expanded 400×560.
 - Commit style: human-readable Title Case subjects, Nathan as sole author, no AI co-author or generated-by trailers. Commit after every task. Do not push, do not open a PR; report the branch state in the final handoff.

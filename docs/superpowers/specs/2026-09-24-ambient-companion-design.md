@@ -40,9 +40,12 @@ being retired in parallel work), Windows/Linux shells.
 ### 3.2 Meaningful items (rows)
 
 - Event types `Decision`, `Handoff`, `Observation`. Nothing else becomes a row.
-- Backfill query on load and on reconnect: `kind:decision OR kind:handoff OR kind:observation
-  last:24h`, limit 200. Live additions: on an `event.appended` whose `eventType` is one of the
-  three, fetch `GET /api/events/{id}` for the full text and metadata and merge it.
+- Backfill query on load and on reconnect: `kind:decision,handoff,observation last:24h`, limit 200.
+  (Corrected post-ship: the parser treats a facet as a comma IN-list, not a free-text `OR`; the
+  `kind:decision OR kind:handoff OR kind:observation` form this section originally specified would
+  parse `OR` as a required free-text term and match nothing.) Live additions: on an
+  `event.appended` whose `eventType` is one of the three, fetch `GET /api/events/{id}` for the
+  full text and metadata and merge it.
 - Headline: first line of `metadata.decision` (decision), `metadata.contextSummary` (handoff), or
   `text` (fallback), trimmed to 120 characters.
 - Handoff rows show `metadata.nextAction` and the count of `metadata.openLoops` when present.
