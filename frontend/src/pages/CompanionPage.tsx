@@ -27,7 +27,7 @@ export default function CompanionPage() {
           <MiniChip pulse={store.model().pulse} unseen={store.model().unseenTotal} onExpand={() => store.setMode("compact")} />
         </Match>
         <Match when={store.mode() === "compact"}>
-          <CompactList model={store.model()} onOpenProject={store.openProject} onOpenRiver={store.openRiver} onCollapse={() => store.setMode("mini")} />
+          <CompactList model={store.model()} loading={store.loading()} onOpenProject={store.openProject} onOpenRiver={store.openRiver} onCollapse={() => store.setMode("mini")} />
         </Match>
         <Match when={store.mode() === "expanded"}>
           <ExpandedView model={store.model()} view={store.expanded()} onBack={() => store.setMode("compact")} onToggleView={store.toggleExpandedView} onCollapse={() => store.setMode("mini")} />

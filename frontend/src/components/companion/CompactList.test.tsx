@@ -44,4 +44,18 @@ describe("CompactList", () => {
     expect(onOpenRiver).toHaveBeenCalledTimes(1);
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
+
+  it("shows a neutral loading state instead of the quiet empty state before the first load finishes", () => {
+    render(() => (
+      <CompactList
+        model={{ ...model, projects: [], river: [], unseenTotal: 0, pulse: "connecting" }}
+        loading
+        onOpenProject={() => {}}
+        onOpenRiver={() => {}}
+        onCollapse={() => {}}
+      />
+    ));
+    expect(screen.queryByText("Quiet. No active projects in the last 24h.")).not.toBeInTheDocument();
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+  });
 });
