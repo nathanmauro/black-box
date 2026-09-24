@@ -34,6 +34,14 @@ npm run e2e                               # Playwright against a packaged jar on
 `npm run build` emits into `src/main/resources/static/`, which is committed — rebuild and commit it
 when frontend changes ship. The E2E suite never touches port 8766 or the production database.
 
+macOS companion shell (Swift, in `companion/macos/`):
+
+```bash
+swift build
+swift test
+swift run BlackBoxCompanion --self-test /tmp/companion.png   # load /companion in the real panel, write a PNG
+```
+
 Verification and smoke:
 
 ```bash
@@ -88,7 +96,8 @@ Wire surfaces: MCP over Streamable HTTP at `/mcp` (spring-ai MCP server; histori
 `offset` and `excludeStatus`; shared field names,
 ISO-8601 timestamps, typed error envelopes), SSE at `/api/stream` as a best-effort wake hint (never
 a queue — `claimNextTask`/`listTasks` stay authoritative), and opt-in capture/recall hooks under
-`scripts/hooks/`.
+`scripts/hooks/`. The `/companion` route (see `docs/companion.md`) is a chrome-less ambient view over
+the same stream and query surfaces.
 
 Configuration defaults live in `src/main/resources/application.yml`, overridden by `SBA_*` env vars
 (see `docs/operations.md`). Server binds to `127.0.0.1:8766`; optional authentication is disabled by
