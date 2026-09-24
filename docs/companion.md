@@ -14,7 +14,8 @@ the screen without becoming a notification feed.
   across projects in time order.
 - **Expanded**: one project's items, or the river, each linking to the exact event in the browse
   view. Handoff rows show the next action and open-loop count. A handoff is a baton, not a
-  completion.
+  completion. A session or item whose working directory is not in the project catalog appears
+  under one `Unassigned` row; its links open the event without a project scope.
 
 Escape steps down one level. Mode and seen-state persist in the browser's `localStorage`.
 
