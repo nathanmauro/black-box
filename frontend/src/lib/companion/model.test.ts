@@ -117,6 +117,24 @@ describe("deriveModel", () => {
     expect(model.river.map((item) => item.id)).toEqual(["b2", "b1", "a1"]);
   });
 
+  it("drops items older than the 24h window", () => {
+    const model = deriveModel({
+      now: NOW,
+      connection: "live",
+      lastEventAt: null,
+      projects,
+      sessions: [],
+      events: [
+        event({ id: "old", cwd: "/repo/a", observedAt: iso(25 * 3_600_000) }),
+        event({ id: "recent", cwd: "/repo/b", observedAt: iso(23 * 3_600_000) }),
+      ],
+      seen: new Set(),
+    });
+    expect(model.river.map((item) => item.id)).toEqual(["recent"]);
+    expect(model.projects.map((card) => card.name)).toEqual(["b"]);
+    expect(model.unseenTotal).toBe(1);
+  });
+
   it("returns no cards when nothing is live and nothing is meaningful", () => {
     const model = deriveModel({ now: NOW, connection: "live", lastEventAt: null, projects, sessions: [], events: [], seen: new Set() });
     expect(model.projects).toEqual([]);

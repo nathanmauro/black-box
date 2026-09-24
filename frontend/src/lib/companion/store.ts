@@ -1,8 +1,18 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
 import { getEvent, getEventFeed, getProjects, getSessions, type AgentEvent, type AgentSession, type EventFeedItem, type ProjectSummary } from "../api";
 import type { EventAppended, LiveStore, SessionUpdated } from "../sse";
 import { modeMessage, postToShell } from "./bridge";
-import { deriveModel, MEANINGFUL_EVENT_TYPES, MEANINGFUL_QUERY, type CompanionMode, type CompanionModel, type ExpandedViewState, type SessionLiveness } from "./model";
+import {
+  ACTIVE_SESSION_WINDOW_MS,
+  deriveModel,
+  MEANINGFUL_EVENT_TYPES,
+  MEANINGFUL_QUERY,
+  MEANINGFUL_WINDOW_MS,
+  type CompanionMode,
+  type CompanionModel,
+  type ExpandedViewState,
+  type SessionLiveness,
+} from "./model";
 import { createSeenStore, safeStorage, type SeenStore } from "./seen";
 
 export const MODE_STORAGE_KEY = "blackbox.companion.mode.v1";
@@ -162,7 +172,24 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.lastSeenAt });
     bumpLastEvent(event.lastSeenAt);
   });
-  const timer = setInterval(() => setNow(deps.now()), TICK_MS);
+  // The tick ages the model; pruning keeps both maps bounded by their windows in a long-running shell.
+  function prune(current: number): void {
+    setEvents((map) => {
+      for (const [id, item] of map) if (current - timestamp(item.observedAt) > MEANINGFUL_WINDOW_MS) map.delete(id);
+      return map;
+    });
+    setSessions((map) => {
+      for (const [id, session] of map) if (current - timestamp(session.lastSeenAt) > ACTIVE_SESSION_WINDOW_MS) map.delete(id);
+      return map;
+    });
+  }
+  const timer = setInterval(() => {
+    const current = deps.now();
+    batch(() => {
+      prune(current);
+      setNow(current);
+    });
+  }, TICK_MS);
   onCleanup(() => {
     stopEvents();
     stopSessions();

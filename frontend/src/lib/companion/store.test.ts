@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentEvent, AgentSession, EventFeedItem, ProjectSummary } from "../api";
 import type { EventAppended, LiveStatus, LiveStore, SessionUpdated } from "../sse";
 import { createSeenStore } from "./seen";
-import { createCompanionStore, MODE_STORAGE_KEY, type CompanionDeps } from "./store";
+import { createCompanionStore, MODE_STORAGE_KEY, TICK_MS, type CompanionDeps } from "./store";
 
 const NOW = Date.parse("2026-09-24T12:00:00Z");
 const iso = (offsetMs: number) => new Date(NOW - offsetMs).toISOString();
@@ -193,6 +193,25 @@ describe("createCompanionStore", () => {
       });
     } finally {
       delete shellWindow.webkit;
+    }
+  });
+
+  it("ages items out of the 24h window on the tick", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      let clock = NOW;
+      await createRoot(async (dispose) => {
+        const store = createCompanionStore(fakeLive().live, deps({ now: () => clock }));
+        await settled(store.loading, (loading) => !loading);
+        expect(store.model().river.map((item) => item.id)).toEqual(["d1"]);
+        clock = NOW + 24 * 3_600_000;
+        vi.advanceTimersByTime(TICK_MS);
+        expect(store.model().river).toEqual([]);
+        expect(store.model().projects).toEqual([]);
+        dispose();
+      });
+    } finally {
+      vi.useRealTimers();
     }
   });
 

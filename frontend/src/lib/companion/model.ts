@@ -19,6 +19,7 @@ export const UNASSIGNED_KEY = "__unassigned__";
 export const UNASSIGNED_NAME = "Unassigned";
 export const LIVE_WINDOW_MS = 120_000;
 export const ACTIVE_SESSION_WINDOW_MS = 10 * 60_000;
+export const MEANINGFUL_WINDOW_MS = 24 * 60 * 60_000;
 export const HEADLINE_MAX = 120;
 
 export type MeaningfulItem = {
@@ -132,6 +133,7 @@ export function pulseOf(connection: ConnectionState, lastEventAt: string | null,
 export function deriveModel(input: DeriveInput): CompanionModel {
   const byId = new Map<string, MeaningfulItem>();
   for (const event of input.events) {
+    if (input.now - timestamp(event.observedAt) > MEANINGFUL_WINDOW_MS) continue;
     const item = toMeaningfulItem(event, input.projects, input.seen);
     if (item) byId.set(item.id, item);
   }
