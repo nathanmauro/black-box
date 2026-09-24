@@ -22,10 +22,33 @@ export function safeStorage(): Storage | null {
 
 export function createSeenStore(storage: Storage | null = safeStorage()): SeenStore {
   const [seen, setSeen] = createSignal<ReadonlySet<string>>(load(storage));
+
+  // Two /companion tabs each hold their own in-memory copy; without this, the second tab's markAll
+  // would persist only its own ids and silently clobber whatever the first tab already wrote.
+  function handleStorageEvent(event: StorageEvent): void {
+    if (event.key !== SEEN_STORAGE_KEY) return;
+    const incoming = parse(event.newValue);
+    if (!incoming) return;
+    setSeen((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const id of incoming) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }
+  if (typeof window !== "undefined") window.addEventListener("storage", handleStorageEvent);
+
   return {
     seen,
     markAll(ids) {
-      const next = new Set(seen());
+      // Re-read storage first so a concurrent write from another tab (since this store's last read
+      // or write) is merged in rather than overwritten.
+      const next = new Set([...seen(), ...load(storage)]);
       let changed = false;
       for (const id of ids) {
         if (!next.has(id)) {
@@ -41,14 +64,19 @@ export function createSeenStore(storage: Storage | null = safeStorage()): SeenSt
   };
 }
 
-function load(storage: Storage | null): Set<string> {
-  if (!storage) return new Set();
+function parse(raw: string | null): Set<string> | null {
+  if (raw == null) return null;
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(SEEN_STORAGE_KEY) ?? "[]");
+    const parsed: unknown = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
   } catch {
-    return new Set();
+    return null;
   }
+}
+
+function load(storage: Storage | null): Set<string> {
+  if (!storage) return new Set();
+  return parse(storage.getItem(SEEN_STORAGE_KEY)) ?? new Set();
 }
 
 function persist(storage: Storage | null, seen: ReadonlySet<string>): void {

@@ -45,4 +45,28 @@ describe("createSeenStore", () => {
     store.markAll(["a"]);
     expect(store.seen()).toBe(before);
   });
+
+  it("does not clobber another tab's ids already in storage when persisting", () => {
+    const storage = new MemoryStorage();
+    const tab1 = createSeenStore(storage);
+    const tab2 = createSeenStore(storage); // snapshots storage before tab1 writes to it
+    tab1.markAll(["a", "b"]);
+    tab2.markAll(["c"]);
+    const persisted: string[] = JSON.parse(storage.getItem(SEEN_STORAGE_KEY) ?? "[]");
+    expect(persisted.sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("merges ids a storage event reports from another tab", () => {
+    const storage = new MemoryStorage();
+    const store = createSeenStore(storage);
+    expect(store.seen().has("from-other-tab")).toBe(false);
+    window.dispatchEvent(new StorageEvent("storage", { key: SEEN_STORAGE_KEY, newValue: JSON.stringify(["from-other-tab"]) }));
+    expect(store.seen().has("from-other-tab")).toBe(true);
+  });
+
+  it("ignores storage events for unrelated keys", () => {
+    const store = createSeenStore(null);
+    window.dispatchEvent(new StorageEvent("storage", { key: "some-other-key", newValue: JSON.stringify(["nope"]) }));
+    expect(store.seen().has("nope")).toBe(false);
+  });
 });
