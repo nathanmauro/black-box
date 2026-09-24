@@ -985,6 +985,48 @@ describe("StreamPage", () => {
     expect(screen.queryByLabelText("meaningful events only")).not.toBeInTheDocument();
   });
 
+  it("keeps Views and Options mutually exclusive and dismisses the open panel on Escape or an outside pointer-down", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const views = screen.getByRole("button", { name: "Views" });
+    const options = screen.getByRole("button", { name: "Options" });
+
+    fireEvent.click(views);
+    expect(views).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(options);
+    expect(options).toHaveAttribute("aria-expanded", "true");
+    expect(views).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("stream-views-panel")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(options).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("stream-options-panel")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(options);
+
+    fireEvent.click(views);
+    // Interacting inside the panel keeps it open; a pointer-down anywhere else closes it.
+    fireEvent.pointerDown(screen.getByLabelText("Saved view name"));
+    expect(views).toHaveAttribute("aria-expanded", "true");
+    fireEvent.pointerDown(document.body);
+    expect(views).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("distinguishes an empty recorder from an over-narrow filter in the empty state", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(feed([]));
+    render(() => <StreamPage />);
+
+    expect(await screen.findByText("No meaningful events recorded yet.")).toBeInTheDocument();
+
+    setParams({ q: "is:all" });
+    expect(await screen.findByText("No events recorded yet.")).toBeInTheDocument();
+
+    setParams({ q: "kind:Decision" });
+    expect(
+      await screen.findByText("No stream events match the current filters."),
+    ).toBeInTheDocument();
+  });
+
   it("announces pending merges through the persistent live region", async () => {
     const old = eventItem("event-old", "Existing row");
     const fresh = eventItem("event-a", "Pending row A", "2026-07-01T12:01:00Z");
