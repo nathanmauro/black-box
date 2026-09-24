@@ -9,12 +9,17 @@ const css = readFileSync("src/theme.css", "utf8") as string;
 
 function expectRule(selector: string, declarations: string[]) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{(?<body>[^}]*)\\}`, "s"));
-  expect(match?.groups?.body, `missing CSS rule for ${selector}`).toBeDefined();
-  const body = match?.groups?.body ?? "";
-  for (const declaration of declarations) {
-    expect(body, `${selector} should include ${declaration}`).toContain(declaration);
-  }
+  // A selector may open several rules (its own block, a selector list, a media query override),
+  // and Prettier starts every selector on its own line, so any one of those blocks may carry the
+  // contract. The rule passes when a single block holds every expected declaration.
+  const bodies = [
+    ...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{(?<body>[^}]*)\\}`, "gs")),
+  ].map((match) => match.groups?.body ?? "");
+  expect(bodies.length, `missing CSS rule for ${selector}`).toBeGreaterThan(0);
+  const satisfied = bodies.some((body) =>
+    declarations.every((declaration) => body.includes(declaration)),
+  );
+  expect(satisfied, `${selector} should include ${declarations.join(" ")}`).toBe(true);
 }
 
 describe("theme mobile layout contracts", () => {

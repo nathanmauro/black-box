@@ -991,8 +991,8 @@ Make the resubmission cleanup explicit.
     expect(themeCss).toContain(".board-columns,");
     expect(themeCss).toContain("grid-template-columns: 1fr;");
     expect(themeCss).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(themeCss).toContain(".board-loading-lines i { animation: none; }");
-    expect(themeCss).toContain(".board-task-button:hover { transform: none; }");
+    expect(themeCss).toMatch(/\.board-loading-lines i \{\s*animation: none;\s*\}/);
+    expect(themeCss).toMatch(/\.board-task-button:hover \{\s*transform: none;\s*\}/);
     expect(themeCss).toContain(".board-annotation-kind--plan");
     expect(themeCss).toContain(".board-annotation-kind--review");
     expect(themeCss).toContain(".board-annotation-kind--approval");

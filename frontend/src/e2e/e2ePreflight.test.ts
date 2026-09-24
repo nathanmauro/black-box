@@ -7,6 +7,8 @@ import os from "node:os";
 // @ts-expect-error Node built-in types are intentionally excluded from the browser tsconfig.
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+// The @ts-expect-error below only covers the next source line, so the import must stay on one.
+// prettier-ignore
 // @ts-expect-error The executable preflight remains plain ESM so Playwright can run it with Node.
 import { assertDatabaseArtifactsAbsent, cleanupOwnedE2eStorage, preflightE2eStorage } from "./e2ePreflight.mjs";
 
