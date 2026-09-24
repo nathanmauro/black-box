@@ -10,7 +10,7 @@ export default function MiniChip(props: MiniChipProps) {
     <button
       type="button"
       class={`companion-chip companion-chip--${props.pulse}`}
-      aria-label={`Black Box companion: ${props.pulse}, ${props.unseen} unseen`}
+      aria-label={`Black Box companion: ${PULSE_LABEL[props.pulse]}, ${props.unseen} unseen`}
       title="Expand"
       onClick={() => props.onExpand()}
     >

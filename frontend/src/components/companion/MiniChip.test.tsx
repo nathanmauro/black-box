@@ -18,4 +18,9 @@ describe("MiniChip", () => {
     expect(screen.getByText("offline")).toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
+
+  it("uses the same word in the accessible name as the visible label", () => {
+    render(() => <MiniChip pulse="disconnected" unseen={0} onExpand={() => {}} />);
+    expect(screen.getByRole("button", { name: "Black Box companion: offline, 0 unseen" })).toBeInTheDocument();
+  });
 });
