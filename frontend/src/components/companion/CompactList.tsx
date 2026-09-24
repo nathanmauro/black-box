@@ -11,6 +11,16 @@ type CompactListProps = {
   onCollapse: () => void;
 };
 
+// An aria-label overrides a button's whole accessible name, so it has to carry everything the row
+// visibly says (spec 4: name, live count, unseen, latest headline, kind, age) — a shorter one built
+// separately from the visible text drifts out of sync (e.g. always saying "0 live" for a row that
+// visibly reads "quiet") and silently drops content for assistive tech.
+function projectRowLabel(card: { name: string; liveSessions: number; unseen: number; latest: { eventType: string; headline: string } | null }): string {
+  const live = card.liveSessions > 0 ? `${card.liveSessions} live` : "quiet";
+  const latest = card.latest ? `, latest ${card.latest.eventType}: ${card.latest.headline}` : "";
+  return `${card.name}: ${live}, ${card.unseen} unseen${latest}`;
+}
+
 export function pulseText(model: CompanionModel): string {
   switch (model.pulse) {
     case "disconnected":
@@ -45,7 +55,7 @@ export default function CompactList(props: CompactListProps) {
                   <button
                     type="button"
                     class="companion-project-row"
-                    aria-label={`${card().name}: ${card().unseen} unseen, ${card().liveSessions} live`}
+                    aria-label={projectRowLabel(card())}
                     onClick={() => props.onOpenProject(card().key)}
                   >
                     <span class={`companion-live-dot${card().liveSessions > 0 ? " companion-live-dot--on" : ""}`} aria-hidden="true" />

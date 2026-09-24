@@ -45,11 +45,11 @@ describe("CompanionPage", () => {
     const chip = await screen.findByRole("button", { name: /Black Box companion/ });
     await waitFor(() => expect(chip).toHaveAccessibleName("Black Box companion: idle, 1 unseen"));
     fireEvent.click(chip);
-    const row = await screen.findByRole("button", { name: "a: 1 unseen, 1 live" });
+    const row = await screen.findByRole("button", { name: /^a: 1 live, 1 unseen/ });
     fireEvent.click(row);
     expect(await screen.findByRole("link", { name: /Pick A/ })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(await screen.findByRole("button", { name: "a: 0 unseen, 1 live" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^a: 1 live, 0 unseen/ })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(await screen.findByRole("button", { name: "Black Box companion: idle, 0 unseen" })).toBeInTheDocument();
   });

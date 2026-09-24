@@ -18,7 +18,7 @@ describe("CompactList", () => {
   it("lists projects with live count, unseen badge and latest headline", () => {
     const onOpenProject = vi.fn();
     render(() => <CompactList model={model} onOpenProject={onOpenProject} onOpenRiver={() => {}} onCollapse={() => {}} />);
-    const row = screen.getByRole("button", { name: "a: 1 unseen, 2 live" });
+    const row = screen.getByRole("button", { name: /a: 2 live, 1 unseen, latest Decision: Pick A/ });
     expect(row).toHaveTextContent("2 live");
     expect(row).toHaveTextContent("Pick A");
     fireEvent.click(row);
@@ -26,12 +26,19 @@ describe("CompactList", () => {
     expect(screen.getByText(/Live · last event/)).toBeInTheDocument();
   });
 
+  it("matches the accessible name to the visible 'quiet' text for a project with no live session", () => {
+    const quiet = { ...model.projects[0], liveSessions: 0 };
+    render(() => <CompactList model={{ ...model, projects: [quiet] }} onOpenProject={() => {}} onOpenRiver={() => {}} onCollapse={() => {}} />);
+    expect(screen.getByRole("button", { name: /a: quiet, 1 unseen/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /0 live/ })).not.toBeInTheDocument();
+  });
+
   it("keeps the row element when a card updates in place", () => {
     const [current, setCurrent] = createSignal(model);
     render(() => <CompactList model={current()} onOpenProject={() => {}} onOpenRiver={() => {}} onCollapse={() => {}} />);
-    const row = screen.getByRole("button", { name: "a: 1 unseen, 2 live" });
+    const row = screen.getByRole("button", { name: /a: 2 live, 1 unseen/ });
     setCurrent({ ...model, projects: [{ ...model.projects[0], liveSessions: 3 }] });
-    expect(screen.getByRole("button", { name: "a: 1 unseen, 3 live" })).toBe(row);
+    expect(screen.getByRole("button", { name: /a: 3 live, 1 unseen/ })).toBe(row);
   });
 
   it("shows the quiet empty state and the river and collapse controls", () => {
