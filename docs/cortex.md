@@ -67,8 +67,9 @@ sessions active within 30 minutes with their source, repository, title, and last
 Event/session IDs and timestamps are not request-state fields. The question set names Nathan.
 
 Only an initial `/Users/<name>/` in repository fields is shortened to `~/`; embedded paths and
-private project, code, or relationship content can remain. Ingest's configurable secret-pattern
-redaction is best-effort and is not a general outbound privacy filter. Review this scope before
+private project, code, or relationship content can remain. Mandatory export credential
+redaction is applied to state text before serialization, in addition to configurable
+ingest redaction. It is best-effort and is not a general outbound privacy filter. Review this scope before
 enabling the provider against a real capture database. Use a fixture database and fake
 `JevTransport` for verification without provider egress.
 
@@ -125,3 +126,31 @@ The beat fold keeps the call rate near one Jev request per active session per fe
 one request per tool event. The orbit measurements that motivated this stage were roughly 400 ms and
 about 1-2k input tokens per call, depending on trail and `others` size. Use the counters in
 `/api/health/judge` to measure actual local behavior.
+
+## Optional payload inspection telemetry
+
+`SBA_JUDGE_PAYLOAD_TELEMETRY_ENABLED=true` enables private structured log envelopes
+from `JevTelemetry`; the default is false. Approve the actual log destinations and
+retention before enabling. This switch adds no provider calls or historical replay.
+
+`blackbox.jev.requested` records the exact serialized body string passed to the HTTP
+transport, plus SHA-256, original character length, request/session/beat/event IDs,
+and truncation/omission flags. State string leaves receive mandatory built-in
+credential redaction before serialization, independent of ingestion settings.
+Quoted credential keys embedded in text conservatively redact the remainder of
+that text leaf. This is best-effort credential filtering, not general removal of
+private content. Headers and API keys are never telemetry fields. If the known
+provider credential occurs in the body, body logging is omitted.
+
+Bodies are capped at 32,768 Java characters. A truncated value is only a prefix and
+may not be valid JSON; the hash describes the complete sent body. No reconstructed
+request is substituted. `blackbox.jev.completed` shares the request ID and reports
+duration, bounded error category, and normalized judgment fields. It means the
+provider response passed validation, not that database persistence succeeded.
+Use the event IDs and `/api/sessions/{id}/judgments` to verify persistence separately.
+Raw provider responses and exception messages are not logged by this telemetry.
+Logging failures do not interrupt classification.
+
+The application does not install an exporter or enforce log retention. Local source
+logs, collector buffers, and the destination database can have different retention.
+Disabling the setting stops new payload logging; it does not delete existing copies.

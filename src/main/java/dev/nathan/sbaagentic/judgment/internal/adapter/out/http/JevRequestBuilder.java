@@ -1,8 +1,11 @@
 package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
 public class JevRequestBuilder {
@@ -10,15 +13,21 @@ public class JevRequestBuilder {
     private static final Pattern HOME_PREFIX = Pattern.compile("^/Users/[^/]+/");
 
     private final JudgeQuestionSet questions;
+    private final UnaryOperator<String> sanitize;
 
     public JevRequestBuilder(JudgeQuestionSet questions) {
+        this(questions, UnaryOperator.identity());
+    }
+
+    public JevRequestBuilder(JudgeQuestionSet questions, UnaryOperator<String> sanitize) {
         this.questions = questions;
+        this.sanitize = sanitize;
     }
 
     public ObjectNode build(BeatState state) {
         ObjectNode body = Json.object();
         body.put("model", questions.model());
-        body.set("state", state(state));
+        body.set("state", sanitizeTree(state(state)));
         ObjectNode requested = questions.baseQuestions();
         if (!state.askHuman()) {
             requested.remove("human");
@@ -29,6 +38,27 @@ public class JevRequestBuilder {
         body.set("questions", requested);
 
         return body;
+    }
+
+    private JsonNode sanitizeTree(JsonNode node) {
+        if (node.isTextual())
+
+            return TextNode.valueOf(sanitize.apply(node.textValue()));
+
+        if (node.isObject()) {
+            ObjectNode copy = node.deepCopy();
+            node.fields().forEachRemaining(entry -> copy.set(entry.getKey(), sanitizeTree(entry.getValue())));
+
+            return copy;
+        }
+        if (node.isArray()) {
+            ArrayNode copy = Json.array();
+            node.forEach(value -> copy.add(sanitizeTree(value)));
+
+            return copy;
+        }
+
+        return node;
     }
 
     private ObjectNode state(BeatState state) {

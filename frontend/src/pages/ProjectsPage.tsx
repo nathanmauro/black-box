@@ -1186,6 +1186,7 @@ function projectScopeOrigin(scope: ProjectScope): string {
   if (scope.source === "manual") return "Manual alias";
   if (scope.source === "nested-worktree") return "Automatic · nested worktree";
   if (scope.source === "git-commondir") return "Automatic · Git common directory";
+  if (scope.source === "codex-voice") return "Automatic · Codex voice conversation";
   return "Automatic catalog scope";
 }
 

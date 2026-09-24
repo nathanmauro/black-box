@@ -130,7 +130,7 @@ export type ProjectScope = {
   canonicalKey: string;
   label: string;
   primary: boolean;
-  source?: "manual" | "nested-worktree" | "git-commondir" | null;
+  source?: "manual" | "nested-worktree" | "git-commondir" | "codex-voice" | null;
 };
 
 export type ProjectSummary = {

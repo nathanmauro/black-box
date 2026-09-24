@@ -16,6 +16,8 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -25,8 +27,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
@@ -42,13 +47,27 @@ public class ProjectAliasService implements ProjectScopeOperations {
     static final String MANUAL_SOURCE = "manual";
     static final String NESTED_WORKTREE_SOURCE = "nested-worktree";
     static final String GIT_COMMONDIR_SOURCE = "git-commondir";
+    static final String CODEX_VOICE_SOURCE = "codex-voice";
+
+    private static final Pattern CODEX_VOICE_FOLDER =
+            Pattern.compile("(?:\\d{4}-\\d{2}-\\d{2}/realtime-voice-chat(?:-[1-9]\\d*)?"
+                    + "|\\d{4}-\\d{2}-\\d{2}-new-realtime-voice-chat)");
 
     private static final List<String> NESTED_WORKTREE_MARKERS = List.of("/.claude/worktrees/", "/.worktrees/");
 
     private final ProjectAliasStore repository;
+    private final String voiceCanonicalScope;
 
-    public ProjectAliasService(ProjectAliasStore repository) {
+    @Autowired
+    public ProjectAliasService(
+            ProjectAliasStore repository, @Value("${sba.projects.voice.canonical.scope:}") String voiceCanonicalScope) {
         this.repository = repository;
+        this.voiceCanonicalScope = voiceCanonicalScope == null || voiceCanonicalScope.isBlank()
+                ? null
+                : requiredScope(voiceCanonicalScope, "Voice canonical scope");
+        if (this.voiceCanonicalScope != null && !isCodexVoiceScope(this.voiceCanonicalScope)) {
+            throw new IllegalArgumentException("Voice canonical scope must be a dated Codex voice directory");
+        }
     }
 
     @EventListener
@@ -134,8 +153,8 @@ public class ProjectAliasService implements ProjectScopeOperations {
         ProjectAlias existing = repository
                 .findByAliasKey(normalized)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Unknown project alias: " + normalized));
-        if (!MANUAL_SOURCE.equals(existing.source())) {
-            throw new ResponseStatusException(CONFLICT, "Automatically discovered project aliases cannot be deleted.");
+        if (!MANUAL_SOURCE.equals(existing.source()) && !CODEX_VOICE_SOURCE.equals(existing.source())) {
+            throw new ResponseStatusException(CONFLICT, "Git worktree project aliases cannot be deleted.");
         }
         if (repository.delete(normalized) == 0) {
             throw new ResponseStatusException(NOT_FOUND, "Unknown project alias: " + normalized);
@@ -158,6 +177,11 @@ public class ProjectAliasService implements ProjectScopeOperations {
     public void discoverVerifiedAlias(String observedScope) {
         try {
             if (observedScope == null || observedScope.isBlank() || protectedScope(observedScope)) {
+
+                return;
+            }
+            if (voiceCanonicalScope != null && isCodexVoiceScope(observedScope)) {
+                persistDiscovered(observedScope, voiceCanonicalScope, CODEX_VOICE_SOURCE);
 
                 return;
             }
@@ -316,6 +340,29 @@ public class ProjectAliasService implements ProjectScopeOperations {
         }
 
         return ProjectKeyCodec.canonicalize(value);
+    }
+
+    private static boolean isCodexVoiceScope(String scope) {
+        String prefix =
+                Path.of(System.getProperty("user.home"), "Documents", "Codex").toString() + "/";
+        String normalized = ProjectKeyCodec.canonicalize(scope);
+        if (!normalized.startsWith(prefix)) {
+
+            return false;
+        }
+        String relative = normalized.substring(prefix.length());
+        if (!CODEX_VOICE_FOLDER.matcher(relative).matches()) {
+
+            return false;
+        }
+        try {
+            LocalDate.parse(relative.substring(0, 10));
+
+            return true;
+        } catch (DateTimeParseException ex) {
+
+            return false;
+        }
     }
 
     private static void rejectProtected(String scope) {
