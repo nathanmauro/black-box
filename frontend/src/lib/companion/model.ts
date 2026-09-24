@@ -13,7 +13,8 @@ export const MEANINGFUL_EVENT_TYPES: Readonly<Record<string, MeaningfulKind>> = 
   Handoff: "handoff",
   Observation: "observation",
 };
-export const MEANINGFUL_QUERY = "kind:decision OR kind:handoff OR kind:observation last:24h";
+// Grammar v2: a facet takes a comma IN-list; "OR" would be free text that must match.
+export const MEANINGFUL_QUERY = "kind:decision,handoff,observation last:24h";
 export const UNASSIGNED_KEY = "__unassigned__";
 export const UNASSIGNED_NAME = "Unassigned";
 export const LIVE_WINDOW_MS = 120_000;

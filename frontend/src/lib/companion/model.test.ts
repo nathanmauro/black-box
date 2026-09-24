@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EventFeedItem, ProjectSummary } from "../api";
-import { deriveModel, headlineOf, pulseOf, toMeaningfulItem, UNASSIGNED_KEY } from "./model";
+import { parseQuery } from "../query";
+import { deriveModel, headlineOf, MEANINGFUL_QUERY, pulseOf, toMeaningfulItem, UNASSIGNED_KEY } from "./model";
 import { eventHref } from "./links";
 
 const NOW = Date.parse("2026-09-24T12:00:00Z");
@@ -34,6 +35,15 @@ function event(overrides: Partial<EventFeedItem> & { id: string }): EventFeedIte
 }
 
 const projects = [project("/repo/a"), project("/repo/b")];
+
+describe("MEANINGFUL_QUERY", () => {
+  it("parses as a kind list over the last 24h with no free-text terms that must match", () => {
+    const parsed = parseQuery(MEANINGFUL_QUERY);
+    expect(parsed.facets.kind).toEqual(["decision", "handoff", "observation"]);
+    expect(parsed.freeTerms).toEqual([]);
+    expect(parsed.since).toEqual({ kind: "duration", value: "24h" });
+  });
+});
 
 describe("headlineOf", () => {
   it("prefers metadata.decision, then contextSummary, then the first text line", () => {
