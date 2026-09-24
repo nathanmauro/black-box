@@ -7,7 +7,7 @@ import {
   ACTIVE_SESSION_WINDOW_MS,
   composeModel,
   deriveItems,
-  MEANINGFUL_EVENT_TYPES,
+  isMeaningfulEventType,
   MEANINGFUL_QUERY,
   MEANINGFUL_WINDOW_MS,
   type CompanionMode,
@@ -197,7 +197,7 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     bumpLastEvent(event.observedAt);
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.observedAt });
     refreshCatalogFor(event.cwd);
-    if (!(event.eventType in MEANINGFUL_EVENT_TYPES)) return;
+    if (!isMeaningfulEventType(event.eventType)) return;
     void deps
       .getEvent(event.id)
       .then((full) => addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }))

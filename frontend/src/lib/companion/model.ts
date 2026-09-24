@@ -13,6 +13,14 @@ export const MEANINGFUL_EVENT_TYPES: Readonly<Record<string, MeaningfulKind>> = 
   Handoff: "handoff",
   Observation: "observation",
 };
+// Object.hasOwn (not `in` or a bare index lookup) so inherited property names like "constructor" or
+// "toString" never read as a meaningful kind.
+export function meaningfulKindOf(eventType: string): MeaningfulKind | undefined {
+  return Object.hasOwn(MEANINGFUL_EVENT_TYPES, eventType) ? MEANINGFUL_EVENT_TYPES[eventType] : undefined;
+}
+export function isMeaningfulEventType(eventType: string): boolean {
+  return Object.hasOwn(MEANINGFUL_EVENT_TYPES, eventType);
+}
 // Grammar v2: a facet takes a comma IN-list; "OR" would be free text that must match.
 export const MEANINGFUL_QUERY = "kind:decision,handoff,observation last:24h";
 export const UNASSIGNED_KEY = "__unassigned__";
@@ -102,7 +110,7 @@ function projectFor(projects: ProjectSummary[], cwd: string | null | undefined):
 }
 
 export function toMeaningfulItem(event: EventFeedItem, projects: ProjectSummary[], seen: ReadonlySet<string>): MeaningfulItem | null {
-  const kind = MEANINGFUL_EVENT_TYPES[event.eventType];
+  const kind = meaningfulKindOf(event.eventType);
   if (!kind) return null;
   const meta = metadataOf(event);
   const project = projectFor(projects, event.cwd);

@@ -64,6 +64,12 @@ describe("toMeaningfulItem", () => {
     expect(toMeaningfulItem(event({ id: "1", eventType: "PostToolUse" }), projects, new Set())).toBeNull();
   });
 
+  it("treats prototype property names as non-meaningful, not inherited kinds", () => {
+    expect(toMeaningfulItem(event({ id: "2", eventType: "constructor" }), projects, new Set())).toBeNull();
+    expect(toMeaningfulItem(event({ id: "3", eventType: "toString" }), projects, new Set())).toBeNull();
+    expect(toMeaningfulItem(event({ id: "4", eventType: "hasOwnProperty" }), projects, new Set())).toBeNull();
+  });
+
   it("maps a handoff with next action and open loops", () => {
     const item = toMeaningfulItem(
       event({ id: "h1", eventType: "Handoff", metadata: { contextSummary: "Wired it", nextAction: "Run tests", openLoops: ["a", "b"] } }),
