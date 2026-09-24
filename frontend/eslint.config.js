@@ -25,7 +25,9 @@ export default defineConfig([
   tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
-    ...solid.configs["flat/typescript"],
+    // eslint-plugin-solid 0.18 names its flat presets `recommended` / `typescript`; the older
+    // `flat/typescript` key is an alias of the same object.
+    ...solid.configs.typescript,
   },
   {
     // Solid assigns `let el: HTMLElement | undefined` through the JSX `ref={el}` binding at compile

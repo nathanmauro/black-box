@@ -31,7 +31,7 @@ Formatting is idempotent: a second `npm run format` after the first reports no c
 | eslint | 10.11.0 | rule engine, flat config (`frontend/eslint.config.js`) |
 | @eslint/js | 10.0.1 | `js.configs.recommended` |
 | typescript-eslint | 8.70.1 | TypeScript parser and `recommended` rules (syntax-only, no type information) |
-| eslint-plugin-solid | 0.18.0 | SolidJS correctness rules via `configs["flat/typescript"]` |
+| eslint-plugin-solid | 0.18.0 | SolidJS correctness rules via `configs.typescript` (flat preset) |
 | eslint-config-prettier | 10.1.8 | turns off every stylistic rule that would fight Prettier |
 | prettier | 3.9.9 | formatter for TS/TSX/JS/CSS/JSON/HTML |
 | globals | 17.12.0 | browser, Node, and Vitest global names |
