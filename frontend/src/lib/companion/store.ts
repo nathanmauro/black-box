@@ -319,6 +319,27 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     persistMode(deps.storage, { mode: mode(), expanded: expanded() });
   });
 
+  // A persisted expanded view (relaunch, or a project that aged out mid-session before this ran)
+  // can name a project no longer in the catalog; correct it once the first load resolves instead of
+  // opening on a blank "Project" with no activity strip.
+  let didValidateInitialView = false;
+  createEffect(() => {
+    if (didValidateInitialView || loading()) return;
+    didValidateInitialView = true;
+    const view = expanded();
+    if (view.kind !== "project") return;
+    const key = resolveProjectKey(view.projectKey);
+    if (key === view.projectKey) return;
+    batch(() => {
+      if (key) {
+        setExpanded({ kind: "project", projectKey: key });
+        setLastProjectKey(key);
+      } else {
+        setExpanded({ kind: "river" });
+      }
+    });
+  });
+
   function openProject(projectKey: string): void {
     const card = model().projects.find((project) => project.key === projectKey);
     batch(() => {
@@ -335,9 +356,17 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     deps.seen.markAll(model().river.map((item) => item.id));
   }
 
+  // A remembered project key can age out (no live session, no meaningful item in 24h) between
+  // visits; falling back to it unvalidated opens a blank view titled "Project" with no activity
+  // strip even though other projects are active. Prefer the key only while it still has a card.
+  function resolveProjectKey(preferred: string | null): string | null {
+    if (preferred && model().projects.some((project) => project.key === preferred)) return preferred;
+    return model().projects[0]?.key ?? null;
+  }
+
   function toggleExpandedView(): void {
     if (expanded().kind === "river") {
-      const key = lastProjectKey() ?? model().projects[0]?.key;
+      const key = resolveProjectKey(lastProjectKey());
       if (key) openProject(key);
       return;
     }

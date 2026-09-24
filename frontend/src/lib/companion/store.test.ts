@@ -438,6 +438,33 @@ describe("createCompanionStore", () => {
     }
   });
 
+  it("falls back to an active project, then the river, when the remembered project has aged out", async () => {
+    await createRoot(async (dispose) => {
+      const storage = new MemoryStorage();
+      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "stale" } }));
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps({ storage }));
+      await settled(store.loading, (loading) => !loading);
+      // The persisted view names a project no longer in the model; it must not open blank.
+      expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA" });
+
+      // toggleExpandedView must also not reopen a stale lastProjectKey when no project is active.
+      const empty = owned(() =>
+        createCompanionStore(
+          fakeLive().live,
+          deps({ getProjects: vi.fn(async () => []), getSessions: vi.fn(async () => []), getEventFeed: vi.fn(async () => ({ items: [] })) }),
+        ),
+      );
+      await settled(empty.value.loading, (loading) => !loading);
+      empty.value.openProject("keyZ"); // no matching card; sets lastProjectKey to a key that doesn't exist
+      empty.value.openRiver();
+      empty.value.toggleExpandedView();
+      expect(empty.value.expanded()).toEqual({ kind: "river" });
+      empty.dispose();
+      dispose();
+    });
+  });
+
   it("steps down one level at a time", async () => {
     await createRoot(async (dispose) => {
       const store = createCompanionStore(fakeLive().live, deps());
