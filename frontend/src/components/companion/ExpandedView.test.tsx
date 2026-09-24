@@ -41,6 +41,11 @@ describe("ExpandedView", () => {
     expect(screen.getByText(/0 live · activity none · capture none/)).toBeInTheDocument();
   });
 
+  it("shows a disconnected footer instead of reading as quiet when the stream is down", () => {
+    render(() => <ExpandedView model={{ ...model, pulse: "disconnected" }} view={{ kind: "river" }} onBack={() => {}} onToggleView={() => {}} onCollapse={() => {}} />);
+    expect(screen.getByText("Disconnected from Black Box")).toBeInTheDocument();
+  });
+
   it("renders the river across projects with a project prefix and a toggle", () => {
     const onToggleView = vi.fn();
     render(() => <ExpandedView model={model} view={{ kind: "river" }} onBack={() => {}} onToggleView={onToggleView} onCollapse={() => {}} />);

@@ -2,6 +2,7 @@ import { createMemo, For, Show } from "solid-js";
 import type { CompanionModel, ExpandedViewState } from "../../lib/companion/model";
 import { timeAgo } from "../../lib/format";
 import KindBadge from "../KindBadge";
+import { pulseText } from "./CompactList";
 
 type ExpandedViewProps = {
   model: CompanionModel;
@@ -44,7 +45,12 @@ export default function ExpandedView(props: ExpandedViewProps) {
           {card()?.liveSessions ?? 0} live · activity {ago(card()?.lastActivityAt ?? null)} · capture {ago(card()?.lastCaptureAt ?? null)}
         </p>
       </Show>
-      <Show when={items().length > 0} fallback={<p class="companion-empty">Nothing meaningful in the last 24h.</p>}>
+      <Show
+        when={items().length > 0}
+        // Spec 3.1: disconnected must never look like quiet. An empty river/project reads as calm
+        // only when the stream is actually live; while disconnected, say so instead.
+        fallback={<p class="companion-empty">{props.model.pulse === "disconnected" ? "Disconnected from Black Box." : "Nothing meaningful in the last 24h."}</p>}
+      >
         <ul class="companion-items">
           <For each={items()}>
             {(item) => (
@@ -74,6 +80,7 @@ export default function ExpandedView(props: ExpandedViewProps) {
           </For>
         </ul>
       </Show>
+      <footer class={`companion-footer companion-footer--${props.model.pulse}`}>{pulseText(props.model)}</footer>
     </div>
   );
 }
