@@ -9,6 +9,9 @@ type CompactListProps = {
   onOpenProject: (projectKey: string) => void;
   onOpenRiver: () => void;
   onCollapse: () => void;
+  // Lets CompanionPage hand focus to this level's primary control (the first project row, or River
+  // when there are none) when the user steps into compact, instead of leaving focus on <body>.
+  focusRef?: (el: HTMLButtonElement) => void;
 };
 
 // An aria-label overrides a button's whole accessible name, so it has to carry everything the row
@@ -39,7 +42,12 @@ export default function CompactList(props: CompactListProps) {
     <div class="companion-panel">
       <header class="companion-header">
         <span class="companion-title">Projects</span>
-        <button type="button" class="companion-link-button" onClick={() => props.onOpenRiver()}>
+        <button
+          type="button"
+          class="companion-link-button"
+          ref={props.model.projects.length === 0 ? props.focusRef : undefined}
+          onClick={() => props.onOpenRiver()}
+        >
           River
         </button>
         <button type="button" class="companion-icon-button" aria-label="Collapse" onClick={() => props.onCollapse()}>
@@ -50,12 +58,13 @@ export default function CompactList(props: CompactListProps) {
         <Show when={props.model.projects.length > 0} fallback={<p class="companion-empty">Quiet. No active projects in the last 24h.</p>}>
           <ul class="companion-projects">
             <Index each={props.model.projects}>
-              {(card) => (
+              {(card, index) => (
                 <li>
                   <button
                     type="button"
                     class="companion-project-row"
                     aria-label={projectRowLabel(card())}
+                    ref={index === 0 ? props.focusRef : undefined}
                     onClick={() => props.onOpenProject(card().key)}
                   >
                     <span class={`companion-live-dot${card().liveSessions > 0 ? " companion-live-dot--on" : ""}`} aria-hidden="true" />

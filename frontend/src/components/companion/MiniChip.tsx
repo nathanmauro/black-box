@@ -3,7 +3,16 @@ import type { PulseState } from "../../lib/companion/model";
 
 export const PULSE_LABEL: Record<PulseState, string> = { connecting: "connecting", live: "live", idle: "idle", disconnected: "offline" };
 
-type MiniChipProps = { pulse: PulseState; unseen: number; onExpand: () => void; onSize?: (width: number) => void; hasError?: boolean };
+type MiniChipProps = {
+  pulse: PulseState;
+  unseen: number;
+  onExpand: () => void;
+  onSize?: (width: number) => void;
+  hasError?: boolean;
+  // Lets CompanionPage hand focus back to the chip when the user steps down to mini, instead of
+  // leaving focus on <body> after the compact/expanded view it was on unmounts.
+  focusRef?: (el: HTMLButtonElement) => void;
+};
 
 export default function MiniChip(props: MiniChipProps) {
   let ref: HTMLButtonElement | undefined;
@@ -27,7 +36,10 @@ export default function MiniChip(props: MiniChipProps) {
   // chip itself instead of relying on that paragraph.
   return (
     <button
-      ref={ref}
+      ref={(el) => {
+        ref = el;
+        props.focusRef?.(el);
+      }}
       type="button"
       class={`companion-chip companion-chip--${props.pulse}${props.hasError ? " companion-chip--warn" : ""}`}
       aria-label={props.hasError ? `Black Box companion: could not load, ${PULSE_LABEL[props.pulse]}` : `Black Box companion: ${PULSE_LABEL[props.pulse]}, ${props.unseen} unseen`}

@@ -46,12 +46,18 @@ describe("CompanionPage", () => {
     await waitFor(() => expect(chip).toHaveAccessibleName("Black Box companion: idle, 1 unseen"));
     fireEvent.click(chip);
     const row = await screen.findByRole("button", { name: /^a: 1 live, 1 unseen/ });
+    // Every level change must hand focus to that level's primary control, not drop it to <body>
+    // (which would force a keyboard user to tab from the top of the document each time).
+    expect(row).toHaveFocus();
     fireEvent.click(row);
     expect(await screen.findByRole("link", { name: /Pick A/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to projects" })).toHaveFocus();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(await screen.findByRole("button", { name: /^a: 1 live, 0 unseen/ })).toBeInTheDocument();
+    const rowAfterBack = await screen.findByRole("button", { name: /^a: 1 live, 0 unseen/ });
+    expect(rowAfterBack).toHaveFocus();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(await screen.findByRole("button", { name: "Black Box companion: idle, 0 unseen" })).toBeInTheDocument();
+    const chipAfterCollapse = await screen.findByRole("button", { name: "Black Box companion: idle, 0 unseen" });
+    expect(chipAfterCollapse).toHaveFocus();
   });
 
   it("renders chrome-less inside the app shell on /companion", async () => {

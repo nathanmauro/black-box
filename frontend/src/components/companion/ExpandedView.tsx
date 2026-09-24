@@ -10,6 +10,9 @@ type ExpandedViewProps = {
   onBack: () => void;
   onToggleView: () => void;
   onCollapse: () => void;
+  // Lets CompanionPage hand focus to the Back button when the user opens a project or the river,
+  // instead of leaving focus on <body>.
+  focusRef?: (el: HTMLButtonElement) => void;
 };
 
 function ago(iso: string | null): string {
@@ -29,7 +32,7 @@ export default function ExpandedView(props: ExpandedViewProps) {
   return (
     <div class="companion-panel companion-panel--expanded">
       <header class="companion-header">
-        <button type="button" class="companion-icon-button" aria-label="Back to projects" onClick={() => props.onBack()}>
+        <button type="button" class="companion-icon-button" aria-label="Back to projects" ref={props.focusRef} onClick={() => props.onBack()}>
           ‹
         </button>
         <span class="companion-title">{title()}</span>
