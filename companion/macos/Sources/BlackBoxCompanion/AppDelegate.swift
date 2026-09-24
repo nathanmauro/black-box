@@ -1,7 +1,7 @@
 import AppKit
 import WebKit
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKUIDelegate, WKNavigationDelegate {
     private let options: Options
     private var statusItem: NSStatusItem!
     private var panel: CompanionPanel!
@@ -20,7 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         configuration.userContentController.add(self, name: "companion")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.uiDelegate = self
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.navigationDelegate = self
+        WebViewTransparency.apply(to: webView)
 
         panel = CompanionPanel(contentSize: NSSize(width: 132, height: 36))
         panel.contentView = webView
@@ -71,9 +72,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         }
     }
 
-    // target="_blank" links open in the default browser instead of inside the panel.
+    // target="_blank" links open in the default browser instead of inside the panel. Only
+    // http/https ever reach NSWorkspace; anything else is ignored rather than shelled out to.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = navigationAction.request.url { NSWorkspace.shared.open(url) }
+        let url = navigationAction.request.url
+        if LinkPolicy.isAllowedScheme(url), let url { NSWorkspace.shared.open(url) }
         return nil
+    }
+
+    // A same-window navigation away from the companion origin (no target="_blank") opens externally
+    // instead of replacing the companion page inside the panel.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        let url = navigationAction.request.url
+        guard navigationAction.targetFrame?.isMainFrame == true, LinkPolicy.isExternalNavigation(to: url, from: options.url) else {
+            decisionHandler(.allow)
+            return
+        }
+        if LinkPolicy.isAllowedScheme(url), let url { NSWorkspace.shared.open(url) }
+        decisionHandler(.cancel)
     }
 }
