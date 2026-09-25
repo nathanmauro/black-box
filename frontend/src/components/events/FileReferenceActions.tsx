@@ -79,10 +79,7 @@ export default function FileReferenceActions(props: FileReferenceActionsProps) {
 
   return (
     <span class="file-reference-actions" data-resolved={reference() ? "true" : "false"}>
-      <Show
-        when={reference()}
-        fallback={<span class="inline-file-path">{label()}</span>}
-      >
+      <Show when={reference()} fallback={<span class="inline-file-path">{label()}</span>}>
         <button
           type="button"
           class="inline-file-link"
@@ -129,9 +126,13 @@ export default function FileReferenceActions(props: FileReferenceActionsProps) {
         </Show>
       </span>
       <Show when={!reference()}>
-        <span id={unresolvedReasonId} class="file-reference-reason">{unresolvedReason()}</span>
+        <span id={unresolvedReasonId} class="file-reference-reason">
+          {unresolvedReason()}
+        </span>
       </Show>
-      <span class="file-reference-status" aria-live="polite">{message()}</span>
+      <span class="file-reference-status" aria-live="polite">
+        {message()}
+      </span>
     </span>
   );
 }
@@ -157,7 +158,9 @@ function navigationErrorMessage(error: unknown, action: "open" | "reveal"): stri
       case "invalid_reference":
         return "File location is invalid.";
       default:
-        return error.message || `Could not ${action === "open" ? "open the file" : "reveal the file"}.`;
+        return (
+          error.message || `Could not ${action === "open" ? "open the file" : "reveal the file"}.`
+        );
     }
   }
   return `Could not ${action === "open" ? "open the file" : "reveal the file"}.`;

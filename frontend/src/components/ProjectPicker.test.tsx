@@ -41,7 +41,9 @@ const projects: ProjectSummary[] = [
 describe("ProjectPicker", () => {
   it("selects all projects and fuzzy project matches", async () => {
     const onSelect = vi.fn();
-    render(() => <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />);
+    render(() => (
+      <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />
+    ));
 
     const trigger = screen.getByRole("button", { name: /All projects/ });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -52,7 +54,9 @@ describe("ProjectPicker", () => {
 
     const listbox = screen.getByRole("listbox", { name: "Project results" });
     expect(within(listbox).getByText("sba-agentic")).toBeInTheDocument();
-    expect(within(listbox).getByText("/Users/nathan/Developer/proj/sba-agentic")).toBeInTheDocument();
+    expect(
+      within(listbox).getByText("/Users/nathan/Developer/proj/sba-agentic"),
+    ).toBeInTheDocument();
     expect(within(listbox).getByText(/2 scopes/)).toBeInTheDocument();
 
     fireEvent.click(within(listbox).getByRole("option", { name: /sba-agentic/ }));
@@ -65,12 +69,20 @@ describe("ProjectPicker", () => {
 
   it("searches variant scopes and resolves a selected alias to its grouped project", async () => {
     const onSelect = vi.fn();
-    render(() => <ProjectPicker projects={projects} selectedProjectKey="sba-worktree-key" onSelect={onSelect} />);
+    render(() => (
+      <ProjectPicker
+        projects={projects}
+        selectedProjectKey="sba-worktree-key"
+        onSelect={onSelect}
+      />
+    ));
 
     const trigger = screen.getByRole("button", { name: /sba-agentic/ });
     expect(trigger).toHaveTextContent("/Users/nathan/Developer/proj/sba-agentic");
     fireEvent.click(trigger);
-    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "worktrees/abc" } });
+    fireEvent.input(screen.getByLabelText("Search projects"), {
+      target: { value: "worktrees/abc" },
+    });
 
     const result = await screen.findByRole("option", { name: /sba-agentic/ });
     fireEvent.click(result);
@@ -79,7 +91,9 @@ describe("ProjectPicker", () => {
 
   it("supports keyboard selection and Escape dismissal", async () => {
     const onSelect = vi.fn();
-    render(() => <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />);
+    render(() => (
+      <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />
+    ));
     const trigger = screen.getByRole("button", { name: /All projects/ });
 
     fireEvent.click(trigger);
@@ -97,7 +111,10 @@ describe("ProjectPicker", () => {
 
   it("visually advances the active option and scrolls it into view with the keyboard", async () => {
     const onSelect = vi.fn();
-    const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "scrollIntoView",
+    );
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -105,7 +122,9 @@ describe("ProjectPicker", () => {
     });
 
     try {
-      render(() => <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />);
+      render(() => (
+        <ProjectPicker projects={projects} selectedProjectKey={undefined} onSelect={onSelect} />
+      ));
       fireEvent.click(screen.getByRole("button", { name: /All projects/ }));
       const search = screen.getByLabelText("Search projects");
       const options = screen.getAllByRole("option");

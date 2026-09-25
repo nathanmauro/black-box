@@ -142,7 +142,10 @@ export function assertSafeSeedBaseUrl(baseURL: string): void {
   }
 }
 
-export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fetch): Promise<void> {
+export async function seedBlackBoxE2e(
+  baseURL: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<void> {
   assertSafeSeedBaseUrl(baseURL);
   const endpoint = new URL("/api/events", baseURL).toString();
   for (const event of E2E_SEED_EVENTS) {
@@ -152,7 +155,9 @@ export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fe
       body: JSON.stringify(event),
     });
     if (!response.ok) {
-      throw new Error(`Failed to seed ${event.metadata.title}: HTTP ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Failed to seed ${event.metadata.title}: HTTP ${response.status} ${response.statusText}`,
+      );
     }
   }
   const projectionResponse = await fetchImpl(new URL("/api/projections", baseURL).toString(), {
@@ -170,12 +175,18 @@ export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fe
   const project = projects.find((candidate) => candidate.canonicalKey === E2E_PROJECT_CWD);
   if (!project) throw new Error(`Seeded project was not grouped under ${E2E_PROJECT_CWD}`);
 
-  const sessionsUrl = new URL(`/api/projects/${encodeURIComponent(project.projectKey)}/sessions`, baseURL);
+  const sessionsUrl = new URL(
+    `/api/projects/${encodeURIComponent(project.projectKey)}/sessions`,
+    baseURL,
+  );
   sessionsUrl.searchParams.set("limit", "20");
-  const sessionsResponse = await fetchImpl(sessionsUrl.toString(), { headers: { accept: "application/json" } });
+  const sessionsResponse = await fetchImpl(sessionsUrl.toString(), {
+    headers: { accept: "application/json" },
+  });
   await requireOk(sessionsResponse, "load seeded project sessions");
   const sessions = (await sessionsResponse.json()) as SeedSession[];
-  if (!sessions.length) throw new Error("Seeded project did not expose any sessions for meld provenance");
+  if (!sessions.length)
+    throw new Error("Seeded project did not expose any sessions for meld provenance");
 
   const meldResponse = await fetchImpl(new URL("/api/melds", baseURL).toString(), {
     method: "POST",
@@ -197,5 +208,6 @@ export async function seedBlackBoxE2e(baseURL: string, fetchImpl: FetchLike = fe
 }
 
 async function requireOk(response: Response, action: string): Promise<void> {
-  if (!response.ok) throw new Error(`Failed to ${action}: HTTP ${response.status} ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`Failed to ${action}: HTTP ${response.status} ${response.statusText}`);
 }

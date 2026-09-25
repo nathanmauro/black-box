@@ -57,7 +57,10 @@ describe("project helpers", () => {
 
   it("ranks recent fuzzy matches by short name and path", () => {
     expect(rankProjects(projects, "sba").map((p) => p.projectKey)).toEqual(["sba-key"]);
-    expect(rankProjects(projects, "proj").map((p) => p.projectKey)).toEqual(["cockpit-key", "sba-key"]);
+    expect(rankProjects(projects, "proj").map((p) => p.projectKey)).toEqual([
+      "cockpit-key",
+      "sba-key",
+    ]);
     expect(rankProjects(projects, "worktrees/abc").map((p) => p.projectKey)).toEqual(["sba-key"]);
   });
 
@@ -65,9 +68,15 @@ describe("project helpers", () => {
     const session = { cwd: "/Users/nathan/Developer/proj/sba-agentic/" } as AgentSession;
     expect(projectMatchesSession(projects[0], session)).toBe(true);
     expect(projectMatchesSession(projects[1], session)).toBe(false);
-    expect(projectMatchesSession(projects[0], { cwd: "/Users/nathan/.codex/worktrees/abc/sba-agentic" } as AgentSession)).toBe(true);
+    expect(
+      projectMatchesSession(projects[0], {
+        cwd: "/Users/nathan/.codex/worktrees/abc/sba-agentic",
+      } as AgentSession),
+    ).toBe(true);
     expect(findProjectByIdentifier(projects, "sba-worktree-key")).toBe(projects[0]);
-    expect(findProjectByIdentifier(projects, "/Users/nathan/.codex/worktrees/abc/sba-agentic")).toBe(projects[0]);
+    expect(
+      findProjectByIdentifier(projects, "/Users/nathan/.codex/worktrees/abc/sba-agentic"),
+    ).toBe(projects[0]);
     expect(primaryProjectScope(projects[0]).projectKey).toBe("sba-key");
     expect(projectScopes(projects[0])).toHaveLength(2);
   });

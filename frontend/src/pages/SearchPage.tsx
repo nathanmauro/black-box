@@ -1,9 +1,33 @@
 import { A, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import SourceDot from "../components/SourceDot";
 import { EventRenderer } from "../components/events/EventRow";
-import { ask, askStatus, search, searchValues, type AgentEvent, type ProjectSummary, type SearchResponse } from "../lib/api";
-import { FACET_FIELDS, parseQuery, removeFacetValue, setFacet, type FacetField, type FacetKey, type FacetMode } from "../lib/query";
+import {
+  ask,
+  askStatus,
+  search,
+  searchValues,
+  type AgentEvent,
+  type ProjectSummary,
+  type SearchResponse,
+} from "../lib/api";
+import {
+  FACET_FIELDS,
+  parseQuery,
+  removeFacetValue,
+  setFacet,
+  type FacetField,
+  type FacetKey,
+  type FacetMode,
+} from "../lib/query";
 import { primaryProjectScope } from "../lib/projects";
 import { timeAgo, truncatePath } from "../lib/format";
 
@@ -49,9 +73,13 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
-  const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
+  const visibleSubmitted = createMemo(() =>
+    props.project ? setFacet(submitted(), "project", null) : submitted(),
+  );
   const apiQuery = createMemo(() =>
-    props.project ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey) : submitted(),
+    props.project
+      ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey)
+      : submitted(),
   );
   createEffect(() => setDraft(visibleSubmitted()));
   createEffect(() => {
@@ -76,7 +104,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
     SearchResponse,
     { submitted: string; api: string; projectScopePending: boolean }
   >(searchRequest, async (request) =>
-    !request.projectScopePending && request.submitted.trim() ? search(request.api, 120) : emptySearchResponse(),
+    !request.projectScopePending && request.submitted.trim()
+      ? search(request.api, 120)
+      : emptySearchResponse(),
   );
 
   // Ask mode is offered only when the backend reports the dependency is reachable.
@@ -98,7 +128,11 @@ export default function SearchPage(props: SearchPageProps = {}) {
     event.preventDefault();
     run(draft().trim());
   }
-  function applyFacet(key: FacetField["key"], value: string | null, mode: "include" | "exclude" = "include") {
+  function applyFacet(
+    key: FacetField["key"],
+    value: string | null,
+    mode: "include" | "exclude" = "include",
+  ) {
     run(setFacet(visibleSubmitted(), key, value, mode));
   }
   function removeFacetChip(key: FacetKey, value: string, mode: FacetMode = "include") {
@@ -107,10 +141,12 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
   // Solid resource accessors throw after a rejected request. Guard the accessor so Find can
   // render a retryable failure without escaping through the route's render tree.
-  const local = () => (response.error ? [] : response()?.local ?? []);
+  const local = () => (response.error ? [] : (response()?.local ?? []));
   const filtered = createMemo(() => {
     const hasKindFacet = Boolean(parsed().facets.kind?.length);
-    return local().filter((event) => !(meaningfulOnly() && !hasKindFacet && event.eventType === "PostToolUse"));
+    return local().filter(
+      (event) => !(meaningfulOnly() && !hasKindFacet && event.eventType === "PostToolUse"),
+    );
   });
   const structured = () => filtered().filter((event) => STRUCTURED.has(event.eventType));
   const others = () => filtered().filter((event) => !STRUCTURED.has(event.eventType));
@@ -123,14 +159,17 @@ export default function SearchPage(props: SearchPageProps = {}) {
     const sep = last.indexOf(":");
     if (sep <= 0) return null;
     const raw = last.slice(0, sep).toLowerCase();
-    const field = FACET_FIELDS.find((f) => f.key === raw || (raw === "agent" && f.key === "source"));
+    const field = FACET_FIELDS.find(
+      (f) => f.key === raw || (raw === "agent" && f.key === "source"),
+    );
     if (!field) return null;
     return { key: field.key, prefix: last.slice(sep + 1) };
   });
   const [suggestions] = createResource(editing, async (edit) =>
     edit ? searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []) : [],
   );
-  const showSuggestions = () => suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
+  const showSuggestions = () =>
+    suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
 
   createEffect(() => {
     if (editing() === null) {
@@ -190,7 +229,13 @@ export default function SearchPage(props: SearchPageProps = {}) {
           fallback={
             <Show
               when={askReady()}
-              fallback={<p class="empty-state">{askReady.loading ? "Checking Ask dependencies..." : "Ask is unavailable on this server."}</p>}
+              fallback={
+                <p class="empty-state">
+                  {askReady.loading
+                    ? "Checking Ask dependencies..."
+                    : "Ask is unavailable on this server."}
+                </p>
+              }
             >
               <AskPanel project={props.project} />
             </Show>
@@ -220,7 +265,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
                   <For each={suggestions()}>
                     {(value) => (
                       <li>
-                        <button type="button" onClick={() => pickSuggestion(value)}>{value}</button>
+                        <button type="button" onClick={() => pickSuggestion(value)}>
+                          {value}
+                        </button>
                       </li>
                     )}
                   </For>
@@ -236,7 +283,11 @@ export default function SearchPage(props: SearchPageProps = {}) {
                   <span class="facet-label">{field.label}</span>
                   <For each={parsed().facets[field.key] ?? []}>
                     {(value) => (
-                      <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
+                      <button
+                        type="button"
+                        class="facet-chip facet-chip--active"
+                        onClick={() => removeFacetChip(field.key, value)}
+                      >
                         {value} ✕
                       </button>
                     )}
@@ -253,11 +304,22 @@ export default function SearchPage(props: SearchPageProps = {}) {
                       </button>
                     )}
                   </For>
-                  <Show when={!parsed().facets[field.key]?.length && !parsed().excludeFacets[field.key]?.length}>
+                  <Show
+                    when={
+                      !parsed().facets[field.key]?.length &&
+                      !parsed().excludeFacets[field.key]?.length
+                    }
+                  >
                     <div class="facet-quick">
                       <For each={QUICK_VALUES[field.key]}>
                         {(value) => (
-                          <button type="button" class="facet-chip" onClick={() => applyFacet(field.key, value)}>{value}</button>
+                          <button
+                            type="button"
+                            class="facet-chip"
+                            onClick={() => applyFacet(field.key, value)}
+                          >
+                            {value}
+                          </button>
                         )}
                       </For>
                       <Show when={QUICK_VALUES[field.key].length === 0}>
@@ -269,7 +331,11 @@ export default function SearchPage(props: SearchPageProps = {}) {
               )}
             </For>
             <label class="meaningful-toggle">
-              <input type="checkbox" checked={meaningfulOnly()} onChange={(e) => setMeaningfulOnly(e.currentTarget.checked)} />
+              <input
+                type="checkbox"
+                checked={meaningfulOnly()}
+                onChange={(e) => setMeaningfulOnly(e.currentTarget.checked)}
+              />
               meaningful events only
             </label>
           </div>
@@ -277,48 +343,77 @@ export default function SearchPage(props: SearchPageProps = {}) {
       </div>
 
       <Show when={mode() === "find"}>
-        <Show when={!props.projectScopePending} fallback={<p class="empty-state">Resolving project scope…</p>}>
+        <Show
+          when={!props.projectScopePending}
+          fallback={<p class="empty-state">Resolving project scope…</p>}
+        >
           <Show
             when={visibleSubmitted().trim()}
-            fallback={<p class="empty-state">Search the recorded memory — try <code>source:codex kind:Decision</code> or a phrase.</p>}
+            fallback={
+              <p class="empty-state">
+                Search the recorded memory — try <code>source:codex kind:Decision</code> or a
+                phrase.
+              </p>
+            }
           >
             <Show when={!response.loading} fallback={<p class="empty-state">Searching…</p>}>
               <Show
                 when={!response.error}
                 fallback={
                   <div class="inline-error" role="alert">
-                    <strong>{props.project ? "Scoped project search unavailable." : "Search unavailable."}</strong>{" "}
+                    <strong>
+                      {props.project ? "Scoped project search unavailable." : "Search unavailable."}
+                    </strong>{" "}
                     {searchErrorMessage(response.error)}
                     <Show when={props.project}>
-                      <span> The selected project scope was preserved; Black Box did not load global results.</span>
+                      <span>
+                        {" "}
+                        The selected project scope was preserved; Black Box did not load global
+                        results.
+                      </span>
                     </Show>{" "}
-                    <button type="button" class="secondary-action" onClick={() => void refetchSearch()}>
+                    <button
+                      type="button"
+                      class="secondary-action"
+                      onClick={() => void refetchSearch()}
+                    >
                       Retry search
                     </button>
                   </div>
                 }
               >
                 <p class="result-summary">
-                  {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()} sessions
+                  {filtered().length.toLocaleString()} events · {sessionCount().toLocaleString()}{" "}
+                  sessions
                   <Show when={response()?.elasticHealth?.available}> · elastic</Show>
                 </p>
 
                 <Show when={structured().length}>
                   <div class="result-group">
                     <h2 class="result-group-title">Decisions &amp; handoffs</h2>
-                    <For each={structured()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                    <For each={structured()}>
+                      {(event) => (
+                        <ResultRow event={event} onSelectSession={props.onSelectSession} />
+                      )}
+                    </For>
                   </div>
                 </Show>
 
                 <Show when={others().length}>
                   <div class="result-group">
                     <h2 class="result-group-title">Events</h2>
-                    <For each={others()}>{(event) => <ResultRow event={event} onSelectSession={props.onSelectSession} />}</For>
+                    <For each={others()}>
+                      {(event) => (
+                        <ResultRow event={event} onSelectSession={props.onSelectSession} />
+                      )}
+                    </For>
                   </div>
                 </Show>
 
                 <Show when={!filtered().length}>
-                  <p class="empty-state">No results. Remove a facet or turn off “meaningful events only”.</p>
+                  <p class="empty-state">
+                    No results. Remove a facet or turn off “meaningful events only”.
+                  </p>
                 </Show>
               </Show>
             </Show>
@@ -334,11 +429,15 @@ function emptySearchResponse(): SearchResponse {
 }
 
 function searchErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : "Black Box could not complete this search.";
+  return error instanceof Error && error.message
+    ? error.message
+    : "Black Box could not complete this search.";
 }
 
 function appendProjectGroupScope(query: string, canonicalKey: string): string {
-  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
@@ -347,7 +446,10 @@ function quoteHiddenFacet(value: string): string {
   return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
-function ResultRow(props: { event: AgentEvent; onSelectSession?: (id: string, eventId?: string) => void }) {
+function ResultRow(props: {
+  event: AgentEvent;
+  onSelectSession?: (id: string, eventId?: string) => void;
+}) {
   function select(event: MouseEvent) {
     if (!props.onSelectSession) return;
     event.preventDefault();
@@ -402,7 +504,9 @@ function AskPanel(props: { project?: ProjectSummary | null } = {}) {
         placeholder="Ask across the recorded memory…"
       />
       <button type="submit">Ask</button>
-      <Show when={answer.loading}><p class="empty-state">Thinking…</p></Show>
+      <Show when={answer.loading}>
+        <p class="empty-state">Thinking…</p>
+      </Show>
       <Show when={answer()}>
         {(result) => (
           <div class="ask-answer">
@@ -412,8 +516,13 @@ function AskPanel(props: { project?: ProjectSummary | null } = {}) {
                 <For each={result().citations}>
                   {(cite) => (
                     <li>
-                      <Show when={cite.sessionId} fallback={<span>{cite.title || cite.snippet}</span>}>
-                        <A href={`/sessions/${encodeURIComponent(cite.sessionId!)}`}>{cite.title || truncatePath(cite.sourcePath || "")}</A>
+                      <Show
+                        when={cite.sessionId}
+                        fallback={<span>{cite.title || cite.snippet}</span>}
+                      >
+                        <A href={`/sessions/${encodeURIComponent(cite.sessionId!)}`}>
+                          {cite.title || truncatePath(cite.sourcePath || "")}
+                        </A>
                       </Show>
                     </li>
                   )}

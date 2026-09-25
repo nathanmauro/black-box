@@ -41,11 +41,11 @@ export default function SteerBox(props: SteerBoxProps) {
     <div class="steer-box">
       <Show
         when={props.enabled}
-        fallback={(
+        fallback={
           <p class="steer-box-disabled">
             {props.disabledHint ?? "Steering is only available while the task is in progress."}
           </p>
-        )}
+        }
       >
         <form onSubmit={submit}>
           <label for={`steer-${props.taskId}`}>Steer this run</label>
@@ -59,7 +59,13 @@ export default function SteerBox(props: SteerBoxProps) {
             {submitting() ? "Sending…" : "Send steer"}
           </button>
         </form>
-        <Show when={error()}>{(message) => <p class="steer-box-error" role="alert">{message()}</p>}</Show>
+        <Show when={error()}>
+          {(message) => (
+            <p class="steer-box-error" role="alert">
+              {message()}
+            </p>
+          )}
+        </Show>
       </Show>
     </div>
   );

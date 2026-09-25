@@ -1,3 +1,4 @@
+import { For } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -26,7 +27,9 @@ export default function HandoffCard(props: HandoffCardProps) {
       </div>
       <div class="event-card-meta">
         {metadataText(meta().toAgent) ? <span>to {metadataText(meta().toAgent)}</span> : null}
-        {metadataText(meta().nextAction) ? <span>next: {truncatePath(metadataText(meta().nextAction))}</span> : null}
+        {metadataText(meta().nextAction) ? (
+          <span>next: {truncatePath(metadataText(meta().nextAction))}</span>
+        ) : null}
       </div>
       <HandoffContext text={summary()} />
       <OpenLoops loops={metadataList(meta().openLoops)} />
@@ -40,9 +43,7 @@ function OpenLoops(props: { loops: string[] }) {
     <div class="metadata-list">
       <span>open loops</span>
       <ul>
-        {props.loops.map((item) => (
-          <li>{truncatePath(item)}</li>
-        ))}
+        <For each={props.loops}>{(item) => <li>{truncatePath(item)}</li>}</For>
       </ul>
     </div>
   );

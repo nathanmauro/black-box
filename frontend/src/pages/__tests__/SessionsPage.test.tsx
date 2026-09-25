@@ -2,8 +2,26 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getEvent, getProjectSessions, getSession, getSessionChildCounts, getSessionDag, getSessionEvents, getSessionLinks, getSessionTranscript, getSessions, getTaskDag } from "../../lib/api";
-import type { AgentEvent, AgentSession, DagResponse, SessionLinksResponse, SessionTranscriptParams, SessionTranscriptResponse } from "../../lib/api";
+import {
+  getEvent,
+  getProjectSessions,
+  getSession,
+  getSessionChildCounts,
+  getSessionDag,
+  getSessionEvents,
+  getSessionLinks,
+  getSessionTranscript,
+  getSessions,
+  getTaskDag,
+} from "../../lib/api";
+import type {
+  AgentEvent,
+  AgentSession,
+  DagResponse,
+  SessionLinksResponse,
+  SessionTranscriptParams,
+  SessionTranscriptResponse,
+} from "../../lib/api";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
@@ -46,7 +64,8 @@ const events: AgentEvent[] = [
     eventType: "PostToolUse",
     role: "tool",
     toolName: "Read",
-    toolInputJson: '{"file_path":"/Users/nathan/Developer/proj/sba-agentic/src/hidden-tool-output.ts"}',
+    toolInputJson:
+      '{"file_path":"/Users/nathan/Developer/proj/sba-agentic/src/hidden-tool-output.ts"}',
     toolOutputJson: '{"ok":true}',
     observedAt: "2026-06-22T20:03:00Z",
   },
@@ -152,7 +171,9 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     getSessions: vi.fn(async () => sessions),
-    getSession: vi.fn(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]),
+    getSession: vi.fn(
+      async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0],
+    ),
     getEvent: vi.fn(),
     getProjectSessions: vi.fn(async () => [sessions[0]]),
     getSessionEvents: vi.fn(async () => events),
@@ -171,14 +192,18 @@ beforeEach(() => {
   vi.mocked(getSessions).mockReset();
   vi.mocked(getSessions).mockResolvedValue(sessions);
   vi.mocked(getSession).mockReset();
-  vi.mocked(getSession).mockImplementation(async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0]);
+  vi.mocked(getSession).mockImplementation(
+    async (id: string) => sessions.find((session) => session.id === id) ?? sessions[0],
+  );
   vi.mocked(getEvent).mockReset();
   vi.mocked(getProjectSessions).mockReset();
   vi.mocked(getProjectSessions).mockResolvedValue([sessions[0]]);
   vi.mocked(getSessionEvents).mockReset();
   vi.mocked(getSessionEvents).mockResolvedValue(events);
   vi.mocked(getSessionTranscript).mockReset();
-  vi.mocked(getSessionTranscript).mockImplementation(async (id: string) => transcriptResponse(events, { sessionId: id }));
+  vi.mocked(getSessionTranscript).mockImplementation(async (id: string) =>
+    transcriptResponse(events, { sessionId: id }),
+  );
   vi.mocked(getTaskDag).mockReset();
   vi.mocked(getTaskDag).mockResolvedValue({ nodes: [], edges: [] });
   vi.mocked(getSessionDag).mockReset();
@@ -190,7 +215,9 @@ beforeEach(() => {
   vi.mocked(sourceFilter.key).mockReset();
   vi.mocked(sourceFilter.key).mockReturnValue("");
   vi.mocked(sourceFilter.matches).mockReset();
-  vi.mocked(sourceFilter.matches).mockImplementation(<T extends { source: string }>(items: T[]) => items);
+  vi.mocked(sourceFilter.matches).mockImplementation(
+    <T extends { source: string }>(items: T[]) => items,
+  );
 });
 
 describe("SessionsPage", () => {
@@ -224,8 +251,12 @@ describe("SessionsPage", () => {
 
     const header = document.querySelector(".tendril-header") as HTMLElement;
     expect(await within(header).findByText("Blocked")).toHaveClass("tendril-status--blocked");
-    expect(within(header).getByText("Steering is only available while the task is in progress.")).toBeInTheDocument();
-    expect(within(header).queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
+    expect(
+      within(header).getByText("Steering is only available while the task is in progress."),
+    ).toBeInTheDocument();
+    expect(
+      within(header).queryByRole("textbox", { name: "Steer this run" }),
+    ).not.toBeInTheDocument();
   });
 
   it("lazily fetches and renders the selected session DAG from the tendril header", async () => {
@@ -233,7 +264,13 @@ describe("SessionsPage", () => {
     vi.mocked(getTaskDag).mockResolvedValue(taskDag("in_progress"));
     vi.mocked(getSessionDag).mockResolvedValue({
       nodes: [
-        { id: "task-1", type: "task", label: "Implement card detail", status: "in_progress", ref: "/tasks/task-1" },
+        {
+          id: "task-1",
+          type: "task",
+          label: "Implement card detail",
+          status: "in_progress",
+          ref: "/tasks/task-1",
+        },
         { id: "session:session-1", type: "session", label: "Worker tendril 1", ref: "session-1" },
       ],
       edges: [{ from: "task-1", to: "session:session-1", type: "worker_session" }],
@@ -244,8 +281,12 @@ describe("SessionsPage", () => {
     expect(getSessionDag).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "View session DAG" }));
     await waitFor(() => expect(getSessionDag).toHaveBeenCalledWith("session-1"));
-    expect(await screen.findByText("Worker tendril 1", { selector: ".dag-label" })).toBeInTheDocument();
-    expect(document.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
+    expect(
+      await screen.findByText("Worker tendril 1", { selector: ".dag-label" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector('[data-node-id="session:session-1"]')).toHaveClass(
+      "dag-node--current",
+    );
   });
 
   it("filters the session rail by text, project, and source facets", async () => {
@@ -256,12 +297,20 @@ describe("SessionsPage", () => {
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
     expect(rail.querySelector(".virtual-spacer")).not.toBeInTheDocument();
 
-    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "project:cockpit" } });
-    await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("Find sessions"), {
+      target: { value: "project:cockpit" },
+    });
+    await waitFor(() =>
+      expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument(),
+    );
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
 
-    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "source:codex focused" } });
-    await waitFor(() => expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("Find sessions"), {
+      target: { value: "source:codex focused" },
+    });
+    await waitFor(() =>
+      expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument(),
+    );
     expect(within(rail).getByText("Focused session")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear session filters" }));
@@ -276,11 +325,17 @@ describe("SessionsPage", () => {
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
 
     fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "-source:codex" } });
-    await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument(),
+    );
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
 
-    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "NOT project:cockpit" } });
-    await waitFor(() => expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("Find sessions"), {
+      target: { value: "NOT project:cockpit" },
+    });
+    await waitFor(() =>
+      expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument(),
+    );
     expect(within(rail).getByText("Focused session")).toBeInTheDocument();
   });
 
@@ -288,35 +343,44 @@ describe("SessionsPage", () => {
     render(() => <SessionsPage />);
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getAllByText("Focus the session reader.")).not.toHaveLength(0));
+    await waitFor(() =>
+      expect(screen.getAllByText("Focus the session reader.")).not.toHaveLength(0),
+    );
     expect(screen.getAllByText("I made the reading view calmer.")).not.toHaveLength(0);
 
     const promptTurns = document.querySelectorAll(".prompt-turn");
     expect(promptTurns).toHaveLength(1);
     expect(promptTurns[0]).toHaveAttribute("id", "prompt-evt-user");
-    expect(within(promptTurns[0] as HTMLElement).getAllByText("Focus the session reader.")).not.toHaveLength(0);
-    expect(within(promptTurns[0] as HTMLElement).getAllByText("I made the reading view calmer.")).not.toHaveLength(0);
+    expect(
+      within(promptTurns[0] as HTMLElement).getAllByText("Focus the session reader."),
+    ).not.toHaveLength(0);
+    expect(
+      within(promptTurns[0] as HTMLElement).getAllByText("I made the reading view calmer."),
+    ).not.toHaveLength(0);
 
     expect(document.querySelector(".outline-pane")).not.toBeInTheDocument();
     expect(document.querySelector(".timeline-pane .virtual-spacer")).not.toBeInTheDocument();
     const conversationOutline = screen.getByRole("navigation", { name: "Conversation outline" });
     expect(conversationOutline).toBeInTheDocument();
-    expect(within(conversationOutline).getByRole("link", { name: "Turn 1: Focus the session reader." })).toHaveAttribute(
-      "href",
-      "#prompt-evt-user",
-    );
+    expect(
+      within(conversationOutline).getByRole("link", { name: "Turn 1: Focus the session reader." }),
+    ).toHaveAttribute("href", "#prompt-evt-user");
     expect(within(promptTurns[0] as HTMLElement).getByText("You")).toBeInTheDocument();
     expect(within(promptTurns[0] as HTMLElement).getByText("Codex")).toBeInTheDocument();
     expect(within(promptTurns[0] as HTMLElement).getByText("agent response")).toBeInTheDocument();
 
     expect(screen.queryByText("Use the calmer session layout")).not.toBeInTheDocument();
-    expect(screen.queryByText("Reader should keep memory cards behind a layer toggle.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Reader should keep memory cards behind a layer toggle."),
+    ).not.toBeInTheDocument();
     expect(await screen.findByText(/hidden-tool-output/)).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Show tool events" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Show memory events" }));
     expect(await screen.findByText("Use the calmer session layout")).toBeInTheDocument();
-    expect(screen.getByText("Reader should keep memory cards behind a layer toggle.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reader should keep memory cards behind a layer toggle."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/hidden-tool-output/)).toBeInTheDocument();
   });
 
@@ -387,18 +451,17 @@ describe("SessionsPage", () => {
         observedAt: "2026-06-22T20:01:00Z",
       },
     ];
-    vi.mocked(getSessionTranscript).mockImplementation(async (
-      id: string,
-      params: SessionTranscriptParams = {},
-    ) => {
-      if (params.q === 'read "vite.config"') {
-        return transcriptResponse([searchableEvents[4]], { sessionId: id, count: 1 });
-      }
-      if (params.q === "42 tests passed") {
-        return transcriptResponse([searchableEvents[1]], { sessionId: id, count: 1 });
-      }
-      return transcriptResponse(searchableEvents, { sessionId: id });
-    });
+    vi.mocked(getSessionTranscript).mockImplementation(
+      async (id: string, params: SessionTranscriptParams = {}) => {
+        if (params.q === 'read "vite.config"') {
+          return transcriptResponse([searchableEvents[4]], { sessionId: id, count: 1 });
+        }
+        if (params.q === "42 tests passed") {
+          return transcriptResponse([searchableEvents[1]], { sessionId: id, count: 1 });
+        }
+        return transcriptResponse(searchableEvents, { sessionId: id });
+      },
+    );
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -418,12 +481,18 @@ describe("SessionsPage", () => {
     });
     expect(document.querySelectorAll(".prompt-turn")).toHaveLength(1);
     expect(screen.getByText("Inspect the frontend config.")).toBeInTheDocument();
-    expect(screen.getByText("This full answer remains visible for turn context.")).toBeInTheDocument();
+    expect(
+      screen.getByText("This full answer remains visible for turn context."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Run the checks.")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Next transcript match" }));
-    await waitFor(() => expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "center", behavior: "smooth" }));
-    expect(document.getElementById("prompt-evt-prompt-1")).toHaveClass("prompt-turn--search-active");
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "center", behavior: "smooth" }),
+    );
+    expect(document.getElementById("prompt-evt-prompt-1")).toHaveClass(
+      "prompt-turn--search-active",
+    );
     expect(screen.getByText("1 of 1 matching turn")).toBeInTheDocument();
 
     fireEvent.input(search, { target: { value: "42 tests passed" } });
@@ -432,7 +501,9 @@ describe("SessionsPage", () => {
     expect(screen.queryByText("Inspect the frontend config.")).not.toBeInTheDocument();
 
     fireEvent.keyDown(search, { key: "Enter" });
-    expect(document.getElementById("prompt-evt-prompt-2")).toHaveClass("prompt-turn--search-active");
+    expect(document.getElementById("prompt-evt-prompt-2")).toHaveClass(
+      "prompt-turn--search-active",
+    );
     fireEvent.keyDown(search, { key: "Escape" });
     expect(search).toHaveValue("");
     expect(await screen.findByText("Inspect the frontend config.")).toBeInTheDocument();
@@ -543,17 +614,31 @@ describe("SessionsPage", () => {
 
     await waitFor(() => expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2));
     const turns = document.querySelectorAll(".prompt-turn");
-    expect(within(turns[0] as HTMLElement).getByText("Show me the first exchange.")).toBeInTheDocument();
-    expect(within(turns[0] as HTMLElement).queryByText(/SHOW me the first/)).not.toBeInTheDocument();
-    expect(within(turns[0] as HTMLElement).getByText("First captured response.")).toBeInTheDocument();
-    expect(within(turns[1] as HTMLElement).getByText("Show me the second exchange.")).toBeInTheDocument();
-    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(2);
+    expect(
+      within(turns[0] as HTMLElement).getByText("Show me the first exchange."),
+    ).toBeInTheDocument();
+    expect(
+      within(turns[0] as HTMLElement).queryByText(/SHOW me the first/),
+    ).not.toBeInTheDocument();
+    expect(
+      within(turns[0] as HTMLElement).getByText("First captured response."),
+    ).toBeInTheDocument();
+    expect(
+      within(turns[1] as HTMLElement).getByText("Show me the second exchange."),
+    ).toBeInTheDocument();
+    expect(within(turns[1] as HTMLElement).getAllByText("Second captured response.")).toHaveLength(
+      2,
+    );
     expect(screen.queryByText("Lifecycle metadata should stay hidden.")).not.toBeInTheDocument();
     expect(screen.queryByText("Startup metadata should stay hidden.")).not.toBeInTheDocument();
 
     const outline = screen.getByRole("navigation", { name: "Conversation outline" });
-    const first = within(outline).getByRole("link", { name: "Turn 1: Show me the first exchange." });
-    const second = within(outline).getByRole("link", { name: "Turn 2: Show me the second exchange." });
+    const first = within(outline).getByRole("link", {
+      name: "Turn 1: Show me the first exchange.",
+    });
+    const second = within(outline).getByRole("link", {
+      name: "Turn 2: Show me the second exchange.",
+    });
     expect(first).toHaveAttribute("href", "#prompt-evt-user-1");
     expect(second).toHaveAttribute("href", "#prompt-evt-user-2");
 
@@ -642,14 +727,15 @@ describe("SessionsPage", () => {
         observedAt: "2026-06-22T19:00:00Z",
       },
     ];
-    vi.mocked(getSessionTranscript).mockImplementation(async (id: string, params: SessionTranscriptParams = {}) => (
-      params.before
-        ? transcriptResponse(olderPage, { sessionId: id, nextBefore: null })
-        : transcriptResponse(events, {
-            sessionId: id,
-            nextBefore: "2026-06-22T20:00:00Z|evt-user",
-          })
-    ));
+    vi.mocked(getSessionTranscript).mockImplementation(
+      async (id: string, params: SessionTranscriptParams = {}) =>
+        params.before
+          ? transcriptResponse(olderPage, { sessionId: id, nextBefore: null })
+          : transcriptResponse(events, {
+              sessionId: id,
+              nextBefore: "2026-06-22T20:00:00Z|evt-user",
+            }),
+    );
 
     render(() => <SessionsPage />);
 
@@ -668,11 +754,13 @@ describe("SessionsPage", () => {
   });
 
   it("uses recorded events returned with an unavailable transcript without falling back", async () => {
-    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse(events, {
-      available: false,
-      complete: false,
-      reason: "missing",
-    }));
+    vi.mocked(getSessionTranscript).mockResolvedValue(
+      transcriptResponse(events, {
+        available: false,
+        complete: false,
+        reason: "missing",
+      }),
+    );
 
     render(() => <SessionsPage />);
 
@@ -714,7 +802,9 @@ describe("SessionsPage", () => {
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
-    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
+    await waitFor(() =>
+      expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }),
+    );
     vi.mocked(getSessionTranscript).mockClear();
 
     setProject({
@@ -775,7 +865,9 @@ describe("SessionsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
     expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
-    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }));
+    await waitFor(() =>
+      expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }),
+    );
     expect(getSessionTranscript).not.toHaveBeenCalledWith("session-2", expect.anything());
   });
 
@@ -800,13 +892,17 @@ describe("SessionsPage", () => {
       metadata: { decision: "Keep the exact older decision reachable" },
       observedAt: "2026-05-01T20:00:00Z",
     };
-    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse(events.filter((event) => event.id !== olderTarget.id)));
+    vi.mocked(getSessionTranscript).mockResolvedValue(
+      transcriptResponse(events.filter((event) => event.id !== olderTarget.id)),
+    );
     vi.mocked(getEvent).mockResolvedValue(olderTarget);
 
     render(() => <SessionsPage selectedSessionId="session-1" targetEventId={olderTarget.id} />);
 
     expect(await screen.findByText("Keep the exact older decision reachable")).toBeInTheDocument();
-    expect(document.getElementById(`event-${olderTarget.id}`)).toHaveClass("event-flow-row--target");
+    expect(document.getElementById(`event-${olderTarget.id}`)).toHaveClass(
+      "event-flow-row--target",
+    );
     expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined });
     expect(getEvent).toHaveBeenCalledOnce();
     expect(getEvent).toHaveBeenCalledWith(olderTarget.id);
@@ -835,7 +931,9 @@ describe("SessionsPage", () => {
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
-    expect(within(rail).queryByRole("button", { name: /subagent sessions/ })).not.toBeInTheDocument();
+    expect(
+      within(rail).queryByRole("button", { name: /subagent sessions/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders an expander with the batch child count for parent sessions", async () => {
@@ -844,14 +942,17 @@ describe("SessionsPage", () => {
     render(() => <SessionsPage />);
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
-    expect(await within(rail).findByRole("button", { name: "Toggle 2 subagent sessions" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(
+      await within(rail).findByRole("button", { name: "Toggle 2 subagent sessions" }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(getSessionChildCounts).toHaveBeenCalledWith(["session-1", "session-2"]);
     expect(getSessions).toHaveBeenCalledWith(120);
-    const cockpitRow = within(rail).getByText("Cockpit cleanup").closest(".session-row-block") as HTMLElement;
-    expect(within(cockpitRow).queryByRole("button", { name: /subagent sessions/ })).not.toBeInTheDocument();
+    const cockpitRow = within(rail)
+      .getByText("Cockpit cleanup")
+      .closest(".session-row-block") as HTMLElement;
+    expect(
+      within(cockpitRow).queryByRole("button", { name: /subagent sessions/ }),
+    ).not.toBeInTheDocument();
     expect(getSessionLinks).not.toHaveBeenCalled();
   });
 
@@ -862,19 +963,27 @@ describe("SessionsPage", () => {
     render(() => <SessionsPage />);
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
-    const expander = await within(rail).findByRole("button", { name: "Toggle 1 subagent sessions" });
+    const expander = await within(rail).findByRole("button", {
+      name: "Toggle 1 subagent sessions",
+    });
     expect(getSessionLinks).not.toHaveBeenCalled();
 
     fireEvent.click(expander);
     await waitFor(() => expect(getSessionLinks).toHaveBeenCalledWith("session-1"));
-    expect(await within(rail).findByText("code-reviewer", { selector: ".agent-type-badge" })).toBeInTheDocument();
+    expect(
+      await within(rail).findByText("code-reviewer", { selector: ".agent-type-badge" }),
+    ).toBeInTheDocument();
     expect(expander).toHaveAttribute("aria-expanded", "true");
 
-    fireEvent.click(within(rail).getByText("code-reviewer", { selector: ".session-row--child strong" }));
+    fireEvent.click(
+      within(rail).getByText("code-reviewer", { selector: ".session-row--child strong" }),
+    );
     expect(navigate).toHaveBeenCalledWith("/sessions/child-1");
 
     fireEvent.click(expander);
-    expect(within(rail).queryByText("code-reviewer", { selector: ".agent-type-badge" })).not.toBeInTheDocument();
+    expect(
+      within(rail).queryByText("code-reviewer", { selector: ".agent-type-badge" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the compact lineage rail and opens its horizontal relationship map", async () => {
@@ -889,7 +998,10 @@ describe("SessionsPage", () => {
     render(() => <SessionsPage />);
 
     expect(await screen.findByRole("navigation", { name: "Agent lineage" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Current agent: Focused session" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Current agent: Focused session" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     expect(screen.getByRole("button", { name: "Subagent: code-reviewer" })).toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "Expand lineage map" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -898,7 +1010,9 @@ describe("SessionsPage", () => {
     expect(document.querySelector(".dag-stage--lineage")).toBeInTheDocument();
     const lineage = document.querySelector(".session-lineage") as HTMLElement;
     expect(lineage).toBeInTheDocument();
-    expect(lineage.querySelector('[data-node-id="session:session-1"]')).toHaveClass("dag-node--current");
+    expect(lineage.querySelector('[data-node-id="session:session-1"]')).toHaveClass(
+      "dag-node--current",
+    );
     expect(getSessionDag).toHaveBeenCalledWith("session-1");
     expect(document.querySelector(".tendril-header")).not.toBeInTheDocument();
   });

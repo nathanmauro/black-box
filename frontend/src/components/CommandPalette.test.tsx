@@ -43,7 +43,9 @@ describe("CommandPalette", () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);
 
-    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), { target: { value: "projects" } });
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
+      target: { value: "projects" },
+    });
     fireEvent.click(await screen.findByRole("option", { name: /Projects/ }));
 
     expect(navigate).toHaveBeenCalledWith("/projects");
@@ -54,7 +56,9 @@ describe("CommandPalette", () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);
 
-    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), { target: { value: "board" } });
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
+      target: { value: "board" },
+    });
     fireEvent.click(await screen.findByRole("option", { name: /Board/ }));
 
     expect(navigate).toHaveBeenCalledWith("/board");

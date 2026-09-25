@@ -14,8 +14,19 @@ export function writePresenter(event: AgentEvent): Presentation {
   return {
     kindPill: { label: "Write", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "write" },
     headline: [{ kind: "fileLink", label: truncatePath(pathValue), file }],
-    blocks: [{ kind: "diff", file, oldText: "", newText: content, label: `New file (${content.length} chars)` }],
-    sizes: { inputChars: event.toolInputJson?.length ?? 0, outputChars: event.toolOutputJson?.length ?? 0 },
+    blocks: [
+      {
+        kind: "diff",
+        file,
+        oldText: "",
+        newText: content,
+        label: `New file (${content.length} chars)`,
+      },
+    ],
+    sizes: {
+      inputChars: event.toolInputJson?.length ?? 0,
+      outputChars: event.toolOutputJson?.length ?? 0,
+    },
     refs: [file],
   };
 }

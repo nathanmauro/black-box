@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Frontend lint and formatting: ESLint 10 (typescript-eslint, eslint-plugin-solid) and Prettier 3
+  with `npm run lint`, `format`, `format:check`, and `check`; enforced in CI and `scripts/verify.sh`,
+  with an opt-in pre-commit hook and a one-time mechanical reformat of `frontend/`.
+
 ## [0.2.0] - 2026-09-20
 
 Everything since 0.1.0, grouped by the era it landed in (see [docs/evolution.md](docs/evolution.md)).

@@ -1,8 +1,21 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  Match,
+  Show,
+  Switch,
+} from "solid-js";
 import ProjectPicker from "../components/ProjectPicker";
 import { getProjects } from "../lib/api";
-import { findProjectByIdentifier, readRememberedProjectKey, rememberProjectKey } from "../lib/projects";
+import {
+  findProjectByIdentifier,
+  readRememberedProjectKey,
+  rememberProjectKey,
+} from "../lib/projects";
 import SessionsPage from "./SessionsPage";
 import SearchPage from "./SearchPage";
 import StreamPage from "./StreamPage";
@@ -23,21 +36,35 @@ type ActivityPageProps = {
 
 export default function ActivityPage(props: ActivityPageProps = {}) {
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams<{ q?: string; session?: string; view?: string; project?: string; event?: string }>();
+  const [params, setParams] = useSearchParams<{
+    q?: string;
+    session?: string;
+    view?: string;
+    project?: string;
+    event?: string;
+  }>();
   const [modeSignal, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
   const mode = () => props.lockedMode ?? modeSignal();
   const [rememberedProjectKey, setRememberedProjectKey] = createSignal(readRememberedProjectKey());
-  const [projects, { refetch: refetchProjects }] = createResource(getProjects, { initialValue: [] });
+  const [projects, { refetch: refetchProjects }] = createResource(getProjects, {
+    initialValue: [],
+  });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
-  const requestedProjectKey = createMemo(() => (
-    params.project !== undefined ? params.project : rememberedProjectKey()
-  ));
-  const selectedProject = createMemo(() => findProjectByIdentifier(availableProjects(), requestedProjectKey()));
-  const projectScopePending = createMemo(() => Boolean(requestedProjectKey()) && projects.loading && !selectedProject());
+  const requestedProjectKey = createMemo(() =>
+    params.project !== undefined ? params.project : rememberedProjectKey(),
+  );
+  const selectedProject = createMemo(() =>
+    findProjectByIdentifier(availableProjects(), requestedProjectKey()),
+  );
+  const projectScopePending = createMemo(
+    () => Boolean(requestedProjectKey()) && projects.loading && !selectedProject(),
+  );
   const projectScopeError = createMemo(() => {
     if (!requestedProjectKey() || projects.loading) return null;
-    if (projects.error) return "The project catalog is unavailable, so Black Box will not broaden this scoped view to global activity.";
-    if (!selectedProject()) return `The project “${requestedProjectKey()}” is not present in the current catalog.`;
+    if (projects.error)
+      return "The project catalog is unavailable, so Black Box will not broaden this scoped view to global activity.";
+    if (!selectedProject())
+      return `The project “${requestedProjectKey()}” is not present in the current catalog.`;
     return null;
   });
 
@@ -131,7 +158,10 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
                 role="tab"
                 aria-label={item.label}
                 aria-selected={mode() === item.id}
-                classList={{ "activity-mode-tab": true, "activity-mode-tab--active": mode() === item.id }}
+                classList={{
+                  "activity-mode-tab": true,
+                  "activity-mode-tab--active": mode() === item.id,
+                }}
                 onClick={() => selectMode(item.id)}
               >
                 <span>{item.label}</span>
@@ -151,15 +181,30 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
               <h2>Scoped activity is paused</h2>
               <p>{projectScopeError()}</p>
               <div>
-                <button type="button" class="secondary-action" onClick={() => void refetchProjects()}>Retry catalog</button>
-                <button type="button" class="secondary-action" onClick={() => selectProject(undefined)}>Clear project</button>
+                <button
+                  type="button"
+                  class="secondary-action"
+                  onClick={() => void refetchProjects()}
+                >
+                  Retry catalog
+                </button>
+                <button
+                  type="button"
+                  class="secondary-action"
+                  onClick={() => selectProject(undefined)}
+                >
+                  Clear project
+                </button>
               </div>
             </div>
           }
         >
           <Switch>
             <Match when={mode() === "browse"}>
-              <Show when={!projectScopePending()} fallback={<p class="empty-state">Resolving project scope…</p>}>
+              <Show
+                when={!projectScopePending()}
+                fallback={<p class="empty-state">Resolving project scope…</p>}
+              >
                 <SessionsPage
                   selectedSessionId={params.session}
                   targetEventId={params.event}

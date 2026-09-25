@@ -207,7 +207,20 @@ export function removeFacetValue(
   return serializeQuery(state);
 }
 
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 const DURATION_UNITS: Record<string, string> = { m: "minute", h: "hour", d: "day", w: "week" };
 
 /** Human phrase for a time-token chip: "Past 2 hours", "Since yesterday", "Until Aug 18". */
@@ -231,7 +244,8 @@ export function describeTimeSpec(spec: TimeSpec, side: "since" | "until"): strin
     return `${sideWord} ${MONTH_NAMES[month - 1]} ${day}${suffix}`;
   }
   const instant = new Date(spec.value);
-  const suffix = instant.getFullYear() === new Date().getFullYear() ? "" : ` ${instant.getFullYear()}`;
+  const suffix =
+    instant.getFullYear() === new Date().getFullYear() ? "" : ` ${instant.getFullYear()}`;
   const time = `${String(instant.getHours()).padStart(2, "0")}:${String(instant.getMinutes()).padStart(2, "0")}`;
   return `${sideWord} ${MONTH_NAMES[instant.getMonth()]} ${instant.getDate()}${suffix}, ${time}`;
 }

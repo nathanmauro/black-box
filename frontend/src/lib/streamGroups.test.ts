@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EventFeedItem } from "./api";
-import { reconcileSegments, segmentStream, STITCH_WINDOW_MS, type FoldRow, type RunSegment } from "./streamGroups";
+import {
+  reconcileSegments,
+  segmentStream,
+  STITCH_WINDOW_MS,
+  type FoldRow,
+  type RunSegment,
+} from "./streamGroups";
 
 // Local-time constructors keep the date-boundary cases timezone-independent: the lib groups by
 // LOCAL date, so tests build instants from local wall-clock positions, never fixed UTC strings.
@@ -8,7 +14,12 @@ function at(day: number, hour: number, minute: number, month = 8): string {
   return new Date(2026, month - 1, day, hour, minute, 0).toISOString();
 }
 
-function item(id: string, sessionId: string, observedAt: string, overrides: Partial<EventFeedItem> = {}): EventFeedItem {
+function item(
+  id: string,
+  sessionId: string,
+  observedAt: string,
+  overrides: Partial<EventFeedItem> = {},
+): EventFeedItem {
   return {
     id,
     sessionId,
@@ -128,7 +139,9 @@ describe("segmentStream", () => {
       ],
       { now: NOW },
     );
-    const labels = segments.filter((segment) => segment.type === "day").map((segment) => segment.label);
+    const labels = segments
+      .filter((segment) => segment.type === "day")
+      .map((segment) => segment.label);
     expect(labels).toEqual(["Yesterday", "Tue Aug 18"]);
   });
 
@@ -160,10 +173,7 @@ describe("segmentStream", () => {
   });
 
   it("keeps existing run identities stable when an SSE prepend extends the head run", () => {
-    const base = [
-      item("a1", "sA", at(20, 12, 0)),
-      item("b1", "sB", at(20, 11, 30)),
-    ];
+    const base = [item("a1", "sA", at(20, 12, 0)), item("b1", "sB", at(20, 11, 30))];
     const before = runs(segmentStream(base)).map((run) => run.key);
 
     const prepended = [item("a0", "sA", at(20, 12, 5)), ...base];
@@ -190,7 +200,12 @@ describe("segmentStream", () => {
 });
 
 // Chatter fixture: PostToolUse rows with a toolName, one minute apart, one session.
-function chatter(id: string, minute: number, toolName = "Read", overrides: Partial<EventFeedItem> = {}): EventFeedItem {
+function chatter(
+  id: string,
+  minute: number,
+  toolName = "Read",
+  overrides: Partial<EventFeedItem> = {},
+): EventFeedItem {
   return item(id, "s1", at(20, 12, minute), {
     toolName,
     toolInputJson: '{"file_path":"/tmp/file.ts"}',
@@ -227,15 +242,27 @@ describe("segmentStream folds", () => {
   });
 
   it("requires the same toolName — a tool change breaks the streak", () => {
-    const items = [chatter("e1", 4), chatter("e2", 3), chatter("e3", 2, "Bash"), chatter("e4", 1), chatter("e5", 0)];
+    const items = [
+      chatter("e1", 4),
+      chatter("e2", 3),
+      chatter("e3", 2, "Bash"),
+      chatter("e4", 1),
+      chatter("e5", 0),
+    ];
     const run = soleRun(segmentStream(items, { folds: {} }));
     expect(run.rows.map((row) => row.type)).toEqual(["event", "event", "event", "event", "event"]);
   });
 
   it("folds adjacent same-tool streaks separately per tool", () => {
     const items = [
-      chatter("r1", 7), chatter("r2", 6), chatter("r3", 5), chatter("r4", 4),
-      chatter("b1", 3, "Bash"), chatter("b2", 2, "Bash"), chatter("b3", 1, "Bash"), chatter("b4", 0, "Bash"),
+      chatter("r1", 7),
+      chatter("r2", 6),
+      chatter("r3", 5),
+      chatter("r4", 4),
+      chatter("b1", 3, "Bash"),
+      chatter("b2", 2, "Bash"),
+      chatter("b3", 1, "Bash"),
+      chatter("b4", 0, "Bash"),
     ];
     const run = soleRun(segmentStream(items, { folds: {} }));
     expect(run.rows.map((row) => row.type)).toEqual(["fold", "fold"]);
@@ -245,9 +272,11 @@ describe("segmentStream folds", () => {
 
   it("never folds landmarks — a landmark breaks the streak", () => {
     const items = [
-      chatter("e1", 4), chatter("e2", 3),
+      chatter("e1", 4),
+      chatter("e2", 3),
       item("d1", "s1", at(20, 12, 2), { eventType: "Decision", text: "Chose folds" }),
-      chatter("e3", 1), chatter("e4", 0),
+      chatter("e3", 1),
+      chatter("e4", 0),
     ];
     const run = soleRun(segmentStream(items, { folds: {} }));
     expect(run.rows.every((row) => row.type === "event")).toBe(true);
@@ -272,7 +301,10 @@ describe("segmentStream folds", () => {
   it("propagates a swallowed failure as the loudest tone", () => {
     const items = [
       chatter("e1", 3, "Bash", { toolInputJson: '{"command":"npm test"}' }),
-      chatter("e2", 2, "Bash", { toolInputJson: '{"command":"false"}', toolOutputJson: '{"exit_code":1,"output":"boom"}' }),
+      chatter("e2", 2, "Bash", {
+        toolInputJson: '{"command":"false"}',
+        toolOutputJson: '{"exit_code":1,"output":"boom"}',
+      }),
       chatter("e3", 1, "Bash", { toolInputJson: '{"command":"ls"}' }),
       chatter("e4", 0, "Bash", { toolInputJson: '{"command":"pwd"}' }),
     ];
@@ -305,7 +337,12 @@ describe("segmentStream folds", () => {
   it("emits event rows in place of a fold the user unfolded", () => {
     const items = [chatter("e1", 3), chatter("e2", 2), chatter("e3", 1), chatter("e4", 0)];
     const run = soleRun(segmentStream(items, { folds: { unfolded: new Set(["e4"]) } }));
-    expect(run.rows.map((row) => (row.type === "event" ? row.item.id : row.key))).toEqual(["e1", "e2", "e3", "e4"]);
+    expect(run.rows.map((row) => (row.type === "event" ? row.item.id : row.key))).toEqual([
+      "e1",
+      "e2",
+      "e3",
+      "e4",
+    ]);
   });
 });
 
@@ -324,7 +361,10 @@ describe("reconcileSegments", () => {
     const all = [...otherRun, ...chatterRun];
 
     const folded = reconcileSegments([], segmentStream(all, { folds: {} }));
-    const unfolded = reconcileSegments(folded, segmentStream(all, { folds: { unfolded: new Set(["e4"]) } }));
+    const unfolded = reconcileSegments(
+      folded,
+      segmentStream(all, { folds: { unfolded: new Set(["e4"]) } }),
+    );
 
     // The untouched s2 run keeps its identity; the unfolded s1 run is a new object.
     expect(unfolded[0]).toBe(folded[0]);

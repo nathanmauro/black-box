@@ -9,12 +9,17 @@ const css = readFileSync("src/theme.css", "utf8") as string;
 
 function expectRule(selector: string, declarations: string[]) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{(?<body>[^}]*)\\}`, "s"));
-  expect(match?.groups?.body, `missing CSS rule for ${selector}`).toBeDefined();
-  const body = match?.groups?.body ?? "";
-  for (const declaration of declarations) {
-    expect(body, `${selector} should include ${declaration}`).toContain(declaration);
-  }
+  // A selector may open several rules (its own block, a selector list, a media query override),
+  // and Prettier starts every selector on its own line, so any one of those blocks may carry the
+  // contract. The rule passes when a single block holds every expected declaration.
+  const bodies = [
+    ...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{(?<body>[^}]*)\\}`, "gs")),
+  ].map((match) => match.groups?.body ?? "");
+  expect(bodies.length, `missing CSS rule for ${selector}`).toBeGreaterThan(0);
+  const satisfied = bodies.some((body) =>
+    declarations.every((declaration) => body.includes(declaration)),
+  );
+  expect(satisfied, `${selector} should include ${declarations.join(" ")}`).toBe(true);
 }
 
 describe("theme mobile layout contracts", () => {
@@ -63,7 +68,10 @@ describe("theme conversation navigator contracts", () => {
       "border-bottom: 1px solid var(--border);",
     ]);
     expectRule(".session-transcript-search-actions", ["display: inline-flex;"]);
-    expectRule(".session-transcript-status", ["flex: none;", "border-bottom: 1px solid var(--border);"]);
+    expectRule(".session-transcript-status", [
+      "flex: none;",
+      "border-bottom: 1px solid var(--border);",
+    ]);
     expectRule(".transcript-page-controls", ["display: flex;", "justify-content: center;"]);
     expectRule(".prompt-turn--search-active::before", ["background: var(--green);"]);
   });
@@ -71,10 +79,7 @@ describe("theme conversation navigator contracts", () => {
 
 describe("theme session lineage contracts", () => {
   it("keeps a compact dock in flow while the animated lineage lens floats above the transcript", () => {
-    expectRule(".session-lineage", [
-      "position: relative;",
-      "flex: none;",
-    ]);
+    expectRule(".session-lineage", ["position: relative;", "flex: none;"]);
     expectRule(".lineage-dock", ["min-height: 46px;"]);
     expectRule(".lineage-lens", [
       "position: absolute;",
@@ -104,12 +109,19 @@ describe("theme route overflow contracts", () => {
 
   it("keeps search results and recall cards from widening the document", () => {
     expectRule(".page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
-    expectRule(".activity-workspace > .page--search", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
+    expectRule(".activity-workspace > .page--search", [
+      "min-width: 0;",
+      "max-width: 100%;",
+      "overflow-x: hidden;",
+    ]);
     expectRule(".result-group", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".result-row", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".result-row-body", ["min-width: 0;", "max-width: 100%;"]);
     expectRule(".recall-results", ["min-width: 0;", "max-width: 100%;", "overflow-x: hidden;"]);
     expectRule(".recall-card", ["min-width: 0;", "max-width: 100%;", "overflow-wrap: anywhere;"]);
-    expectRule(".recall-rationale,\n.recall-next", ["overflow-wrap: anywhere;", "word-break: break-word;"]);
+    expectRule(".recall-rationale,\n.recall-next", [
+      "overflow-wrap: anywhere;",
+      "word-break: break-word;",
+    ]);
   });
 });

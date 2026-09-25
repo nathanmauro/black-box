@@ -48,7 +48,10 @@ export default function StreamRow(props: StreamRowProps) {
         <Show
           when={landmark()}
           fallback={
-            <span classList={{ "kind-mark": true, "kind-mark--error": mark().error }} aria-hidden="true">
+            <span
+              classList={{ "kind-mark": true, "kind-mark--error": mark().error }}
+              aria-hidden="true"
+            >
               {mark().label}
             </span>
           }
@@ -57,7 +60,9 @@ export default function StreamRow(props: StreamRowProps) {
         </Show>
         <span class="stream-row-headline" title={headline()}>
           <For each={eventHeadlineSpans(item())}>
-            {(span) => (span.kind === "arg" ? <span class="headline-arg">{span.text}</span> : span.text)}
+            {(span) =>
+              span.kind === "arg" ? <span class="headline-arg">{span.text}</span> : span.text
+            }
           </For>
           <Show when={props.cwdException}>
             <span class="stream-row-cwd"> · {truncatePath(item().cwd)}</span>
@@ -91,5 +96,7 @@ export default function StreamRow(props: StreamRowProps) {
 }
 
 function kindClass(kind: string | null | undefined): string {
-  return String(kind || "event").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return String(kind || "event")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-");
 }

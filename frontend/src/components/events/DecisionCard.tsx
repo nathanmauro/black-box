@@ -1,3 +1,4 @@
+import { For } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import KindBadge from "../KindBadge";
@@ -24,7 +25,9 @@ export default function DecisionCard(props: DecisionCardProps) {
         <strong>{truncatePath(decision())}</strong>
         <span class="event-card-time">{timeAgo(props.event.observedAt)}</span>
       </div>
-      {metadataText(meta().rationale) ? <p class="event-rationale">{truncatePath(metadataText(meta().rationale))}</p> : null}
+      {metadataText(meta().rationale) ? (
+        <p class="event-rationale">{truncatePath(metadataText(meta().rationale))}</p>
+      ) : null}
       <div class="confidence-row">
         <span>confidence</span>
         <meter min="0" max="1" value={confidence()}>
@@ -44,9 +47,7 @@ function MetadataList(props: { title: string; items: string[] }) {
     <div class="metadata-list">
       <span>{props.title}</span>
       <ul>
-        {props.items.map((item) => (
-          <li>{truncatePath(item)}</li>
-        ))}
+        <For each={props.items}>{(item) => <li>{truncatePath(item)}</li>}</For>
       </ul>
     </div>
   );

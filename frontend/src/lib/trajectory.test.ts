@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ProjectTrajectoryResponse,
-  TrajectoryCapture,
-  TrajectoryTask,
-} from "./api";
+import type { ProjectTrajectoryResponse, TrajectoryCapture, TrajectoryTask } from "./api";
 import {
   FRONTIER_DAYS,
   FUTURE_MAX,
@@ -25,7 +21,9 @@ describe("buildTrajectory", () => {
     const startMs = Date.parse("2026-01-01T00:00:00Z");
     const captures = [
       capture("b0-a", "observation", iso(startMs), { headline: "First capture" }),
-      capture("b0-b", "decision", iso(startMs + GAP_HOURS * HOUR_MS), { headline: "Boundary decision" }),
+      capture("b0-b", "decision", iso(startMs + GAP_HOURS * HOUR_MS), {
+        headline: "Boundary decision",
+      }),
       ...Array.from({ length: SPINE_MAX + 1 }, (_, index) =>
         capture(
           `b${index + 1}`,
@@ -52,9 +50,7 @@ describe("buildTrajectory", () => {
 
   it("emits an honest hidden-only deep past when the capped feed contains only the head burst", () => {
     const headMs = Date.parse("2026-06-10T12:00:00Z");
-    const feed = response([
-      capture("head", "handoff", iso(headMs), { headline: "Visible head" }),
-    ]);
+    const feed = response([capture("head", "handoff", iso(headMs), { headline: "Visible head" })]);
     feed.totalCaptures = 6;
 
     const graph = buildTrajectory(feed, headMs);
@@ -63,7 +59,8 @@ describe("buildTrajectory", () => {
     expect(deepPast).toMatchObject({
       label: "+5 earlier captures",
       eyebrow: "before Jun 10",
-      fullText: "5 older trajectory captures collapsed into the deep past. 5 older captures lie beyond the feed cap.",
+      fullText:
+        "5 older trajectory captures collapsed into the deep past. 5 older captures lie beyond the feed cap.",
       memberCount: 5,
       members: [],
       hasDecision: false,
@@ -92,7 +89,8 @@ describe("buildTrajectory", () => {
     expect(deepPast).toMatchObject({
       label: "+11 earlier captures",
       eyebrow: "before Jun 5",
-      fullText: "11 older trajectory captures collapsed into the deep past. 10 older captures lie beyond the feed cap.",
+      fullText:
+        "11 older trajectory captures collapsed into the deep past. 10 older captures lie beyond the feed cap.",
       memberCount: 11,
       members: [expect.objectContaining({ id: "old-decision" })],
       hasDecision: true,
@@ -126,10 +124,15 @@ describe("buildTrajectory", () => {
     expect(deepPast).toMatchObject({
       label: "+23 earlier captures",
       eyebrow: "before Jan 10",
-      fullText: "23 older trajectory captures collapsed into the deep past. 20 older captures lie beyond the feed cap.",
+      fullText:
+        "23 older trajectory captures collapsed into the deep past. 20 older captures lie beyond the feed cap.",
       memberCount: 23,
     });
-    expect(deepPast?.members?.map((capture) => capture.id)).toEqual(["burst-0", "burst-1", "burst-2"]);
+    expect(deepPast?.members?.map((capture) => capture.id)).toEqual([
+      "burst-0",
+      "burst-1",
+      "burst-2",
+    ]);
     expect(graph.nodes.filter((node) => node.kind === "burst")).toHaveLength(SPINE_MAX - 1);
   });
 
@@ -159,9 +162,13 @@ describe("buildTrajectory", () => {
     const headMs = Date.parse("2026-03-10T12:00:00Z");
     const graph = buildTrajectory(
       response([
-        capture("obs-before", "observation", iso(headMs - HOUR_MS), { headline: "Earlier observation" }),
+        capture("obs-before", "observation", iso(headMs - HOUR_MS), {
+          headline: "Earlier observation",
+        }),
         capture("handoff", "handoff", iso(headMs), { headline: "Latest handoff" }),
-        capture("obs-after", "observation", iso(headMs + HOUR_MS), { headline: "Later observation" }),
+        capture("obs-after", "observation", iso(headMs + HOUR_MS), {
+          headline: "Later observation",
+        }),
       ]),
       headMs + DAY_MS,
     );
@@ -174,13 +181,18 @@ describe("buildTrajectory", () => {
     const fallback = buildTrajectory(
       response([
         capture("old-observation", "observation", iso(headMs), { headline: "Old observation" }),
-        capture("latest-decision", "decision", iso(headMs + HOUR_MS), { headline: "Latest decision" }),
+        capture("latest-decision", "decision", iso(headMs + HOUR_MS), {
+          headline: "Latest decision",
+        }),
       ]),
       headMs + DAY_MS,
     );
     expect(fallback.headId).toBe("head:latest-decision");
 
-    const fresh = buildTrajectory(response([capture("fresh", "handoff", iso(headMs))]), headMs + STALE_DAYS * DAY_MS);
+    const fresh = buildTrajectory(
+      response([capture("fresh", "handoff", iso(headMs))]),
+      headMs + STALE_DAYS * DAY_MS,
+    );
     const stale = buildTrajectory(
       response([capture("stale", "handoff", iso(headMs))]),
       headMs + STALE_DAYS * DAY_MS + 1,
@@ -263,7 +275,9 @@ describe("buildTrajectory", () => {
 
     expect(futureLabels(graph, "future-next")).toEqual(["Audit trajectory detail flow"]);
     expect(futureLabels(graph, "future-loop")).toEqual([]);
-    expect(allFutureLabels(graph).filter((label) => label === "Audit trajectory detail flow")).toHaveLength(1);
+    expect(
+      allFutureLabels(graph).filter((label) => label === "Audit trajectory detail flow"),
+    ).toHaveLength(1);
   });
 
   it("uses the latest non-expired projection as the full ghost set even when it is empty", () => {
@@ -305,7 +319,9 @@ describe("buildTrajectory", () => {
     expect(allFutureLabels(graph)).not.toContain("Audit docs");
     expect(allFutureLabels(graph)).toEqual(expect.arrayContaining(["Blocked high", "Blocked mid"]));
     expect(allFutureLabels(graph)).not.toContain("Blocked low");
-    expect(allFutureLabels(graph)).toEqual(expect.arrayContaining(["In-progress task", "Claimed task", "Open task"]));
+    expect(allFutureLabels(graph)).toEqual(
+      expect.arrayContaining(["In-progress task", "Claimed task", "Open task"]),
+    );
     expect(more).toMatchObject({ label: "+6 more" });
     expect(more?.items?.map((item) => item.label)).toEqual([
       "Claimed task",
@@ -316,7 +332,9 @@ describe("buildTrajectory", () => {
       "Ghost path three",
     ]);
     expect(visibleFutures.filter((node) => node.kind === "future-ghost")).toHaveLength(1);
-    expect(allFutureLabels(graph).filter((label) => label.startsWith("Ghost path"))).toHaveLength(GHOST_MAX);
+    expect(allFutureLabels(graph).filter((label) => label.startsWith("Ghost path"))).toHaveLength(
+      GHOST_MAX,
+    );
     expect(allFutureLabels(graph)).not.toContain("Ghost path four");
 
     const expiredProjection = buildTrajectory(
@@ -324,7 +342,9 @@ describe("buildTrajectory", () => {
       nowMs,
     );
     expect(expiredProjection.nodes.some((node) => node.kind === "future-ghost")).toBe(false);
-    expect(allFutureLabels(expiredProjection).some((label) => label.startsWith("Ghost path"))).toBe(false);
+    expect(allFutureLabels(expiredProjection).some((label) => label.startsWith("Ghost path"))).toBe(
+      false,
+    );
   });
 
   it("aggregates at most one rejected stub per burst and never attaches stubs to futures", () => {
@@ -356,7 +376,9 @@ describe("buildTrajectory", () => {
       "Keep the old parser",
       "Keep the old renderer",
     ]);
-    expect(stubs.find((node) => node.sourceBurstId === graph.headId)?.alternatives).toEqual(["Defer the graph"]);
+    expect(stubs.find((node) => node.sourceBurstId === graph.headId)?.alternatives).toEqual([
+      "Defer the graph",
+    ]);
     expect(stubs.every((node) => !node.sourceBurstId?.startsWith("future:"))).toBe(true);
     expect(rejectedEdges.every((edge) => !edge.from.startsWith("future:"))).toBe(true);
   });
@@ -369,7 +391,9 @@ describe("buildTrajectory", () => {
       ...Array.from({ length: SPINE_MAX + 1 }, (_, index) =>
         capture(`b${index + 1}`, "observation", iso(startMs + (index + 1) * 3 * DAY_MS)),
       ),
-      capture("head", "handoff", iso(startMs + (SPINE_MAX + 2) * 3 * DAY_MS), { sessionId: "session-1" }),
+      capture("head", "handoff", iso(startMs + (SPINE_MAX + 2) * 3 * DAY_MS), {
+        sessionId: "session-1",
+      }),
     ];
 
     const graph = buildTrajectory(response(captures), startMs + (SPINE_MAX + 2) * 3 * DAY_MS);
@@ -394,7 +418,10 @@ describe("buildTrajectory", () => {
     const nowMs = Date.parse("2026-07-15T16:00:00Z");
     const captures = [
       capture("old", "observation", iso(nowMs - 10 * DAY_MS)),
-      capture("head", "handoff", iso(nowMs), { sessionId: "session-1", nextAction: "Do the next thing" }),
+      capture("head", "handoff", iso(nowMs), {
+        sessionId: "session-1",
+        nextAction: "Do the next thing",
+      }),
     ];
     const graph = buildTrajectory(response(captures), nowMs);
 
@@ -412,9 +439,14 @@ describe("layoutTrajectory", () => {
     const graph = buildTrajectory(
       rankingResponse(nowMs, undefined, [
         ...Array.from({ length: SPINE_MAX + 4 }, (_, index) =>
-          capture(`old-${index}`, index % 2 === 0 ? "observation" : "decision", iso(nowMs - (42 - index * 3) * DAY_MS), {
-            headline: `Old burst ${index}`,
-          }),
+          capture(
+            `old-${index}`,
+            index % 2 === 0 ? "observation" : "decision",
+            iso(nowMs - (42 - index * 3) * DAY_MS),
+            {
+              headline: `Old burst ${index}`,
+            },
+          ),
         ),
       ]),
       nowMs,
@@ -448,41 +480,44 @@ function rankingResponse(
   projectionObservedAt = iso(nowMs - 2 * HOUR_MS),
   extraCaptures: TrajectoryCapture[] = [],
 ): ProjectTrajectoryResponse {
-  return response([
-    ...extraCaptures,
-    capture("next-3", "handoff", iso(nowMs - 6 * HOUR_MS), {
-      sessionId: "next-3",
-      nextAction: "Audit docs",
-    }),
-    capture("loops", "handoff", iso(nowMs - 5 * HOUR_MS), {
-      sessionId: "loops",
-      openLoops: ["Loop one", "Loop two"],
-    }),
-    capture("next-2", "handoff", iso(nowMs - 4 * HOUR_MS), {
-      sessionId: "next-2",
-      nextAction: "Review graph surface",
-    }),
-    capture("next-1", "handoff", iso(nowMs - 3 * HOUR_MS), {
-      sessionId: "next-1",
-      nextAction: "Draft tests",
-    }),
-    capture("projection", "projection", projectionObservedAt, {
-      paths: [
-        { title: "Ghost path one", description: "Speculative route one", confidence: 0.8 },
-        { title: "Ghost path two", description: "Speculative route two", confidence: 0.7 },
-        { title: "Ghost path three", description: "Speculative route three", confidence: 0.6 },
-        { title: "Ghost path four", description: "Speculative route four", confidence: 0.5 },
-      ],
-    }),
-    capture("head", "handoff", iso(nowMs), { sessionId: "head" }),
-  ], [
-    task("blocked-high", "Blocked high", "blocked", 90, nowMs - HOUR_MS),
-    task("blocked-mid", "Blocked mid", "blocked", 80, nowMs - HOUR_MS),
-    task("blocked-low", "Blocked low", "blocked", 70, nowMs - HOUR_MS),
-    task("claimed", "Claimed task", "claimed", 10, nowMs - HOUR_MS),
-    task("in-progress", "In-progress task", "in_progress", 100, nowMs - HOUR_MS),
-    task("open", "Open task", "open", 100, nowMs - HOUR_MS),
-  ]);
+  return response(
+    [
+      ...extraCaptures,
+      capture("next-3", "handoff", iso(nowMs - 6 * HOUR_MS), {
+        sessionId: "next-3",
+        nextAction: "Audit docs",
+      }),
+      capture("loops", "handoff", iso(nowMs - 5 * HOUR_MS), {
+        sessionId: "loops",
+        openLoops: ["Loop one", "Loop two"],
+      }),
+      capture("next-2", "handoff", iso(nowMs - 4 * HOUR_MS), {
+        sessionId: "next-2",
+        nextAction: "Review graph surface",
+      }),
+      capture("next-1", "handoff", iso(nowMs - 3 * HOUR_MS), {
+        sessionId: "next-1",
+        nextAction: "Draft tests",
+      }),
+      capture("projection", "projection", projectionObservedAt, {
+        paths: [
+          { title: "Ghost path one", description: "Speculative route one", confidence: 0.8 },
+          { title: "Ghost path two", description: "Speculative route two", confidence: 0.7 },
+          { title: "Ghost path three", description: "Speculative route three", confidence: 0.6 },
+          { title: "Ghost path four", description: "Speculative route four", confidence: 0.5 },
+        ],
+      }),
+      capture("head", "handoff", iso(nowMs), { sessionId: "head" }),
+    ],
+    [
+      task("blocked-high", "Blocked high", "blocked", 90, nowMs - HOUR_MS),
+      task("blocked-mid", "Blocked mid", "blocked", 80, nowMs - HOUR_MS),
+      task("blocked-low", "Blocked low", "blocked", 70, nowMs - HOUR_MS),
+      task("claimed", "Claimed task", "claimed", 10, nowMs - HOUR_MS),
+      task("in-progress", "In-progress task", "in_progress", 100, nowMs - HOUR_MS),
+      task("open", "Open task", "open", 100, nowMs - HOUR_MS),
+    ],
+  );
 }
 
 function futureLabels(graph: ReturnType<typeof buildTrajectory>, kind: string): string[] {
@@ -497,7 +532,10 @@ function allFutureLabels(graph: ReturnType<typeof buildTrajectory>): string[] {
   });
 }
 
-function response(captures: TrajectoryCapture[], tasks: TrajectoryTask[] = []): ProjectTrajectoryResponse {
+function response(
+  captures: TrajectoryCapture[],
+  tasks: TrajectoryTask[] = [],
+): ProjectTrajectoryResponse {
   return {
     projectKey: "project-key",
     canonicalKey: "/repo/project",
@@ -525,7 +563,13 @@ function capture(
   };
 }
 
-function task(id: string, title: string, status: string, priority: number, updatedAtMs: number): TrajectoryTask {
+function task(
+  id: string,
+  title: string,
+  status: string,
+  priority: number,
+  updatedAtMs: number,
+): TrajectoryTask {
   return { id, title, status, priority, updatedAt: iso(updatedAtMs) };
 }
 

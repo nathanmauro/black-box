@@ -89,12 +89,14 @@ describe("session transcript event merging", () => {
   });
 
   it("keeps same-text turns that are not clearly the same occurrence and sorts deterministically", () => {
-    const recorded = [event({
-      id: "recorded-later",
-      role: "user",
-      text: "Try again",
-      observedAt: "2026-08-30T14:05:00Z",
-    })];
+    const recorded = [
+      event({
+        id: "recorded-later",
+        role: "user",
+        text: "Try again",
+        observedAt: "2026-08-30T14:05:00Z",
+      }),
+    ];
     const transcript = [
       event({
         id: "transcript-newest",
@@ -120,15 +122,51 @@ describe("session transcript event merging", () => {
 
 describe("session transcript reading and search", () => {
   it("shows user, assistant, and tool records while hiding memory and internal records", () => {
-    const prompt = event({ id: "prompt", role: "user", text: "Question", observedAt: "2026-08-30T14:00:00Z" });
-    const response = event({ id: "response", role: "assistant", text: "Answer", observedAt: "2026-08-30T14:00:01Z" });
-    const tool = event({ id: "tool", role: "tool", toolName: "Read", observedAt: "2026-08-30T14:00:02Z" });
-    const system = event({ id: "system", role: "system", text: "Internal", observedAt: "2026-08-30T14:00:03Z" });
-    const reasoning = event({ id: "reasoning", role: "reasoning", text: "Hidden", observedAt: "2026-08-30T14:00:04Z" });
-    const memory = event({ id: "memory", eventType: "Decision", role: "assistant", text: "Remember", observedAt: "2026-08-30T14:00:05Z" });
+    const prompt = event({
+      id: "prompt",
+      role: "user",
+      text: "Question",
+      observedAt: "2026-08-30T14:00:00Z",
+    });
+    const response = event({
+      id: "response",
+      role: "assistant",
+      text: "Answer",
+      observedAt: "2026-08-30T14:00:01Z",
+    });
+    const tool = event({
+      id: "tool",
+      role: "tool",
+      toolName: "Read",
+      observedAt: "2026-08-30T14:00:02Z",
+    });
+    const system = event({
+      id: "system",
+      role: "system",
+      text: "Internal",
+      observedAt: "2026-08-30T14:00:03Z",
+    });
+    const reasoning = event({
+      id: "reasoning",
+      role: "reasoning",
+      text: "Hidden",
+      observedAt: "2026-08-30T14:00:04Z",
+    });
+    const memory = event({
+      id: "memory",
+      eventType: "Decision",
+      role: "assistant",
+      text: "Remember",
+      observedAt: "2026-08-30T14:00:05Z",
+    });
 
     expect([prompt, response, tool, system, reasoning, memory].map(isSessionReaderEvent)).toEqual([
-      true, true, true, false, false, false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
     ]);
     expect(sessionConversationRole(prompt)).toBe("user");
     expect(sessionConversationRole(response)).toBe("assistant");
@@ -139,7 +177,12 @@ describe("session transcript reading and search", () => {
     const matchingTurn = {
       id: "turn-1",
       events: [
-        event({ id: "prompt", role: "user", text: "Please inspect the config", observedAt: "2026-08-30T14:00:00Z" }),
+        event({
+          id: "prompt",
+          role: "user",
+          text: "Please inspect the config",
+          observedAt: "2026-08-30T14:00:00Z",
+        }),
         event({
           id: "tool",
           role: "tool",
@@ -147,7 +190,12 @@ describe("session transcript reading and search", () => {
           toolInputJson: '{"file_path":"frontend/vite.config.ts"}',
           observedAt: "2026-08-30T14:00:01Z",
         }),
-        event({ id: "response", role: "assistant", text: "A response kept for context", observedAt: "2026-08-30T14:00:02Z" }),
+        event({
+          id: "response",
+          role: "assistant",
+          text: "A response kept for context",
+          observedAt: "2026-08-30T14:00:02Z",
+        }),
         event({
           id: "memory",
           eventType: "Decision",
@@ -159,11 +207,22 @@ describe("session transcript reading and search", () => {
     };
     const otherTurn = {
       id: "turn-2",
-      events: [event({ id: "other", role: "assistant", text: "Unrelated", observedAt: "2026-08-30T14:01:00Z" })],
+      events: [
+        event({
+          id: "other",
+          role: "assistant",
+          text: "Unrelated",
+          observedAt: "2026-08-30T14:01:00Z",
+        }),
+      ],
     };
 
-    expect(filterSessionTranscriptTurns([matchingTurn, otherTurn], 'read "vite.config"')).toEqual([matchingTurn]);
-    expect(filterSessionTranscriptTurns([matchingTurn, otherTurn], "context")).toEqual([matchingTurn]);
+    expect(filterSessionTranscriptTurns([matchingTurn, otherTurn], 'read "vite.config"')).toEqual([
+      matchingTurn,
+    ]);
+    expect(filterSessionTranscriptTurns([matchingTurn, otherTurn], "context")).toEqual([
+      matchingTurn,
+    ]);
     expect(filterSessionTranscriptTurns([matchingTurn, otherTurn], "decision text")).toEqual([]);
   });
 });

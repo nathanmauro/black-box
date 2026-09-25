@@ -27,7 +27,11 @@ export function patchFileStubs(command: string): PatchFileStub[] {
 }
 
 export function parseApplyPatch(command: string): PatchFile[] | null {
-  if (!/\*\*\*\s+Begin Patch/.test(command) && !FILE_HEADER.test(command.split(/\r?\n/, 1)[0] ?? "")) return null;
+  if (
+    !/\*\*\*\s+Begin Patch/.test(command) &&
+    !FILE_HEADER.test(command.split(/\r?\n/, 1)[0] ?? "")
+  )
+    return null;
   const files: PatchFile[] = [];
   let current: PatchFile | null = null;
   let hunk: Hunk | null = null;
@@ -38,7 +42,12 @@ export function parseApplyPatch(command: string): PatchFile[] | null {
 
     const header = FILE_HEADER.exec(trimmed);
     if (header) {
-      current = { op: header[1].toLowerCase() as PatchOp, path: header[2], movedTo: null, hunks: [] };
+      current = {
+        op: header[1].toLowerCase() as PatchOp,
+        path: header[2],
+        movedTo: null,
+        hunks: [],
+      };
       files.push(current);
       hunk = null;
       continue;
@@ -61,8 +70,15 @@ export function parseApplyPatch(command: string): PatchFile[] | null {
       continue;
     }
 
-    const kind: DiffLine["kind"] = rawLine.startsWith("+") ? "add" : rawLine.startsWith("-") ? "del" : "context";
-    const text = rawLine.startsWith("+") || rawLine.startsWith("-") || rawLine.startsWith(" ") ? rawLine.slice(1) : rawLine;
+    const kind: DiffLine["kind"] = rawLine.startsWith("+")
+      ? "add"
+      : rawLine.startsWith("-")
+        ? "del"
+        : "context";
+    const text =
+      rawLine.startsWith("+") || rawLine.startsWith("-") || rawLine.startsWith(" ")
+        ? rawLine.slice(1)
+        : rawLine;
     if (!hunk) {
       hunk = { lines: [] };
       current.hunks.push(hunk);

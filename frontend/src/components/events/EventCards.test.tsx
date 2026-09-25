@@ -48,7 +48,9 @@ describe("EventRow", () => {
         cwd: "/Users/nathan/Developer/proj/sba-agentic/frontend",
         timeout: 30_000,
       }),
-      toolOutputJson: JSON.stringify("Exit code: 0\nWall time: 1.2 seconds\nOutput:\n42 tests passed"),
+      toolOutputJson: JSON.stringify(
+        "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n42 tests passed",
+      ),
       text: "Exit code: 0\nWall time: 1.2 seconds\nOutput:\n42 tests passed",
       observedAt: "2026-06-16T20:00:00Z",
     };
@@ -76,17 +78,22 @@ describe("EventRow", () => {
       eventType: "PostToolUse",
       role: "tool",
       toolName: "apply_patch",
-      toolInputJson: JSON.stringify({ command: "*** Begin Patch\n*** Update File: /Users/nathan/Developer/proj/sba-agentic/README.md\n*** End Patch" }),
+      toolInputJson: JSON.stringify({
+        command:
+          "*** Begin Patch\n*** Update File: /Users/nathan/Developer/proj/sba-agentic/README.md\n*** End Patch",
+      }),
       observedAt: "2026-06-16T20:00:00Z",
     };
 
     const { container } = render(() => (
       <CodeNavigationContext.Provider
         value={{
-          scopes: () => [{
-            projectKey: "sba-key",
-            root: "/Users/nathan/Developer/proj/sba-agentic",
-          }],
+          scopes: () => [
+            {
+              projectKey: "sba-key",
+              root: "/Users/nathan/Developer/proj/sba-agentic",
+            },
+          ],
           catalogStatus: () => "ready",
           catalogError: () => null,
           refreshCatalog: () => undefined,
@@ -97,9 +104,11 @@ describe("EventRow", () => {
     ));
 
     expect(container.querySelector(".tone-pill")?.textContent).toBe("Patch");
-    expect(screen.getByRole("button", {
-      name: "Open /Users/nathan/Developer/proj/sba-agentic/README.md in editor",
-    })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Open /Users/nathan/Developer/proj/sba-agentic/README.md in editor",
+      }),
+    ).toBeInTheDocument();
     expect(eventHeadline(event)).toBe("Patch ~/Developer/proj/sba-agentic/README.md");
   });
 
@@ -120,12 +129,16 @@ describe("EventRow", () => {
 
     expect(screen.getByRole("region", { name: "Input" })).toBeInTheDocument();
     expect(screen.getByText("Query")).toBeInTheDocument();
-    expect(screen.getByText("hello world", { selector: ".tool-payload-inline" })).toBeInTheDocument();
+    expect(
+      screen.getByText("hello world", { selector: ".tool-payload-inline" }),
+    ).toBeInTheDocument();
   });
 
   it("collapses long primary reader messages until the user expands them", async () => {
-    const longPrompt = Array.from({ length: 18 }, (_, index) => `Requirement ${index + 1}: keep the reader focused on prompts and responses.`)
-      .join("\n\n");
+    const longPrompt = Array.from(
+      { length: 18 },
+      (_, index) => `Requirement ${index + 1}: keep the reader focused on prompts and responses.`,
+    ).join("\n\n");
     const event: AgentEvent = {
       id: "evt-long",
       sessionId: "ses-1",

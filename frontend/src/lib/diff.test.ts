@@ -10,8 +10,16 @@ describe("diffLines", () => {
   });
 
   it("diffs a one-line change with surrounding context", () => {
-    const hunks = diffLines("const a = 1;\nconst b = 2;\nconst c = 3;", "const a = 1;\nconst b = 9;\nconst c = 3;");
-    expect(flat(hunks)).toEqual(["c:const a = 1;", "d:const b = 2;", "a:const b = 9;", "c:const c = 3;"]);
+    const hunks = diffLines(
+      "const a = 1;\nconst b = 2;\nconst c = 3;",
+      "const a = 1;\nconst b = 9;\nconst c = 3;",
+    );
+    expect(flat(hunks)).toEqual([
+      "c:const a = 1;",
+      "d:const b = 2;",
+      "a:const b = 9;",
+      "c:const c = 3;",
+    ]);
   });
 
   it("numbers old and new lines correctly", () => {
@@ -24,7 +32,19 @@ describe("diffLines", () => {
 
   it("limits context and splits distant changes into separate hunks", () => {
     const oldText = ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10"].join("\n");
-    const newText = ["CHANGED0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "CHANGED10"].join("\n");
+    const newText = [
+      "CHANGED0",
+      "x1",
+      "x2",
+      "x3",
+      "x4",
+      "x5",
+      "x6",
+      "x7",
+      "x8",
+      "x9",
+      "CHANGED10",
+    ].join("\n");
     const hunks = diffLines(oldText, newText, 3);
     expect(hunks).toHaveLength(2);
   });

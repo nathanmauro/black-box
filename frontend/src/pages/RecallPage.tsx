@@ -68,7 +68,10 @@ export default function RecallPage() {
         <div>
           <p class="eyebrow">structured recall</p>
           <h1>Ask what agents already decided</h1>
-          <p>Query Black Box for decisions, handoffs, and observations without digging through raw transcripts.</p>
+          <p>
+            Query Black Box for decisions, handoffs, and observations without digging through raw
+            transcripts.
+          </p>
         </div>
       </header>
 
@@ -83,14 +86,30 @@ export default function RecallPage() {
           <div class="recall-control-heading">
             <label for="recall-scope">Scope</label>
             <RecallHelp label="Help with scope">
-              <p><strong>Start with a place or a subject.</strong></p>
+              <p>
+                <strong>Start with a place or a subject.</strong>
+              </p>
               <ul>
-                <li><code>/workspace/example-app</code> finds matching paths or captured text.</li>
-                <li><code>example-app</code> can match a repo name or a mention in the text.</li>
-                <li><code>recover after a failed deploy</code> tries a topic or paraphrase. Semantic matching needs an available model; otherwise use words from the captured text. Write topics without slashes.</li>
+                <li>
+                  <code>/workspace/example-app</code> finds matching paths or captured text.
+                </li>
+                <li>
+                  <code>example-app</code> can match a repo name or a mention in the text.
+                </li>
+                <li>
+                  <code>recover after a failed deploy</code> tries a topic or paraphrase. Semantic
+                  matching needs an available model; otherwise use words from the captured text.
+                  Write topics without slashes.
+                </li>
               </ul>
-              <p>Leave Scope blank for recent intent across repos. A pasted event ID can match recorded intent too; the window and kinds still apply.</p>
-              <p>Use one scope at a time. A path is a text match, not an exact project filter; combining a repo with a separate topic is not supported.</p>
+              <p>
+                Leave Scope blank for recent intent across repos. A pasted event ID can match
+                recorded intent too; the window and kinds still apply.
+              </p>
+              <p>
+                Use one scope at a time. A path is a text match, not an exact project filter;
+                combining a repo with a separate topic is not supported.
+              </p>
             </RecallHelp>
           </div>
           <input
@@ -104,7 +123,12 @@ export default function RecallPage() {
           <legend>Window</legend>
           <For each={TIME_WINDOWS}>
             {(option) => (
-              <label classList={{ "segmented-option": true, "segmented-option--active": withinHours() === option.value }}>
+              <label
+                classList={{
+                  "segmented-option": true,
+                  "segmented-option--active": withinHours() === option.value,
+                }}
+              >
                 <input
                   type="radio"
                   name="withinHours"
@@ -116,9 +140,17 @@ export default function RecallPage() {
             )}
           </For>
           <RecallHelp label="Help with time windows">
-            <p><strong>Look back from now.</strong> Windows use each capture's observed time.</p>
-            <p>Three months means <strong>90 days</strong>; six months means <strong>180 days</strong>, rather than calendar months.</p>
-            <p>For example, choose 90 days to revisit work from two months ago. Run recall after changing the window. A wider window still returns up to 10 results, not every capture.</p>
+            <p>
+              <strong>Look back from now.</strong> Windows use each capture's observed time.
+            </p>
+            <p>
+              Three months means <strong>90 days</strong>; six months means{" "}
+              <strong>180 days</strong>, rather than calendar months.
+            </p>
+            <p>
+              For example, choose 90 days to revisit work from two months ago. Run recall after
+              changing the window. A wider window still returns up to 10 results, not every capture.
+            </p>
           </RecallHelp>
         </fieldset>
         <fieldset class="recall-kinds">
@@ -126,20 +158,38 @@ export default function RecallPage() {
           <For each={RECALL_KINDS}>
             {(kind) => (
               <label class="check-chip">
-                <input type="checkbox" checked={kinds().includes(kind)} onChange={() => toggleKind(kind)} />
+                <input
+                  type="checkbox"
+                  checked={kinds().includes(kind)}
+                  onChange={() => toggleKind(kind)}
+                />
                 <span>{titleKind(kind)}</span>
               </label>
             )}
           </For>
           <RecallHelp label="Help with filters">
-            <p><strong>Choose the intent you need.</strong></p>
+            <p>
+              <strong>Choose the intent you need.</strong>
+            </p>
             <ul>
-              <li><strong>Decision:</strong> choices and their reasoning.</li>
-              <li><strong>Handoff:</strong> where work stands and what comes next.</li>
-              <li><strong>Observation:</strong> recorded facts or notes.</li>
+              <li>
+                <strong>Decision:</strong> choices and their reasoning.
+              </li>
+              <li>
+                <strong>Handoff:</strong> where work stands and what comes next.
+              </li>
+              <li>
+                <strong>Observation:</strong> recorded facts or notes.
+              </li>
             </ul>
-            <p>For example, add Observation when looking for a recorded failure. Keep at least one kind selected, then run recall.</p>
-            <p>The source filter in the top bar can hide returned items by client. Check it if the visible count is lower than the returned count.</p>
+            <p>
+              For example, add Observation when looking for a recorded failure. Keep at least one
+              kind selected, then run recall.
+            </p>
+            <p>
+              The source filter in the top bar can hide returned items by client. Check it if the
+              visible count is lower than the returned count.
+            </p>
           </RecallHelp>
         </fieldset>
         <button type="submit" class="primary-action" disabled={loading() || kinds().length === 0}>
@@ -158,7 +208,10 @@ export default function RecallPage() {
             <div class="recall-empty">
               <p class="eyebrow">ready</p>
               <h2>Run a recall query</h2>
-              <p>Default kind filters start with decisions and handoffs, the highest-signal handoff surface.</p>
+              <p>
+                Default kind filters start with decisions and handoffs, the highest-signal handoff
+                surface.
+              </p>
             </div>
           }
         >
@@ -171,7 +224,9 @@ export default function RecallPage() {
               </div>
               <Show
                 when={filteredItems().length}
-                fallback={<p class="empty-state">No recall items match this scope and source filter.</p>}
+                fallback={
+                  <p class="empty-state">No recall items match this scope and source filter.</p>
+                }
               >
                 <For each={groupedItems()}>
                   {(group) => (
@@ -207,7 +262,9 @@ function RecallHelp(props: { label: string; children: JSX.Element }) {
         event.preventDefault();
       }}
     >
-      <summary ref={trigger} aria-label={props.label}>?</summary>
+      <summary ref={trigger} aria-label={props.label}>
+        ?
+      </summary>
       <div class="recall-help-body">{props.children}</div>
     </details>
   );

@@ -1,10 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError, type CodeProjectScope } from "../../lib/api";
-import {
-  CodeNavigationContext,
-  type CodeCatalogStatus,
-} from "../../lib/codeNavigation";
+import { CodeNavigationContext, type CodeCatalogStatus } from "../../lib/codeNavigation";
 import FileReferenceActions from "./FileReferenceActions";
 
 const mocks = vi.hoisted(() => ({
@@ -37,15 +34,19 @@ afterEach(() => {
 });
 
 it("sends only the catalog key and relative path when opening a resolved file", async () => {
-  renderWithScopes(() => <FileReferenceActions file={{ path: "/repo/src/App.ts", line: 4 }} label="src/App.ts" />);
+  renderWithScopes(() => (
+    <FileReferenceActions file={{ path: "/repo/src/App.ts", line: 4 }} label="src/App.ts" />
+  ));
 
   fireEvent.click(screen.getByRole("button", { name: "Open /repo/src/App.ts in editor" }));
 
-  await waitFor(() => expect(mocks.openInEditor).toHaveBeenCalledWith({
-    projectKey: "repo-key",
-    relativePath: "src/App.ts",
-    line: 4,
-  }));
+  await waitFor(() =>
+    expect(mocks.openInEditor).toHaveBeenCalledWith({
+      projectKey: "repo-key",
+      relativePath: "src/App.ts",
+      line: 4,
+    }),
+  );
   expect(await screen.findByText("Opened in editor.")).toBeInTheDocument();
   expect(JSON.stringify(mocks.openInEditor.mock.calls[0]?.[0])).not.toContain("/repo");
 });
@@ -55,8 +56,13 @@ it("keeps copy visible but disables open and reveal for an unresolved path", asy
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   renderWithScopes(() => <FileReferenceActions file={{ path: "/etc/passwd" }} />);
 
-  expect(screen.queryByRole("button", { name: "Open /etc/passwd in editor" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Reveal in Finder /etc/passwd" })).toHaveAttribute("aria-disabled", "true");
+  expect(
+    screen.queryByRole("button", { name: "Open /etc/passwd in editor" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Reveal in Finder /etc/passwd" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(screen.getByText("This path is outside the eligible project roots.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Copy path /etc/passwd" }));
 
@@ -106,11 +112,13 @@ it("reveals a resolved file through the relative reference and reports success",
 
   fireEvent.click(screen.getByRole("button", { name: "Reveal in Finder /repo/src/App.ts" }));
 
-  await waitFor(() => expect(mocks.revealInFinder).toHaveBeenCalledWith({
-    projectKey: "repo-key",
-    relativePath: "src/App.ts",
-    line: 4,
-  }));
+  await waitFor(() =>
+    expect(mocks.revealInFinder).toHaveBeenCalledWith({
+      projectKey: "repo-key",
+      relativePath: "src/App.ts",
+      line: 4,
+    }),
+  );
   expect(await screen.findByText("Revealed in Finder.")).toBeInTheDocument();
   expect(JSON.stringify(mocks.revealInFinder.mock.calls[0]?.[0])).not.toContain("/repo");
 });
@@ -122,11 +130,7 @@ it.each([
   ["editor_disabled", 503, "Editor integration is unavailable."],
   ["invalid_reference", 400, "File location is invalid."],
 ])("renders the %s backend failure as honest local status", async (type, status, expected) => {
-  mocks.openInEditor.mockRejectedValue(new ApiError(
-    "Navigation failed.",
-    status,
-    type,
-  ));
+  mocks.openInEditor.mockRejectedValue(new ApiError("Navigation failed.", status, type));
   renderWithScopes(() => <FileReferenceActions file={{ path: "/repo/gone.ts" }} />);
 
   fireEvent.click(screen.getByRole("button", { name: "Open /repo/gone.ts in editor" }));
@@ -135,11 +139,9 @@ it.each([
 });
 
 it("renders a typed Finder failure as honest local status", async () => {
-  mocks.revealInFinder.mockRejectedValue(new ApiError(
-    "Finder unavailable.",
-    503,
-    "reveal_unavailable",
-  ));
+  mocks.revealInFinder.mockRejectedValue(
+    new ApiError("Finder unavailable.", 503, "reveal_unavailable"),
+  );
   renderWithScopes(() => <FileReferenceActions file={{ path: "/repo/gone.ts" }} />);
 
   fireEvent.click(screen.getByRole("button", { name: "Reveal in Finder /repo/gone.ts" }));
@@ -154,12 +156,14 @@ function renderWithScopes(
   error: string | null = null,
 ) {
   return render(() => (
-    <CodeNavigationContext.Provider value={{
-      scopes: () => currentScopes,
-      catalogStatus: () => status,
-      catalogError: () => error,
-      refreshCatalog,
-    }}>
+    <CodeNavigationContext.Provider
+      value={{
+        scopes: () => currentScopes,
+        catalogStatus: () => status,
+        catalogError: () => error,
+        refreshCatalog,
+      }}
+    >
       {view() as never}
     </CodeNavigationContext.Provider>
   ));

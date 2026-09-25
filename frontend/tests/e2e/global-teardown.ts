@@ -18,25 +18,37 @@ export default async function globalTeardown(config: FullConfig) {
   const snapshotFile = safetySnapshotPath(tempDir);
   try {
     if (!existsSync(snapshotFile)) {
-      console.log("[black-box-saga-e2e] protected runtime comparison skipped because global setup did not finish");
+      console.log(
+        "[black-box-saga-e2e] protected runtime comparison skipped because global setup did not finish",
+      );
       return;
     }
     const before = readSafetySnapshot(snapshotFile);
     const after = captureProtectedRuntime(before.databasePath);
     assertProtectedRuntimeUnchanged(before, after);
-    console.log(`[black-box-saga-e2e] protected port 8766 listener PIDs unchanged: ${formatPids(after.listenerPids)}`);
-    console.log(`[black-box-saga-e2e] protected production DB identity unchanged: ${after.databasePath || "not discovered"}`);
-    console.log(`[black-box-saga-e2e] production synthetic-event row count unchanged: ${after.syntheticEventRows ?? "unavailable"}`);
+    console.log(
+      `[black-box-saga-e2e] protected port 8766 listener PIDs unchanged: ${formatPids(after.listenerPids)}`,
+    );
+    console.log(
+      `[black-box-saga-e2e] protected production DB identity unchanged: ${after.databasePath || "not discovered"}`,
+    );
+    console.log(
+      `[black-box-saga-e2e] production synthetic-event row count unchanged: ${after.syntheticEventRows ?? "unavailable"}`,
+    );
   } finally {
     cleanupPrivateTmux(String(config.metadata.blackBoxE2eTmuxTmpDir || ""));
     const projectFixtureCleaned = cleanupProjectFixture(tempDir);
-    console.log(projectFixtureCleaned
-      ? "[black-box-saga-e2e] isolated project fixture removed"
-      : "[black-box-saga-e2e] isolated project fixture was already removed");
+    console.log(
+      projectFixtureCleaned
+        ? "[black-box-saga-e2e] isolated project fixture removed"
+        : "[black-box-saga-e2e] isolated project fixture was already removed",
+    );
     const cleaned = cleanupOwnedE2eStorage(tempDir, dbPath, runToken);
-    console.log(cleaned
-      ? `[black-box-saga-e2e] isolated temp database removed: ${tempDir}`
-      : `[black-box-saga-e2e] isolated temp database was already removed: ${tempDir}`);
+    console.log(
+      cleaned
+        ? `[black-box-saga-e2e] isolated temp database removed: ${tempDir}`
+        : `[black-box-saga-e2e] isolated temp database was already removed: ${tempDir}`,
+    );
   }
 }
 

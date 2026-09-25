@@ -72,9 +72,16 @@ describe("SessionLineage", () => {
     ));
 
     expect(screen.getByRole("navigation", { name: "Agent lineage" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Current agent: Coordinator" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Subagent: Reviewer" })).toHaveClass("lineage-agent-chip--subagent");
-    expect(screen.getByRole("button", { name: "Continued agent: Verifier" })).toHaveClass("lineage-agent-chip--continued");
+    expect(screen.getByRole("button", { name: "Current agent: Coordinator" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "Subagent: Reviewer" })).toHaveClass(
+      "lineage-agent-chip--subagent",
+    );
+    expect(screen.getByRole("button", { name: "Continued agent: Verifier" })).toHaveClass(
+      "lineage-agent-chip--continued",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Subagent: Reviewer" }));
     expect(selectSession).toHaveBeenCalledWith("reviewer");
@@ -88,28 +95,32 @@ describe("SessionLineage", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAccessibleName("Collapse lineage map");
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("region", { name: "Agent lineage map" })).toHaveClass("lineage-lens--open");
+    expect(screen.getByRole("region", { name: "Agent lineage map" })).toHaveClass(
+      "lineage-lens--open",
+    );
     expect(lens).not.toHaveAttribute("inert");
     expect(container.querySelector(".dag-stage--lineage")).toBeInTheDocument();
     expect(container.querySelectorAll(".dag-edges path")).toHaveLength(3);
 
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.getByRole("button", { name: "Expand lineage map" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Expand lineage map" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
     expect(lens).toHaveAttribute("aria-hidden", "true");
   });
 
   it("closes the lens when the user clicks outside it", () => {
     render(() => (
-      <SessionLineage
-        dag={lineageFixture}
-        currentSessionId="parent"
-        onSelectSession={vi.fn()}
-      />
+      <SessionLineage dag={lineageFixture} currentSessionId="parent" onSelectSession={vi.fn()} />
     ));
 
     fireEvent.click(screen.getByRole("button", { name: "Expand lineage map" }));
     expect(screen.getByRole("region", { name: "Agent lineage map" })).toBeInTheDocument();
     fireEvent.pointerDown(document.body);
-    expect(screen.getByRole("button", { name: "Expand lineage map" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Expand lineage map" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 });

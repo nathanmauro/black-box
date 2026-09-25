@@ -33,12 +33,14 @@ describe("ApprovalBox", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
-    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
-      actor: "nathan",
-      kind: "approval",
-      text: "Plan approved.",
-      dataJson: { decision: "approve", stage: "plan", feedback: "" },
-    }));
+    await waitFor(() =>
+      expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
+        actor: "nathan",
+        kind: "approval",
+        text: "Plan approved.",
+        dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      }),
+    );
     expect(await screen.findByText(/Approved by nathan at/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Rejection feedback" })).not.toBeInTheDocument();
@@ -54,7 +56,12 @@ describe("ApprovalBox", () => {
     });
     const createAnnotation = vi.fn(async () => result);
     render(() => (
-      <ApprovalBox taskId="task-review" actor="nathan" stage="review" createAnnotation={createAnnotation} />
+      <ApprovalBox
+        taskId="task-review"
+        actor="nathan"
+        stage="review"
+        createAnnotation={createAnnotation}
+      />
     ));
 
     const feedback = screen.getByRole("textbox", { name: "Rejection feedback" });
@@ -65,12 +72,14 @@ describe("ApprovalBox", () => {
     fireEvent.input(feedback, { target: { value: "  Cover the retry path.  " } });
     fireEvent.click(reject);
 
-    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-review", {
-      actor: "nathan",
-      kind: "approval",
-      text: "Review rejected: Cover the retry path.",
-      dataJson: { decision: "reject", stage: "review", feedback: "Cover the retry path." },
-    }));
+    await waitFor(() =>
+      expect(createAnnotation).toHaveBeenCalledWith("task-review", {
+        actor: "nathan",
+        kind: "approval",
+        text: "Review rejected: Cover the retry path.",
+        dataJson: { decision: "reject", stage: "review", feedback: "Cover the retry path." },
+      }),
+    );
     expect(await screen.findByText(/Rejected by nathan at/)).toBeInTheDocument();
     expect(screen.getByText("Cover the retry path.")).toBeInTheDocument();
   });
@@ -78,7 +87,12 @@ describe("ApprovalBox", () => {
   it("does not submit whitespace-only rejection feedback", () => {
     const createAnnotation = vi.fn(async () => approval());
     render(() => (
-      <ApprovalBox taskId="task-plan" actor="nathan" stage="plan" createAnnotation={createAnnotation} />
+      <ApprovalBox
+        taskId="task-plan"
+        actor="nathan"
+        stage="plan"
+        createAnnotation={createAnnotation}
+      />
     ));
 
     const feedback = screen.getByRole("textbox", { name: "Rejection feedback" });
@@ -94,7 +108,12 @@ describe("ApprovalBox", () => {
       throw new Error("approval endpoint unavailable");
     });
     render(() => (
-      <ApprovalBox taskId="task-review" actor="nathan" stage="review" createAnnotation={createAnnotation} />
+      <ApprovalBox
+        taskId="task-review"
+        actor="nathan"
+        stage="review"
+        createAnnotation={createAnnotation}
+      />
     ));
 
     const feedback = screen.getByRole("textbox", { name: "Rejection feedback" });
@@ -120,12 +139,19 @@ describe("ApprovalBox", () => {
   it("does not collapse for a response belonging to another task", async () => {
     const createAnnotation = vi.fn(async () => approval({ taskId: "task-other" }));
     render(() => (
-      <ApprovalBox taskId="task-plan" actor="nathan" stage="plan" createAnnotation={createAnnotation} />
+      <ApprovalBox
+        taskId="task-plan"
+        actor="nathan"
+        stage="plan"
+        createAnnotation={createAnnotation}
+      />
     ));
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Approval response did not contain the submitted decision.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Approval response did not contain the submitted decision.",
+    );
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.queryByText(/Approved by nathan at/)).not.toBeInTheDocument();
   });

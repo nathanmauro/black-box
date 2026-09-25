@@ -44,14 +44,18 @@ export default function EventRow(props: EventRowProps) {
   const presentation = () => (event().toolName ? presentationOf(event()) : null);
 
   return (
-    <article classList={{ "event-card": true, "event-card--muted": event().eventType === "PostToolUse" }}>
+    <article
+      classList={{ "event-card": true, "event-card--muted": event().eventType === "PostToolUse" }}
+    >
       <div class="event-card-head">
         <SourceDot source={event().source} />
         <KindBadge kind={event().eventType} />
         <Show when={presentation()} fallback={<strong>{headline()}</strong>}>
           {(current) => (
             <>
-              <span class={`tone-pill tone-pill--${current().kindPill.tone}`}>{current().kindPill.label}</span>
+              <span class={`tone-pill tone-pill--${current().kindPill.tone}`}>
+                {current().kindPill.label}
+              </span>
               <strong>
                 <Show when={current().headline.length} fallback={headline()}>
                   <InlineSpans spans={current().headline} />
@@ -67,12 +71,18 @@ export default function EventRow(props: EventRowProps) {
         {event().toolName && !presentation() ? <span>{event().toolName}</span> : null}
         <span>seq {event().turnId || event().id.slice(0, 8)}</span>
       </div>
-      {event().text && !looksLikeJson(event().text) && !duplicatesToolOutput(event()) ? <ReaderText text={event().text ?? ""} expanded={props.textExpanded} /> : null}
+      {event().text && !looksLikeJson(event().text) && !duplicatesToolOutput(event()) ? (
+        <ReaderText text={event().text ?? ""} expanded={props.textExpanded} />
+      ) : null}
       <Show
         when={presentation()}
         fallback={
           event().toolInputJson || event().toolOutputJson ? (
-            <ToolPayload toolName={event().toolName} inputJson={event().toolInputJson} outputJson={event().toolOutputJson} />
+            <ToolPayload
+              toolName={event().toolName}
+              inputJson={event().toolInputJson}
+              outputJson={event().toolOutputJson}
+            />
           ) : null
         }
       >
@@ -107,7 +117,8 @@ export function eventHeadlineSpans(event: AgentEvent): HeadlineSpan[] {
   }
   const input = parseJsonObject(event.toolInputJson);
   const key = input ? primaryArgKey(input) : null;
-  if (key && input) return [{ kind: "arg", text: commandHeadline(String(input[key]), event.toolName) }];
+  if (key && input)
+    return [{ kind: "arg", text: commandHeadline(String(input[key]), event.toolName) }];
   if (event.text && !looksLikeJson(event.text)) return [{ kind: "label", text: event.text || "" }];
   return [{ kind: "label", text: event.toolName || event.role || event.eventType || "Event" }];
 }
@@ -154,7 +165,10 @@ function primaryArgKey(args: Record<string, unknown>): string | null {
   for (const key of PRIMARY_KEYS) {
     if (typeof args[key] === "string" && args[key].trim()) return key;
   }
-  return Object.keys(args).find((key) => typeof args[key] === "string" && String(args[key]).trim()) || null;
+  return (
+    Object.keys(args).find((key) => typeof args[key] === "string" && String(args[key]).trim()) ||
+    null
+  );
 }
 
 function shouldCompactText(text: string): boolean {
@@ -172,7 +186,10 @@ function commandHeadline(value: string, toolName: string | null | undefined): st
   if (String(toolName || "").toLowerCase() === "apply_patch" && patchFile) {
     return `Patch ${truncatePath(patchFile.trim())}`;
   }
-  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const firstUseful = lines.find((line) => !line.startsWith("#")) ?? lines[0] ?? value.trim();
   const suffix = lines.length > 1 ? ` +${lines.length - 1} lines` : "";
   return `${truncatePath(firstUseful).slice(0, 180)}${suffix}`;

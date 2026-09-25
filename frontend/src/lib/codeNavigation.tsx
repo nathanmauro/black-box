@@ -20,27 +20,32 @@ const EMPTY_CONTEXT: CodeNavigationContextValue = {
 export const CodeNavigationContext = createContext<CodeNavigationContextValue>(EMPTY_CONTEXT);
 
 export function CodeNavigationProvider(props: { children?: JSX.Element }) {
-  const [catalog, { refetch }] = createResource(async () => {
-    try {
-      return { scopes: await getCodeProjectScopes(), status: "ready" as const, error: null };
-    } catch {
-      return {
-        scopes: [],
-        status: "error" as const,
-        error: "Eligible project roots could not be loaded.",
-      };
-    }
-  }, { initialValue: { scopes: [], status: "loading" as const, error: null } });
+  const [catalog, { refetch }] = createResource(
+    async () => {
+      try {
+        return { scopes: await getCodeProjectScopes(), status: "ready" as const, error: null };
+      } catch {
+        return {
+          scopes: [],
+          status: "error" as const,
+          error: "Eligible project roots could not be loaded.",
+        };
+      }
+    },
+    { initialValue: { scopes: [], status: "loading" as const, error: null } },
+  );
 
   const value: CodeNavigationContextValue = {
     scopes: () => catalog().scopes,
-    catalogStatus: () => catalog.loading ? "loading" : catalog().status,
+    catalogStatus: () => (catalog.loading ? "loading" : catalog().status),
     catalogError: () => catalog().error,
     refreshCatalog: () => {
       void refetch();
     },
   };
-  return <CodeNavigationContext.Provider value={value}>{props.children}</CodeNavigationContext.Provider>;
+  return (
+    <CodeNavigationContext.Provider value={value}>{props.children}</CodeNavigationContext.Provider>
+  );
 }
 
 export function useCodeNavigation(): CodeNavigationContextValue {

@@ -29,7 +29,12 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
   return {
     ...actual,
-    A: (props: { href: string; class?: string; onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>; children?: JSX.Element }) => (
+    A: (props: {
+      href: string;
+      class?: string;
+      onClick?: JSX.EventHandlerUnion<HTMLAnchorElement, MouseEvent>;
+      children?: JSX.Element;
+    }) => (
       <a href={props.href} class={props.class} onClick={props.onClick}>
         {props.children}
       </a>
@@ -96,11 +101,15 @@ describe("SearchPage", () => {
     expect(input).toHaveValue("kind:Decision ");
 
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
-    await waitFor(() => expect(document.querySelector(".facet-chip--active")).toHaveTextContent("Decision"));
+    await waitFor(() =>
+      expect(document.querySelector(".facet-chip--active")).toHaveTextContent("Decision"),
+    );
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
 
     fireEvent.click(document.querySelector(".facet-chip--active") as HTMLElement);
-    await waitFor(() => expect(document.querySelector(".facet-chip--active")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(document.querySelector(".facet-chip--active")).not.toBeInTheDocument(),
+    );
 
     fireEvent.input(input, { target: { value: "kind:Han" } });
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
@@ -120,33 +129,38 @@ describe("SearchPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() =>
-      expect(search).toHaveBeenLastCalledWith("kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic", 120),
+      expect(search).toHaveBeenLastCalledWith(
+        "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
+        120,
+      ),
     );
   });
 
   it("keeps a failed project search scoped and retries without crashing the route", async () => {
     [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
-    search
-      .mockRejectedValueOnce(new Error("search backend offline"))
-      .mockResolvedValueOnce({
-        query: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
-        local: [],
-        elastic: [],
-        elasticHealth: {},
-      });
+    search.mockRejectedValueOnce(new Error("search backend offline")).mockResolvedValueOnce({
+      query: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
+      local: [],
+      elastic: [],
+      elasticHealth: {},
+    });
 
     render(() => <SearchPage project={selectedProject} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Scoped project search unavailable.");
     expect(alert).toHaveTextContent("search backend offline");
-    expect(alert).toHaveTextContent("The selected project scope was preserved; Black Box did not load global results.");
+    expect(alert).toHaveTextContent(
+      "The selected project scope was preserved; Black Box did not load global results.",
+    );
     expect(search).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(alert).getByRole("button", { name: "Retry search" }));
 
     await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(document.querySelector(".result-summary")).toHaveTextContent("0 events · 0 sessions"));
+    await waitFor(() =>
+      expect(document.querySelector(".result-summary")).toHaveTextContent("0 events · 0 sessions"),
+    );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -169,7 +183,10 @@ describe("SearchPage", () => {
       within(element as HTMLElement).queryByText("Project"),
     ) as HTMLElement;
     expect(within(projectGroup).queryByRole("button", { name: /cockpit/ })).not.toBeInTheDocument();
-    expect(search).toHaveBeenLastCalledWith("kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic", 120);
+    expect(search).toHaveBeenLastCalledWith(
+      "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
+      120,
+    );
   });
 
   it("warns that Ask is not scoped by selected project", async () => {
@@ -180,9 +197,14 @@ describe("SearchPage", () => {
 
     render(() => <SearchPage mode="ask" showModeTabs={false} project={selectedProject} />);
 
-    expect(await screen.findByText("Project context is not applied to Ask yet. Ask will search across all recorded memory."))
-      .toBeInTheDocument();
-    expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Project context is not applied to Ask yet. Ask will search across all recorded memory.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByPlaceholderText("Ask across the recorded memory…"),
+    ).toBeInTheDocument();
   });
 
   it("keeps file actions independent from the explicit result session link", async () => {
@@ -210,10 +232,12 @@ describe("SearchPage", () => {
     render(() => (
       <CodeNavigationContext.Provider
         value={{
-          scopes: () => [{
-            projectKey: "t3-key",
-            root: "/Users/nathan/Developer/proj/opensource/t3code",
-          }],
+          scopes: () => [
+            {
+              projectKey: "t3-key",
+              root: "/Users/nathan/Developer/proj/opensource/t3code",
+            },
+          ],
           catalogStatus: () => "ready",
           catalogError: () => null,
           refreshCatalog: () => undefined,
@@ -225,11 +249,13 @@ describe("SearchPage", () => {
 
     const fileButton = await screen.findByRole("button", { name: `Open ${path} in editor` });
     fireEvent.click(fileButton);
-    await waitFor(() => expect(mocks.openInEditor).toHaveBeenCalledWith({
-      projectKey: "t3-key",
-      relativePath: "src/service.ts",
-      line: 40,
-    }));
+    await waitFor(() =>
+      expect(mocks.openInEditor).toHaveBeenCalledWith({
+        projectKey: "t3-key",
+        relativePath: "src/service.ts",
+        line: 40,
+      }),
+    );
     expect(selectSession).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("link", { name: "View session" }));

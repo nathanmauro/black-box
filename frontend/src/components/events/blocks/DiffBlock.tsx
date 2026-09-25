@@ -19,13 +19,20 @@ export default function DiffBlock(props: DiffBlockProps) {
       <div class="diff-file-reference">
         <FileReferenceActions file={props.file} />
       </div>
-      <DiffBody eventId={props.eventId} index={props.index} oldText={props.oldText} newText={props.newText} />
+      <DiffBody
+        eventId={props.eventId}
+        index={props.index}
+        oldText={props.oldText}
+        newText={props.newText}
+      />
     </LazyDetails>
   );
 }
 
 function DiffBody(props: { eventId: string; index: number; oldText: string; newText: string }) {
-  const hunks = createMemo(() => memoizedDiffLines(`${props.eventId}:${props.index}`, props.oldText, props.newText));
+  const hunks = createMemo(() =>
+    memoizedDiffLines(`${props.eventId}:${props.index}`, props.oldText, props.newText),
+  );
   return <DiffHunks hunks={hunks()} />;
 }
 
@@ -48,7 +55,9 @@ export function DiffHunks(props: { hunks: Hunk[] }) {
                       "diff-line--del": line.kind === "del",
                     }}
                   >
-                    <span class="diff-gutter">{line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}</span>
+                    <span class="diff-gutter">
+                      {line.kind === "add" ? "+" : line.kind === "del" ? "−" : " "}
+                    </span>
                     <span class="diff-text">{line.text}</span>
                   </div>
                 )}

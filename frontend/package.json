@@ -8,18 +8,30 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run lint && npm run format:check && tsc --noEmit"
   },
   "dependencies": {
     "@solidjs/router": "^0.16.0",
     "solid-js": "^1.9.9"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@playwright/test": "^1.54.0",
     "@solidjs/testing-library": "^0.8.10",
     "@testing-library/jest-dom": "^6.6.3",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-solid": "0.18.0",
+    "globals": "17.12.0",
     "jsdom": "^26.1.0",
+    "prettier": "3.9.9",
     "typescript": "^6.0.0",
+    "typescript-eslint": "8.70.1",
     "vite": "^8.0.0",
     "vite-plugin-solid": "^2.11.7",
     "vitest": "^3.2.4"

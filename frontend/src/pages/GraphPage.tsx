@@ -57,7 +57,9 @@ type Cluster = {
 };
 
 export default function GraphPage() {
-  const [result, { refetch }] = createResource(() => getRecall("", GRAPH_WITHIN_HOURS, GRAPH_KINDS));
+  const [result, { refetch }] = createResource(() =>
+    getRecall("", GRAPH_WITHIN_HOURS, GRAPH_KINDS),
+  );
   const visibleItems = createMemo(() => sourceFilter.matches(result()?.items || []));
   const graph = createMemo(() => buildConstellation(visibleItems()));
 
@@ -67,7 +69,10 @@ export default function GraphPage() {
         <div>
           <p class="eyebrow">graph constellation</p>
           <h1>Map recalled intent by project</h1>
-          <p>Decisions, handoffs, and observations form project clusters from the existing structured recall API.</p>
+          <p>
+            Decisions, handoffs, and observations form project clusters from the existing structured
+            recall API.
+          </p>
         </div>
       </header>
 
@@ -90,7 +95,10 @@ export default function GraphPage() {
               <div class="graph-empty">
                 <p class="eyebrow">empty</p>
                 <h2>No recalled intent in range</h2>
-                <p>Capture decisions or handoffs, then return here to see their project constellation.</p>
+                <p>
+                  Capture decisions or handoffs, then return here to see their project
+                  constellation.
+                </p>
               </div>
             }
           >
@@ -144,7 +152,10 @@ export function buildConstellation(items: RecalledItem[]): ConstellationGraph {
     const spread = memberSpread(cluster.items.length);
     const base = angle - spread / 2;
     cluster.items.forEach((item, memberIndex) => {
-      const memberAngle = cluster.items.length === 1 ? angle : base + (spread * memberIndex) / (cluster.items.length - 1);
+      const memberAngle =
+        cluster.items.length === 1
+          ? angle
+          : base + (spread * memberIndex) / (cluster.items.length - 1);
       const id = leafId(item, memberIndex);
       const leafNode: ConstellationNode = {
         id,
@@ -171,7 +182,12 @@ export function buildConstellation(items: RecalledItem[]): ConstellationGraph {
 function Constellation(props: { graph: ConstellationGraph }) {
   return (
     <section class="graph-stage" aria-label="Recall constellation">
-      <svg class="graph-svg" viewBox={viewBoxFor(props.graph.bounds)} role="img" aria-label="Recall constellation graph">
+      <svg
+        class="graph-svg"
+        viewBox={viewBoxFor(props.graph.bounds)}
+        role="img"
+        aria-label="Recall constellation graph"
+      >
         <g class="graph-edges" aria-hidden="true">
           <For each={props.graph.edges}>
             {(edge) => {
@@ -225,7 +241,12 @@ function ConstellationNodeView(props: { node: ConstellationNode }) {
           {node().count}
         </text>
       </Show>
-      <text class={`graph-label graph-label--${node().type}`} x={labelPosition(node()).x} y={labelPosition(node()).y} text-anchor={labelPosition(node()).anchor}>
+      <text
+        class={`graph-label graph-label--${node().type}`}
+        x={labelPosition(node()).x}
+        y={labelPosition(node()).y}
+        text-anchor={labelPosition(node()).anchor}
+      >
         {node().label}
       </text>
     </g>
@@ -349,7 +370,12 @@ function tooltipForItem(item: RecalledItem, clusterLabel: string): string {
     item.confidence != null ? `${Math.round(Number(item.confidence) * 100)}% confidence` : "",
     timeAgo(item.observedAt),
   ].filter(Boolean);
-  const body = humanText(item.headline) || humanText(item.rationale) || humanText(item.nextAction) || item.clientSessionId || "";
+  const body =
+    humanText(item.headline) ||
+    humanText(item.rationale) ||
+    humanText(item.nextAction) ||
+    item.clientSessionId ||
+    "";
   return `${details.join(" - ")}${body ? `\n${clamp(body, 120)}` : ""}`;
 }
 
@@ -365,7 +391,9 @@ function summarizeKinds(items: RecalledItem[]) {
     const kind = normalizeKind(item.kind);
     counts.set(kind, (counts.get(kind) || 0) + 1);
   }
-  return [...counts.entries()].map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
+  return [...counts.entries()]
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind));
 }
 
 function summarizeSources(items: RecalledItem[]) {
@@ -374,7 +402,9 @@ function summarizeSources(items: RecalledItem[]) {
     const source = item.source || "unknown";
     counts.set(source, (counts.get(source) || 0) + 1);
   }
-  return [...counts.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
+  return [...counts.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source));
 }
 
 function dominantSource(items: RecalledItem[]): string {
@@ -382,7 +412,10 @@ function dominantSource(items: RecalledItem[]): string {
 }
 
 function sortItems(a: RecalledItem, b: RecalledItem): number {
-  return Date.parse(b.observedAt || "") - Date.parse(a.observedAt || "") || labelForItem(a).localeCompare(labelForItem(b));
+  return (
+    Date.parse(b.observedAt || "") - Date.parse(a.observedAt || "") ||
+    labelForItem(a).localeCompare(labelForItem(b))
+  );
 }
 
 function normalizeKind(kind: string | null | undefined): string {
@@ -402,13 +435,17 @@ function titleKind(kind: string | null | undefined): string {
 }
 
 function humanText(value: string | null | undefined): string {
-  const trimmed = String(value || "").trim().replace(/\s+/g, " ");
+  const trimmed = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
   if (!trimmed || looksLikeJson(trimmed)) return "";
   return trimmed;
 }
 
 function looksLikeJson(value: string): boolean {
-  return (value.startsWith("{") && value.endsWith("}")) || (value.startsWith("[") && value.endsWith("]"));
+  return (
+    (value.startsWith("{") && value.endsWith("}")) || (value.startsWith("[") && value.endsWith("]"))
+  );
 }
 
 function leafId(item: RecalledItem, index: number): string {
@@ -438,7 +475,11 @@ function leafSize(item: RecalledItem): number {
   return Math.max(12, Math.min(22, 12 + confidence * 10));
 }
 
-function labelPosition(node: ConstellationNode): { x: number; y: number; anchor: "start" | "middle" | "end" } {
+function labelPosition(node: ConstellationNode): {
+  x: number;
+  y: number;
+  anchor: "start" | "middle" | "end";
+} {
   if (node.type === "origin") return { x: 0, y: -28, anchor: "middle" };
   const dx = Math.cos(node.angle);
   const dy = Math.sin(node.angle);

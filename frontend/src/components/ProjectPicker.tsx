@@ -23,8 +23,12 @@ export default function ProjectPicker(props: ProjectPickerProps) {
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [activeIndex, setActiveIndex] = createSignal(0);
-  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(props.selectedProjectKey);
-  const selectedProject = createMemo(() => findProjectByIdentifier(props.projects, selectedProjectKey()));
+  const [selectedProjectKey, setSelectedProjectKey] = createSignal<string | undefined>(
+    props.selectedProjectKey,
+  );
+  const selectedProject = createMemo(() =>
+    findProjectByIdentifier(props.projects, selectedProjectKey()),
+  );
   const results = createMemo(() => rankProjects(props.projects, query()).slice(0, 12));
   const listboxId = `project-picker-results-${createUniqueId()}`;
   let triggerButton: HTMLButtonElement | undefined;
@@ -97,13 +101,21 @@ export default function ProjectPicker(props: ProjectPickerProps) {
       >
         <span class="project-picker-label">Project</span>
         <strong>{selectedProject() ? projectShortName(selectedProject()!) : "All projects"}</strong>
-        <small>{selectedProject() ? primaryProjectScope(selectedProject()!).canonicalKey : props.allDescription || "Global activity"}</small>
+        <small>
+          {selectedProject()
+            ? primaryProjectScope(selectedProject()!).canonicalKey
+            : props.allDescription || "Global activity"}
+        </small>
       </button>
 
       <Show when={open()}>
         <div class="project-picker-popover">
           <Show when={props.allowAll !== false}>
-            <button type="button" class="project-picker-all" onClick={() => selectProject(undefined)}>
+            <button
+              type="button"
+              class="project-picker-all"
+              onClick={() => selectProject(undefined)}
+            >
               All projects
             </button>
           </Show>
@@ -114,20 +126,31 @@ export default function ProjectPicker(props: ProjectPickerProps) {
             aria-autocomplete="list"
             aria-expanded="true"
             aria-controls={listboxId}
-            aria-activedescendant={results()[activeIndex()] ? `${listboxId}-${activeIndex()}` : undefined}
+            aria-activedescendant={
+              results()[activeIndex()] ? `${listboxId}-${activeIndex()}` : undefined
+            }
             value={query()}
             onInput={(event) => setQuery(event.currentTarget.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder="Search projects..."
             autocomplete="off"
           />
-          <ul id={listboxId} class="project-picker-results" role="listbox" aria-label="Project results">
+          <ul
+            id={listboxId}
+            class="project-picker-results"
+            role="listbox"
+            aria-label="Project results"
+          >
             <Show
               when={!props.loading}
               fallback={<li class="project-picker-empty">Loading projects...</li>}
             >
               <Show when={props.error}>
-                {(message) => <li class="project-picker-empty" role="alert">{message()}</li>}
+                {(message) => (
+                  <li class="project-picker-empty" role="alert">
+                    {message()}
+                  </li>
+                )}
               </Show>
               <For each={results()}>
                 {(project, index) => (
@@ -145,7 +168,9 @@ export default function ProjectPicker(props: ProjectPickerProps) {
                       <small>{primaryProjectScope(project).canonicalKey}</small>
                       <small>
                         {project.sessionCount} sessions - {project.eventCount} events
-                        {projectScopes(project).length > 1 ? ` - ${projectScopes(project).length} scopes` : ""}
+                        {projectScopes(project).length > 1
+                          ? ` - ${projectScopes(project).length} scopes`
+                          : ""}
                       </small>
                     </button>
                   </li>
