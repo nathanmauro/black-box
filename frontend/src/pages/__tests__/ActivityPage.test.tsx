@@ -5,7 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../../lib/api";
 import ActivityPage from "../ActivityPage";
 
-type ActivitySearchParams = { q?: string; session?: string; view?: string; project?: string; event?: string };
+type ActivitySearchParams = {
+  q?: string;
+  session?: string;
+  view?: string;
+  project?: string;
+  event?: string;
+};
 
 let params: ActivitySearchParams;
 let setParams: SetStoreFunction<ActivitySearchParams>;
@@ -55,7 +61,12 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@solidjs/router")>();
   return {
     ...actual,
-    A: (props: { href: string; class?: string; onClick?: (event: MouseEvent) => void; children?: Element }) => (
+    A: (props: {
+      href: string;
+      class?: string;
+      onClick?: (event: MouseEvent) => void;
+      children?: Element;
+    }) => (
       <a href={props.href} class={props.class} onClick={props.onClick}>
         {props.children}
       </a>
@@ -117,7 +128,9 @@ beforeEach(() => {
   apiMocks.getSessions.mockReset();
   apiMocks.getSessions.mockResolvedValue(sessions);
   apiMocks.getSession.mockReset();
-  apiMocks.getSession.mockImplementation(async (id: string) => sessions.find((session) => session.id === id));
+  apiMocks.getSession.mockImplementation(async (id: string) =>
+    sessions.find((session) => session.id === id),
+  );
   apiMocks.getSessionEvents.mockReset();
   apiMocks.getSessionEvents.mockResolvedValue([]);
   apiMocks.getSessionChildCounts.mockReset();
@@ -201,30 +214,49 @@ describe("ActivityPage", () => {
 
     expect(screen.getByRole("heading", { name: "Activity" })).toBeInTheDocument();
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
-    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "false");
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
     expect(within(modes).queryByRole("tab", { name: "Find" })).not.toBeInTheDocument();
     expect(within(modes).getByRole("tab", { name: "Ask" })).toBeInTheDocument();
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Browse" }));
-    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
 
     const rail = document.querySelector(".session-list-pane") as HTMLElement;
     const detail = document.querySelector(".session-detail-pane") as HTMLElement;
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
-    expect(await within(detail).findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
+    expect(
+      await within(detail).findByRole("heading", { name: "Focused session" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: /Cockpit cleanup/ }));
-    await waitFor(() => expect(within(detail).getByRole("heading", { name: "Cockpit cleanup" })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(detail).getByRole("heading", { name: "Cockpit cleanup" })).toBeInTheDocument(),
+    );
     expect(navigate).not.toHaveBeenCalled();
     expect(params.session).toBe("session-2");
 
-    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "project:cockpit" } });
-    await waitFor(() => expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument());
+    fireEvent.input(screen.getByLabelText("Find sessions"), {
+      target: { value: "project:cockpit" },
+    });
+    await waitFor(() =>
+      expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument(),
+    );
     expect(within(rail).getByText("Cockpit cleanup")).toBeInTheDocument();
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Ask" }));
-    expect(await screen.findByPlaceholderText("Ask across the recorded memory…")).toBeInTheDocument();
+    expect(
+      await screen.findByPlaceholderText("Ask across the recorded memory…"),
+    ).toBeInTheDocument();
   });
 
   it("normalizes legacy Activity Find URLs into the Stream without losing the query", async () => {
@@ -237,8 +269,17 @@ describe("ActivityPage", () => {
     await waitFor(() => expect(params.view).toBeUndefined());
     expect(params.q).toBe("focused");
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
-    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "focused", meaningful: true }));
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await waitFor(() =>
+      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({
+        limit: 100,
+        q: "focused",
+        meaningful: true,
+      }),
+    );
   });
 
   it("selects a shared Activity project and stores it in the URL", async () => {
@@ -264,7 +305,11 @@ describe("ActivityPage", () => {
   // (spec 4; docs/companion.md's "exact event" promise). Restoring a remembered project scope over
   // that link would filter the deep-linked session out of view instead of opening it.
   it("preserves a deep-linked session and event instead of clobbering them with a remembered project", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({ session: "session-2", event: "event-old", view: "browse" });
+    [params, setParams] = createStore<ActivitySearchParams>({
+      session: "session-2",
+      event: "event-old",
+      view: "browse",
+    });
     localStorage.setItem("blackbox.activity.projectKey", "sba-key");
     render(() => <ActivityPage />);
 
@@ -313,7 +358,10 @@ describe("ActivityPage", () => {
   });
 
   it("clears a stale remembered project when the URL has no project", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({ session: "session-2", event: "event-old" });
+    [params, setParams] = createStore<ActivitySearchParams>({
+      session: "session-2",
+      event: "event-old",
+    });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
     render(() => <ActivityPage />);
 
@@ -365,12 +413,18 @@ describe("ActivityPage", () => {
   });
 
   it("fails closed for a stale URL project instead of loading global activity", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({ project: "missing-key", session: "session-2", event: "event-old" });
+    [params, setParams] = createStore<ActivitySearchParams>({
+      project: "missing-key",
+      session: "session-2",
+      event: "event-old",
+    });
     localStorage.setItem("blackbox.activity.projectKey", "missing-key");
 
     render(() => <ActivityPage />);
 
-    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Scoped activity is paused" }),
+    ).toBeInTheDocument();
     expect(params.project).toBe("missing-key");
     expect(params.session).toBe("session-2");
     expect(params.event).toBe("event-old");
@@ -395,11 +449,15 @@ describe("ActivityPage", () => {
       </ErrorBoundary>
     ));
 
-    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Scoped activity is paused" }),
+    ).toBeInTheDocument();
     expect(params.project).toBe("sba-key");
     expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
     expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
-    expect(screen.getByText(/will not broaden this scoped view to global activity/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/will not broaden this scoped view to global activity/),
+    ).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
     expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
@@ -415,13 +473,17 @@ describe("ActivityPage", () => {
       </ErrorBoundary>
     ));
 
-    expect(await screen.findByRole("heading", { name: "Scoped activity is paused" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Scoped activity is paused" }),
+    ).toBeInTheDocument();
     expect(params.project).toBeUndefined();
     expect(localStorage.getItem("blackbox.activity.projectKey")).toBe("sba-key");
     expect(apiMocks.getEventFeed).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear project" }));
-    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }));
+    await waitFor(() =>
+      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }),
+    );
   });
 
   it("keeps ?view=stream on / rendering the stream", async () => {
@@ -429,9 +491,16 @@ describe("ActivityPage", () => {
     render(() => <ActivityPage />);
 
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await waitFor(() =>
-      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
+      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({
+        limit: 100,
+        q: "kind:Decision",
+        meaningful: true,
+      }),
     );
   });
 
@@ -440,9 +509,17 @@ describe("ActivityPage", () => {
     render(() => <ActivityPage lockedMode="stream" />);
 
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
-    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
-    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "false");
-    await waitFor(() => expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }));
+    expect(within(modes).getByRole("tab", { name: "Stream" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(modes).getByRole("tab", { name: "Browse" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    await waitFor(() =>
+      expect(apiMocks.getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "", meaningful: true }),
+    );
     expect(document.querySelector(".sessions-page")).not.toBeInTheDocument();
   });
 
@@ -452,12 +529,16 @@ describe("ActivityPage", () => {
 
     const modes = screen.getByRole("tablist", { name: "Activity mode" });
     fireEvent.click(within(modes).getByRole("tab", { name: "Browse" }));
-    expect(navigate).toHaveBeenCalledWith(`/?${new URLSearchParams({ view: "browse", q: "source:codex last:2h" }).toString()}`);
+    expect(navigate).toHaveBeenCalledWith(
+      `/?${new URLSearchParams({ view: "browse", q: "source:codex last:2h" }).toString()}`,
+    );
     // navigate(), never setParams: /stream must not render a non-stream mode at a lying address.
     expect(params.view).toBeUndefined();
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Ask" }));
-    expect(navigate).toHaveBeenLastCalledWith(`/?${new URLSearchParams({ view: "ask", q: "source:codex last:2h" }).toString()}`);
+    expect(navigate).toHaveBeenLastCalledWith(
+      `/?${new URLSearchParams({ view: "ask", q: "source:codex last:2h" }).toString()}`,
+    );
 
     fireEvent.click(within(modes).getByRole("tab", { name: "Stream" }));
     expect(navigate).toHaveBeenCalledTimes(2);

@@ -1,5 +1,22 @@
-import { batch, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
-import { getEvent, getEventFeed, getProjects, getSessions, type AgentEvent, type AgentSession, type EventFeedItem, type ProjectSummary } from "../api";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+  type Accessor,
+} from "solid-js";
+import {
+  getEvent,
+  getEventFeed,
+  getProjects,
+  getSessions,
+  type AgentEvent,
+  type AgentSession,
+  type EventFeedItem,
+  type ProjectSummary,
+} from "../api";
 import { findProjectByIdentifier } from "../projects";
 import type { EventAppended, LiveStore, SessionUpdated } from "../sse";
 import { modeMessage, postToShell } from "./bridge";
@@ -95,7 +112,10 @@ function loadMode(storage: Storage | null): PersistedMode {
             projectKey: parsed.expanded.projectKey,
             // Older persisted data has no projectName; the initial-view validation effect below
             // resolves a real one from the catalog once the first load completes.
-            projectName: typeof parsed.expanded.projectName === "string" ? parsed.expanded.projectName : parsed.expanded.projectKey,
+            projectName:
+              typeof parsed.expanded.projectName === "string"
+                ? parsed.expanded.projectName
+                : parsed.expanded.projectKey,
           }
         : { kind: "river" };
     return { mode: parsed.mode as CompanionMode, expanded };
@@ -113,10 +133,17 @@ function persistMode(storage: Storage | null, value: PersistedMode): void {
   }
 }
 
-export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defaultDeps()): CompanionStore {
+export function createCompanionStore(
+  live: LiveStore,
+  deps: CompanionDeps = defaultDeps(),
+): CompanionStore {
   const [projects, setProjects] = createSignal<ProjectSummary[]>([]);
-  const [sessions, setSessions] = createSignal<Map<string, SessionLiveness>>(new Map(), { equals: false });
-  const [events, setEvents] = createSignal<Map<string, EventFeedItem>>(new Map(), { equals: false });
+  const [sessions, setSessions] = createSignal<Map<string, SessionLiveness>>(new Map(), {
+    equals: false,
+  });
+  const [events, setEvents] = createSignal<Map<string, EventFeedItem>>(new Map(), {
+    equals: false,
+  });
   const [lastEventAt, setLastEventAt] = createSignal<string | null>(null);
   const [now, setNow] = createSignal(deps.now());
   const [loading, setLoading] = createSignal(true);
@@ -125,12 +152,23 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const [mode, setModeSignal] = createSignal<CompanionMode>(persisted.mode);
   const [expanded, setExpanded] = createSignal<ExpandedViewState>(persisted.expanded);
   const [miniWidth, setMiniWidth] = createSignal<number | null>(null);
-  const [lastProjectKey, setLastProjectKey] = createSignal<string | null>(persisted.expanded.kind === "project" ? persisted.expanded.projectKey : null);
+  const [lastProjectKey, setLastProjectKey] = createSignal<string | null>(
+    persisted.expanded.kind === "project" ? persisted.expanded.projectKey : null,
+  );
 
   // Items only change with events, the catalog, seen-state, or the window; activity frames reuse them,
   // so rows keep their identity (and their DOM) while tool calls stream in.
   const items = createMemo<MeaningfulItem[]>(
-    (previous) => deriveItems({ now: now(), projects: projects(), events: [...events().values()], seen: deps.seen.seen() }, previous),
+    (previous) =>
+      deriveItems(
+        {
+          now: now(),
+          projects: projects(),
+          events: [...events().values()],
+          seen: deps.seen.seen(),
+        },
+        previous,
+      ),
     [],
     { equals: sameElements },
   );
@@ -147,7 +185,9 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   const shellState = createMemo(
     () => ({ pulse: model().pulse, unseen: model().unseenTotal }),
     undefined,
-    { equals: (previous, next) => previous.pulse === next.pulse && previous.unseen === next.unseen },
+    {
+      equals: (previous, next) => previous.pulse === next.pulse && previous.unseen === next.unseen,
+    },
   );
 
   function bumpLastEvent(iso: string | null | undefined): void {
@@ -167,7 +207,11 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   function visibleItemIds(): string[] {
     const view = expanded();
     const current = model();
-    return view.kind === "river" ? current.river.map((item) => item.id) : current.projects.find((project) => project.key === view.projectKey)?.items.map((item) => item.id) ?? [];
+    return view.kind === "river"
+      ? current.river.map((item) => item.id)
+      : (current.projects
+          .find((project) => project.key === view.projectKey)
+          ?.items.map((item) => item.id) ?? []);
   }
 
   // A hidden panel or a backgrounded tab must never look like quiet: "expanded" alone does not mean
@@ -241,7 +285,11 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
       batch(() => {
         setProjects(projectList);
         for (const session of sessionList) {
-          upsertSession({ id: session.id, cwd: session.cwd ?? null, lastSeenAt: session.lastSeenAt });
+          upsertSession({
+            id: session.id,
+            cwd: session.cwd ?? null,
+            lastSeenAt: session.lastSeenAt,
+          });
           bumpLastEvent(session.lastSeenAt);
         }
         setEvents((map) => {
@@ -266,7 +314,9 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
     // Wait for both: the full event body (retried) and any in-flight catalog refresh for its cwd,
     // so a brand-new worktree's first item is attributed to its real project, not Unassigned.
     void Promise.all([fetchEventWithRetry(event.id), catalogReady])
-      .then(([full]) => addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }))
+      .then(([full]) =>
+        addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }),
+      )
       .catch(() => {
         // Retries exhausted; the next full refresh (reconnect or reload) backfills this item.
       });
@@ -280,11 +330,13 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   // The tick ages the model; pruning keeps both maps bounded by their windows in a long-running shell.
   function prune(current: number): void {
     setEvents((map) => {
-      for (const [id, item] of map) if (current - timestamp(item.observedAt) > MEANINGFUL_WINDOW_MS) map.delete(id);
+      for (const [id, item] of map)
+        if (current - timestamp(item.observedAt) > MEANINGFUL_WINDOW_MS) map.delete(id);
       return map;
     });
     setSessions((map) => {
-      for (const [id, session] of map) if (current - timestamp(session.lastSeenAt) > ACTIVE_SESSION_WINDOW_MS) map.delete(id);
+      for (const [id, session] of map)
+        if (current - timestamp(session.lastSeenAt) > ACTIVE_SESSION_WINDOW_MS) map.delete(id);
       return map;
     });
   }
@@ -350,7 +402,8 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
       setExpanded({ kind: "river" });
       return;
     }
-    const projectName = model().projects.find((project) => project.key === key)?.name ?? view.projectName;
+    const projectName =
+      model().projects.find((project) => project.key === key)?.name ?? view.projectName;
     if (key === view.projectKey && projectName === view.projectName) return;
     batch(() => {
       setExpanded({ kind: "project", projectKey: key, projectName });
@@ -381,7 +434,8 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
   // visits; falling back to it unvalidated opens a blank view titled "Project" with no activity
   // strip even though other projects are active. Prefer the key only while it still has a card.
   function resolveProjectKey(preferred: string | null): string | null {
-    if (preferred && model().projects.some((project) => project.key === preferred)) return preferred;
+    if (preferred && model().projects.some((project) => project.key === preferred))
+      return preferred;
     return model().projects[0]?.key ?? null;
   }
 
@@ -409,5 +463,18 @@ export function createCompanionStore(live: LiveStore, deps: CompanionDeps = defa
 
   void refresh();
 
-  return { model, mode, expanded, loading, error, setMode: setModeSignal, openProject, openRiver, toggleExpandedView, stepDown, refresh, reportMiniWidth };
+  return {
+    model,
+    mode,
+    expanded,
+    loading,
+    error,
+    setMode: setModeSignal,
+    openProject,
+    openRiver,
+    toggleExpandedView,
+    stepDown,
+    refresh,
+    reportMiniWidth,
+  };
 }

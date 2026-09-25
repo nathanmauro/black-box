@@ -22,9 +22,13 @@ function ago(iso: string | null): string {
 export default function ExpandedView(props: ExpandedViewProps) {
   const card = createMemo(() => {
     const view = props.view;
-    return view.kind === "project" ? props.model.projects.find((project) => project.key === view.projectKey) ?? null : null;
+    return view.kind === "project"
+      ? (props.model.projects.find((project) => project.key === view.projectKey) ?? null)
+      : null;
   });
-  const items = createMemo(() => (props.view.kind === "river" ? props.model.river : card()?.items ?? []));
+  const items = createMemo(() =>
+    props.view.kind === "river" ? props.model.river : (card()?.items ?? []),
+  );
   // The view carries its own projectName (set once, when opened) so a project whose card ages out of
   // the model while its view stays open keeps a real title and strip instead of "Project" with none.
   const title = () => (props.view.kind === "river" ? "River" : props.view.projectName);
@@ -32,33 +36,56 @@ export default function ExpandedView(props: ExpandedViewProps) {
   return (
     <div class="companion-panel companion-panel--expanded">
       <header class="companion-header">
-        <button type="button" class="companion-icon-button" aria-label="Back to projects" ref={props.focusRef} onClick={() => props.onBack()}>
+        <button
+          type="button"
+          class="companion-icon-button"
+          aria-label="Back to projects"
+          ref={props.focusRef}
+          onClick={() => props.onBack()}
+        >
           ‹
         </button>
         <span class="companion-title">{title()}</span>
         <button type="button" class="companion-link-button" onClick={() => props.onToggleView()}>
           {props.view.kind === "river" ? "By project" : "River"}
         </button>
-        <button type="button" class="companion-icon-button" aria-label="Collapse" onClick={() => props.onCollapse()}>
+        <button
+          type="button"
+          class="companion-icon-button"
+          aria-label="Collapse"
+          onClick={() => props.onCollapse()}
+        >
           –
         </button>
       </header>
       <Show when={props.view.kind === "project"}>
         <p class="companion-strip">
-          {card()?.liveSessions ?? 0} live · activity {ago(card()?.lastActivityAt ?? null)} · capture {ago(card()?.lastCaptureAt ?? null)}
+          {card()?.liveSessions ?? 0} live · activity {ago(card()?.lastActivityAt ?? null)} ·
+          capture {ago(card()?.lastCaptureAt ?? null)}
         </p>
       </Show>
       <Show
         when={items().length > 0}
         // Spec 3.1: disconnected must never look like quiet. An empty river/project reads as calm
         // only when the stream is actually live; while disconnected, say so instead.
-        fallback={<p class="companion-empty">{props.model.pulse === "disconnected" ? "Disconnected from Black Box." : "Nothing meaningful in the last 24h."}</p>}
+        fallback={
+          <p class="companion-empty">
+            {props.model.pulse === "disconnected"
+              ? "Disconnected from Black Box."
+              : "Nothing meaningful in the last 24h."}
+          </p>
+        }
       >
         <ul class="companion-items">
           <For each={items()}>
             {(item) => (
               <li>
-                <a class={`companion-item${item.seen ? "" : " companion-item--unseen"}`} href={item.href} target="_blank" rel="noreferrer">
+                <a
+                  class={`companion-item${item.seen ? "" : " companion-item--unseen"}`}
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <span class="companion-item-head">
                     {/* The unseen border color is a visual-only cue (WCAG 1.4.1); say it too. */}
                     <Show when={!item.seen}>
@@ -87,7 +114,9 @@ export default function ExpandedView(props: ExpandedViewProps) {
           </For>
         </ul>
       </Show>
-      <footer class={`companion-footer companion-footer--${props.model.pulse}`}>{pulseText(props.model)}</footer>
+      <footer class={`companion-footer companion-footer--${props.model.pulse}`}>
+        {pulseText(props.model)}
+      </footer>
     </div>
   );
 }

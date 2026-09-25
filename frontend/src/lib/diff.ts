@@ -19,19 +19,31 @@ export function diffLines(oldText: string, newText: string, context = 3): Hunk[]
   const newLines = splitLines(newText);
 
   let prefix = 0;
-  while (prefix < oldLines.length && prefix < newLines.length && oldLines[prefix] === newLines[prefix]) prefix += 1;
+  while (
+    prefix < oldLines.length &&
+    prefix < newLines.length &&
+    oldLines[prefix] === newLines[prefix]
+  )
+    prefix += 1;
   let suffix = 0;
   while (
-    suffix < oldLines.length - prefix
-    && suffix < newLines.length - prefix
-    && oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]
-  ) suffix += 1;
+    suffix < oldLines.length - prefix &&
+    suffix < newLines.length - prefix &&
+    oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]
+  )
+    suffix += 1;
 
   const ops: DiffLine[] = [];
   for (let index = 0; index < prefix; index += 1) {
     ops.push({ kind: "context", text: oldLines[index], oldLine: index + 1, newLine: index + 1 });
   }
-  ops.push(...middleOps(oldLines.slice(prefix, oldLines.length - suffix), newLines.slice(prefix, newLines.length - suffix), prefix));
+  ops.push(
+    ...middleOps(
+      oldLines.slice(prefix, oldLines.length - suffix),
+      newLines.slice(prefix, newLines.length - suffix),
+      prefix,
+    ),
+  );
   for (let index = 0; index < suffix; index += 1) {
     const oldLine = oldLines.length - suffix + index + 1;
     const newLine = newLines.length - suffix + index + 1;
@@ -43,7 +55,16 @@ export function diffLines(oldText: string, newText: string, context = 3): Hunk[]
 export function allAdditions(text: string): Hunk[] {
   const lines = splitLines(text);
   if (!lines.length) return [];
-  return [{ lines: lines.map((line, index) => ({ kind: "add" as const, text: line, oldLine: null, newLine: index + 1 })) }];
+  return [
+    {
+      lines: lines.map((line, index) => ({
+        kind: "add" as const,
+        text: line,
+        oldLine: null,
+        newLine: index + 1,
+      })),
+    },
+  ];
 }
 
 const cache = new Map<string, Hunk[]>();
@@ -70,8 +91,12 @@ function middleOps(oldMid: string[], newMid: string[], offset: number): DiffLine
   if (!oldMid.length && !newMid.length) return ops;
   const overBudget = oldMid.length * newMid.length > LCS_CELL_BUDGET;
   if (overBudget || !oldMid.length || !newMid.length) {
-    oldMid.forEach((text, index) => ops.push({ kind: "del", text, oldLine: offset + index + 1, newLine: null }));
-    newMid.forEach((text, index) => ops.push({ kind: "add", text, oldLine: null, newLine: offset + index + 1 }));
+    oldMid.forEach((text, index) =>
+      ops.push({ kind: "del", text, oldLine: offset + index + 1, newLine: null }),
+    );
+    newMid.forEach((text, index) =>
+      ops.push({ kind: "add", text, oldLine: null, newLine: offset + index + 1 }),
+    );
     return ops;
   }
 
@@ -79,9 +104,10 @@ function middleOps(oldMid: string[], newMid: string[], offset: number): DiffLine
   const table = new Uint32Array((oldMid.length + 1) * cols);
   for (let row = oldMid.length - 1; row >= 0; row -= 1) {
     for (let col = newMid.length - 1; col >= 0; col -= 1) {
-      table[row * cols + col] = oldMid[row] === newMid[col]
-        ? table[(row + 1) * cols + col + 1] + 1
-        : Math.max(table[(row + 1) * cols + col], table[row * cols + col + 1]);
+      table[row * cols + col] =
+        oldMid[row] === newMid[col]
+          ? table[(row + 1) * cols + col + 1] + 1
+          : Math.max(table[(row + 1) * cols + col], table[row * cols + col + 1]);
     }
   }
 
@@ -89,7 +115,12 @@ function middleOps(oldMid: string[], newMid: string[], offset: number): DiffLine
   let col = 0;
   while (row < oldMid.length && col < newMid.length) {
     if (oldMid[row] === newMid[col]) {
-      ops.push({ kind: "context", text: oldMid[row], oldLine: offset + row + 1, newLine: offset + col + 1 });
+      ops.push({
+        kind: "context",
+        text: oldMid[row],
+        oldLine: offset + row + 1,
+        newLine: offset + col + 1,
+      });
       row += 1;
       col += 1;
     } else if (table[(row + 1) * cols + col] >= table[row * cols + col + 1]) {

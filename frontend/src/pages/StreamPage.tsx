@@ -1,5 +1,14 @@
 import { A, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+} from "solid-js";
 import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
 import StreamFold from "../components/events/StreamFold";
@@ -124,7 +133,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
     // and dropping focus; put focus back on the row the user just activated.
     const active = document.activeElement;
     if (!active || active === document.body || !active.isConnected) {
-      feedRef?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(id)}"]`)?.focus();
+      feedRef
+        ?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(id)}"]`)
+        ?.focus();
     }
   }
 
@@ -146,7 +157,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
       return next;
     });
     if (firstId) {
-      feedRef?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(firstId)}"]`)?.focus();
+      feedRef
+        ?.querySelector<HTMLButtonElement>(`button[data-event-id="${CSS.escape(firstId)}"]`)
+        ?.focus();
     }
   }
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
@@ -166,12 +179,18 @@ export default function StreamPage(props: StreamPageProps = {}) {
   let facetsToken = 0;
 
   const submitted = () => params.q ?? "";
-  const visibleSubmitted = createMemo(() => (props.project ? setFacet(submitted(), "project", null) : submitted()));
+  const visibleSubmitted = createMemo(() =>
+    props.project ? setFacet(submitted(), "project", null) : submitted(),
+  );
   const apiQuery = createMemo(() =>
-    props.project ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey) : submitted(),
+    props.project
+      ? appendProjectGroupScope(visibleSubmitted(), primaryProjectScope(props.project).canonicalKey)
+      : submitted(),
   );
   const parsed = createMemo(() => parseQuery(visibleSubmitted()));
-  const newestObservedAt = createMemo(() => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt);
+  const newestObservedAt = createMemo(
+    () => pendingItems()[0]?.observedAt ?? items()[0]?.observedAt,
+  );
   const canLoadMore = createMemo(() => Boolean(nextBefore()) && items().length < MAX_ROWS);
   // "Live paused" when until: bounds the query in the past (client-side approximation, see
   // resolvesToPastInstant): new events cannot match, so the N-new pill and the live head-refetch
@@ -334,17 +353,21 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (sep <= 0) return null;
     const raw = last.slice(0, sep).toLowerCase();
     if (raw === "session") return { key: "session", prefix: last.slice(sep + 1) };
-    const field = FACET_FIELDS.find((f) => f.key === raw || (raw === "agent" && f.key === "source"));
+    const field = FACET_FIELDS.find(
+      (f) => f.key === raw || (raw === "agent" && f.key === "source"),
+    );
     if (!field) return null;
     return { key: field.key, prefix: last.slice(sep + 1) };
   });
   const [suggestions] = createSignalResource(editing, async (edit): Promise<Suggestion[]> => {
     if (!edit) return [];
-    if (edit.key === "session") return (await sessionSuggestions(edit.prefix)).map((value) => ({ value }));
+    if (edit.key === "session")
+      return (await sessionSuggestions(edit.prefix)).map((value) => ({ value }));
     // Empty prefix on an enumerable facet surfaces the static quick values (spec §4.6);
     // tool:/project: prefer the facets endpoint's counted top values under the current query
     // (spec §6.4), falling back to the live value index when counts are unavailable.
-    if (!edit.prefix && QUICK_VALUES[edit.key].length) return QUICK_VALUES[edit.key].map((value) => ({ value }));
+    if (!edit.prefix && QUICK_VALUES[edit.key].length)
+      return QUICK_VALUES[edit.key].map((value) => ({ value }));
     if (!edit.prefix && (edit.key === "tool" || edit.key === "project")) {
       const fields = countedFields();
       if (fields) return fields[edit.key].slice(0, 8).map(({ value, count }) => ({ value, count }));
@@ -352,7 +375,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
     const values = await searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []);
     return values.map((value) => ({ value }));
   });
-  const showSuggestions = () => suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
+  const showSuggestions = () =>
+    suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
   // Keyboard highlight for the popover: -1 means "typing, nothing highlighted".
   const [activeSuggestion, setActiveSuggestion] = createSignal(-1);
 
@@ -469,15 +493,27 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   async function loadMore() {
     const before = nextBefore();
-    if (props.projectScopePending || loading() || !before || loadingMore() || items().length >= MAX_ROWS) return;
+    if (
+      props.projectScopePending ||
+      loading() ||
+      !before ||
+      loadingMore() ||
+      items().length >= MAX_ROWS
+    )
+      return;
     const token = loadToken;
     setLoadingMore(true);
     setError(null);
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: true, before });
+      const response = await getEventFeed({
+        limit: FEED_LIMIT,
+        q: apiQuery(),
+        meaningful: true,
+        before,
+      });
       if (!isCurrentStreamRequest(token)) return;
       setItems((current) => dedupe([...current, ...response.items]).slice(0, MAX_ROWS));
-      setNextBefore(items().length >= MAX_ROWS ? null : response.nextBefore ?? null);
+      setNextBefore(items().length >= MAX_ROWS ? null : (response.nextBefore ?? null));
     } catch (cause) {
       if (!isCurrentStreamRequest(token)) return;
       setError(cause instanceof Error ? cause.message : "Unable to load more events.");
@@ -490,7 +526,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (props.projectScopePending || !since || livePaused()) return;
     const token = loadToken;
     try {
-      const response = await getEventFeed({ limit: FEED_LIMIT, q: apiQuery(), meaningful: true, since });
+      const response = await getEventFeed({
+        limit: FEED_LIMIT,
+        q: apiQuery(),
+        meaningful: true,
+        since,
+      });
       if (!isCurrentStreamRequest(token)) return;
       const existing = new Set([...items(), ...pendingItems()].map((item) => item.id));
       const fresh = response.items.filter((item) => !existing.has(item.id));
@@ -555,19 +596,29 @@ export default function StreamPage(props: StreamPageProps = {}) {
               aria-controls="stream-suggest-list"
               aria-autocomplete="list"
               aria-activedescendant={
-                showSuggestions() && activeSuggestion() >= 0 ? `stream-suggest-option-${activeSuggestion()}` : undefined
+                showSuggestions() && activeSuggestion() >= 0
+                  ? `stream-suggest-option-${activeSuggestion()}`
+                  : undefined
               }
             />
             <button type="submit">Filter</button>
             <Show when={showSuggestions()}>
-              <ul class="suggest-popover" role="listbox" id="stream-suggest-list" aria-label="Query suggestions">
+              <ul
+                class="suggest-popover"
+                role="listbox"
+                id="stream-suggest-list"
+                aria-label="Query suggestions"
+              >
                 <For each={suggestions()}>
                   {(suggestion, index) => (
                     <li
                       role="option"
                       id={`stream-suggest-option-${index()}`}
                       aria-selected={index() === activeSuggestion()}
-                      classList={{ "suggest-option": true, "suggest-option--active": index() === activeSuggestion() }}
+                      classList={{
+                        "suggest-option": true,
+                        "suggest-option--active": index() === activeSuggestion(),
+                      }}
                       onClick={() => pickSuggestion(suggestion.value)}
                     >
                       <span class="suggest-option-value">{suggestion.value}</span>
@@ -594,7 +645,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
               <div id="stream-views-panel" class="stream-options-panel stream-views-panel">
                 <For each={VIEW_PRESETS}>
                   {(preset) => (
-                    <button type="button" class="stream-view-option" onClick={() => applyView(preset.q)}>
+                    <button
+                      type="button"
+                      class="stream-view-option"
+                      onClick={() => applyView(preset.q)}
+                    >
                       <span class="stream-view-name">{preset.name}</span>
                       <code class="stream-view-q">{preset.q}</code>
                     </button>
@@ -605,7 +660,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   <For each={savedViews()}>
                     {(view) => (
                       <div class="stream-view-saved">
-                        <button type="button" class="stream-view-option" title={view.q} onClick={() => applyView(view.q)}>
+                        <button
+                          type="button"
+                          class="stream-view-option"
+                          title={view.q}
+                          onClick={() => applyView(view.q)}
+                        >
                           <span class="stream-view-name">{view.name}</span>
                         </button>
                         <button
@@ -693,130 +753,132 @@ export default function StreamPage(props: StreamPageProps = {}) {
         </div>
         <Show when={hasActiveChips()}>
           <div class="facet-rail">
-          <Show when={props.project}>
-            {(project) => (
-              <button
-                type="button"
-                class="facet-chip facet-chip--active facet-chip--pinned"
-                title={`Pinned project scope: ${primaryProjectScope(project()).canonicalKey}`}
-                aria-label={`Pinned project ${projectShortName(project())} — clear project scope`}
-                onClick={() => props.onClearProject?.()}
-              >
-                <span class="facet-chip-pin" aria-hidden="true">
-                  📌
-                </span>{" "}
-                Project: {projectShortName(project())} ✕
-              </button>
-            )}
-          </Show>
-          <For each={FACET_FIELDS}>
-            {(field) => (
-              <Show when={facetHasChips(field.key)}>
-                <div class="facet-group">
-                  <span class="facet-label">{field.label}</span>
-                  <For each={parsed().facets[field.key] ?? []}>
-                    {(value) => (
-                      <button type="button" class="facet-chip facet-chip--active" onClick={() => removeFacetChip(field.key, value)}>
-                        {value} x
-                      </button>
-                    )}
-                  </For>
-                  <For each={parsed().excludeFacets[field.key] ?? []}>
-                    {(value) => (
-                      <button
-                        type="button"
-                        class="facet-chip facet-chip--active facet-chip--exclude"
-                        aria-label={`${field.key} != ${value}`}
-                        onClick={() => removeFacetChip(field.key, value, "exclude")}
-                      >
-                        {field.key} != {value} x
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-            )}
-          </For>
-          <For each={parsed().facets.project_exact ?? []}>
-            {(value) => (
+            <Show when={props.project}>
+              {(project) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active facet-chip--pinned"
+                  title={`Pinned project scope: ${primaryProjectScope(project()).canonicalKey}`}
+                  aria-label={`Pinned project ${projectShortName(project())} — clear project scope`}
+                  onClick={() => props.onClearProject?.()}
+                >
+                  <span class="facet-chip-pin" aria-hidden="true">
+                    📌
+                  </span>{" "}
+                  Project: {projectShortName(project())} ✕
+                </button>
+              )}
+            </Show>
+            <For each={FACET_FIELDS}>
+              {(field) => (
+                <Show when={facetHasChips(field.key)}>
+                  <div class="facet-group">
+                    <span class="facet-label">{field.label}</span>
+                    <For each={parsed().facets[field.key] ?? []}>
+                      {(value) => (
+                        <button
+                          type="button"
+                          class="facet-chip facet-chip--active"
+                          onClick={() => removeFacetChip(field.key, value)}
+                        >
+                          {value} x
+                        </button>
+                      )}
+                    </For>
+                    <For each={parsed().excludeFacets[field.key] ?? []}>
+                      {(value) => (
+                        <button
+                          type="button"
+                          class="facet-chip facet-chip--active facet-chip--exclude"
+                          aria-label={`${field.key} != ${value}`}
+                          onClick={() => removeFacetChip(field.key, value, "exclude")}
+                        >
+                          {field.key} != {value} x
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              )}
+            </For>
+            <For each={parsed().facets.project_exact ?? []}>
+              {(value) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active"
+                  onClick={() => removeFacetChip("project_exact", value)}
+                >
+                  project_exact: {value} x
+                </button>
+              )}
+            </For>
+            <For each={parsed().excludeFacets.project_exact ?? []}>
+              {(value) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active facet-chip--exclude"
+                  aria-label={`project_exact != ${value}`}
+                  onClick={() => removeFacetChip("project_exact", value, "exclude")}
+                >
+                  project_exact != {value} x
+                </button>
+              )}
+            </For>
+            <Show when={parsed().session}>
+              {(sessionRef) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active"
+                  title={`session:${sessionRef()}`}
+                  onClick={() => patchQuery((state) => (state.session = null))}
+                >
+                  session: {shortSessionRef(sessionRef())} x
+                </button>
+              )}
+            </Show>
+            <Show when={parsed().since}>
+              {(spec) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active facet-chip--time"
+                  onClick={() => patchQuery((state) => (state.since = null))}
+                >
+                  <span class="facet-chip-clock" aria-hidden="true">
+                    🕒
+                  </span>{" "}
+                  {describeTimeSpec(spec(), "since")} ✕
+                </button>
+              )}
+            </Show>
+            <Show when={parsed().until}>
+              {(spec) => (
+                <button
+                  type="button"
+                  class="facet-chip facet-chip--active facet-chip--time"
+                  onClick={() => patchQuery((state) => (state.until = null))}
+                >
+                  <span class="facet-chip-clock" aria-hidden="true">
+                    🕒
+                  </span>{" "}
+                  {describeTimeSpec(spec(), "until")} ✕
+                </button>
+              )}
+            </Show>
+            <Show when={parsed().isAll}>
               <button
                 type="button"
                 class="facet-chip facet-chip--active"
-                onClick={() => removeFacetChip("project_exact", value)}
+                aria-label="remove is:all"
+                onClick={() => patchQuery((state) => (state.isAll = false))}
               >
-                project_exact: {value} x
+                all events x
               </button>
-            )}
-          </For>
-          <For each={parsed().excludeFacets.project_exact ?? []}>
-            {(value) => (
-              <button
-                type="button"
-                class="facet-chip facet-chip--active facet-chip--exclude"
-                aria-label={`project_exact != ${value}`}
-                onClick={() => removeFacetChip("project_exact", value, "exclude")}
-              >
-                project_exact != {value} x
-              </button>
-            )}
-          </For>
-          <Show when={parsed().session}>
-            {(sessionRef) => (
-              <button
-                type="button"
-                class="facet-chip facet-chip--active"
-                title={`session:${sessionRef()}`}
-                onClick={() => patchQuery((state) => (state.session = null))}
-              >
-                session: {shortSessionRef(sessionRef())} x
-              </button>
-            )}
-          </Show>
-          <Show when={parsed().since}>
-            {(spec) => (
-              <button
-                type="button"
-                class="facet-chip facet-chip--active facet-chip--time"
-                onClick={() => patchQuery((state) => (state.since = null))}
-              >
-                <span class="facet-chip-clock" aria-hidden="true">
-                  🕒
-                </span>{" "}
-                {describeTimeSpec(spec(), "since")} ✕
-              </button>
-            )}
-          </Show>
-          <Show when={parsed().until}>
-            {(spec) => (
-              <button
-                type="button"
-                class="facet-chip facet-chip--active facet-chip--time"
-                onClick={() => patchQuery((state) => (state.until = null))}
-              >
-                <span class="facet-chip-clock" aria-hidden="true">
-                  🕒
-                </span>{" "}
-                {describeTimeSpec(spec(), "until")} ✕
-              </button>
-            )}
-          </Show>
-          <Show when={parsed().isAll}>
-            <button
-              type="button"
-              class="facet-chip facet-chip--active"
-              aria-label="remove is:all"
-              onClick={() => patchQuery((state) => (state.isAll = false))}
-            >
-              all events x
-            </button>
-          </Show>
+            </Show>
           </div>
         </Show>
       </form>
 
-      <Show when={error()}>
-        {(message) => <p class="empty-state">{message()}</p>}
-      </Show>
+      <Show when={error()}>{(message) => <p class="empty-state">{message()}</p>}</Show>
 
       <Show when={matchTotal() !== null || scopePhrases().length > 0 || livePaused()}>
         <div class="stream-result-header">
@@ -894,7 +956,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
         {newCount() > 0 ? `${newCount()} new ${newCount() === 1 ? "event" : "events"}` : ""}
       </div>
 
-      <div ref={feedRef} class="stream-feed" role="feed" aria-busy={loadingMore()} aria-label="Activity stream">
+      <div
+        ref={feedRef}
+        class="stream-feed"
+        role="feed"
+        aria-busy={loadingMore()}
+        aria-label="Activity stream"
+      >
         <Show when={newCount() && !livePaused()}>
           <button type="button" class="stream-new-pill" onClick={showNewItems}>
             {newCount()} new
@@ -908,7 +976,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   {(day) => (
                     <div class="stream-daybreak">
                       <span>{day().label}</span>
-                      <Show when={day().gapLabel}>{(gap) => <span class="stream-daybreak-gap">· {gap()}</span>}</Show>
+                      <Show when={day().gapLabel}>
+                        {(gap) => <span class="stream-daybreak-gap">· {gap()}</span>}
+                      </Show>
                     </div>
                   )}
                 </Match>
@@ -925,8 +995,14 @@ export default function StreamPage(props: StreamPageProps = {}) {
                         actions={
                           <RowSessionActions
                             sessionId={run().sessionId}
-                            streamLink={sessionStreamLink(visibleSubmitted(), run().sessionId, props.project?.projectKey ?? "")}
-                            onFilterToSession={(sessionId) => patchQuery((state) => (state.session = sessionId))}
+                            streamLink={sessionStreamLink(
+                              visibleSubmitted(),
+                              run().sessionId,
+                              props.project?.projectKey ?? "",
+                            )}
+                            onFilterToSession={(sessionId) =>
+                              patchQuery((state) => (state.session = sessionId))
+                            }
                           />
                         }
                       />
@@ -1000,7 +1076,9 @@ function formatMatchCount(total: number): string {
 }
 
 function appendProjectGroupScope(query: string, canonicalKey: string): string {
-  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`].filter(Boolean).join(" ");
+  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`]
+    .filter(Boolean)
+    .join(" ");
 }
 
 // Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
@@ -1038,7 +1116,8 @@ async function sessionSuggestions(prefix: string): Promise<string[]> {
       const value = session.clientSessionId || session.id;
       if (!value || values.includes(value)) continue;
       const haystacks = [value, session.id, session.title ?? ""];
-      if (needle && !haystacks.some((candidate) => candidate.toLowerCase().includes(needle))) continue;
+      if (needle && !haystacks.some((candidate) => candidate.toLowerCase().includes(needle)))
+        continue;
       values.push(value);
       if (values.length >= 8) break;
     }
@@ -1076,7 +1155,10 @@ function askMemoryHref(phrase: string, project: ProjectSummary | null | undefine
 // "Trajectory →" for expanded landmark cards (spec §9, D14): projectKey resolves from the row's
 // cwd via the already-loaded catalog (exact/canonical scope match only). Unresolvable cwds get
 // no link — never guess.
-function trajectoryHrefFor(item: EventFeedItem, projects: ProjectSummary[] | undefined): string | undefined {
+function trajectoryHrefFor(
+  item: EventFeedItem,
+  projects: ProjectSummary[] | undefined,
+): string | undefined {
   if (!TRAJECTORY_LINK_KINDS.has(item.eventType ?? "")) return undefined;
   if (!item.cwd || !projects?.length) return undefined;
   const project = findProjectByIdentifier(projects, item.cwd);

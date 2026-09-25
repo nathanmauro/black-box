@@ -149,7 +149,9 @@ export default function SessionLineage(props: SessionLineageProps) {
           aria-label={expanded() ? "Collapse lineage map" : "Expand lineage map"}
           onClick={() => setExpanded((open) => !open)}
         >
-          <span>{items().length} {items().length === 1 ? "agent" : "agents"}</span>
+          <span>
+            {items().length} {items().length === 1 ? "agent" : "agents"}
+          </span>
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="m4 6 4 4 4-4" />
           </svg>

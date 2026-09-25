@@ -17,7 +17,9 @@ const REGISTRY: Record<string, Presenter> = {
 };
 
 export function normalizeToolName(toolName: string | null | undefined): string {
-  const raw = String(toolName || "").trim().toLowerCase();
+  const raw = String(toolName || "")
+    .trim()
+    .toLowerCase();
   const mcp = /^mcp__.+__(.+)$/.exec(raw);
   return mcp ? mcp[1] : raw;
 }

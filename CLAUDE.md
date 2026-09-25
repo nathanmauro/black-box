@@ -27,9 +27,15 @@ Frontend (SolidJS + Vite, in `frontend/`):
 ```bash
 npm test                                  # vitest suite
 npx vitest run src/path/to/file.test.tsx  # single test file
+npm run lint                              # eslint (lint:fix applies safe autofixes)
+npm run format                            # prettier --write (format:check verifies only)
+npm run check                             # lint + format:check + tsc --noEmit
 npm run build                             # tsc --noEmit + vite build → ../src/main/resources/static
 npm run e2e                               # Playwright against a packaged jar on an isolated temp DB
 ```
+
+Run `npm run format` on frontend files you touch; CI and `scripts/verify.sh` reject lint errors and
+unformatted files. Rules and exemptions are explained in `docs/frontend-standards.md`.
 
 `npm run build` emits into `src/main/resources/static/`, which is committed — rebuild and commit it
 when frontend changes ship. The E2E suite never touches port 8766 or the production database.

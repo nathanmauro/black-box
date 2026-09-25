@@ -6,7 +6,9 @@ import { E2E_INJECTION_FILE } from "./project-fixture";
 
 const SHOT_DIR = "test-results/shots";
 
-test("stream is the default landing view and shows meaningful events newest-first", async ({ page }) => {
+test("stream is the default landing view and shows meaningful events newest-first", async ({
+  page,
+}) => {
   await page.goto("/");
 
   const modes = page.getByRole("tablist", { name: "Activity mode" });
@@ -16,7 +18,9 @@ test("stream is the default landing view and shows meaningful events newest-firs
   const rows = page.locator(".stream-row");
   await expect(rows.first()).toBeVisible();
   await expect(page.getByText("Use SolidJS + Vite for the UI rewrite").first()).toBeVisible();
-  await expect(page.getByText("Frontend build completed for the self-contained SolidJS jar.").first()).toBeVisible();
+  await expect(
+    page.getByText("Frontend build completed for the self-contained SolidJS jar.").first(),
+  ).toBeVisible();
 
   // The seeded user prompt is not meaningful, so the default view hides it.
   await expect(page.getByText("Rewrite the UI to match agent-observatory")).toHaveCount(0);
@@ -46,7 +50,10 @@ test("meaningful toggle widens the stream and a source facet narrows it", async 
 
 test("clicking a stream row expands it inline with the full event card", async ({ page }) => {
   await page.goto("/");
-  const decisionRow = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
+  const decisionRow = page
+    .locator(".stream-row")
+    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })
+    .first();
   await expect(decisionRow).toBeVisible();
   await expect(decisionRow).toHaveAttribute("type", "button");
 
@@ -54,8 +61,13 @@ test("clicking a stream row expands it inline with the full event card", async (
   await expect(decisionRow).toHaveAttribute("aria-expanded", "true");
   const expanded = page.locator(".stream-row-expanded");
   await expect(expanded).toBeVisible();
-  await expect(expanded.getByRole("link", { name: "Open at this event" })).toHaveAttribute("href", /view=browse.*session=.*event=/);
-  await expect(expanded.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
+  await expect(expanded.getByRole("link", { name: "Open at this event" })).toHaveAttribute(
+    "href",
+    /view=browse.*session=.*event=/,
+  );
+  await expect(
+    expanded.getByText("Matches agent-observatory; stays self-contained in the jar at runtime"),
+  ).toBeVisible();
 
   await decisionRow.click();
   await expect(page.locator(".stream-row-expanded")).toHaveCount(0);
@@ -63,9 +75,15 @@ test("clicking a stream row expands it inline with the full event card", async (
 
 test("the explicit Stream action opens the exact event in Browse", async ({ page }) => {
   await page.goto("/");
-  const decisionRow = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
+  const decisionRow = page
+    .locator(".stream-row")
+    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })
+    .first();
   await decisionRow.click();
-  await page.locator(".stream-row-expanded").getByRole("link", { name: "Open at this event" }).click();
+  await page
+    .locator(".stream-row-expanded")
+    .getByRole("link", { name: "Open at this event" })
+    .click();
 
   await expect(page).toHaveURL(/view=browse/);
   await expect(page).toHaveURL(/session=/);
@@ -116,7 +134,10 @@ test("density toggle expands every row and survives a reload", async ({ page }) 
   await expect(page.locator(".stream-row").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Options", exact: true }).click();
-  await page.getByRole("group", { name: "Stream density" }).getByRole("button", { name: "Expanded" }).click();
+  await page
+    .getByRole("group", { name: "Stream density" })
+    .getByRole("button", { name: "Expanded" })
+    .click();
   const rows = page.locator(".stream-row");
   const rowCount = await rows.count();
   for (let index = 0; index < rowCount; index += 1) {
@@ -127,7 +148,10 @@ test("density toggle expands every row and survives a reload", async ({ page }) 
   await expect(page.locator(".stream-row").first()).toHaveAttribute("aria-expanded", "true");
 });
 
-test("an edit event renders a readable diff behind a lazy details block", async ({ page, request }) => {
+test("an edit event renders a readable diff behind a lazy details block", async ({
+  page,
+  request,
+}) => {
   const seeded = await request.post("/api/events", {
     data: {
       source: "claude",
@@ -158,7 +182,10 @@ test("an edit event renders a readable diff behind a lazy details block", async 
   await expect(page.locator(".diff-line--add").first()).toContainText("const total = 9;");
 });
 
-test("a file link opens through the verified project catalog without shell or desktop leakage", async ({ page, request }) => {
+test("a file link opens through the verified project catalog without shell or desktop leakage", async ({
+  page,
+  request,
+}) => {
   const filePath = `${E2E_PROJECT_CWD}/app.ts`;
   const seeded = await request.post("/api/events", {
     data: {
@@ -182,10 +209,9 @@ test("a file link opens through the verified project catalog without shell or de
   await expect(page.getByText("Opened in editor.").first()).toBeVisible();
 
   const editorLog = path.join(requiredE2eTempDir(), "editor-argv.bin");
-  await expect.poll(() => editorCalls(editorLog)).toEqual([
-    [realpathSync(E2E_PROJECT_CWD)],
-    ["-g", `${realpathSync(filePath)}:2`],
-  ]);
+  await expect
+    .poll(() => editorCalls(editorLog))
+    .toEqual([[realpathSync(E2E_PROJECT_CWD)], ["-g", `${realpathSync(filePath)}:2`]]);
 
   const injectionPath = `${E2E_PROJECT_CWD}/${E2E_INJECTION_FILE}`;
   const injectionSeed = await request.post("/api/events", {
@@ -207,17 +233,19 @@ test("a file link opens through the verified project catalog without shell or de
   await injectionRow.click();
   await page.getByRole("button", { name: `Open ${injectionPath} in editor` }).click();
   await expect(page.getByText("Opened in editor.").first()).toBeVisible();
-  await expect.poll(() => editorCalls(editorLog)).toEqual([
-    [realpathSync(E2E_PROJECT_CWD)],
-    ["-g", `${realpathSync(filePath)}:2`],
-    [realpathSync(E2E_PROJECT_CWD)],
-    ["-g", `${realpathSync(injectionPath)}:1`],
-  ]);
+  await expect
+    .poll(() => editorCalls(editorLog))
+    .toEqual([
+      [realpathSync(E2E_PROJECT_CWD)],
+      ["-g", `${realpathSync(filePath)}:2`],
+      [realpathSync(E2E_PROJECT_CWD)],
+      ["-g", `${realpathSync(injectionPath)}:1`],
+    ]);
   expect(existsSync(path.join(requiredE2eTempDir(), "injection-sentinel"))).toBe(false);
 
   const scopesResponse = await request.get("/api/projects/code-scopes");
   expect(scopesResponse.ok()).toBeTruthy();
-  const scopes = await scopesResponse.json() as Array<{ projectKey: string; root: string }>;
+  const scopes = (await scopesResponse.json()) as Array<{ projectKey: string; root: string }>;
   const scope = scopes.find((candidate) => candidate.root === E2E_PROJECT_CWD);
   expect(scope).toBeTruthy();
   const callsBeforeBlockedRequest = editorCalls(editorLog);
@@ -249,8 +277,12 @@ test("a file link opens through the verified project catalog without shell or de
   await expect(outsideRow).toBeVisible();
   await outsideRow.click();
   await expect(page.getByRole("button", { name: `Open ${outsidePath} in editor` })).toHaveCount(0);
-  await expect(page.getByText("This path is outside the eligible project roots.").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: `Reveal in Finder ${outsidePath}` })).toHaveAttribute("aria-disabled", "true");
+  await expect(
+    page.getByText("This path is outside the eligible project roots.").first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: `Reveal in Finder ${outsidePath}` }),
+  ).toHaveAttribute("aria-disabled", "true");
   await page.getByRole("button", { name: `Copy path ${outsidePath}` }).click();
   await expect(page.getByText("Could not copy path.").first()).toBeVisible();
   expect(editorCalls(editorLog)).toEqual(callsBeforeBlockedRequest);

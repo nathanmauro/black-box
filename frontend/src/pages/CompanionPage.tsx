@@ -82,7 +82,13 @@ export default function CompanionPage() {
           />
         </Match>
       </Switch>
-      <Show when={store.error()}>{(message) => <p class="companion-error" role="status">{message()}</p>}</Show>
+      <Show when={store.error()}>
+        {(message) => (
+          <p class="companion-error" role="status">
+            {message()}
+          </p>
+        )}
+      </Show>
     </section>
   );
 }

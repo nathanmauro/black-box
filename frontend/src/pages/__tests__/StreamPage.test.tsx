@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-lib
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { EventFacetCounts, EventFeedItem, EventFeedResponse, ProjectSummary } from "../../lib/api";
+import type {
+  EventFacetCounts,
+  EventFeedItem,
+  EventFeedResponse,
+  ProjectSummary,
+} from "../../lib/api";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -45,11 +50,29 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getEventFeed: mocks.getEventFeed,
     getEventFacets: mocks.getEventFacets,
     searchValues: vi.fn(async (_field: string, prefix: string) =>
-      ["Decision", "Handoff", "Observation"].filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase())),
+      ["Decision", "Handoff", "Observation"].filter((value) =>
+        value.toLowerCase().startsWith(prefix.toLowerCase()),
+      ),
     ),
     getSessions: vi.fn(async () => [
-      { id: "session-1", source: "codex", clientSessionId: "client-abc", title: "Stream work", startedAt: "", lastSeenAt: "", eventCount: 3 },
-      { id: "session-2", source: "claude", clientSessionId: "client-xyz", title: "Browse fix", startedAt: "", lastSeenAt: "", eventCount: 2 },
+      {
+        id: "session-1",
+        source: "codex",
+        clientSessionId: "client-abc",
+        title: "Stream work",
+        startedAt: "",
+        lastSeenAt: "",
+        eventCount: 3,
+      },
+      {
+        id: "session-2",
+        source: "claude",
+        clientSessionId: "client-xyz",
+        title: "Browse fix",
+        startedAt: "",
+        lastSeenAt: "",
+        eventCount: 2,
+      },
     ]),
   };
 });
@@ -147,11 +170,15 @@ describe("StreamPage", () => {
     const [project, setProject] = createSignal<ProjectSummary | null>(null);
     render(() => <StreamPage project={project()} />);
 
-    expect(await screen.findByRole("button", { name: /Global row must not leak/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /Global row must not leak/ }),
+    ).toBeInTheDocument();
     setProject(selectedProject);
 
     expect(await screen.findByText("Scoped feed unavailable")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Global row must not leak/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Global row must not leak/ }),
+    ).not.toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
       q: "project_group:/Users/nathan/Developer/proj/sba-agentic",
@@ -190,7 +217,13 @@ describe("StreamPage", () => {
 
     fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
     await waitFor(() => expect(params.q).toBe("source:codex"));
-    await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "source:codex", meaningful: true }));
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "source:codex",
+        meaningful: true,
+      }),
+    );
   });
 
   it("renders exclude chips from negative facets", async () => {
@@ -199,7 +232,11 @@ describe("StreamPage", () => {
     await screen.findByRole("button", { name: /Make stream default/ });
 
     expect(screen.getByRole("button", { name: "kind != PostToolUse" })).toBeInTheDocument();
-    expect(getEventFeed).toHaveBeenCalledWith({ limit: 100, q: "-kind:PostToolUse", meaningful: true });
+    expect(getEventFeed).toHaveBeenCalledWith({
+      limit: 100,
+      q: "-kind:PostToolUse",
+      meaningful: true,
+    });
   });
 
   it("renders one chip per value for multi-value facets and removes values individually", async () => {
@@ -258,7 +295,9 @@ describe("StreamPage", () => {
   });
 
   it("renders removable project_exact chips", async () => {
-    [params, setParams] = createStore<{ q?: string }>({ q: "project_exact:/tmp/app kind:Decision" });
+    [params, setParams] = createStore<{ q?: string }>({
+      q: "project_exact:/tmp/app kind:Decision",
+    });
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
@@ -276,7 +315,9 @@ describe("StreamPage", () => {
     fireEvent.click(checkbox);
 
     await waitFor(() => expect(params.q).toBe("is:all"));
-    await waitFor(() => expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "is:all", meaningful: true }));
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "is:all", meaningful: true }),
+    );
   });
 
   it("derives the meaningful checkbox from a deep-linked is:all query", async () => {
@@ -299,7 +340,9 @@ describe("StreamPage", () => {
     expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful");
 
     setParams({ q: "is:all" });
-    await waitFor(() => expect(document.querySelector(".stream-result-header")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(document.querySelector(".stream-result-header")).not.toBeInTheDocument(),
+    );
   });
 
   it("renders the time phrase in the result header", async () => {
@@ -307,7 +350,9 @@ describe("StreamPage", () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
-    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful · past 2 hours");
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe(
+      "meaningful · past 2 hours",
+    );
     expect(screen.queryByText("live paused — historical scope")).not.toBeInTheDocument();
   });
 
@@ -354,7 +399,12 @@ describe("StreamPage", () => {
       vi.useFakeTimers();
       mocks.setLiveEvents([{ id: "sse-a" }]);
       await vi.advanceTimersByTimeAsync(600);
-      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true, since: old.observedAt });
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "",
+        meaningful: true,
+        since: old.observedAt,
+      });
       expect(screen.getByRole("button", { name: "1 new" })).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -362,7 +412,9 @@ describe("StreamPage", () => {
   });
 
   it("round-trips is:all through a composite query without disturbing other tokens", async () => {
-    [params, setParams] = createStore<{ q?: string }>({ q: "session:abc until:2026-08-18 free text" });
+    [params, setParams] = createStore<{ q?: string }>({
+      q: "session:abc until:2026-08-18 free text",
+    });
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
@@ -379,7 +431,9 @@ describe("StreamPage", () => {
     render(() => <StreamPage project={selectedProject} onClearProject={onClearProject} />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
-    const chip = screen.getByRole("button", { name: "Pinned project sba-agentic — clear project scope" });
+    const chip = screen.getByRole("button", {
+      name: "Pinned project sba-agentic — clear project scope",
+    });
     const rail = document.querySelector(".facet-rail") as HTMLElement;
     expect(rail.firstElementChild).toBe(chip);
 
@@ -411,7 +465,10 @@ describe("StreamPage", () => {
     // The visible q only — the hidden project_group scope never leaks into the shared link — but
     // project= carries the pinned key so the link reproduces what the sender saw instead of being
     // rescoped by the opener's remembered project.
-    const search = new URLSearchParams({ q: "kind:Decision session:session-1", project: "sba-key" }).toString();
+    const search = new URLSearchParams({
+      q: "kind:Decision session:session-1",
+      project: "sba-key",
+    }).toString();
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/stream?${search}`);
   });
 
@@ -441,7 +498,9 @@ describe("StreamPage", () => {
 
   it("loads the next page and appends rows with the nextBefore cursor", async () => {
     getEventFeed
-      .mockResolvedValueOnce(feed([eventItem("event-1", "Make stream default")], "2026-07-01T12:00:00Z|event-1"))
+      .mockResolvedValueOnce(
+        feed([eventItem("event-1", "Make stream default")], "2026-07-01T12:00:00Z|event-1"),
+      )
       .mockResolvedValueOnce(feed([eventItem("event-2", "Browse mode preserved")]));
 
     render(() => <StreamPage />);
@@ -449,7 +508,9 @@ describe("StreamPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
-    expect(await screen.findByRole("button", { name: /Browse mode preserved/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /Browse mode preserved/ }),
+    ).toBeInTheDocument();
     expect(getEventFeed).toHaveBeenLastCalledWith({
       limit: 100,
       q: "",
@@ -461,7 +522,9 @@ describe("StreamPage", () => {
   it("ignores stale load-more responses after the stream query changes", async () => {
     const stalePage = deferred<EventFeedResponse>();
     getEventFeed
-      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockResolvedValueOnce(
+        feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"),
+      )
       .mockReturnValueOnce(stalePage.promise)
       .mockResolvedValueOnce(feed([eventItem("event-scoped", "New scope row")]));
 
@@ -473,20 +536,28 @@ describe("StreamPage", () => {
 
     setParams({ q: "kind:Decision" });
     await waitFor(() =>
-      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "kind:Decision", meaningful: true }),
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "kind:Decision",
+        meaningful: true,
+      }),
     );
     expect(await screen.findByRole("button", { name: /New scope row/ })).toBeInTheDocument();
 
     stalePage.resolve(feed([eventItem("event-stale", "Stale old scope row")]));
     await Promise.resolve();
 
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Stale old scope row/ })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Stale old scope row/ })).not.toBeInTheDocument(),
+    );
   });
 
   it("clears pagination while a primary stream reload is pending", async () => {
     const primaryReload = deferred<EventFeedResponse>();
     getEventFeed
-      .mockResolvedValueOnce(feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"))
+      .mockResolvedValueOnce(
+        feed([eventItem("event-old", "Original scope row")], "2026-07-01T12:00:00Z|event-old"),
+      )
       .mockReturnValueOnce(primaryReload.promise)
       .mockResolvedValueOnce(feed([eventItem("event-stale", "Stale page row")]));
 
@@ -522,12 +593,22 @@ describe("StreamPage", () => {
 
       mocks.setLiveEvents([{ id: "sse-a" }]);
       await vi.advanceTimersByTimeAsync(500);
-      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true, since: old.observedAt });
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "",
+        meaningful: true,
+        since: old.observedAt,
+      });
       expect(screen.getByRole("button", { name: "1 new" })).toBeInTheDocument();
 
       mocks.setLiveEvents([{ id: "sse-a" }, { id: "sse-b" }]);
       await vi.advanceTimersByTimeAsync(500);
-      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true, since: a.observedAt });
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "",
+        meaningful: true,
+        since: a.observedAt,
+      });
       expect(screen.getByRole("button", { name: "2 new" })).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -536,7 +617,11 @@ describe("StreamPage", () => {
 
   it("replaces load more with the honest endcap when the local row cap is reached", async () => {
     const cappedRows = Array.from({ length: 500 }, (_, index) =>
-      eventItem(`event-cap-${index}`, `Capped row ${index}`, `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00Z`),
+      eventItem(
+        `event-cap-${index}`,
+        `Capped row ${index}`,
+        `2026-07-01T11:${String(index % 60).padStart(2, "0")}:00Z`,
+      ),
     );
     getEventFeed.mockResolvedValueOnce(feed(cappedRows, "2026-07-01T11:00:00Z|event-cap-499"));
 
@@ -544,7 +629,9 @@ describe("StreamPage", () => {
     await screen.findByRole("button", { name: /Capped row 0/ });
 
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
-    expect(screen.getByText("500 of many shown — refine the filter to go deeper.")).toBeInTheDocument();
+    expect(
+      screen.getByText("500 of many shown — refine the filter to go deeper."),
+    ).toBeInTheDocument();
   });
 
   it("shows no endcap below the cap", async () => {
@@ -556,7 +643,10 @@ describe("StreamPage", () => {
   it("expanded density expands every row and per-row toggling still overrides it", async () => {
     getEventFeed.mockReset();
     getEventFeed.mockResolvedValue(
-      feed([eventItem("event-1", "Make stream default"), eventItem("event-2", "Second row", "2026-07-01T11:58:00Z")]),
+      feed([
+        eventItem("event-1", "Make stream default"),
+        eventItem("event-2", "Second row", "2026-07-01T11:58:00Z"),
+      ]),
     );
     render(() => <StreamPage />);
     const rowOne = await screen.findByRole("button", { name: /Make stream default/ });
@@ -602,7 +692,10 @@ describe("StreamPage", () => {
       mocks.setLiveEvents([{ id: "sse-a" }]);
       await vi.advanceTimersByTimeAsync(500);
       fireEvent.click(screen.getByRole("button", { name: "1 new" }));
-      expect(screen.getByRole("button", { name: /Live row/ })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("button", { name: /Live row/ })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -666,13 +759,18 @@ describe("StreamPage", () => {
     const exceptionRow = screen.getByRole("button", { name: /Worktree row/ });
 
     expect(sameRow.querySelector(".stream-row-cwd")).not.toBeInTheDocument();
-    expect(exceptionRow.querySelector(".stream-row-cwd")).toHaveTextContent("~/Developer/proj/sba-agentic-worktree");
+    expect(exceptionRow.querySelector(".stream-row-cwd")).toHaveTextContent(
+      "~/Developer/proj/sba-agentic-worktree",
+    );
   });
 
   it("renders a dateline with the quiet gap phrasing between date-crossing runs", async () => {
     getEventFeed.mockReset();
     getEventFeed.mockResolvedValue(
-      feed([eventItem("event-1", "Newer day row", localIso(4, 12)), eventItem("event-2", "Older day row", localIso(1, 12))]),
+      feed([
+        eventItem("event-1", "Newer day row", localIso(4, 12)),
+        eventItem("event-2", "Older day row", localIso(1, 12)),
+      ]),
     );
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Newer day row/ });
@@ -686,7 +784,10 @@ describe("StreamPage", () => {
   it("flips the gap phrasing to no-matches when a visible filter is active", async () => {
     getEventFeed.mockReset();
     getEventFeed.mockResolvedValue(
-      feed([eventItem("event-1", "Newer day row", localIso(4, 12)), eventItem("event-2", "Older day row", localIso(1, 12))]),
+      feed([
+        eventItem("event-1", "Newer day row", localIso(4, 12)),
+        eventItem("event-2", "Older day row", localIso(1, 12)),
+      ]),
     );
     [params, setParams] = createStore<{ q?: string }>({ q: "source:codex" });
     render(() => <StreamPage />);
@@ -702,12 +803,16 @@ describe("StreamPage", () => {
     const row = await screen.findByRole("button", { name: /Make stream default/ });
 
     const head = document.querySelector(".stream-run-head") as HTMLElement;
-    expect(within(head).getByRole("button", { name: "Filter to this session" })).toBeInTheDocument();
+    expect(
+      within(head).getByRole("button", { name: "Filter to this session" }),
+    ).toBeInTheDocument();
     expect(within(head).getByRole("button", { name: "Copy link" })).toBeInTheDocument();
 
     fireEvent.click(row);
     const card = document.querySelector(".stream-row-expanded") as HTMLElement;
-    expect(within(card).queryByRole("button", { name: "Filter to this session" })).not.toBeInTheDocument();
+    expect(
+      within(card).queryByRole("button", { name: "Filter to this session" }),
+    ).not.toBeInTheDocument();
     expect(within(card).queryByRole("button", { name: "Copy link" })).not.toBeInTheDocument();
     // The card keeps only the per-event position link; the session title moved to the header.
     expect(within(card).getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
@@ -720,7 +825,9 @@ describe("StreamPage", () => {
       feed([
         chatterItem("event-1", "npm test", "2026-07-01T12:03:00Z"),
         chatterItem("event-2", "npm run build", "2026-07-01T12:02:00Z"),
-        chatterItem("event-3", "false", "2026-07-01T12:01:00Z", { toolOutputJson: '{"exit_code":1,"output":"boom"}' }),
+        chatterItem("event-3", "false", "2026-07-01T12:01:00Z", {
+          toolOutputJson: '{"exit_code":1,"output":"boom"}',
+        }),
         chatterItem("event-4", "pwd", "2026-07-01T12:00:00Z"),
       ]),
     );
@@ -820,7 +927,10 @@ describe("StreamPage", () => {
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-activedescendant", "stream-suggest-option-0");
-    expect(screen.getByRole("option", { name: "Decision" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "Decision" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "ArrowUp" });
@@ -904,7 +1014,9 @@ describe("StreamPage", () => {
   it("marks the feed role and busies it during load-more", async () => {
     const nextPage = deferred<EventFeedResponse>();
     getEventFeed
-      .mockResolvedValueOnce(feed([eventItem("event-1", "Make stream default")], "2026-07-01T12:00:00Z|event-1"))
+      .mockResolvedValueOnce(
+        feed([eventItem("event-1", "Make stream default")], "2026-07-01T12:00:00Z|event-1"),
+      )
       .mockReturnValueOnce(nextPage.promise);
 
     render(() => <StreamPage />);
@@ -940,7 +1052,10 @@ describe("StreamPage", () => {
 
     const countButton = await screen.findByRole("button", { name: "1,204 matches" });
     expect(countButton).toHaveAttribute("aria-expanded", "false");
-    expect(mocks.getEventFacets).toHaveBeenCalledWith({ q: "", meaningful: true }, expect.any(AbortSignal));
+    expect(mocks.getEventFacets).toHaveBeenCalledWith(
+      { q: "", meaningful: true },
+      expect.any(AbortSignal),
+    );
     // The header reads "N matches · meaningful" — count beside the scope phrase (spec §4.6).
     expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful");
   });
@@ -952,7 +1067,9 @@ describe("StreamPage", () => {
 
     await waitFor(() => expect(mocks.getEventFacets).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(document.querySelector(".stream-result-scope")?.textContent).toBe("meaningful · past 2 hours");
+    expect(document.querySelector(".stream-result-scope")?.textContent).toBe(
+      "meaningful · past 2 hours",
+    );
     expect(document.querySelector(".stream-result-count")).not.toBeInTheDocument();
     expect(document.querySelector(".stream-count-browser")).not.toBeInTheDocument();
   });
@@ -1002,7 +1119,10 @@ describe("StreamPage", () => {
       await vi.advanceTimersByTimeAsync(300);
       // Three q states, one surviving fetch — the earlier debounce windows never fired.
       expect(mocks.getEventFacets).toHaveBeenCalledTimes(1);
-      expect(mocks.getEventFacets).toHaveBeenCalledWith({ q: "kind:Handoff", meaningful: true }, expect.any(AbortSignal));
+      expect(mocks.getEventFacets).toHaveBeenCalledWith(
+        { q: "kind:Handoff", meaningful: true },
+        expect.any(AbortSignal),
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -1095,7 +1215,9 @@ describe("StreamPage", () => {
         meaningful: true,
       }),
     );
-    expect(screen.getByRole("button", { name: "Pinned project sba-agentic — clear project scope" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Pinned project sba-agentic — clear project scope" }),
+    ).toBeInTheDocument();
   });
 
   it("saves the current view, persists it across mounts, applies it, and removes it", async () => {
@@ -1104,7 +1226,9 @@ describe("StreamPage", () => {
     await screen.findByRole("button", { name: /Make stream default/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Views" }));
-    fireEvent.input(screen.getByLabelText("Saved view name"), { target: { value: "My weekly decisions" } });
+    fireEvent.input(screen.getByLabelText("Saved view name"), {
+      target: { value: "My weekly decisions" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(JSON.parse(localStorage.getItem("blackbox.savedViews")!)).toMatchObject([
@@ -1154,7 +1278,10 @@ describe("StreamPage", () => {
 
     setParams({ q: 'kind:Decision "recall bug"' });
     const link = await screen.findByRole("link", { name: /Ask memory about «recall bug»/ });
-    expect(link).toHaveAttribute("href", `/?${new URLSearchParams({ view: "ask", q: "recall bug" }).toString()}`);
+    expect(link).toHaveAttribute(
+      "href",
+      `/?${new URLSearchParams({ view: "ask", q: "recall bug" }).toString()}`,
+    );
   });
 
   it("carries the pinned project on the Ask-memory link", async () => {
@@ -1175,7 +1302,10 @@ describe("StreamPage", () => {
     fireEvent.click(row);
 
     const link = screen.getByRole("link", { name: "Trajectory" });
-    expect(link).toHaveAttribute("href", `/projects/sba-key?${new URLSearchParams({ focus: "capture:event-1" }).toString()}`);
+    expect(link).toHaveAttribute(
+      "href",
+      `/projects/sba-key?${new URLSearchParams({ focus: "capture:event-1" }).toString()}`,
+    );
     // The per-event position link stays alongside it (D14 keeps position precision).
     expect(screen.getByRole("link", { name: "Open at this event" })).toBeInTheDocument();
   });
@@ -1230,7 +1360,6 @@ function feed(items: EventFeedItem[], nextBefore: string | null = null): EventFe
   };
 }
 
-
 function openOptions() {
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
 }
@@ -1243,7 +1372,12 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function eventItem(id: string, text: string, observedAt?: string, overrides: Partial<EventFeedItem> = {}): EventFeedItem {
+function eventItem(
+  id: string,
+  text: string,
+  observedAt?: string,
+  overrides: Partial<EventFeedItem> = {},
+): EventFeedItem {
   return {
     id,
     sessionId: id === "event-1" ? "session-1" : "session-2",
@@ -1258,7 +1392,10 @@ function eventItem(id: string, text: string, observedAt?: string, overrides: Par
     toolOutputJson: null,
     metadata: null,
     observedAt: observedAt ?? (id === "event-1" ? "2026-07-01T12:00:00Z" : "2026-07-01T11:59:00Z"),
-    cwd: id === "event-1" ? "/Users/nathan/Developer/proj/sba-agentic" : "/Users/nathan/Developer/proj/cockpit",
+    cwd:
+      id === "event-1"
+        ? "/Users/nathan/Developer/proj/sba-agentic"
+        : "/Users/nathan/Developer/proj/cockpit",
     sessionTitle: id === "event-1" ? "Activity stream work" : "Browse regression",
     ...overrides,
   };
@@ -1271,7 +1408,12 @@ function localIso(day: number, hour: number): string {
 }
 
 // Same-session tool chatter for fold cases.
-function chatterItem(id: string, command: string, observedAt: string, extra: Partial<EventFeedItem> = {}): EventFeedItem {
+function chatterItem(
+  id: string,
+  command: string,
+  observedAt: string,
+  extra: Partial<EventFeedItem> = {},
+): EventFeedItem {
   return eventItem(id, "", observedAt, {
     sessionId: "session-1",
     source: "codex",

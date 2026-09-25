@@ -52,8 +52,13 @@ export function assertDatabaseArtifactsAbsent(tempDir, dbPath) {
 
   const resolvedTemp = realpathSync(tempDir);
   const resolvedDatabase = path.join(realpathSync(path.dirname(dbPath)), path.basename(dbPath));
-  if (path.dirname(resolvedDatabase) !== resolvedTemp || path.basename(resolvedDatabase) !== DATABASE_NAME) {
-    throw new Error(`Refusing database target outside the owned E2E directory: ${resolvedDatabase}`);
+  if (
+    path.dirname(resolvedDatabase) !== resolvedTemp ||
+    path.basename(resolvedDatabase) !== DATABASE_NAME
+  ) {
+    throw new Error(
+      `Refusing database target outside the owned E2E directory: ${resolvedDatabase}`,
+    );
   }
 }
 
@@ -74,9 +79,13 @@ export function preflightE2eStorage(tempDir, dbPath, runToken) {
 
     const systemTemp = realpathSync(os.tmpdir());
     const resolvedTemp = realpathSync(tempDir);
-    if (path.dirname(resolvedTemp) !== systemTemp
-      || !path.basename(resolvedTemp).startsWith(DIRECTORY_PREFIX)) {
-      throw new Error(`Refusing resolved E2E directory outside the real temp root: ${resolvedTemp}`);
+    if (
+      path.dirname(resolvedTemp) !== systemTemp ||
+      !path.basename(resolvedTemp).startsWith(DIRECTORY_PREFIX)
+    ) {
+      throw new Error(
+        `Refusing resolved E2E directory outside the real temp root: ${resolvedTemp}`,
+      );
     }
 
     assertDatabaseArtifactsAbsent(tempDir, dbPath);

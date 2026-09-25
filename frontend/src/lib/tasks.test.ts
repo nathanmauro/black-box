@@ -71,7 +71,9 @@ function snapshot(value: AgentTask): TaskSnapshot {
 function frame(
   value: AgentTask,
   transitionId = "transition-1",
-  transitionType: TaskLifecycleFrame["transitionType"] = value.status === "done" ? "task.completed" : "task.claimed",
+  transitionType: TaskLifecycleFrame["transitionType"] = value.status === "done"
+    ? "task.completed"
+    : "task.claimed",
 ): TaskLifecycleFrame {
   return {
     task: value,
@@ -107,7 +109,11 @@ describe("task live store", () => {
 
   it("applies a lifecycle frame idempotently", async () => {
     const open = task();
-    const claimed = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:01:00Z" });
+    const claimed = task({
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:01:00Z",
+    });
     const source = new FakeEventSource();
     const store = createTaskLiveStore({
       loadTasks: async () => [snapshot(open)],
@@ -124,7 +130,11 @@ describe("task live store", () => {
   });
 
   it("does not let an older out-of-order event overwrite newer task state", async () => {
-    const claimed = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:02:00Z" });
+    const claimed = task({
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:02:00Z",
+    });
     const older = task({ status: "open", updatedAt: "2026-07-10T00:01:00Z" });
     const source = new FakeEventSource();
     const store = createTaskLiveStore({
@@ -140,7 +150,11 @@ describe("task live store", () => {
   });
 
   it("preserves backend Instant sub-millisecond ordering", async () => {
-    const newer = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:02:00.000999Z" });
+    const newer = task({
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:02:00.000999Z",
+    });
     const older = task({ status: "open", updatedAt: "2026-07-10T00:02:00.000001Z" });
     const source = new FakeEventSource();
     const store = createTaskLiveStore({
@@ -149,7 +163,10 @@ describe("task live store", () => {
     });
     await store.refresh();
 
-    source.emit("task.created", JSON.stringify(frame(older, "transition-sub-ms-old", "task.created")));
+    source.emit(
+      "task.created",
+      JSON.stringify(frame(older, "transition-sub-ms-old", "task.created")),
+    );
 
     expect(store.tasks()).toEqual([newer]);
     store.close();
@@ -157,9 +174,20 @@ describe("task live store", () => {
 
   it("refreshes once after reconnect and then resumes event application", async () => {
     const open = task();
-    const claimed = task({ status: "in_progress", claimedBy: "worker-1", updatedAt: "2026-07-10T00:01:00Z" });
-    const done = task({ status: "done", claimedBy: "worker-1", resultHandoffId: "handoff-1", updatedAt: "2026-07-10T00:02:00Z" });
-    const loadTasks = vi.fn(async () => [snapshot(loadTasks.mock.calls.length > 1 ? claimed : open)]);
+    const claimed = task({
+      status: "in_progress",
+      claimedBy: "worker-1",
+      updatedAt: "2026-07-10T00:01:00Z",
+    });
+    const done = task({
+      status: "done",
+      claimedBy: "worker-1",
+      resultHandoffId: "handoff-1",
+      updatedAt: "2026-07-10T00:02:00Z",
+    });
+    const loadTasks = vi.fn(async () => [
+      snapshot(loadTasks.mock.calls.length > 1 ? claimed : open),
+    ]);
     const source = new FakeEventSource();
     const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
     await store.refresh();
@@ -183,7 +211,8 @@ describe("task live store", () => {
     const firstRecovery = new Promise<TaskSnapshot[]>((resolve) => {
       resolveFirstRecovery = resolve;
     });
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([snapshot(open)])
       .mockReturnValueOnce(firstRecovery)
       .mockResolvedValueOnce([snapshot(open)]);
@@ -219,7 +248,8 @@ describe("task live store", () => {
     const recovery = new Promise<TaskSnapshot[]>((resolve) => {
       resolveRecovery = resolve;
     });
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([snapshot(open)])
       .mockReturnValueOnce(recovery);
     const source = new FakeEventSource();
@@ -246,7 +276,8 @@ describe("task live store", () => {
     const recovery = new Promise<TaskSnapshot[]>((resolve) => {
       resolveRecovery = resolve;
     });
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([snapshot(open)])
       .mockReturnValueOnce(recovery);
     const source = new FakeEventSource();
@@ -264,7 +295,8 @@ describe("task live store", () => {
 
   it("treats a completed snapshot refresh as authoritative for stale rows", async () => {
     const open = task();
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([snapshot(open)])
       .mockResolvedValueOnce([]);
     const source = new FakeEventSource();
@@ -307,7 +339,8 @@ describe("task live store", () => {
     const firstRecovery = new Promise<TaskSnapshot[]>((resolve) => {
       resolveFirstRecovery = resolve;
     });
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([snapshot(open)])
       .mockReturnValueOnce(firstRecovery)
       .mockResolvedValueOnce([snapshot(open)]);
@@ -328,14 +361,18 @@ describe("task live store", () => {
 
   it("hydrates an unseen created task with its frozen spec", async () => {
     const created = task();
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([snapshot(created)]);
     const source = new FakeEventSource();
     const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
     await store.refresh();
 
-    source.emit("task.created", JSON.stringify(frame(created, "transition-created", "task.created")));
+    source.emit(
+      "task.created",
+      JSON.stringify(frame(created, "transition-created", "task.created")),
+    );
     await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
     await flush();
 
@@ -345,13 +382,22 @@ describe("task live store", () => {
   });
 
   it("queues hydration for a second create after the active snapshot point", async () => {
-    const createdA = task({ id: "task-a", title: "Task A", updatedAt: "2026-07-10T00:01:00.000001Z" });
-    const createdB = task({ id: "task-b", title: "Task B", updatedAt: "2026-07-10T00:01:00.000002Z" });
+    const createdA = task({
+      id: "task-a",
+      title: "Task A",
+      updatedAt: "2026-07-10T00:01:00.000001Z",
+    });
+    const createdB = task({
+      id: "task-b",
+      title: "Task B",
+      updatedAt: "2026-07-10T00:01:00.000002Z",
+    });
     let resolveFirstHydration: ((value: TaskSnapshot[]) => void) | undefined;
     const firstHydration = new Promise<TaskSnapshot[]>((resolve) => {
       resolveFirstHydration = resolve;
     });
-    const loadTasks = vi.fn()
+    const loadTasks = vi
+      .fn()
       .mockResolvedValueOnce([])
       .mockReturnValueOnce(firstHydration)
       .mockResolvedValueOnce([snapshot(createdA), snapshot(createdB)]);
@@ -359,9 +405,15 @@ describe("task live store", () => {
     const store = createTaskLiveStore({ loadTasks, eventSourceFactory: () => source });
     await store.refresh();
 
-    source.emit("task.created", JSON.stringify(frame(createdA, "transition-created-a", "task.created")));
+    source.emit(
+      "task.created",
+      JSON.stringify(frame(createdA, "transition-created-a", "task.created")),
+    );
     await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
-    source.emit("task.created", JSON.stringify(frame(createdB, "transition-created-b", "task.created")));
+    source.emit(
+      "task.created",
+      JSON.stringify(frame(createdB, "transition-created-b", "task.created")),
+    );
 
     resolveFirstHydration?.([snapshot(createdA)]);
     await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(3));
@@ -381,12 +433,17 @@ describe("task live store", () => {
     await store.refresh();
 
     for (let index = 0; index < 1_500; index += 1) {
-      store.applyFrame(frame(task({
-        id: `task-${index}`,
-        status: "in_progress",
-        claimedBy: "worker-1",
-        updatedAt: `2026-07-10T00:02:${String(index % 60).padStart(2, "0")}.${String(index).padStart(6, "0")}Z`,
-      }), `transition-${index}`));
+      store.applyFrame(
+        frame(
+          task({
+            id: `task-${index}`,
+            status: "in_progress",
+            claimedBy: "worker-1",
+            updatedAt: `2026-07-10T00:02:${String(index % 60).padStart(2, "0")}.${String(index).padStart(6, "0")}Z`,
+          }),
+          `transition-${index}`,
+        ),
+      );
     }
 
     expect(store.tasks()).toHaveLength(100);
@@ -408,8 +465,18 @@ describe("task live store", () => {
 
     await store.setFilters({ projectKey: "black-box", lane: "codex", status: "open", limit: 25 });
 
-    expect(loadTasks).toHaveBeenLastCalledWith({ projectKey: "black-box", lane: "codex", status: "open", limit: 25 });
-    expect(store.filters()).toEqual({ projectKey: "black-box", lane: "codex", status: "open", limit: 25 });
+    expect(loadTasks).toHaveBeenLastCalledWith({
+      projectKey: "black-box",
+      lane: "codex",
+      status: "open",
+      limit: 25,
+    });
+    expect(store.filters()).toEqual({
+      projectKey: "black-box",
+      lane: "codex",
+      status: "open",
+      limit: 25,
+    });
     expect(store.tasks()[0]).toEqual(open);
     store.close();
   });
@@ -426,7 +493,10 @@ describe("task.note handling", () => {
     });
     await store.refresh();
 
-    source.emit("task.note", JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }),
+    );
 
     expect(store.taskAnnotations(open.id)).toEqual([note]);
     store.close();
@@ -437,9 +507,7 @@ describe("task.note handling", () => {
     const note = annotation({
       id: `annotation-${kind}`,
       kind,
-      dataJson: kind === "approval"
-        ? { decision: "approve", stage: "plan", feedback: "" }
-        : null,
+      dataJson: kind === "approval" ? { decision: "approve", stage: "plan", feedback: "" } : null,
     });
     const source = new FakeEventSource();
     const store = createTaskLiveStore({
@@ -448,7 +516,10 @@ describe("task.note handling", () => {
     });
     await store.refresh();
 
-    source.emit("task.note", JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: open, annotation: note, observedAt: note.observedAt }),
+    );
 
     expect(store.taskAnnotations(open.id)).toEqual([note]);
     store.close();
@@ -496,8 +567,14 @@ describe("task.note handling", () => {
     });
     await store.refresh();
 
-    source.emit("task.note", JSON.stringify({ task: taskA, annotation: noteA, observedAt: noteA.observedAt }));
-    source.emit("task.note", JSON.stringify({ task: taskB, annotation: noteB, observedAt: noteB.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: taskA, annotation: noteA, observedAt: noteA.observedAt }),
+    );
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: taskB, annotation: noteB, observedAt: noteB.observedAt }),
+    );
 
     expect(store.taskAnnotations(taskA.id)).toEqual([noteA]);
     expect(store.taskAnnotations(taskB.id)).toEqual([noteB]);
@@ -513,11 +590,16 @@ describe("task.note handling", () => {
     await store.refresh();
     const epoch = store.noteEpoch();
 
-    expect(() => source.emit("task.note", JSON.stringify({
-      task: open,
-      annotation: malformedAnnotation,
-      observedAt: malformedAnnotation.observedAt,
-    }))).not.toThrow();
+    expect(() =>
+      source.emit(
+        "task.note",
+        JSON.stringify({
+          task: open,
+          annotation: malformedAnnotation,
+          observedAt: malformedAnnotation.observedAt,
+        }),
+      ),
+    ).not.toThrow();
     await vi.waitFor(() => expect(loadTasks).toHaveBeenCalledTimes(2));
     await flush();
 
@@ -554,7 +636,10 @@ describe("task.note handling", () => {
     await store.refresh();
     const epoch = store.noteEpoch();
 
-    source.emit("task.note", JSON.stringify({ task: older, annotation: note, observedAt: note.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: older, annotation: note, observedAt: note.observedAt }),
+    );
 
     expect(store.taskAnnotations(current.id)).toEqual([note]);
     expect(store.noteEpoch()).toBe(epoch + 1);
@@ -580,10 +665,16 @@ describe("task.note handling", () => {
     });
     await store.refresh();
 
-    source.emit("task.note", JSON.stringify({ task: newer, annotation: newerNote, observedAt: newerNote.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: newer, annotation: newerNote, observedAt: newerNote.observedAt }),
+    );
     expect(store.tasks()).toEqual([newer]);
 
-    source.emit("task.note", JSON.stringify({ task: older, annotation: olderNote, observedAt: olderNote.observedAt }));
+    source.emit(
+      "task.note",
+      JSON.stringify({ task: older, annotation: olderNote, observedAt: olderNote.observedAt }),
+    );
     expect(store.tasks()).toEqual([newer]);
     store.close();
   });

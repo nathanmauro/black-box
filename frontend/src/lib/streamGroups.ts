@@ -22,7 +22,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export type EventRow = { type: "event"; item: EventFeedItem };
 // loudestTone: "error" when ANY member's cached presentation tone is error — collapse must
 // never bury a failure (P4, D3).
-export type FoldRow = { type: "fold"; items: EventFeedItem[]; mark: string; loudestTone: string; key: string };
+export type FoldRow = {
+  type: "fold";
+  items: EventFeedItem[];
+  mark: string;
+  loudestTone: string;
+  key: string;
+};
 export type Row = EventRow | FoldRow;
 
 export type RunSegment = {
@@ -185,7 +191,12 @@ function buildRows(items: EventFeedItem[], folds?: FoldOptions): Row[] {
       continue;
     }
     let end = index;
-    while (end < items.length && foldable(items[end], folds) && items[end].toolName === head.toolName) end += 1;
+    while (
+      end < items.length &&
+      foldable(items[end], folds) &&
+      items[end].toolName === head.toolName
+    )
+      end += 1;
     const streak = items.slice(index, end);
     if (streak.length >= FOLD_MIN_STREAK) {
       const key = streak[streak.length - 1].id;

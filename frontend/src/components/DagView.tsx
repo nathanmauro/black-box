@@ -16,8 +16,18 @@ const LINEAGE_MIN_WIDTH = 560;
 const LINEAGE_MIN_HEIGHT = 200;
 
 export type DagLayoutNode = DagNode & { x: number; y: number; column: number };
-export type DagLayoutEdge = { id: string; type: DagEdgeType; from: DagLayoutNode; to: DagLayoutNode };
-export type DagLayout = { nodes: DagLayoutNode[]; edges: DagLayoutEdge[]; width: number; height: number };
+export type DagLayoutEdge = {
+  id: string;
+  type: DagEdgeType;
+  from: DagLayoutNode;
+  to: DagLayoutNode;
+};
+export type DagLayout = {
+  nodes: DagLayoutNode[];
+  edges: DagLayoutEdge[];
+  width: number;
+  height: number;
+};
 
 export type DagViewProps = {
   dag: DagResponse;
@@ -49,12 +59,14 @@ export function layoutDag(dag: DagResponse): DagLayout {
     const from = nodesById.get(edge.from);
     const to = nodesById.get(edge.to);
     if (!from || !to) return [];
-    return [{
-      id: `${edge.type}:${edge.from}:${edge.to}:${edgeIndex}`,
-      type: edge.type,
-      from,
-      to,
-    }];
+    return [
+      {
+        id: `${edge.type}:${edge.from}:${edge.to}:${edgeIndex}`,
+        type: edge.type,
+        from,
+        to,
+      },
+    ];
   });
 
   const maxX = nodes.length ? Math.max(...nodes.map((node) => node.x)) : 0;
@@ -124,10 +136,7 @@ export function layoutLineageDag(dag: DagResponse): DagLayout {
     LINEAGE_MIN_WIDTH,
     maxDepth * LINEAGE_COLUMN_SPACING + LINEAGE_HORIZONTAL_PADDING * 2,
   );
-  const height = Math.max(
-    LINEAGE_MIN_HEIGHT,
-    maxColumnSpan + LINEAGE_VERTICAL_PADDING * 2,
-  );
+  const height = Math.max(LINEAGE_MIN_HEIGHT, maxColumnSpan + LINEAGE_VERTICAL_PADDING * 2);
   const startX = (width - maxDepth * LINEAGE_COLUMN_SPACING) / 2;
   const nodes = columns.flatMap((column, columnIndex) => {
     const columnSpan = Math.max(0, column.length - 1) * LINEAGE_ROW_SPACING;
@@ -144,12 +153,14 @@ export function layoutLineageDag(dag: DagResponse): DagLayout {
     const from = layoutNodesById.get(edge.from);
     const to = layoutNodesById.get(edge.to);
     if (!from || !to) return [];
-    return [{
-      id: `${edge.type}:${edge.from}:${edge.to}:${edgeIndex}`,
-      type: edge.type,
-      from,
-      to,
-    }];
+    return [
+      {
+        id: `${edge.type}:${edge.from}:${edge.to}:${edgeIndex}`,
+        type: edge.type,
+        from,
+        to,
+      },
+    ];
   });
 
   return { nodes, edges, width, height };
@@ -157,7 +168,9 @@ export function layoutLineageDag(dag: DagResponse): DagLayout {
 
 export default function DagView(props: DagViewProps) {
   const isLineage = () => props.layout === "lineage";
-  const layout = createMemo(() => (isLineage() ? layoutLineageDag(props.dag) : layoutDag(props.dag)));
+  const layout = createMemo(() =>
+    isLineage() ? layoutLineageDag(props.dag) : layoutDag(props.dag),
+  );
   const ariaLabel = () => (isLineage() ? "Agent lineage DAG" : "Task DAG");
 
   return (
@@ -179,7 +192,7 @@ export default function DagView(props: DagViewProps) {
               {(edge) => (
                 <Show
                   when={isLineage()}
-                  fallback={(
+                  fallback={
                     <line
                       class={`dag-edge dag-edge--${edge.type}`}
                       x1={edge.from.x}
@@ -187,12 +200,9 @@ export default function DagView(props: DagViewProps) {
                       x2={edge.to.x}
                       y2={edge.to.y}
                     />
-                  )}
+                  }
                 >
-                  <path
-                    class={`dag-edge dag-edge--${edge.type}`}
-                    d={lineageEdgePath(edge)}
-                  />
+                  <path class={`dag-edge dag-edge--${edge.type}`} d={lineageEdgePath(edge)} />
                 </Show>
               )}
             </For>
@@ -203,8 +213,8 @@ export default function DagView(props: DagViewProps) {
                 <DagNodeView
                   node={node}
                   current={
-                    (node.type === "task" && props.currentTaskId === node.id)
-                    || (node.type === "session" && props.currentSessionId === sessionRef(node))
+                    (node.type === "task" && props.currentTaskId === node.id) ||
+                    (node.type === "session" && props.currentSessionId === sessionRef(node))
                   }
                   onSelectSession={props.onSelectSession}
                 />
@@ -265,7 +275,14 @@ function DagNodeContent(props: { node: DagLayoutNode }) {
   return (
     <>
       {props.node.type === "spec" ? (
-        <rect class="dag-node-shape" x="-15" y="-15" width="30" height="30" transform="rotate(45)" />
+        <rect
+          class="dag-node-shape"
+          x="-15"
+          y="-15"
+          width="30"
+          height="30"
+          transform="rotate(45)"
+        />
       ) : props.node.type === "task" ? (
         <rect class="dag-node-shape" x="-44" y="-18" width="88" height="36" rx="8" />
       ) : (

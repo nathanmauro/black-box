@@ -30,13 +30,18 @@ const emptyCatalog = async (): Promise<ProjectSummary[]> => [];
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string }) => (
-    <a href={props.href} class={props.class}>{props.children}</a>
+    <a href={props.href} class={props.class}>
+      {props.children}
+    </a>
   ),
   useNavigate: () => vi.fn(),
-  useSearchParams: () => [params, (next: BoardSearchParams) => {
-    searchParamWrites(next);
-    setParams(next);
-  }],
+  useSearchParams: () => [
+    params,
+    (next: BoardSearchParams) => {
+      searchParamWrites(next);
+      setParams(next);
+    },
+  ],
 }));
 
 vi.mock("../../lib/api", async (importOriginal) => {
@@ -74,7 +79,14 @@ describe("BoardPage", () => {
       observedAt: "2026-07-10T00:30:00Z",
     }));
 
-    render(() => <BoardPage store={store} updateStatus={vi.fn()} loadHandoff={loadHandoff} loadProjects={emptyCatalog} />);
+    render(() => (
+      <BoardPage
+        store={store}
+        updateStatus={vi.fn()}
+        loadHandoff={loadHandoff}
+        loadProjects={emptyCatalog}
+      />
+    ));
 
     await screen.findByRole("heading", { name: "Coordination board" });
     const open = screen.getByRole("region", { name: "Open tasks" });
@@ -89,23 +101,33 @@ describe("BoardPage", () => {
     expect(screen.queryByText("Retired experiment")).not.toBeInTheDocument();
 
     const detail = screen.getByRole("complementary", { name: "Task detail" });
-    expect(within(detail).getByText("Frozen acceptance contract for blocked work.")).toBeInTheDocument();
+    expect(
+      within(detail).getByText("Frozen acceptance contract for blocked work."),
+    ).toBeInTheDocument();
     expect(within(detail).getByText("waiting for deterministic fixture data")).toBeInTheDocument();
     expect(within(detail).getByText("worker-2")).toBeInTheDocument();
     expect(within(detail).getByText(/specs\/queue\.md/)).toBeInTheDocument();
     expect(within(detail).getByRole("button", { name: "Reset task to open" })).toBeInTheDocument();
-    expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /execute|launch|run agent/i })).not.toBeInTheDocument();
+    expect(
+      within(detail).queryByRole("button", { name: "Revise & resubmit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /execute|launch|run agent/i }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(within(done).getByRole("button", { name: /Ship the adapter/ }));
     expect(within(detail).getByText("Linked Handoff")).toBeInTheDocument();
-    expect(await within(detail).findByText("REST and MCP adapters shipped with parity.")).toBeInTheDocument();
+    expect(
+      await within(detail).findByText("REST and MCP adapters shipped with parity."),
+    ).toBeInTheDocument();
     expect(within(detail).getByText("Inspect the coordination surface.")).toBeInTheDocument();
     expect(loadHandoff).toHaveBeenCalledOnce();
     expect(loadHandoff).toHaveBeenCalledWith("handoff-44");
 
     fireEvent.click(screen.getByRole("button", { name: "Show 1 cancelled task" }));
-    expect(screen.getByRole("region", { name: "Cancelled tasks" })).toHaveTextContent("Retired experiment");
+    expect(screen.getByRole("region", { name: "Cancelled tasks" })).toHaveTextContent(
+      "Retired experiment",
+    );
   });
 
   it("shows a stable error state when the linked Handoff cannot be loaded", async () => {
@@ -131,8 +153,20 @@ describe("BoardPage", () => {
 
   it("offers revision only for blocked gate tasks", async () => {
     const store = fakeTaskStore([
-      snapshot({ id: "blocked-gate", title: "Blocked at gate", status: "blocked", lane: "gate", blockedReason: "Add acceptance criteria." }),
-      snapshot({ id: "blocked-review", title: "Blocked in review", status: "blocked", lane: "sdlc:review", blockedReason: "Review rejected." }),
+      snapshot({
+        id: "blocked-gate",
+        title: "Blocked at gate",
+        status: "blocked",
+        lane: "gate",
+        blockedReason: "Add acceptance criteria.",
+      }),
+      snapshot({
+        id: "blocked-review",
+        title: "Blocked in review",
+        status: "blocked",
+        lane: "sdlc:review",
+        blockedReason: "Review rejected.",
+      }),
       snapshot({ id: "open-gate", title: "Open at gate", status: "open", lane: "gate" }),
     ]);
     render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
@@ -142,23 +176,34 @@ describe("BoardPage", () => {
     expect(within(detail).getByRole("button", { name: "Revise & resubmit" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Blocked in review, Blocked" }));
-    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(detail).queryByRole("button", { name: "Revise & resubmit" }),
+      ).not.toBeInTheDocument(),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Open at gate, Open" }));
-    await waitFor(() => expect(within(detail).queryByRole("button", { name: "Revise & resubmit" })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(detail).queryByRole("button", { name: "Revise & resubmit" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("fetches and prefills the frozen spec, then creates the replacement before cancelling the old gate", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked-gate" });
-    const blocked = snapshot({
-      id: "task-blocked-gate",
-      projectKey: "/workspace/black-box",
-      title: "Original task title",
-      status: "blocked",
-      lane: "gate",
-      priority: 7,
-      blockedReason: "Name the exact cancellation behavior in acceptance criteria.",
-    }, "This snapshot body must not be used for the prefill.");
+    const blocked = snapshot(
+      {
+        id: "task-blocked-gate",
+        projectKey: "/workspace/black-box",
+        title: "Original task title",
+        status: "blocked",
+        lane: "gate",
+        priority: 7,
+        blockedReason: "Name the exact cancellation behavior in acceptance criteria.",
+      },
+      "This snapshot body must not be used for the prefill.",
+    );
     const frozenSpec = {
       ...blocked.spec,
       title: "Correct the gate contract",
@@ -231,25 +276,35 @@ Make the resubmission cleanup explicit.
     const detail = await screen.findByRole("complementary", { name: "Task detail" });
     fireEvent.click(within(detail).getByRole("button", { name: "Revise & resubmit" }));
 
-    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue("Correct the gate contract");
+    expect(await screen.findByRole("textbox", { name: "Title" })).toHaveValue(
+      "Correct the gate contract",
+    );
     expect(loadSpec).toHaveBeenCalledWith(blocked.task.specId);
     expect(screen.getByRole("textbox", { name: "Repo path" })).toHaveValue("/workspace/black-box");
-    expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue("Make the resubmission cleanup explicit.");
+    expect(screen.getByRole("textbox", { name: "Goal" })).toHaveValue(
+      "Make the resubmission cleanup explicit.",
+    );
     expect(screen.getByRole("textbox", { name: "Acceptance criteria" })).toHaveValue(
       "A new gate task is enqueued.\nThe blocked gate is cancelled afterward.",
     );
-    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue("Keep the original spec frozen.");
+    expect(screen.getByRole("textbox", { name: "Constraints" })).toHaveValue(
+      "Keep the original spec frozen.",
+    );
     expect(screen.getByRole("textbox", { name: "Verify command" })).toHaveValue("npx vitest run");
     expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveValue(42);
     expect(screen.getByRole("radio", { name: "SDLC" })).toBeChecked();
-    expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(blocked.task.blockedReason!);
+    expect(screen.getByRole("note", { name: "Gate feedback" })).toHaveTextContent(
+      blocked.task.blockedReason!,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Create revised story" }));
 
-    await waitFor(() => expect(update).toHaveBeenCalledWith("task-blocked-gate", {
-      actor: "board",
-      status: "cancelled",
-    }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith("task-blocked-gate", {
+        actor: "board",
+        status: "cancelled",
+      }),
+    );
     expect(create).toHaveBeenCalledOnce();
     expect(enqueue).toHaveBeenCalledWith({
       specId: "spec-revised",
@@ -268,14 +323,28 @@ Make the resubmission cleanup explicit.
     await screen.findByText("Shape the contract");
 
     store.applyFrame({
-      task: { ...fixtures()[0]!.task, status: "blocked", claimedBy: "worker-9", blockedReason: "review", updatedAt: "2026-07-10T01:00:00Z" },
+      task: {
+        ...fixtures()[0]!.task,
+        status: "blocked",
+        claimedBy: "worker-9",
+        blockedReason: "review",
+        updatedAt: "2026-07-10T01:00:00Z",
+      },
       transitionId: "transition-9",
       transitionType: "task.blocked",
       observedAt: "2026-07-10T01:00:00Z",
     });
 
-    await waitFor(() => expect(within(screen.getByRole("region", { name: "Blocked tasks" })).getByText("Shape the contract")).toBeInTheDocument());
-    expect(within(screen.getByRole("region", { name: "Open tasks" })).queryByText("Shape the contract")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("region", { name: "Blocked tasks" })).getByText(
+          "Shape the contract",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Open tasks" })).queryByText("Shape the contract"),
+    ).not.toBeInTheDocument();
   });
 
   it("moves keyboard focus into task detail and restores it to the originating card", async () => {
@@ -295,11 +364,15 @@ Make the resubmission cleanup explicit.
   it("writes shareable project, lane, and task filters without mutating task state", async () => {
     const updateStatus = vi.fn();
     const store = fakeTaskStore(fixtures());
-    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
+    render(() => (
+      <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />
+    ));
     await screen.findByText("Shape the contract");
 
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.input(screen.getByLabelText("Search projects"), {
+      target: { value: "other-project" },
+    });
     fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
     fireEvent.change(screen.getByLabelText("Lane"), { target: { value: "review" } });
     fireEvent.click(screen.getByRole("button", { name: /Shape the contract/ }));
@@ -320,19 +393,32 @@ Make the resubmission cleanup explicit.
     const store = fakeTaskStore(fixtures());
     const updateStatus = vi.fn();
 
-    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
+    render(() => (
+      <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />
+    ));
 
     expect(await screen.findByRole("button", { name: /black-box/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Lane")).toHaveValue("review");
-    expect(screen.getByRole("complementary", { name: "Task detail" })).toHaveTextContent("Verify the queue");
-    expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "black-box", lane: "review", limit: 250 });
+    expect(screen.getByRole("complementary", { name: "Task detail" })).toHaveTextContent(
+      "Verify the queue",
+    );
+    expect(store.setFilters).toHaveBeenCalledWith({
+      projectKey: "black-box",
+      lane: "review",
+      limit: 250,
+    });
     expect(updateStatus).not.toHaveBeenCalled();
   });
 
   it("searches catalog projects by name and path, then filters tasks by canonical scope", async () => {
     const canonicalScope = "/workspace/black-box";
     const store = fakeTaskStore([
-      snapshot({ id: "task-catalog", projectKey: canonicalScope, title: "Catalog-backed task", priority: 9 }),
+      snapshot({
+        id: "task-catalog",
+        projectKey: canonicalScope,
+        title: "Catalog-backed task",
+        priority: 9,
+      }),
     ]);
     render(() => (
       <BoardPage
@@ -354,7 +440,9 @@ Make the resubmission cleanup explicit.
     option = await screen.findByRole("option", { name: /black-box/ });
     fireEvent.click(option);
 
-    await waitFor(() => expect(searchParamWrites).toHaveBeenCalledWith({ project: canonicalScope, task: undefined }));
+    await waitFor(() =>
+      expect(searchParamWrites).toHaveBeenCalledWith({ project: canonicalScope, task: undefined }),
+    );
     expect(store.setFilters).toHaveBeenCalledWith({ projectKey: canonicalScope, limit: 250 });
     expect(screen.getByRole("button", { name: /black-box/ })).toHaveTextContent(canonicalScope);
 
@@ -366,12 +454,18 @@ Make the resubmission cleanup explicit.
     const detail = await screen.findByRole("complementary", { name: "Task detail" });
     expect(within(detail).getByText("black-box")).toBeInTheDocument();
     expect(within(detail).getByText(canonicalScope)).toBeInTheDocument();
-    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-black-box");
+    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute(
+      "href",
+      "/projects/catalog-black-box",
+    );
   });
 
   it("maps grouped variant scopes for display without broadening the exact task filter", async () => {
     const variantScope = "/workspace/black-box-worktrees/feature";
-    [params, setParams] = createStore<BoardSearchParams>({ project: variantScope, task: "task-variant" });
+    [params, setParams] = createStore<BoardSearchParams>({
+      project: variantScope,
+      task: "task-variant",
+    });
     const store = fakeTaskStore([
       snapshot({ id: "task-variant", projectKey: variantScope, title: "Variant-scoped task" }),
     ]);
@@ -391,8 +485,15 @@ Make the resubmission cleanup explicit.
 
     const detail = screen.getByRole("complementary", { name: "Task detail" });
     expect(within(detail).getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
-    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-black-box");
-    expect(within(screen.getByRole("region", { name: "Board filters" })).getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "Open project" })).toHaveAttribute(
+      "href",
+      "/projects/catalog-black-box",
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Board filters" })).getByText(
+        `Exact queue scope · ${variantScope}`,
+      ),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /black-box/ }));
     fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: variantScope } });
@@ -406,7 +507,11 @@ Make the resubmission cleanup explicit.
   it("shows a named empty project state and clearing it restores the complete queue", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ project: "/workspace/cockpit" });
     const allTasks = [
-      snapshot({ id: "task-catalog", projectKey: "/workspace/black-box", title: "Catalog-backed task" }),
+      snapshot({
+        id: "task-catalog",
+        projectKey: "/workspace/black-box",
+        title: "Catalog-backed task",
+      }),
     ];
     const store = fakeTaskStore(allTasks, async () => undefined, true);
     render(() => (
@@ -417,9 +522,14 @@ Make the resubmission cleanup explicit.
       />
     ));
 
-    expect(await screen.findByRole("heading", { name: "No work is queued for cockpit" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "No work is queued for cockpit" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Agents enqueue work through REST or MCP/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open project" })).toHaveAttribute("href", "/projects/catalog-cockpit");
+    expect(screen.getByRole("link", { name: "Open project" })).toHaveAttribute(
+      "href",
+      "/projects/catalog-cockpit",
+    );
     fireEvent.click(screen.getByRole("button", { name: /Clear project/i }));
 
     expect(await screen.findByText("Catalog-backed task")).toBeInTheDocument();
@@ -430,9 +540,17 @@ Make the resubmission cleanup explicit.
   it("keeps an empty grouped variant labeled as an exact queue scope", async () => {
     const variantScope = "/workspace/black-box-worktrees/feature";
     [params, setParams] = createStore<BoardSearchParams>({ project: variantScope });
-    const store = fakeTaskStore([
-      snapshot({ id: "task-primary", projectKey: "/workspace/black-box", title: "Primary-scoped task" }),
-    ], async () => undefined, true);
+    const store = fakeTaskStore(
+      [
+        snapshot({
+          id: "task-primary",
+          projectKey: "/workspace/black-box",
+          title: "Primary-scoped task",
+        }),
+      ],
+      async () => undefined,
+      true,
+    );
 
     render(() => (
       <BoardPage
@@ -442,17 +560,33 @@ Make the resubmission cleanup explicit.
       />
     ));
 
-    expect(await screen.findByRole("heading", { name: "No tasks match this view" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "No tasks match this view" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(`Exact queue scope · ${variantScope}`)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "No work is queued for black-box" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "No work is queued for black-box" }),
+    ).not.toBeInTheDocument();
     expect(store.setFilters).toHaveBeenCalledWith({ projectKey: variantScope, limit: 250 });
   });
 
   it("uses the generic empty state when another filter excludes a project's tasks", async () => {
-    [params, setParams] = createStore<BoardSearchParams>({ project: "/workspace/black-box", lane: "review" });
-    const store = fakeTaskStore([
-      snapshot({ id: "task-catalog", projectKey: "/workspace/black-box", title: "Catalog-backed task", lane: "codex" }),
-    ], async () => undefined, true);
+    [params, setParams] = createStore<BoardSearchParams>({
+      project: "/workspace/black-box",
+      lane: "review",
+    });
+    const store = fakeTaskStore(
+      [
+        snapshot({
+          id: "task-catalog",
+          projectKey: "/workspace/black-box",
+          title: "Catalog-backed task",
+          lane: "codex",
+        }),
+      ],
+      async () => undefined,
+      true,
+    );
     render(() => (
       <BoardPage
         store={store}
@@ -461,7 +595,9 @@ Make the resubmission cleanup explicit.
       />
     ));
 
-    expect(await screen.findByRole("heading", { name: "No tasks match this view" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "No tasks match this view" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/No work is queued for/)).not.toBeInTheDocument();
   });
 
@@ -477,15 +613,23 @@ Make the resubmission cleanup explicit.
     await screen.findByText("Shape the contract");
 
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.input(screen.getByLabelText("Search projects"), {
+      target: { value: "other-project" },
+    });
     const option = await screen.findByRole("option", { name: /other-project/ });
     expect(within(option).getByText(/^Uncatalogued queue scope/)).toBeInTheDocument();
     fireEvent.click(option);
 
-    await waitFor(() => expect(searchParamWrites).toHaveBeenCalledWith({ project: "other-project", task: undefined }));
+    await waitFor(() =>
+      expect(searchParamWrites).toHaveBeenCalledWith({ project: "other-project", task: undefined }),
+    );
     expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 });
     fireEvent.click(screen.getByRole("button", { name: "Review the release, Open" }));
-    expect(within(screen.getByRole("complementary", { name: "Task detail" })).queryByRole("link", { name: "Open project" })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("complementary", { name: "Task detail" })).queryByRole("link", {
+        name: "Open project",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps queued work and raw-scope filtering usable when the project catalog fails", async () => {
@@ -504,10 +648,14 @@ Make the resubmission cleanup explicit.
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
     expect(await screen.findByText("Unable to load projects.")).toBeInTheDocument();
 
-    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.input(screen.getByLabelText("Search projects"), {
+      target: { value: "other-project" },
+    });
     fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
 
-    await waitFor(() => expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 }));
+    await waitFor(() =>
+      expect(store.setFilters).toHaveBeenCalledWith({ projectKey: "other-project", limit: 250 }),
+    );
     expect(screen.getByText("Shape the contract")).toBeInTheDocument();
   });
 
@@ -521,7 +669,9 @@ Make the resubmission cleanup explicit.
     await waitFor(() => expect(screen.queryByText("refreshing")).not.toBeInTheDocument());
 
     fireEvent.click(await screen.findByRole("button", { name: /All projects/ }));
-    fireEvent.input(screen.getByLabelText("Search projects"), { target: { value: "other-project" } });
+    fireEvent.input(screen.getByLabelText("Search projects"), {
+      target: { value: "other-project" },
+    });
     fireEvent.click(await screen.findByRole("option", { name: /other-project/ }));
 
     const alert = await screen.findByRole("alert");
@@ -532,26 +682,37 @@ Make the resubmission cleanup explicit.
 
     store.refresh.mockResolvedValueOnce(undefined);
     fireEvent.click(within(alert).getByRole("button", { name: "Retry refreshing board" }));
-    await waitFor(() => expect(screen.queryByText("Snapshot refresh failed")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("Snapshot refresh failed")).not.toBeInTheDocument(),
+    );
   });
 
   it("shows a deliberate pending reset and relies on a refresh for canonical state", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked" });
     const store = fakeTaskStore(fixtures());
     let resolveReset!: () => void;
-    const updateStatus = vi.fn(() => new Promise<TaskChange>((resolve) => {
-      resolveReset = () => resolve({ snapshot: fixtures()[2]!, event: {
-        id: "event-reset",
-        taskId: "task-blocked",
-        type: "task.reset",
-        actor: "board",
-        fromStatus: "blocked",
-        toStatus: "open",
-        detail: null,
-        observedAt: "2026-07-10T01:00:00Z",
-      } });
-    }));
-    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
+    const updateStatus = vi.fn(
+      () =>
+        new Promise<TaskChange>((resolve) => {
+          resolveReset = () =>
+            resolve({
+              snapshot: fixtures()[2]!,
+              event: {
+                id: "event-reset",
+                taskId: "task-blocked",
+                type: "task.reset",
+                actor: "board",
+                fromStatus: "blocked",
+                toStatus: "open",
+                detail: null,
+                observedAt: "2026-07-10T01:00:00Z",
+              },
+            });
+        }),
+    );
+    render(() => (
+      <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />
+    ));
     const reset = await screen.findByRole("button", { name: "Reset task to open" });
 
     fireEvent.click(reset);
@@ -569,12 +730,18 @@ Make the resubmission cleanup explicit.
     const updateStatus = vi.fn(async () => {
       throw new Error("task changed concurrently");
     });
-    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
+    render(() => (
+      <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />
+    ));
 
     fireEvent.click(await screen.findByRole("button", { name: "Reset task to open" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Reset failed: task changed concurrently");
-    expect(within(screen.getByRole("region", { name: "Blocked tasks" })).getByText("Verify the queue")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Reset failed: task changed concurrently",
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Blocked tasks" })).getByText("Verify the queue"),
+    ).toBeInTheDocument();
     expect(store.refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -582,10 +749,15 @@ Make the resubmission cleanup explicit.
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-blocked" });
     const store = fakeTaskStore(fixtures());
     let rejectReset!: (error: Error) => void;
-    const updateStatus = vi.fn(() => new Promise<TaskChange>((_resolve, reject) => {
-      rejectReset = reject;
-    }));
-    render(() => <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />);
+    const updateStatus = vi.fn(
+      () =>
+        new Promise<TaskChange>((_resolve, reject) => {
+          rejectReset = reject;
+        }),
+    );
+    render(() => (
+      <BoardPage store={store} updateStatus={updateStatus} loadProjects={emptyCatalog} />
+    ));
     fireEvent.click(await screen.findByRole("button", { name: "Reset task to open" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Build the client, In progress" }));
@@ -600,9 +772,13 @@ Make the resubmission cleanup explicit.
 
   it("renders distinct loading, failure, and empty workspace states", async () => {
     let rejectLoad!: (error: Error) => void;
-    const store = fakeTaskStore([], () => new Promise<void>((_resolve, reject) => {
-      rejectLoad = reject;
-    }));
+    const store = fakeTaskStore(
+      [],
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectLoad = reject;
+        }),
+    );
     render(() => <BoardPage store={store} updateStatus={vi.fn()} loadProjects={emptyCatalog} />);
 
     expect(screen.getByRole("status", { name: "Loading coordination board" })).toBeInTheDocument();
@@ -662,7 +838,11 @@ Make the resubmission cleanup explicit.
 
     await screen.findByText("Live verification complete");
     const rows = [...document.querySelectorAll<HTMLElement>(".board-annotation-row")];
-    expect(rows.map((row) => row.dataset.annotationId)).toEqual(["note-live", "note-fetched", "event-created"]);
+    expect(rows.map((row) => row.dataset.annotationId)).toEqual([
+      "note-live",
+      "note-fetched",
+      "event-created",
+    ]);
     expect(rows.filter((row) => row.dataset.annotationId === "note-fetched")).toHaveLength(1);
     expect(rows[2]).toHaveTextContent("— → open");
   });
@@ -684,7 +864,11 @@ Make the resubmission cleanup explicit.
         taskId: "task-active",
         type: "task.note",
         actor: "worker-review",
-        detail: { kind: "review", text: "## Findings\n\n- Approval path is covered.", dataJson: null },
+        detail: {
+          kind: "review",
+          text: "## Findings\n\n- Approval path is covered.",
+          dataJson: null,
+        },
         observedAt: "2026-07-16T12:01:00Z",
       },
       {
@@ -710,25 +894,35 @@ Make the resubmission cleanup explicit.
       />
     ));
 
-    await waitFor(() => expect(document.querySelector('[data-annotation-id="plan-note"]')).not.toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-annotation-id="plan-note"]')).not.toBeNull(),
+    );
     const planRow = document.querySelector<HTMLElement>('[data-annotation-id="plan-note"]')!;
     const reviewRow = document.querySelector<HTMLElement>('[data-annotation-id="review-note"]')!;
-    const approvalRow = document.querySelector<HTMLElement>('[data-annotation-id="approval-note"]')!;
+    const approvalRow = document.querySelector<HTMLElement>(
+      '[data-annotation-id="approval-note"]',
+    )!;
     expect(planRow.querySelector("pre")).toHaveTextContent("## Approach 1. Inspect the board.");
-    expect(reviewRow.querySelector("pre")).toHaveTextContent("## Findings - Approval path is covered.");
+    expect(reviewRow.querySelector("pre")).toHaveTextContent(
+      "## Findings - Approval path is covered.",
+    );
     expect(within(planRow).getByText("Plan")).toHaveClass("board-annotation-kind--plan");
     expect(within(reviewRow).getByText("Review")).toHaveClass("board-annotation-kind--review");
-    expect(within(approvalRow).getByText("Approval")).toHaveClass("board-annotation-kind--approval");
+    expect(within(approvalRow).getByText("Approval")).toHaveClass(
+      "board-annotation-kind--approval",
+    );
   });
 
   it("links the newest worker session back to the selected task", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
-    const store = fakeTaskStore(fixtures(), undefined, false, [annotation({
-      id: "worker-session",
-      kind: "worker_session",
-      text: "Worker session attached",
-      dataJson: { sessionId: "session-9" },
-    })]);
+    const store = fakeTaskStore(fixtures(), undefined, false, [
+      annotation({
+        id: "worker-session",
+        kind: "worker_session",
+        text: "Worker session attached",
+        dataJson: { sessionId: "session-9" },
+      }),
+    ]);
 
     render(() => (
       <BoardPage
@@ -776,13 +970,18 @@ Make the resubmission cleanup explicit.
     const chips = await screen.findByLabelText("Agent run context");
     expect(chips).toHaveTextContent("Engine · codex");
     expect(chips).toHaveTextContent("feature/new");
-    expect(within(chips).getByRole("link", { name: "Pull request ↗" })).toHaveAttribute("href", "https://example.com/pr/2");
+    expect(within(chips).getByRole("link", { name: "Pull request ↗" })).toHaveAttribute(
+      "href",
+      "https://example.com/pr/2",
+    );
   });
 
   it("enables steering only while the selected task is in progress", async () => {
     [params, setParams] = createStore<BoardSearchParams>({ task: "task-active" });
     const store = fakeTaskStore(fixtures());
-    const createAnnotation = vi.fn(async () => annotation({ kind: "steer", text: "Stay on verification." }));
+    const createAnnotation = vi.fn(async () =>
+      annotation({ kind: "steer", text: "Stay on verification." }),
+    );
     const getTaskEvents = vi.fn(async () => [] as TaskEvent[]);
     render(() => (
       <BoardPage
@@ -797,14 +996,18 @@ Make the resubmission cleanup explicit.
     const textarea = await screen.findByRole("textbox", { name: "Steer this run" });
     fireEvent.input(textarea, { target: { value: "Stay on verification." } });
     fireEvent.click(screen.getByRole("button", { name: "Send steer" }));
-    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-active", {
-      actor: "board",
-      kind: "steer",
-      text: "Stay on verification.",
-    }));
+    await waitFor(() =>
+      expect(createAnnotation).toHaveBeenCalledWith("task-active", {
+        actor: "board",
+        kind: "steer",
+        text: "Stay on verification.",
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Verify the queue, Blocked" }));
-    expect(await screen.findByText("Steering is only available while the task is in progress.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Steering is only available while the task is in progress."),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Steer this run" })).not.toBeInTheDocument();
   });
 
@@ -817,14 +1020,16 @@ Make the resubmission cleanup explicit.
       lane: "sdlc:plan",
       priority: 10,
     });
-    const history: TaskEvent[] = [{
-      id: "plan-document",
-      taskId: "task-plan",
-      type: "task.note",
-      actor: "worker-plan",
-      detail: { kind: "plan", text: "Implement the approval seam.", dataJson: null },
-      observedAt: "2026-07-16T13:00:00Z",
-    }];
+    const history: TaskEvent[] = [
+      {
+        id: "plan-document",
+        taskId: "task-plan",
+        type: "task.note",
+        actor: "worker-plan",
+        detail: { kind: "plan", text: "Implement the approval seam.", dataJson: null },
+        observedAt: "2026-07-16T13:00:00Z",
+      },
+    ];
     const store = fakeTaskStore([stageTask]);
     const result = annotation({
       id: "approval-plan",
@@ -846,7 +1051,9 @@ Make the resubmission cleanup explicit.
       />
     ));
 
-    const card = await screen.findByRole("button", { name: "Approve the implementation plan, Done" });
+    const card = await screen.findByRole("button", {
+      name: "Approve the implementation plan, Done",
+    });
     expect(within(card).getByText("plan")).toHaveClass("board-stage-chip--plan");
     await waitFor(() => expect(within(card).getByText("Awaiting approval")).toBeInTheDocument());
     expect(card).toHaveAccessibleDescription(/plan Awaiting approval/i);
@@ -854,15 +1061,19 @@ Make the resubmission cleanup explicit.
     expect(await within(detail).findByText("Awaiting approval")).toBeInTheDocument();
     fireEvent.click(await within(detail).findByRole("button", { name: "Approve" }));
 
-    await waitFor(() => expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
-      actor: "nathan",
-      kind: "approval",
-      text: "Plan approved.",
-      dataJson: { decision: "approve", stage: "plan", feedback: "" },
-    }));
+    await waitFor(() =>
+      expect(createAnnotation).toHaveBeenCalledWith("task-plan", {
+        actor: "nathan",
+        kind: "approval",
+        text: "Plan approved.",
+        dataJson: { decision: "approve", stage: "plan", feedback: "" },
+      }),
+    );
     expect(await within(detail).findByText(/Approved by nathan at/)).toBeInTheDocument();
     expect(within(detail).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
-    await waitFor(() => expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(within(card).queryByText("Awaiting approval")).not.toBeInTheDocument(),
+    );
   });
 
   it("hydrates prior decisions and ignores malformed or wrong-stage approvals", async () => {
@@ -900,9 +1111,9 @@ Make the resubmission cleanup explicit.
         dataJson: { decision: "approve", stage: "review", feedback: "" },
       },
     };
-    const getTaskEvents = vi.fn(async (taskId: string) => (
-      taskId === "task-plan-valid" ? [validApproval] : [wrongStageApproval]
-    ));
+    const getTaskEvents = vi.fn(async (taskId: string) =>
+      taskId === "task-plan-valid" ? [validApproval] : [wrongStageApproval],
+    );
     const store = fakeTaskStore([validTask, pendingTask]);
     render(() => (
       <BoardPage
@@ -914,9 +1125,15 @@ Make the resubmission cleanup explicit.
     ));
 
     const validCard = await screen.findByRole("button", { name: "Previously approved plan, Done" });
-    const pendingCard = screen.getByRole("button", { name: "Plan with wrong-stage decision, Done" });
-    await waitFor(() => expect(within(validCard).queryByText("Awaiting approval")).not.toBeInTheDocument());
-    await waitFor(() => expect(within(pendingCard).getByText("Awaiting approval")).toBeInTheDocument());
+    const pendingCard = screen.getByRole("button", {
+      name: "Plan with wrong-stage decision, Done",
+    });
+    await waitFor(() =>
+      expect(within(validCard).queryByText("Awaiting approval")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(within(pendingCard).getByText("Awaiting approval")).toBeInTheDocument(),
+    );
 
     fireEvent.click(validCard);
     expect(await screen.findByText(/Approved by nathan at/)).toBeInTheDocument();
@@ -934,9 +1151,12 @@ Make the resubmission cleanup explicit.
       lane: "sdlc:plan",
     });
     let rejectHistory!: (error: Error) => void;
-    const getTaskEvents = vi.fn(() => new Promise<TaskEvent[]>((_resolve, reject) => {
-      rejectHistory = reject;
-    }));
+    const getTaskEvents = vi.fn(
+      () =>
+        new Promise<TaskEvent[]>((_resolve, reject) => {
+          rejectHistory = reject;
+        }),
+    );
     const store = fakeTaskStore([stageTask]);
     render(() => (
       <BoardPage
@@ -963,7 +1183,13 @@ Make the resubmission cleanup explicit.
     const dag: DagResponse = {
       nodes: [
         { id: "spec-1", type: "spec", label: "Coordination story", ref: "/specs/spec-1" },
-        { id: "task-active", type: "task", label: "Build the client", status: "in_progress", ref: "/tasks/task-active" },
+        {
+          id: "task-active",
+          type: "task",
+          label: "Build the client",
+          status: "in_progress",
+          ref: "/tasks/task-active",
+        },
       ],
       edges: [{ from: "spec-1", to: "task-active", type: "has_task" }],
     };
@@ -982,7 +1208,9 @@ Make the resubmission cleanup explicit.
     expect(getTaskDag).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "View agent DAG" }));
     await waitFor(() => expect(getTaskDag).toHaveBeenCalledWith("task-active"));
-    expect(await screen.findByText("Build the client", { selector: ".dag-label" })).toBeInTheDocument();
+    expect(
+      await screen.findByText("Build the client", { selector: ".dag-label" }),
+    ).toBeInTheDocument();
     expect(document.querySelector('[data-node-id="task-active"]')).toHaveClass("dag-node--current");
   });
 
@@ -991,8 +1219,8 @@ Make the resubmission cleanup explicit.
     expect(themeCss).toContain(".board-columns,");
     expect(themeCss).toContain("grid-template-columns: 1fr;");
     expect(themeCss).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(themeCss).toContain(".board-loading-lines i { animation: none; }");
-    expect(themeCss).toContain(".board-task-button:hover { transform: none; }");
+    expect(themeCss).toMatch(/\.board-loading-lines i \{\s*animation: none;\s*\}/);
+    expect(themeCss).toMatch(/\.board-task-button:hover \{\s*transform: none;\s*\}/);
     expect(themeCss).toContain(".board-annotation-kind--plan");
     expect(themeCss).toContain(".board-annotation-kind--review");
     expect(themeCss).toContain(".board-annotation-kind--approval");
@@ -1013,7 +1241,10 @@ function fakeTaskStore(
     annotationsByTask.set(item.taskId, [...(annotationsByTask.get(item.taskId) ?? []), item]);
   }
   const refresh = vi.fn(refreshImpl);
-  const store: TaskLiveStoreWithNotes & { setFilters: ReturnType<typeof vi.fn>; refresh: ReturnType<typeof vi.fn> } = {
+  const store: TaskLiveStoreWithNotes & {
+    setFilters: ReturnType<typeof vi.fn>;
+    refresh: ReturnType<typeof vi.fn>;
+  } = {
     status: () => "live",
     tasks: () => snapshots().map(({ task }) => task),
     snapshots,
@@ -1022,25 +1253,39 @@ function fakeTaskStore(
     filters,
     setFilters: vi.fn(async (next: TaskFilters) => {
       const current = filters();
-      if (current.projectKey === next.projectKey
-        && current.lane === next.lane
-        && current.status === next.status
-        && current.limit === next.limit) return;
+      if (
+        current.projectKey === next.projectKey &&
+        current.lane === next.lane &&
+        current.status === next.status &&
+        current.limit === next.limit
+      )
+        return;
       setFiltersSignal(next);
       if (filterSnapshots) {
-        setSnapshots(initial.filter(({ task }) => (
-          (!next.projectKey || task.projectKey === next.projectKey)
-          && (!next.lane || task.lane === next.lane)
-          && (!next.status || task.status === next.status)
-        )));
+        setSnapshots(
+          initial.filter(
+            ({ task }) =>
+              (!next.projectKey || task.projectKey === next.projectKey) &&
+              (!next.lane || task.lane === next.lane) &&
+              (!next.status || task.status === next.status),
+          ),
+        );
       }
       await refresh();
     }),
     refresh,
-    applyFrame: (frame: TaskLifecycleFrame) => setSnapshots((current) => current.map((item) => (
-      item.task.id === frame.task.id ? { ...item, task: frame.task } : item
-    ))),
-    diagnostics: () => ({ records: snapshots().length, versions: snapshots().length, liveMutations: 0, transitions: 0 }),
+    applyFrame: (frame: TaskLifecycleFrame) =>
+      setSnapshots((current) =>
+        current.map((item) =>
+          item.task.id === frame.task.id ? { ...item, task: frame.task } : item,
+        ),
+      ),
+    diagnostics: () => ({
+      records: snapshots().length,
+      versions: snapshots().length,
+      liveMutations: 0,
+      transitions: 0,
+    }),
     close: vi.fn(),
   };
   return store;
@@ -1098,20 +1343,57 @@ function catalogProjects(): ProjectSummary[] {
 
 function fixtures(): TaskSnapshot[] {
   return [
-    snapshot({ id: "task-open", title: "Shape the contract", status: "open", lane: "planning", priority: 9 }),
-    snapshot({ id: "task-active", title: "Build the client", status: "in_progress", lane: "frontend", priority: 7, claimedBy: "worker-1" }),
     snapshot({
-      id: "task-blocked",
-      title: "Verify the queue",
-      status: "blocked",
+      id: "task-open",
+      title: "Shape the contract",
+      status: "open",
+      lane: "planning",
+      priority: 9,
+    }),
+    snapshot({
+      id: "task-active",
+      title: "Build the client",
+      status: "in_progress",
+      lane: "frontend",
+      priority: 7,
+      claimedBy: "worker-1",
+    }),
+    snapshot(
+      {
+        id: "task-blocked",
+        title: "Verify the queue",
+        status: "blocked",
+        lane: "review",
+        priority: 8,
+        claimedBy: "worker-2",
+        blockedReason: "waiting for deterministic fixture data",
+      },
+      "Frozen acceptance contract for blocked work.",
+    ),
+    snapshot({
+      id: "task-done",
+      title: "Ship the adapter",
+      status: "done",
+      lane: "backend",
+      priority: 5,
+      claimedBy: "worker-3",
+      resultHandoffId: "handoff-44",
+    }),
+    snapshot({
+      id: "task-cancelled",
+      title: "Retired experiment",
+      status: "cancelled",
+      lane: "research",
+      priority: 1,
+    }),
+    snapshot({
+      id: "task-other",
+      projectKey: "other-project",
+      title: "Review the release",
+      status: "open",
       lane: "review",
-      priority: 8,
-      claimedBy: "worker-2",
-      blockedReason: "waiting for deterministic fixture data",
-    }, "Frozen acceptance contract for blocked work."),
-    snapshot({ id: "task-done", title: "Ship the adapter", status: "done", lane: "backend", priority: 5, claimedBy: "worker-3", resultHandoffId: "handoff-44" }),
-    snapshot({ id: "task-cancelled", title: "Retired experiment", status: "cancelled", lane: "research", priority: 1 }),
-    snapshot({ id: "task-other", projectKey: "other-project", title: "Review the release", status: "open", lane: "review", priority: 4 }),
+      priority: 4,
+    }),
   ];
 }
 

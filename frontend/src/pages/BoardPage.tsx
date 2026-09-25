@@ -1,5 +1,16 @@
 import { A, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show, untrack, type JSX } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  Show,
+  untrack,
+  type JSX,
+} from "solid-js";
 import ApprovalBox, { approvalDecision, type ApprovalStage } from "../components/ApprovalBox";
 import DagView from "../components/DagView";
 import ProjectPicker from "../components/ProjectPicker";
@@ -20,7 +31,6 @@ import {
   type AnnotationKind,
   type ProjectSummary,
   type TaskAnnotation,
-  type TaskChange,
   type TaskEvent,
   type TaskFilters,
   type TaskSnapshot,
@@ -57,7 +67,12 @@ type StoryFormState = {
 
 const COLUMNS: BoardColumn[] = [
   { id: "open", label: "Open", description: "Ready to claim", statuses: ["open"] },
-  { id: "active", label: "In Progress", description: "Owned and moving", statuses: ["claimed", "in_progress"] },
+  {
+    id: "active",
+    label: "In Progress",
+    description: "Owned and moving",
+    statuses: ["claimed", "in_progress"],
+  },
   { id: "blocked", label: "Blocked", description: "Needs intervention", statuses: ["blocked"] },
   { id: "done", label: "Done", description: "Handoff recorded", statuses: ["done"] },
 ];
@@ -90,7 +105,9 @@ export default function BoardPage(props: BoardPageProps) {
   const [revisionErrors, setRevisionErrors] = createSignal<Record<string, string | undefined>>({});
   const [resettingTasks, setResettingTasks] = createSignal<Set<string>>(new Set());
   const [resetErrors, setResetErrors] = createSignal<Record<string, string | undefined>>({});
-  const [knownProjects, setKnownProjects] = createSignal<string[]>(params.project ? [params.project] : []);
+  const [knownProjects, setKnownProjects] = createSignal<string[]>(
+    params.project ? [params.project] : [],
+  );
   const [knownLanes, setKnownLanes] = createSignal<string[]>(params.lane ? [params.lane] : []);
   const [localApprovals, setLocalApprovals] = createSignal<Record<string, TaskAnnotation>>({});
   const taskButtons = new Map<string, HTMLButtonElement>();
@@ -98,14 +115,20 @@ export default function BoardPage(props: BoardPageProps) {
   let loadSequence = 0;
 
   const snapshots = createMemo(() => store.snapshots());
-  const activeSnapshots = createMemo(() => snapshots().filter(({ task }) => task.status !== "cancelled"));
-  const cancelledSnapshots = createMemo(() => snapshots().filter(({ task }) => task.status === "cancelled"));
+  const activeSnapshots = createMemo(() =>
+    snapshots().filter(({ task }) => task.status !== "cancelled"),
+  );
+  const cancelledSnapshots = createMemo(() =>
+    snapshots().filter(({ task }) => task.status === "cancelled"),
+  );
   const selected = createMemo(() => snapshots().find(({ task }) => task.id === params.task));
   const totalActive = createMemo(() => activeSnapshots().length);
-  const catalogProjects = createMemo(() => catalog.error ? [] : catalog());
+  const catalogProjects = createMemo(() => (catalog.error ? [] : catalog()));
   const projectOptions = createMemo(() => mergeProjectOptions(catalogProjects(), knownProjects()));
-  const selectedProject = createMemo(() => selectedProjectForScope(params.project, projectOptions()));
-  const projectCatalogError = createMemo(() => catalog.error ? "Unable to load projects." : null);
+  const selectedProject = createMemo(() =>
+    selectedProjectForScope(params.project, projectOptions()),
+  );
+  const projectCatalogError = createMemo(() => (catalog.error ? "Unable to load projects." : null));
 
   createEffect(() => {
     const projects = new Set(knownProjects());
@@ -136,11 +159,9 @@ export default function BoardPage(props: BoardPageProps) {
     setPhase("loading");
     setLoadError(null);
     try {
-      const operation = untrack(() => (
-        sameTaskFilters(store.filters(), filters)
-          ? store.refresh()
-          : store.setFilters(filters)
-      ));
+      const operation = untrack(() =>
+        sameTaskFilters(store.filters(), filters) ? store.refresh() : store.setFilters(filters),
+      );
       await operation;
       if (sequence === loadSequence) {
         setVisibleFilters({ ...filters });
@@ -223,7 +244,10 @@ export default function BoardPage(props: BoardPageProps) {
         <div class="board-heading">
           <p class="eyebrow">coordination ledger</p>
           <h1 id="board-title">Coordination board</h1>
-          <p>Observe the agent queue, inspect frozen intent, and clear stalled ownership without running an agent.</p>
+          <p>
+            Observe the agent queue, inspect frozen intent, and clear stalled ownership without
+            running an agent.
+          </p>
         </div>
         <div class="board-vitals" aria-label="Board status">
           <span class={`board-live board-live--${store.status()}`}>
@@ -250,7 +274,9 @@ export default function BoardPage(props: BoardPageProps) {
           <select
             aria-label="Lane"
             value={params.lane ?? ""}
-            onChange={(event) => setParams({ lane: optionalValue(event.currentTarget.value), task: undefined })}
+            onChange={(event) =>
+              setParams({ lane: optionalValue(event.currentTarget.value), task: undefined })
+            }
           >
             <option value="">All lanes</option>
             <For each={knownLanes()}>{(lane) => <option value={lane}>{lane}</option>}</For>
@@ -297,8 +323,16 @@ export default function BoardPage(props: BoardPageProps) {
       </Show>
 
       <Show when={phase() === "loading" && snapshots().length === 0}>
-        <BoardState class="board-state--loading" label="Loading coordination board" title="Reading the queue">
-          <div class="board-loading-lines" aria-hidden="true"><i /><i /><i /></div>
+        <BoardState
+          class="board-state--loading"
+          label="Loading coordination board"
+          title="Reading the queue"
+        >
+          <div class="board-loading-lines" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
         </BoardState>
       </Show>
 
@@ -307,7 +341,12 @@ export default function BoardPage(props: BoardPageProps) {
           <span class="board-state-index">ERR</span>
           <h2>Queue snapshot unavailable</h2>
           <p>{loadError()}</p>
-          <button type="button" class="secondary-action" aria-label="Retry loading board" onClick={() => void load()}>
+          <button
+            type="button"
+            class="secondary-action"
+            aria-label="Retry loading board"
+            onClick={() => void load()}
+          >
             Retry snapshot
           </button>
         </div>
@@ -316,11 +355,15 @@ export default function BoardPage(props: BoardPageProps) {
       <Show when={phase() === "ready" && snapshots().length === 0}>
         <Show
           when={!params.lane ? primaryCatalogFilter(params.project, selectedProject()) : undefined}
-          fallback={(
-            <BoardState class="board-state--empty" label="Empty coordination board" title="No tasks match this view">
+          fallback={
+            <BoardState
+              class="board-state--empty"
+              label="Empty coordination board"
+              title="No tasks match this view"
+            >
               <p>Change a filter or enqueue work through the REST or MCP task contract.</p>
             </BoardState>
-          )}
+          }
         >
           {(project) => (
             <BoardState
@@ -328,11 +371,24 @@ export default function BoardPage(props: BoardPageProps) {
               label={`Empty coordination board for ${projectShortName(project())}`}
               title={`No work is queued for ${projectShortName(project())}`}
             >
-              <p>Agents enqueue work through REST or MCP. Selecting a project does not infer tasks from recorded activity.</p>
+              <p>
+                Agents enqueue work through REST or MCP. Selecting a project does not infer tasks
+                from recorded activity.
+              </p>
               <Show when={projectHref(project())}>
-                {(href) => <A class="secondary-action" href={href()}>Open project</A>}
+                {(href) => (
+                  <A class="secondary-action" href={href()}>
+                    Open project
+                  </A>
+                )}
               </Show>
-              <button type="button" class="secondary-action" onClick={() => selectProject(undefined)}>Clear project</button>
+              <button
+                type="button"
+                class="secondary-action"
+                onClick={() => selectProject(undefined)}
+              >
+                Clear project
+              </button>
             </BoardState>
           )}
         </Show>
@@ -342,26 +398,45 @@ export default function BoardPage(props: BoardPageProps) {
         <div class="board-stale-alert" role="alert">
           <div>
             <strong>Snapshot refresh failed</strong>
-            <span>{loadError()}. Showing the last successful view: {filterLabel(visibleFilters(), projectOptions())}.</span>
+            <span>
+              {loadError()}. Showing the last successful view:{" "}
+              {filterLabel(visibleFilters(), projectOptions())}.
+            </span>
           </div>
-          <button type="button" aria-label="Retry refreshing board" onClick={() => void load()}>Retry</button>
+          <button type="button" aria-label="Retry refreshing board" onClick={() => void load()}>
+            Retry
+          </button>
         </div>
       </Show>
 
       <Show when={snapshots().length > 0}>
-        <div classList={{ "board-workspace": true, "board-workspace--detail": selected() !== undefined }}>
+        <div
+          classList={{
+            "board-workspace": true,
+            "board-workspace--detail": selected() !== undefined,
+          }}
+        >
           <div class="board-canvas">
             <div class="board-columns" aria-label="Task status columns">
               <For each={COLUMNS}>
                 {(column, columnIndex) => (
-                  <section class={`board-column board-column--${column.id}`} aria-label={`${column.label} tasks`}>
+                  <section
+                    class={`board-column board-column--${column.id}`}
+                    aria-label={`${column.label} tasks`}
+                  >
                     <header>
                       <span class="board-column-index">0{columnIndex() + 1}</span>
-                      <div><h2>{column.label}</h2><p>{column.description}</p></div>
+                      <div>
+                        <h2>{column.label}</h2>
+                        <p>{column.description}</p>
+                      </div>
                       <strong>{columnTasks(column).length}</strong>
                     </header>
                     <div class="board-task-stack">
-                      <For each={columnTasks(column)} fallback={<p class="board-column-empty">No records</p>}>
+                      <For
+                        each={columnTasks(column)}
+                        fallback={<p class="board-column-empty">No records</p>}
+                      >
                         {(snapshot) => (
                           <TaskCard
                             snapshot={snapshot}
@@ -389,7 +464,8 @@ export default function BoardPage(props: BoardPageProps) {
                   onClick={() => setShowCancelled((shown) => !shown)}
                 >
                   <span aria-hidden="true">{showCancelled() ? "−" : "+"}</span>
-                  {showCancelled() ? "Hide" : "Show"} {cancelledSnapshots().length} cancelled {pluralize(cancelledSnapshots().length, "task")}
+                  {showCancelled() ? "Hide" : "Show"} {cancelledSnapshots().length} cancelled{" "}
+                  {pluralize(cancelledSnapshots().length, "task")}
                 </button>
                 <Show when={showCancelled()}>
                   <div class="board-cancelled-list" role="region" aria-label="Cancelled tasks">
@@ -428,10 +504,12 @@ export default function BoardPage(props: BoardPageProps) {
                 getTaskDag={props.getTaskDag ?? getTaskDag}
                 createAnnotation={props.createAnnotation}
                 localApproval={localApprovals()[snapshot().task.id]}
-                onApproval={(annotation) => setLocalApprovals((current) => ({
-                  ...current,
-                  [annotation.taskId]: annotation,
-                }))}
+                onApproval={(annotation) =>
+                  setLocalApprovals((current) => ({
+                    ...current,
+                    [annotation.taskId]: annotation,
+                  }))
+                }
                 onClose={closeTaskDetail}
                 onReset={() => void resetTask(snapshot())}
                 onRevise={() => void reviseTask(snapshot())}
@@ -467,19 +545,14 @@ function TaskCard(props: {
   const task = () => props.snapshot.task;
   const stage = createMemo(() => sdlcStage(task().lane));
   const [stageEvents] = createResource(
-    () => (task().status === "done" && stage()
-      ? task().id
-      : undefined),
+    () => (task().status === "done" && stage() ? task().id : undefined),
     (taskId) => props.getTaskEvents(taskId),
   );
   const stageTimeline = createMemo(() => {
     props.store.noteEpoch();
     return mergeTaskTimeline(
-      stageEvents.error ? [] : stageEvents() ?? [],
-      annotationsWithLocal(
-        props.store.taskAnnotations(task().id),
-        props.localApproval,
-      ),
+      stageEvents.error ? [] : (stageEvents() ?? []),
+      annotationsWithLocal(props.store.taskAnnotations(task().id), props.localApproval),
     );
   });
   const decision = createMemo(() => approvalForStage(stageTimeline(), stage()));
@@ -510,7 +583,9 @@ function TaskCard(props: {
         <Show when={stage()}>
           {(currentStage) => (
             <span id={`task-stage-${task().id}`} class="board-task-stage-row">
-              <span class={`board-stage-chip board-stage-chip--${currentStage()}`}>{currentStage()}</span>
+              <span class={`board-stage-chip board-stage-chip--${currentStage()}`}>
+                {currentStage()}
+              </span>
               <Show when={approvalState() === "awaiting"}>
                 <span class="board-awaiting-chip">Awaiting approval</span>
               </Show>
@@ -518,17 +593,16 @@ function TaskCard(props: {
                 <span class="board-approval-state-chip">Checking approval</span>
               </Show>
               <Show when={approvalState() === "unavailable"}>
-                <span class="board-approval-state-chip board-approval-state-chip--error">Approval status unavailable</span>
+                <span class="board-approval-state-chip board-approval-state-chip--error">
+                  Approval status unavailable
+                </span>
               </Show>
             </span>
           )}
         </Show>
         <span class="board-task-meta">
           <i>{task().lane}</i>
-          <Show
-            when={props.project}
-            fallback={<i>{task().projectKey}</i>}
-          >
+          <Show when={props.project} fallback={<i>{task().projectKey}</i>}>
             {(project) => (
               <>
                 <i>{projectShortName(project())}</i>
@@ -586,11 +660,8 @@ function TaskDetail(props: {
   const timeline = createMemo(() => {
     props.store.noteEpoch();
     return mergeTaskTimeline(
-      events.error ? [] : events() ?? [],
-      annotationsWithLocal(
-        props.store.taskAnnotations(task().id),
-        props.localApproval,
-      ),
+      events.error ? [] : (events() ?? []),
+      annotationsWithLocal(props.store.taskAnnotations(task().id), props.localApproval),
     );
   });
   const decision = createMemo(() => approvalForStage(timeline(), stage()));
@@ -602,23 +673,28 @@ function TaskDetail(props: {
     if (events() === undefined) return "checking";
     return "awaiting";
   });
-  const approvalReady = createMemo(() => (
-    task().status === "done"
-    && stage() !== undefined
-    && (decision() !== undefined || (!events.loading && !events.error && events() !== undefined))
-  ));
+  const approvalReady = createMemo(
+    () =>
+      task().status === "done" &&
+      stage() !== undefined &&
+      (decision() !== undefined || (!events.loading && !events.error && events() !== undefined)),
+  );
   const chips = createMemo(() => timelineChips(timeline()));
-  const tendril = createMemo(() => timeline().find((entry) => (
-    entry.kind === "worker_session" && typeof entry.dataJson?.sessionId === "string"
-  )));
+  const tendril = createMemo(() =>
+    timeline().find(
+      (entry) => entry.kind === "worker_session" && typeof entry.dataJson?.sessionId === "string",
+    ),
+  );
   const [handoff] = createResource(
     () => task().resultHandoffId || undefined,
     (handoffId) => props.loadHandoff(handoffId),
   );
-  createEffect(on(
-    () => task().id,
-    () => queueMicrotask(() => closeButton?.focus()),
-  ));
+  createEffect(
+    on(
+      () => task().id,
+      () => queueMicrotask(() => closeButton?.focus()),
+    ),
+  );
   return (
     <aside class="board-detail" aria-label="Task detail">
       <header class="board-detail-head">
@@ -626,7 +702,15 @@ function TaskDetail(props: {
           <p class="eyebrow">task record</p>
           <h2>{task().title}</h2>
         </div>
-        <button ref={closeButton} type="button" class="board-detail-close" aria-label="Close task detail" onClick={props.onClose}>×</button>
+        <button
+          ref={closeButton}
+          type="button"
+          class="board-detail-close"
+          aria-label="Close task detail"
+          onClick={props.onClose}
+        >
+          ×
+        </button>
       </header>
 
       <div class="board-detail-scroll">
@@ -641,7 +725,9 @@ function TaskDetail(props: {
             <span class="board-approval-state-chip">Checking approval</span>
           </Show>
           <Show when={approvalState() === "unavailable"}>
-            <span class="board-approval-state-chip board-approval-state-chip--error">Approval status unavailable</span>
+            <span class="board-approval-state-chip board-approval-state-chip--error">
+              Approval status unavailable
+            </span>
           </Show>
         </section>
 
@@ -658,7 +744,10 @@ function TaskDetail(props: {
           <section class="board-revise-panel">
             <div>
               <strong>Submit a corrected story</strong>
-              <p>The frozen spec stays unchanged. A successful resubmission creates a new spec and gate task.</p>
+              <p>
+                The frozen spec stays unchanged. A successful resubmission creates a new spec and
+                gate task.
+              </p>
             </div>
             <button
               type="button"
@@ -670,7 +759,11 @@ function TaskDetail(props: {
               {props.revising ? "Loading spec…" : "Revise & resubmit"}
             </button>
             <Show when={props.revisionError}>
-              {(message) => <p class="board-revise-error" role="alert">Unable to load frozen spec: {message()}</p>}
+              {(message) => (
+                <p class="board-revise-error" role="alert">
+                  Unable to load frozen spec: {message()}
+                </p>
+              )}
             </Show>
           </section>
         </Show>
@@ -689,24 +782,41 @@ function TaskDetail(props: {
                 {(href) => <A href={href()}>Open project</A>}
               </Show>
             </dd>
-            <dt>Current claimant</dt><dd>{task().claimedBy || "Unclaimed"}</dd>
-            <dt>Created by</dt><dd>{task().createdBy}</dd>
-            <dt>Created</dt><dd>{formatInstant(task().createdAt)}</dd>
-            <dt>Last transition</dt><dd>{formatInstant(task().updatedAt)}</dd>
-            <dt>Task ID</dt><dd><code>{task().id}</code></dd>
+            <dt>Current claimant</dt>
+            <dd>{task().claimedBy || "Unclaimed"}</dd>
+            <dt>Created by</dt>
+            <dd>{task().createdBy}</dd>
+            <dt>Created</dt>
+            <dd>{formatInstant(task().createdAt)}</dd>
+            <dt>Last transition</dt>
+            <dd>{formatInstant(task().updatedAt)}</dd>
+            <dt>Task ID</dt>
+            <dd>
+              <code>{task().id}</code>
+            </dd>
           </dl>
         </section>
 
         <section class="board-detail-section board-spec">
           <div class="board-section-heading">
-            <div><span>Frozen specification</span><h3>{spec().title}</h3></div>
-            <span class={`board-spec-status board-spec-status--${spec().status}`}>{spec().status}</span>
+            <div>
+              <span>Frozen specification</span>
+              <h3>{spec().title}</h3>
+            </div>
+            <span class={`board-spec-status board-spec-status--${spec().status}`}>
+              {spec().status}
+            </span>
           </div>
           <pre class="board-spec-body">{spec().body}</pre>
           <dl class="board-detail-grid">
-            <dt>Spec ID</dt><dd><code>{spec().id}</code></dd>
-            <dt>Frozen by</dt><dd>{spec().createdBy}</dd>
-            <dt>Frozen at</dt><dd>{formatInstant(spec().createdAt)}</dd>
+            <dt>Spec ID</dt>
+            <dd>
+              <code>{spec().id}</code>
+            </dd>
+            <dt>Frozen by</dt>
+            <dd>{spec().createdBy}</dd>
+            <dt>Frozen at</dt>
+            <dd>{formatInstant(spec().createdAt)}</dd>
           </dl>
           <Show when={spec().specRef}>
             {(provenance) => (
@@ -722,10 +832,23 @@ function TaskDetail(props: {
           <h3>Agent activity</h3>
           <Show when={chips().engine || chips().branch || chips().prUrl}>
             <div class="board-chip-row" aria-label="Agent run context">
-              <Show when={chips().engine}>{(engine) => <span class="board-chip board-chip--engine">Engine · {engine()}</span>}</Show>
-              <Show when={chips().branch}>{(branch) => <code class="board-chip board-chip--branch">{branch()}</code>}</Show>
+              <Show when={chips().engine}>
+                {(engine) => <span class="board-chip board-chip--engine">Engine · {engine()}</span>}
+              </Show>
+              <Show when={chips().branch}>
+                {(branch) => <code class="board-chip board-chip--branch">{branch()}</code>}
+              </Show>
               <Show when={chips().prUrl}>
-                {(prUrl) => <a class="board-chip board-chip--pr" href={prUrl()} target="_blank" rel="noreferrer">Pull request ↗</a>}
+                {(prUrl) => (
+                  <a
+                    class="board-chip board-chip--pr"
+                    href={prUrl()}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Pull request ↗
+                  </a>
+                )}
               </Show>
             </div>
           </Show>
@@ -745,7 +868,9 @@ function TaskDetail(props: {
             <p class="board-annotation-state">Loading task activity…</p>
           </Show>
           <Show when={events.error}>
-            <p class="board-annotation-state board-annotation-state--error">Task activity could not be loaded.</p>
+            <p class="board-annotation-state board-annotation-state--error">
+              Task activity could not be loaded.
+            </p>
           </Show>
           <Show when={!events.loading && !events.error && timeline().length === 0}>
             <p class="board-annotation-state">No task activity yet.</p>
@@ -757,8 +882,10 @@ function TaskDetail(props: {
                   <li
                     classList={{
                       "board-annotation-row": true,
-                      "board-annotation-row--document": entry.kind === "plan" || entry.kind === "review",
-                      [`board-annotation-row--${entry.kind}`]: entry.kind === "plan" || entry.kind === "review",
+                      "board-annotation-row--document":
+                        entry.kind === "plan" || entry.kind === "review",
+                      [`board-annotation-row--${entry.kind}`]:
+                        entry.kind === "plan" || entry.kind === "review",
                     }}
                     data-annotation-id={entry.id}
                   >
@@ -823,7 +950,9 @@ function TaskDetail(props: {
                 <p class="board-annotation-state">Loading agent DAG…</p>
               </Show>
               <Show when={dag.error}>
-                <p class="board-annotation-state board-annotation-state--error">Agent DAG could not be loaded.</p>
+                <p class="board-annotation-state board-annotation-state--error">
+                  Agent DAG could not be loaded.
+                </p>
               </Show>
               <Show when={!dag.loading && !dag.error}>
                 <DagView dag={dag() ?? { nodes: [], edges: [] }} currentTaskId={task().id} />
@@ -836,23 +965,40 @@ function TaskDetail(props: {
           {(handoffId) => (
             <section class="board-handoff" id={`handoff-${handoffId()}`}>
               <div class="board-handoff-head">
-                <div><span>Completion artifact</span><code>{handoffId()}</code></div>
+                <div>
+                  <span>Completion artifact</span>
+                  <code>{handoffId()}</code>
+                </div>
                 <span class="board-handoff-label">Linked Handoff</span>
               </div>
               <Show when={handoff.loading}>
                 <p class="board-handoff-state">Resolving linked Handoff…</p>
               </Show>
               <Show when={handoff.error}>
-                <p class="board-handoff-state board-handoff-state--error">Linked Handoff could not be loaded.</p>
+                <p class="board-handoff-state board-handoff-state--error">
+                  Linked Handoff could not be loaded.
+                </p>
               </Show>
               <Show when={!handoff.error && handoff()}>
                 {(item) => (
                   <div class="board-handoff-body">
                     <strong>{handoffHeadline(item())}</strong>
-                    <span>{item().source}{item().clientSessionId ? ` · ${item().clientSessionId}` : ""}</span>
-                    <Show when={handoffNextAction(item())}>{(next) => <p><b>Next</b>{next()}</p>}</Show>
+                    <span>
+                      {item().source}
+                      {item().clientSessionId ? ` · ${item().clientSessionId}` : ""}
+                    </span>
+                    <Show when={handoffNextAction(item())}>
+                      {(next) => (
+                        <p>
+                          <b>Next</b>
+                          {next()}
+                        </p>
+                      )}
+                    </Show>
                     <Show when={handoffOpenLoops(item()).length}>
-                      <ul><For each={handoffOpenLoops(item())}>{(loop) => <li>{loop}</li>}</For></ul>
+                      <ul>
+                        <For each={handoffOpenLoops(item())}>{(loop) => <li>{loop}</li>}</For>
+                      </ul>
                     </Show>
                   </div>
                 )}
@@ -863,7 +1009,10 @@ function TaskDetail(props: {
 
         <Show when={canReset()}>
           <section class="board-reset-panel">
-            <div><strong>Release ownership</strong><p>Return this task to Open so another agent can claim it.</p></div>
+            <div>
+              <strong>Release ownership</strong>
+              <p>Return this task to Open so another agent can claim it.</p>
+            </div>
             <button
               type="button"
               class="board-reset-button"
@@ -874,7 +1023,13 @@ function TaskDetail(props: {
             >
               {props.resetting ? "Resetting…" : "Reset to open"}
             </button>
-            <Show when={props.resetError}>{(message) => <p class="board-reset-error" role="alert">Reset failed: {message()}</p>}</Show>
+            <Show when={props.resetError}>
+              {(message) => (
+                <p class="board-reset-error" role="alert">
+                  Reset failed: {message()}
+                </p>
+              )}
+            </Show>
           </section>
         </Show>
       </div>
@@ -883,9 +1038,14 @@ function TaskDetail(props: {
 }
 
 function handoffHeadline(event: AgentEvent): string {
-  return metadataString(event, "contextSummary")
-    ?? event.text?.split(/\r?\n/u).find((line) => line.trim())?.trim()
-    ?? "Completion Handoff";
+  return (
+    metadataString(event, "contextSummary") ??
+    event.text
+      ?.split(/\r?\n/u)
+      .find((line) => line.trim())
+      ?.trim() ??
+    "Completion Handoff"
+  );
 }
 
 function handoffNextAction(event: AgentEvent): string | undefined {
@@ -905,12 +1065,14 @@ function metadataString(event: AgentEvent, key: string): string | undefined {
 
 function metadata(event: AgentEvent): Record<string, unknown> {
   return event.metadata && typeof event.metadata === "object" && !Array.isArray(event.metadata)
-    ? event.metadata as Record<string, unknown>
+    ? (event.metadata as Record<string, unknown>)
     : {};
 }
 
 function StatusBadge(props: { status: AgentTask["status"] }) {
-  return <span class={`board-status board-status--${props.status}`}>{statusLabel(props.status)}</span>;
+  return (
+    <span class={`board-status board-status--${props.status}`}>{statusLabel(props.status)}</span>
+  );
 }
 
 type TaskTimelineEntry = {
@@ -945,32 +1107,39 @@ const ANNOTATION_KIND_LABELS: Record<AnnotationKind, string> = {
   approval: "Approval",
 };
 
-function mergeTaskTimeline(history: TaskEvent[], liveAnnotations: TaskAnnotation[]): TaskTimelineEntry[] {
+function mergeTaskTimeline(
+  history: TaskEvent[],
+  liveAnnotations: TaskAnnotation[],
+): TaskTimelineEntry[] {
   const fetchedIds = new Set(history.map((event) => event.id));
   const entries = history.flatMap((event): TaskTimelineEntry[] => {
     if (event.type !== "task.note") {
       const label = `${event.fromStatus ?? "—"} → ${event.toStatus ?? event.type}`;
-      return [{
-        id: event.id,
-        taskId: event.taskId,
-        kind: "lifecycle",
-        actor: event.actor,
-        text: label,
-        observedAt: event.observedAt,
-      }];
+      return [
+        {
+          id: event.id,
+          taskId: event.taskId,
+          kind: "lifecycle",
+          actor: event.actor,
+          text: label,
+          observedAt: event.observedAt,
+        },
+      ];
     }
 
     const detail = event.detail;
     if (!isRecord(detail) || !isAnnotationKind(detail.kind)) return [];
-    return [{
-      id: event.id,
-      taskId: event.taskId,
-      kind: detail.kind,
-      actor: event.actor,
-      text: typeof detail.text === "string" ? detail.text : "",
-      dataJson: isRecord(detail.dataJson) ? detail.dataJson : undefined,
-      observedAt: event.observedAt,
-    }];
+    return [
+      {
+        id: event.id,
+        taskId: event.taskId,
+        kind: detail.kind,
+        actor: event.actor,
+        text: typeof detail.text === "string" ? detail.text : "",
+        dataJson: isRecord(detail.dataJson) ? detail.dataJson : undefined,
+        observedAt: event.observedAt,
+      },
+    ];
   });
 
   for (const annotation of liveAnnotations) {
@@ -981,12 +1150,17 @@ function mergeTaskTimeline(history: TaskEvent[], liveAnnotations: TaskAnnotation
     });
   }
 
-  return entries.sort((left, right) => (
-    right.observedAt.localeCompare(left.observedAt) || right.id.localeCompare(left.id)
-  ));
+  return entries.sort(
+    (left, right) =>
+      right.observedAt.localeCompare(left.observedAt) || right.id.localeCompare(left.id),
+  );
 }
 
-function timelineChips(entries: TaskTimelineEntry[]): { engine?: string; branch?: string; prUrl?: string } {
+function timelineChips(entries: TaskTimelineEntry[]): {
+  engine?: string;
+  branch?: string;
+  prUrl?: string;
+} {
   const result: { engine?: string; branch?: string; prUrl?: string } = {};
   for (const entry of [...entries].reverse()) {
     if (!entry.dataJson || !["engine", "progress", "worker_session"].includes(entry.kind)) continue;
@@ -1013,10 +1187,11 @@ function approvalForStage(
   stage: ApprovalStage | undefined,
 ): TaskAnnotation | undefined {
   if (!stage) return undefined;
-  const entry = entries.find((candidate) => (
-    candidate.kind === "approval"
-    && approvalDecision({ kind: "approval", dataJson: candidate.dataJson }, stage) !== undefined
-  ));
+  const entry = entries.find(
+    (candidate) =>
+      candidate.kind === "approval" &&
+      approvalDecision({ kind: "approval", dataJson: candidate.dataJson }, stage) !== undefined,
+  );
   if (!entry) return undefined;
   return {
     id: entry.id,
@@ -1033,7 +1208,8 @@ function annotationsWithLocal(
   annotations: TaskAnnotation[],
   localApproval: TaskAnnotation | undefined,
 ): TaskAnnotation[] {
-  if (!localApproval || annotations.some((annotation) => annotation.id === localApproval.id)) return annotations;
+  if (!localApproval || annotations.some((annotation) => annotation.id === localApproval.id))
+    return annotations;
   return [...annotations, localApproval];
 }
 
@@ -1109,17 +1285,26 @@ function mergeProjectOptions(catalog: ProjectSummary[], queueScopes: string[]): 
   return projects;
 }
 
-function projectForScope(scope: string | null | undefined, projects: ProjectSummary[]): ProjectSummary | undefined {
+function projectForScope(
+  scope: string | null | undefined,
+  projects: ProjectSummary[],
+): ProjectSummary | undefined {
   return findProjectByIdentifier(projects, scope);
 }
 
-function selectedProjectForScope(scope: string | null | undefined, projects: ProjectSummary[]): ProjectSummary | undefined {
+function selectedProjectForScope(
+  scope: string | null | undefined,
+  projects: ProjectSummary[],
+): ProjectSummary | undefined {
   if (!scope) return undefined;
   const canonicalScope = canonicalizeProjectPath(scope);
-  return projects.find((project) => (
-    isExactQueueChoice(project)
-    && canonicalizeProjectPath(project.canonicalKey) === canonicalScope
-  )) ?? projectForScope(scope, projects);
+  return (
+    projects.find(
+      (project) =>
+        isExactQueueChoice(project) &&
+        canonicalizeProjectPath(project.canonicalKey) === canonicalScope,
+    ) ?? projectForScope(scope, projects)
+  );
 }
 
 function primaryCatalogFilter(
@@ -1127,13 +1312,16 @@ function primaryCatalogFilter(
   project: ProjectSummary | undefined,
 ): ProjectSummary | undefined {
   if (!scope || !project || isExactQueueChoice(project)) return undefined;
-  return canonicalizeProjectPath(primaryProjectScope(project).canonicalKey) === canonicalizeProjectPath(scope)
+  return canonicalizeProjectPath(primaryProjectScope(project).canonicalKey) ===
+    canonicalizeProjectPath(scope)
     ? project
     : undefined;
 }
 
 function isExactQueueChoice(project: ProjectSummary): boolean {
-  return project.projectKey.startsWith("queue-scope:") || project.projectKey.startsWith("uncatalogued:");
+  return (
+    project.projectKey.startsWith("queue-scope:") || project.projectKey.startsWith("uncatalogued:")
+  );
 }
 
 function projectHref(project: ProjectSummary | undefined): string | undefined {
@@ -1147,10 +1335,12 @@ function projectLabel(project: ProjectSummary | undefined, fallback?: string): s
 }
 
 function sameTaskFilters(left: TaskFilters, right: TaskFilters): boolean {
-  return left.projectKey === right.projectKey
-    && left.lane === right.lane
-    && left.status === right.status
-    && left.limit === right.limit;
+  return (
+    left.projectKey === right.projectKey &&
+    left.lane === right.lane &&
+    left.status === right.status &&
+    left.limit === right.limit
+  );
 }
 
 function errorMessage(error: unknown): string {

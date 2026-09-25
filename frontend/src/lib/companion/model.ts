@@ -10,7 +10,8 @@ export type CompanionMode = "mini" | "compact" | "expanded";
 // the live model on every render, so a project whose card ages out of the model while its view is
 // still open (no live session, last item past the 24h window) keeps a real title and strip instead
 // of falling back to the generic "Project".
-export type ExpandedViewState = { kind: "project"; projectKey: string; projectName: string } | { kind: "river" };
+export type ExpandedViewState =
+  { kind: "project"; projectKey: string; projectName: string } | { kind: "river" };
 
 export const MEANINGFUL_EVENT_TYPES: Readonly<Record<string, MeaningfulKind>> = {
   Decision: "decision",
@@ -20,7 +21,9 @@ export const MEANINGFUL_EVENT_TYPES: Readonly<Record<string, MeaningfulKind>> = 
 // Object.hasOwn (not `in` or a bare index lookup) so inherited property names like "constructor" or
 // "toString" never read as a meaningful kind.
 export function meaningfulKindOf(eventType: string): MeaningfulKind | undefined {
-  return Object.hasOwn(MEANINGFUL_EVENT_TYPES, eventType) ? MEANINGFUL_EVENT_TYPES[eventType] : undefined;
+  return Object.hasOwn(MEANINGFUL_EVENT_TYPES, eventType)
+    ? MEANINGFUL_EVENT_TYPES[eventType]
+    : undefined;
 }
 export function isMeaningfulEventType(eventType: string): boolean {
   return Object.hasOwn(MEANINGFUL_EVENT_TYPES, eventType);
@@ -81,7 +84,12 @@ export type DeriveInput = {
   seen: ReadonlySet<string>;
 };
 
-type Metadata = { decision?: unknown; contextSummary?: unknown; nextAction?: unknown; openLoops?: unknown };
+type Metadata = {
+  decision?: unknown;
+  contextSummary?: unknown;
+  nextAction?: unknown;
+  openLoops?: unknown;
+};
 
 function metadataOf(event: EventFeedItem): Metadata {
   return event.metadata && typeof event.metadata === "object" ? (event.metadata as Metadata) : {};
@@ -103,22 +111,41 @@ function later(a: string | null, b: string | null | undefined): string | null {
 
 export function headlineOf(event: EventFeedItem): string {
   const meta = metadataOf(event);
-  const raw = asString(meta.decision) ?? asString(meta.contextSummary) ?? asString(event.text) ?? event.eventType;
-  const line = raw.split("\n").map((part) => part.trim()).find(Boolean) ?? event.eventType;
+  const raw =
+    asString(meta.decision) ??
+    asString(meta.contextSummary) ??
+    asString(event.text) ??
+    event.eventType;
+  const line =
+    raw
+      .split("\n")
+      .map((part) => part.trim())
+      .find(Boolean) ?? event.eventType;
   return line.length > HEADLINE_MAX ? `${line.slice(0, HEADLINE_MAX - 1).trimEnd()}…` : line;
 }
 
-function projectFor(projects: ProjectSummary[], cwd: string | null | undefined): { key: string; name: string } {
+function projectFor(
+  projects: ProjectSummary[],
+  cwd: string | null | undefined,
+): { key: string; name: string } {
   const project = findProjectByIdentifier(projects, cwd);
-  return project ? { key: project.projectKey, name: projectShortName(project) } : { key: UNASSIGNED_KEY, name: UNASSIGNED_NAME };
+  return project
+    ? { key: project.projectKey, name: projectShortName(project) }
+    : { key: UNASSIGNED_KEY, name: UNASSIGNED_NAME };
 }
 
-export function toMeaningfulItem(event: EventFeedItem, projects: ProjectSummary[], seen: ReadonlySet<string>): MeaningfulItem | null {
+export function toMeaningfulItem(
+  event: EventFeedItem,
+  projects: ProjectSummary[],
+  seen: ReadonlySet<string>,
+): MeaningfulItem | null {
   const kind = meaningfulKindOf(event.eventType);
   if (!kind) return null;
   const meta = metadataOf(event);
   const project = projectFor(projects, event.cwd);
-  const openLoops = Array.isArray(meta.openLoops) ? meta.openLoops.filter((loop): loop is string => typeof loop === "string") : [];
+  const openLoops = Array.isArray(meta.openLoops)
+    ? meta.openLoops.filter((loop): loop is string => typeof loop === "string")
+    : [];
   return {
     id: event.id,
     kind,
@@ -136,7 +163,11 @@ export function toMeaningfulItem(event: EventFeedItem, projects: ProjectSummary[
   };
 }
 
-export function pulseOf(connection: ConnectionState, lastEventAt: string | null, now: number): PulseState {
+export function pulseOf(
+  connection: ConnectionState,
+  lastEventAt: string | null,
+  now: number,
+): PulseState {
   if (connection === "down") return "disconnected";
   if (connection === "connecting") return "connecting";
   return lastEventAt && now - timestamp(lastEventAt) <= LIVE_WINDOW_MS ? "live" : "idle";
@@ -161,7 +192,10 @@ function sameItem(a: MeaningfulItem, b: MeaningfulItem): boolean {
  * Meaningful items inside the window, deduplicated by id, newest first. Items whose content is
  * unchanged reuse their `previous` object, so keyed lists keep their rows across recomputes.
  */
-export function deriveItems(input: ItemsInput, previous: readonly MeaningfulItem[] = []): MeaningfulItem[] {
+export function deriveItems(
+  input: ItemsInput,
+  previous: readonly MeaningfulItem[] = [],
+): MeaningfulItem[] {
   const prior = new Map(previous.map((item) => [item.id, item]));
   const byId = new Map<string, MeaningfulItem>();
   for (const event of input.events) {
@@ -185,7 +219,16 @@ export function composeModel(input: ComposeInput): CompanionModel {
   const ensure = (key: string, name: string): ProjectCard => {
     let card = cards.get(key);
     if (!card) {
-      card = { key, name, liveSessions: 0, lastActivityAt: null, lastCaptureAt: null, unseen: 0, latest: null, items: [] };
+      card = {
+        key,
+        name,
+        liveSessions: 0,
+        lastActivityAt: null,
+        lastCaptureAt: null,
+        unseen: 0,
+        latest: null,
+        items: [],
+      };
       cards.set(key, card);
     }
     return card;
@@ -209,7 +252,10 @@ export function composeModel(input: ComposeInput): CompanionModel {
   }
 
   const projects = [...cards.values()].sort(
-    (a, b) => b.unseen - a.unseen || timestamp(b.lastActivityAt) - timestamp(a.lastActivityAt) || a.name.localeCompare(b.name),
+    (a, b) =>
+      b.unseen - a.unseen ||
+      timestamp(b.lastActivityAt) - timestamp(a.lastActivityAt) ||
+      a.name.localeCompare(b.name),
   );
 
   return {

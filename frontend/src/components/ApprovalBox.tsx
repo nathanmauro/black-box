@@ -23,15 +23,17 @@ export default function ApprovalBox(props: ApprovalBoxProps) {
     return approvalDecision(current, props.stage) ? current : undefined;
   });
 
-  createEffect(on(
-    () => props.taskId,
-    () => {
-      setFeedback("");
-      setSubmittedDecision(undefined);
-      setSubmitting(undefined);
-      setError(null);
-    },
-  ));
+  createEffect(
+    on(
+      () => props.taskId,
+      () => {
+        setFeedback("");
+        setSubmittedDecision(undefined);
+        setSubmitting(undefined);
+        setError(null);
+      },
+    ),
+  );
 
   async function submit(nextDecision: ApprovalDecision) {
     if (submitting()) return;
@@ -44,18 +46,21 @@ export default function ApprovalBox(props: ApprovalBoxProps) {
       const annotation = await (props.createAnnotation ?? createTaskAnnotation)(props.taskId, {
         actor: props.actor,
         kind: "approval",
-        text: nextDecision === "approve"
-          ? `${stageLabel(props.stage)} approved.`
-          : `${stageLabel(props.stage)} rejected: ${trimmedFeedback}`,
+        text:
+          nextDecision === "approve"
+            ? `${stageLabel(props.stage)} approved.`
+            : `${stageLabel(props.stage)} rejected: ${trimmedFeedback}`,
         dataJson: {
           decision: nextDecision,
           stage: props.stage,
           feedback: trimmedFeedback,
         },
       });
-      if (annotation.taskId !== props.taskId
-        || approvalDecision(annotation, props.stage) !== nextDecision
-        || approvalFeedback(annotation) !== trimmedFeedback) {
+      if (
+        annotation.taskId !== props.taskId ||
+        approvalDecision(annotation, props.stage) !== nextDecision ||
+        approvalFeedback(annotation) !== trimmedFeedback
+      ) {
         throw new Error("Approval response did not contain the submitted decision.");
       }
       setSubmittedDecision(annotation);
@@ -71,11 +76,13 @@ export default function ApprovalBox(props: ApprovalBoxProps) {
     <section class="approval-box" aria-label={`${stageLabel(props.stage)} approval`}>
       <Show
         when={decision()}
-        fallback={(
-          <form onSubmit={(event) => {
-            event.preventDefault();
-            void submit("reject");
-          }}>
+        fallback={
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submit("reject");
+            }}
+          >
             <div class="approval-box-heading">
               <span>Human gate</span>
               <strong>Approve or reject the {props.stage}</strong>
@@ -107,9 +114,15 @@ export default function ApprovalBox(props: ApprovalBoxProps) {
                 {submitting() === "reject" ? "Rejecting…" : "Reject"}
               </button>
             </div>
-            <Show when={error()}>{(message) => <p class="approval-box-error" role="alert">{message()}</p>}</Show>
+            <Show when={error()}>
+              {(message) => (
+                <p class="approval-box-error" role="alert">
+                  {message()}
+                </p>
+              )}
+            </Show>
           </form>
-        )}
+        }
       >
         {(annotation) => {
           const currentDecision = () => approvalDecision(annotation(), props.stage)!;
@@ -118,7 +131,8 @@ export default function ApprovalBox(props: ApprovalBoxProps) {
             <div class={`approval-record approval-record--${currentDecision()}`} role="status">
               <span>{currentDecision() === "approve" ? "Approved" : "Rejected"}</span>
               <p>
-                {currentDecision() === "approve" ? "Approved" : "Rejected"} by {annotation().actor} at {formatInstant(annotation().observedAt)}
+                {currentDecision() === "approve" ? "Approved" : "Rejected"} by {annotation().actor}{" "}
+                at {formatInstant(annotation().observedAt)}
               </p>
               <Show when={currentDecision() === "reject" && currentFeedback()}>
                 <pre>{currentFeedback()}</pre>
@@ -139,7 +153,8 @@ export function approvalDecision(
   if (annotation.dataJson.stage !== stage) return undefined;
   if (typeof annotation.dataJson.feedback !== "string") return undefined;
   if (annotation.dataJson.decision === "approve") return "approve";
-  if (annotation.dataJson.decision === "reject" && annotation.dataJson.feedback.trim()) return "reject";
+  if (annotation.dataJson.decision === "reject" && annotation.dataJson.feedback.trim())
+    return "reject";
   return undefined;
 }
 

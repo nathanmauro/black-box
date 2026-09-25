@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assembleSpecBody, evaluateGateHints, parseSpecBody, type StoryFormInput } from "./storySpec";
+import {
+  assembleSpecBody,
+  evaluateGateHints,
+  parseSpecBody,
+  type StoryFormInput,
+} from "./storySpec";
 
 const validInput: StoryFormInput = {
   title: "Build the board runner",
@@ -14,13 +19,15 @@ const validInput: StoryFormInput = {
 
 describe("assembleSpecBody", () => {
   it("assembles the exact story document for a fully-filled input", () => {
-    expect(assembleSpecBody({
-      ...validInput,
-      title: "  Build the board runner  ",
-      repo: "  /Users/nathan/Developer/proj/sba-agentic  ",
-      goal: "  Run approved stories from the board.  ",
-      verify: "  mvn test  ",
-    })).toBe(`---
+    expect(
+      assembleSpecBody({
+        ...validInput,
+        title: "  Build the board runner  ",
+        repo: "  /Users/nathan/Developer/proj/sba-agentic  ",
+        goal: "  Run approved stories from the board.  ",
+        verify: "  mvn test  ",
+      }),
+    ).toBe(`---
 story: v1
 repo: "/Users/nathan/Developer/proj/sba-agentic"
 mode: full_auto
@@ -78,10 +85,9 @@ Run approved stories from the board.
       verify: 'mvn test -Dfoo="bar"',
     });
 
-    expect(body.split("\n")).toEqual(expect.arrayContaining([
-      'repo: "/tmp\\\\repo\\"name"',
-      'verify: "mvn test -Dfoo=\\"bar\\""',
-    ]));
+    expect(body.split("\n")).toEqual(
+      expect.arrayContaining(['repo: "/tmp\\\\repo\\"name"', 'verify: "mvn test -Dfoo=\\"bar\\""']),
+    );
   });
 });
 
@@ -131,11 +137,13 @@ Keep the frozen contract.`,
   });
 
   it("restores omitted verify and the canonical empty-constraints sentinel", () => {
-    const parsed = parseSpecBody(assembleSpecBody({
-      ...validInput,
-      verify: "  ",
-      constraints: "\n ",
-    }));
+    const parsed = parseSpecBody(
+      assembleSpecBody({
+        ...validInput,
+        verify: "  ",
+        constraints: "\n ",
+      }),
+    );
 
     expect(parsed.verify).toBe("");
     expect(parsed.constraints).toBe("");
@@ -155,7 +163,8 @@ Keep the frozen contract.`,
   });
 
   it("ignores extra frontmatter keys and defaults absent owned values", () => {
-    expect(parseSpecBody(`---
+    expect(
+      parseSpecBody(`---
 story: v1
 repo: '/tmp/black-box'
 mode: "sdlc"
@@ -170,7 +179,8 @@ custom: { retained: outside-the-form }
 ## Goal
 
 Address the gate feedback.
-`)).toEqual({
+`),
+    ).toEqual({
       title: "Resubmit the blocked story",
       repo: "/tmp/black-box",
       mode: "sdlc",
@@ -208,27 +218,32 @@ describe("evaluateGateHints", () => {
   });
 
   it("reports a relative repo path", () => {
-    expect(evaluateGateHints({ ...validInput, repo: "repos/black-box" }).map((hint) => hint.id))
-      .toContain("repo-not-absolute");
+    expect(
+      evaluateGateHints({ ...validInput, repo: "repos/black-box" }).map((hint) => hint.id),
+    ).toContain("repo-not-absolute");
   });
 
   it.each(["", " \n \n "])("reports empty acceptance criteria for %j", (acceptanceCriteria) => {
-    expect(evaluateGateHints({ ...validInput, acceptanceCriteria }).map((hint) => hint.id))
-      .toContain("acceptance-criteria-empty");
+    expect(
+      evaluateGateHints({ ...validInput, acceptanceCriteria }).map((hint) => hint.id),
+    ).toContain("acceptance-criteria-empty");
   });
 
   it("reports a missing verify command", () => {
-    expect(evaluateGateHints({ ...validInput, verify: " \n " }).map((hint) => hint.id))
-      .toContain("verify-missing");
+    expect(evaluateGateHints({ ...validInput, verify: " \n " }).map((hint) => hint.id)).toContain(
+      "verify-missing",
+    );
   });
 
   it("accepts SDLC mode without an unsupported-mode hint", () => {
-    expect(evaluateGateHints({ ...validInput, mode: "sdlc" }).map((hint) => hint.id))
-      .not.toContain("mode-unsupported");
+    expect(evaluateGateHints({ ...validInput, mode: "sdlc" }).map((hint) => hint.id)).not.toContain(
+      "mode-unsupported",
+    );
   });
 
   it.each([0, 101, Number.NaN])("reports an invalid priority for %s", (priority) => {
-    expect(evaluateGateHints({ ...validInput, priority }).map((hint) => hint.id))
-      .toContain("priority-out-of-range");
+    expect(evaluateGateHints({ ...validInput, priority }).map((hint) => hint.id)).toContain(
+      "priority-out-of-range",
+    );
   });
 });

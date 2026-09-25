@@ -39,15 +39,30 @@ describe("App shell", () => {
 
     const utilityBar = screen.getByRole("banner", { name: "Black Box utility bar" });
     expect(utilityBar).toHaveClass("app-utility-bar");
-    expect(within(utilityBar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute("href", "/");
+    expect(within(utilityBar).getByRole("link", { name: "Black Box overview" })).toHaveAttribute(
+      "href",
+      "/",
+    );
 
     const utilityNav = within(utilityBar).getByRole("navigation", { name: "Utility" });
     expect(within(utilityNav).getByRole("link", { name: "Stream" })).toHaveAttribute("href", "/");
-    expect(within(utilityNav).getByRole("link", { name: "Browse" })).toHaveAttribute("href", "/?view=browse");
-    expect(within(utilityNav).getByRole("link", { name: "Projects" })).toHaveAttribute("href", "/projects");
-    expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute("href", "/recall");
+    expect(within(utilityNav).getByRole("link", { name: "Browse" })).toHaveAttribute(
+      "href",
+      "/?view=browse",
+    );
+    expect(within(utilityNav).getByRole("link", { name: "Projects" })).toHaveAttribute(
+      "href",
+      "/projects",
+    );
+    expect(within(utilityNav).getByRole("link", { name: "Recall" })).toHaveAttribute(
+      "href",
+      "/recall",
+    );
     expect(within(utilityNav).queryByRole("link", { name: "Search" })).not.toBeInTheDocument();
-    expect(within(utilityNav).getByRole("link", { name: "Board" })).toHaveAttribute("href", "/board");
+    expect(within(utilityNav).getByRole("link", { name: "Board" })).toHaveAttribute(
+      "href",
+      "/board",
+    );
     expect(within(utilityNav).queryByRole("link", { name: "Sessions" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Overview" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
@@ -56,7 +71,9 @@ describe("App shell", () => {
     fireEvent.click(within(utilityBar).getByRole("button", { name: "Filter sources" }));
     expect(within(utilityBar).getByRole("group", { name: "Filter by source" })).toBeInTheDocument();
     expect(within(utilityBar).getByText("down")).toBeInTheDocument();
-    expect(within(utilityBar).getByRole("button", { name: "Open command palette" })).toBeInTheDocument();
+    expect(
+      within(utilityBar).getByRole("button", { name: "Open command palette" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Current page" })).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { EventFeedItem, ProjectSummary } from "../api";
 import { parseQuery } from "../query";
-import { deriveModel, headlineOf, MEANINGFUL_QUERY, pulseOf, toMeaningfulItem, UNASSIGNED_KEY } from "./model";
+import {
+  deriveModel,
+  headlineOf,
+  MEANINGFUL_QUERY,
+  pulseOf,
+  toMeaningfulItem,
+  UNASSIGNED_KEY,
+} from "./model";
 import { eventHref } from "./links";
 
 const NOW = Date.parse("2026-09-24T12:00:00Z");
@@ -47,8 +54,18 @@ describe("MEANINGFUL_QUERY", () => {
 
 describe("headlineOf", () => {
   it("prefers metadata.decision, then contextSummary, then the first text line", () => {
-    expect(headlineOf(event({ id: "1", metadata: { decision: "Pick SQLite" } }))).toBe("Pick SQLite");
-    expect(headlineOf(event({ id: "2", eventType: "Handoff", metadata: { contextSummary: "Done: tests\nNext: ship" } }))).toBe("Done: tests");
+    expect(headlineOf(event({ id: "1", metadata: { decision: "Pick SQLite" } }))).toBe(
+      "Pick SQLite",
+    );
+    expect(
+      headlineOf(
+        event({
+          id: "2",
+          eventType: "Handoff",
+          metadata: { contextSummary: "Done: tests\nNext: ship" },
+        }),
+      ),
+    ).toBe("Done: tests");
     expect(headlineOf(event({ id: "3", text: "\n  first line  \nsecond" }))).toBe("first line");
   });
 
@@ -61,28 +78,52 @@ describe("headlineOf", () => {
 
 describe("toMeaningfulItem", () => {
   it("returns null for non-meaningful event types", () => {
-    expect(toMeaningfulItem(event({ id: "1", eventType: "PostToolUse" }), projects, new Set())).toBeNull();
+    expect(
+      toMeaningfulItem(event({ id: "1", eventType: "PostToolUse" }), projects, new Set()),
+    ).toBeNull();
   });
 
   it("treats prototype property names as non-meaningful, not inherited kinds", () => {
-    expect(toMeaningfulItem(event({ id: "2", eventType: "constructor" }), projects, new Set())).toBeNull();
-    expect(toMeaningfulItem(event({ id: "3", eventType: "toString" }), projects, new Set())).toBeNull();
-    expect(toMeaningfulItem(event({ id: "4", eventType: "hasOwnProperty" }), projects, new Set())).toBeNull();
+    expect(
+      toMeaningfulItem(event({ id: "2", eventType: "constructor" }), projects, new Set()),
+    ).toBeNull();
+    expect(
+      toMeaningfulItem(event({ id: "3", eventType: "toString" }), projects, new Set()),
+    ).toBeNull();
+    expect(
+      toMeaningfulItem(event({ id: "4", eventType: "hasOwnProperty" }), projects, new Set()),
+    ).toBeNull();
   });
 
   it("maps a handoff with next action and open loops", () => {
     const item = toMeaningfulItem(
-      event({ id: "h1", eventType: "Handoff", metadata: { contextSummary: "Wired it", nextAction: "Run tests", openLoops: ["a", "b"] } }),
+      event({
+        id: "h1",
+        eventType: "Handoff",
+        metadata: { contextSummary: "Wired it", nextAction: "Run tests", openLoops: ["a", "b"] },
+      }),
       projects,
       new Set(["h1"]),
     );
-    expect(item).toMatchObject({ kind: "handoff", eventType: "Handoff", headline: "Wired it", nextAction: "Run tests", openLoops: ["a", "b"], seen: true, projectName: "a" });
+    expect(item).toMatchObject({
+      kind: "handoff",
+      eventType: "Handoff",
+      headline: "Wired it",
+      nextAction: "Run tests",
+      openLoops: ["a", "b"],
+      seen: true,
+      projectName: "a",
+    });
     expect(item?.href).toBe(eventHref("s1", "h1", projects[0].projectKey));
   });
 
   it("groups unresolved cwd under Unassigned", () => {
-    expect(toMeaningfulItem(event({ id: "u1", cwd: "/elsewhere" }), projects, new Set())).toMatchObject({ projectKey: UNASSIGNED_KEY, projectName: "Unassigned" });
-    expect(toMeaningfulItem(event({ id: "u2", cwd: null }), projects, new Set())).toMatchObject({ projectKey: UNASSIGNED_KEY });
+    expect(
+      toMeaningfulItem(event({ id: "u1", cwd: "/elsewhere" }), projects, new Set()),
+    ).toMatchObject({ projectKey: UNASSIGNED_KEY, projectName: "Unassigned" });
+    expect(toMeaningfulItem(event({ id: "u2", cwd: null }), projects, new Set())).toMatchObject({
+      projectKey: UNASSIGNED_KEY,
+    });
   });
 });
 
@@ -118,8 +159,16 @@ describe("deriveModel", () => {
     expect(model.pulse).toBe("live");
     expect(model.unseenTotal).toBe(2);
     expect(model.projects.map((card) => card.name)).toEqual(["b", "a"]);
-    expect(model.projects[0]).toMatchObject({ liveSessions: 0, unseen: 2, latest: expect.objectContaining({ id: "b2" }) });
-    expect(model.projects[1]).toMatchObject({ liveSessions: 1, unseen: 0, lastActivityAt: iso(30_000) });
+    expect(model.projects[0]).toMatchObject({
+      liveSessions: 0,
+      unseen: 2,
+      latest: expect.objectContaining({ id: "b2" }),
+    });
+    expect(model.projects[1]).toMatchObject({
+      liveSessions: 1,
+      unseen: 0,
+      lastActivityAt: iso(30_000),
+    });
     expect(model.river.map((item) => item.id)).toEqual(["b2", "b1", "a1"]);
   });
 
@@ -142,7 +191,15 @@ describe("deriveModel", () => {
   });
 
   it("returns no cards when nothing is live and nothing is meaningful", () => {
-    const model = deriveModel({ now: NOW, connection: "live", lastEventAt: null, projects, sessions: [], events: [], seen: new Set() });
+    const model = deriveModel({
+      now: NOW,
+      connection: "live",
+      lastEventAt: null,
+      projects,
+      sessions: [],
+      events: [],
+      seen: new Set(),
+    });
     expect(model.projects).toEqual([]);
     expect(model.pulse).toBe("idle");
   });

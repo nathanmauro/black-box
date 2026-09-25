@@ -7,11 +7,17 @@ describe("TrajectoryView", () => {
   it("renders selectable SVG nodes with tooltips and no SVG anchors", () => {
     const onSelect = vi.fn();
     const { container } = render(() => (
-      <TrajectoryView graph={graph} selectedNodeId="future:ghost:projection:0" onSelect={onSelect} />
+      <TrajectoryView
+        graph={graph}
+        selectedNodeId="future:ghost:projection:0"
+        onSelect={onSelect}
+      />
     ));
 
     const head = container.querySelector('[data-node-id="head:handoff"]') as SVGGElement;
-    const ghost = container.querySelector('[data-node-id="future:ghost:projection:0"]') as SVGGElement;
+    const ghost = container.querySelector(
+      '[data-node-id="future:ghost:projection:0"]',
+    ) as SVGGElement;
 
     expect(head).toHaveAttribute("data-node-kind", "head");
     expect(ghost).toHaveAttribute("data-node-kind", "future-ghost");
@@ -19,16 +25,22 @@ describe("TrajectoryView", () => {
     expect(ghost).toHaveClass("traj-node--selected");
 
     fireEvent.click(head);
-    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ id: "head:handoff", kind: "head" }));
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "head:handoff", kind: "head" }),
+    );
     fireEvent.keyDown(ghost, { key: "Enter" });
     fireEvent.keyDown(ghost, { key: " " });
     expect(onSelect).toHaveBeenCalledTimes(3);
-    expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({
-      id: "future:ghost:projection:0",
-      kind: "future-ghost",
-    }));
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: "future:ghost:projection:0",
+        kind: "future-ghost",
+      }),
+    );
 
-    expect(Array.from(container.querySelectorAll("title")).map((title) => title.textContent)).toEqual(
+    expect(
+      Array.from(container.querySelectorAll("title")).map((title) => title.textContent),
+    ).toEqual(
       expect.arrayContaining([
         "Current state - Head - NOW",
         "Speculative branch - Ghost - projection",

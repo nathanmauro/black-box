@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { describeTimeSpec, parseQuery, removeFacetValue, resolvesToPastInstant, serializeQuery, setFacet } from "./query";
+import {
+  describeTimeSpec,
+  parseQuery,
+  removeFacetValue,
+  resolvesToPastInstant,
+  serializeQuery,
+  setFacet,
+} from "./query";
 
 describe("parseQuery", () => {
   it("parses canonical facets and free text", () => {
@@ -10,7 +17,9 @@ describe("parseQuery", () => {
   });
 
   it("maps backend aliases and unions repeated tokens", () => {
-    const parsed = parseQuery("event_type:Handoff kind:Decision tool_name:Edit tool:Read cwd:/tmp project:~/x");
+    const parsed = parseQuery(
+      "event_type:Handoff kind:Decision tool_name:Edit tool:Read cwd:/tmp project:~/x",
+    );
     expect(parsed.facets).toEqual({
       kind: ["Handoff", "Decision"],
       tool: ["Edit", "Read"],
@@ -24,8 +33,13 @@ describe("parseQuery", () => {
   });
 
   it("keeps quoted text and quoted facet values together", () => {
-    const parsed = parseQuery('tool:Edit "ask history" project:"/Users/nathan/Developer/proj/sba agentic"');
-    expect(parsed.facets).toEqual({ tool: ["Edit"], project: ["/Users/nathan/Developer/proj/sba agentic"] });
+    const parsed = parseQuery(
+      'tool:Edit "ask history" project:"/Users/nathan/Developer/proj/sba agentic"',
+    );
+    expect(parsed.facets).toEqual({
+      tool: ["Edit"],
+      project: ["/Users/nathan/Developer/proj/sba agentic"],
+    });
     expect(parsed.freeTerms).toEqual(["ask history"]);
   });
 
@@ -97,8 +111,12 @@ describe("serializeQuery", () => {
 
 describe("setFacet", () => {
   it("removes include and exclude facets independently", () => {
-    expect(setFacet("source:codex NOT kind:PostToolUse", "kind", null, "exclude")).toBe("source:codex");
-    expect(setFacet("source:codex NOT kind:PostToolUse", "source", null)).toBe("NOT kind:PostToolUse");
+    expect(setFacet("source:codex NOT kind:PostToolUse", "kind", null, "exclude")).toBe(
+      "source:codex",
+    );
+    expect(setFacet("source:codex NOT kind:PostToolUse", "source", null)).toBe(
+      "NOT kind:PostToolUse",
+    );
   });
 
   it("clears the same value from the opposite mode when setting facets", () => {
@@ -107,11 +125,15 @@ describe("setFacet", () => {
   });
 
   it("replaces the whole value list for the field", () => {
-    expect(setFacet("source:codex,claude kind:Decision", "source", "cursor")).toBe("source:cursor kind:Decision");
+    expect(setFacet("source:codex,claude kind:Decision", "source", "cursor")).toBe(
+      "source:cursor kind:Decision",
+    );
   });
 
   it("accepts multi-value arrays and treats an empty array as removal", () => {
-    expect(setFacet("kind:Decision", "source", ["codex", "claude"])).toBe("source:codex,claude kind:Decision");
+    expect(setFacet("kind:Decision", "source", ["codex", "claude"])).toBe(
+      "source:codex,claude kind:Decision",
+    );
     expect(setFacet("source:codex kind:Decision", "source", [])).toBe("kind:Decision");
   });
 
@@ -133,9 +155,9 @@ describe("removeFacetValue", () => {
   });
 
   it("removes exclude values in exclude mode", () => {
-    expect(removeFacetValue("NOT kind:PostToolUse,Read source:codex", "kind", "Read", "exclude")).toBe(
-      "source:codex NOT kind:PostToolUse",
-    );
+    expect(
+      removeFacetValue("NOT kind:PostToolUse,Read source:codex", "kind", "Read", "exclude"),
+    ).toBe("source:codex NOT kind:PostToolUse");
   });
 });
 
@@ -143,17 +165,25 @@ describe("describeTimeSpec", () => {
   it("phrases durations as past windows on the since side", () => {
     expect(describeTimeSpec({ kind: "duration", value: "2h" }, "since")).toBe("Past 2 hours");
     expect(describeTimeSpec({ kind: "duration", value: "1w" }, "since")).toBe("Past 1 week");
-    expect(describeTimeSpec({ kind: "duration", value: "30m" }, "until")).toBe("Until 30 minutes ago");
+    expect(describeTimeSpec({ kind: "duration", value: "30m" }, "until")).toBe(
+      "Until 30 minutes ago",
+    );
   });
 
   it("phrases keywords with the side word", () => {
-    expect(describeTimeSpec({ kind: "keyword", value: "yesterday" }, "since")).toBe("Since yesterday");
+    expect(describeTimeSpec({ kind: "keyword", value: "yesterday" }, "since")).toBe(
+      "Since yesterday",
+    );
     expect(describeTimeSpec({ kind: "keyword", value: "today" }, "until")).toBe("Until today");
   });
 
   it("phrases plain dates without a timezone shift", () => {
-    expect(describeTimeSpec({ kind: "absolute", value: "2026-08-18" }, "until")).toMatch(/^Until Aug 18/);
-    expect(describeTimeSpec({ kind: "absolute", value: "1999-01-02" }, "since")).toBe("Since Jan 2, 1999");
+    expect(describeTimeSpec({ kind: "absolute", value: "2026-08-18" }, "until")).toMatch(
+      /^Until Aug 18/,
+    );
+    expect(describeTimeSpec({ kind: "absolute", value: "1999-01-02" }, "since")).toBe(
+      "Since Jan 2, 1999",
+    );
   });
 });
 

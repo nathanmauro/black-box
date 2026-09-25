@@ -19,12 +19,19 @@ function readEvent(overrides: Partial<AgentEvent>): AgentEvent {
 describe("readPresenter", () => {
   it("headlines the home-shortened path as a file link with a line range", () => {
     const event = readEvent({
-      toolInputJson: JSON.stringify({ file_path: "/Users/nathan/Developer/proj/x/a.ts", offset: 10, limit: 40 }),
+      toolInputJson: JSON.stringify({
+        file_path: "/Users/nathan/Developer/proj/x/a.ts",
+        offset: 10,
+        limit: 40,
+      }),
       toolOutputJson: JSON.stringify({ output: "const x = 1;" }),
     });
     const presentation = readPresenter(event);
     expect(headlineText(presentation)).toBe("~/Developer/proj/x/a.ts:10–50");
-    expect(presentation.headline[0]).toMatchObject({ kind: "fileLink", file: { path: "/Users/nathan/Developer/proj/x/a.ts", line: 10 } });
+    expect(presentation.headline[0]).toMatchObject({
+      kind: "fileLink",
+      file: { path: "/Users/nathan/Developer/proj/x/a.ts", line: 10 },
+    });
     expect(presentation.refs).toEqual([{ path: "/Users/nathan/Developer/proj/x/a.ts", line: 10 }]);
     expect(presentation.kindPill).toEqual({ label: "Read", tone: "read" });
   });
@@ -35,11 +42,19 @@ describe("readPresenter", () => {
       toolOutputJson: JSON.stringify({ output: "print('hi')" }),
     });
     const [block] = readPresenter(event).blocks;
-    expect(block).toMatchObject({ kind: "code", lang: "python", text: "print('hi')", label: "Content (11 chars)" });
+    expect(block).toMatchObject({
+      kind: "code",
+      lang: "python",
+      text: "print('hi')",
+      label: "Content (11 chars)",
+    });
   });
 
   it("emits no blocks when there is no output yet (PreToolUse)", () => {
-    const event = readEvent({ eventType: "PreToolUse", toolInputJson: JSON.stringify({ file_path: "/tmp/a.txt" }) });
+    const event = readEvent({
+      eventType: "PreToolUse",
+      toolInputJson: JSON.stringify({ file_path: "/tmp/a.txt" }),
+    });
     expect(readPresenter(event).blocks).toEqual([]);
   });
 

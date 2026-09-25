@@ -9,7 +9,10 @@ import type { InlineSpan, Presentation } from "./types";
 export function applyPatchPresenter(event: AgentEvent): Presentation {
   const input = parseJsonObject(event.toolInputJson) ?? {};
   const commandValue = input.command ?? input.input ?? input.patch;
-  if (typeof commandValue !== "string" || !/\*\*\*\s+(Begin Patch|Update File|Add File|Delete File)/.test(commandValue)) {
+  if (
+    typeof commandValue !== "string" ||
+    !/\*\*\*\s+(Begin Patch|Update File|Add File|Delete File)/.test(commandValue)
+  ) {
     return genericPresenter(event);
   }
   const files = patchFileStubs(commandValue);
@@ -18,7 +21,9 @@ export function applyPatchPresenter(event: AgentEvent): Presentation {
     ? [
         { kind: "text", text: "Patch " },
         { kind: "fileLink", label: truncatePath(first.path), file: { path: first.path } },
-        ...(files.length > 1 ? [{ kind: "text", text: ` +${files.length - 1} more` } satisfies InlineSpan] : []),
+        ...(files.length > 1
+          ? [{ kind: "text", text: ` +${files.length - 1} more` } satisfies InlineSpan]
+          : []),
       ]
     : [{ kind: "text", text: "Patch" }];
 
@@ -26,7 +31,10 @@ export function applyPatchPresenter(event: AgentEvent): Presentation {
     kindPill: { label: "Patch", tone: outputLooksFailed(event.toolOutputJson) ? "error" : "write" },
     headline,
     blocks: [{ kind: "patch", command: commandValue, files }],
-    sizes: { inputChars: event.toolInputJson?.length ?? 0, outputChars: event.toolOutputJson?.length ?? 0 },
+    sizes: {
+      inputChars: event.toolInputJson?.length ?? 0,
+      outputChars: event.toolOutputJson?.length ?? 0,
+    },
     refs: files.map((stub) => ({ path: stub.path })),
   };
 }

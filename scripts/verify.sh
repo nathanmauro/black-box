@@ -42,6 +42,12 @@ step "Hook durability and deployment recovery"
 step "Java suite: mvn -B -q test"
 mvn -B -q test
 
+step "Frontend: eslint"
+(cd frontend && npm run lint --silent)
+
+step "Frontend: prettier --check"
+(cd frontend && npm run format:check --silent)
+
 step "Frontend: type check"
 (cd frontend && npx tsc --noEmit)
 

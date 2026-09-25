@@ -26,7 +26,8 @@ test("Activity project picker scopes the current session rail and reader", async
   await page.goto("/?view=browse");
 
   await page.locator(".project-picker-button").click();
-  const projectOption = page.getByRole("listbox", { name: "Project results" })
+  const projectOption = page
+    .getByRole("listbox", { name: "Project results" })
     .getByRole("option")
     .filter({ hasText: "/tmp/black-box-e2e" });
   await expect(projectOption).toBeVisible();
@@ -63,7 +64,10 @@ test("stream facet suggestions close after selection and dismissal", async ({ pa
 
   await input.fill("kind:Dec");
   await expect(page.getByRole("listbox")).toBeVisible();
-  await page.getByRole("listbox", { name: "Query suggestions" }).getByRole("option", { name: "Decision", exact: true }).click();
+  await page
+    .getByRole("listbox", { name: "Query suggestions" })
+    .getByRole("option", { name: "Decision", exact: true })
+    .click();
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await expect(input).toHaveValue("kind:Decision ");
 
@@ -88,14 +92,22 @@ test("stream facet suggestions close after selection and dismissal", async ({ pa
 
 test("session detail renders a structured decision card", async ({ page }) => {
   await page.goto("/?q=source%3Acodex");
-  const row = page.locator(".stream-row").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" }).first();
+  const row = page
+    .locator(".stream-row")
+    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })
+    .first();
   await row.click();
-  await page.locator(".stream-row-expanded").getByRole("link", { name: "Open at this event" }).click();
+  await page
+    .locator(".stream-row-expanded")
+    .getByRole("link", { name: "Open at this event" })
+    .click();
   await expect(page).toHaveURL(/view=browse/);
   await expect(page).toHaveURL(/event=/);
   await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
   await expect(page.locator(".event-flow-row--target")).toBeVisible();
-  await expect(page.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
+  await expect(
+    page.getByText("Matches agent-observatory; stays self-contained in the jar at runtime"),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/session-detail.png`, fullPage: true });
 });
 
@@ -127,7 +139,9 @@ test("live feed receives a newly ingested event over SSE", async ({ page, reques
     },
   });
   expect(res.ok()).toBeTruthy();
-  await expect(page.locator(".stream-row").filter({ hasText: marker })).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".stream-row").filter({ hasText: marker })).toBeVisible({
+    timeout: 10_000,
+  });
 });
 
 test("graph shows the seeded recall constellation", async ({ page, request }) => {
@@ -171,26 +185,41 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
   await expect(page.getByText("Project catalog", { exact: true })).toBeVisible();
-  const fixtureProject = page.locator(".project-catalog-row").filter({ hasText: "/tmp/black-box-e2e" });
+  const fixtureProject = page
+    .locator(".project-catalog-row")
+    .filter({ hasText: "/tmp/black-box-e2e" });
   await expect(fixtureProject).toBeVisible();
   await fixtureProject.click();
   await expect(page.getByRole("heading", { name: "black-box-e2e", exact: true })).toBeVisible();
   const storylineToggle = page.getByRole("group", { name: "Project storyline view" });
-  await expect(storylineToggle.getByRole("button", { name: "Trajectory" })).toHaveAttribute("aria-pressed", "true");
+  await expect(storylineToggle.getByRole("button", { name: "Trajectory" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(page.locator('.project-trajectory [data-node-kind="head"]')).toBeVisible();
-  await expect(page.locator([
-    '.project-trajectory [data-node-kind="future-next"]',
-    '.project-trajectory [data-node-kind="future-loop"]',
-    '.project-trajectory [data-node-kind="future-task"]',
-  ].join(", ")).first()).toBeVisible();
-  await expect(page.locator('.project-trajectory [data-node-kind="future-ghost"]').first()).toBeVisible();
+  await expect(
+    page
+      .locator(
+        [
+          '.project-trajectory [data-node-kind="future-next"]',
+          '.project-trajectory [data-node-kind="future-loop"]',
+          '.project-trajectory [data-node-kind="future-task"]',
+        ].join(", "),
+      )
+      .first(),
+  ).toBeVisible();
+  await expect(
+    page.locator('.project-trajectory [data-node-kind="future-ghost"]').first(),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/projects.png`, fullPage: true });
   await storylineToggle.getByRole("button", { name: "Timeline" }).click();
   await expect(page.getByText("Hybrid storyline", { exact: true })).toBeVisible();
   await expect(page.getByText("Recent sessions", { exact: true })).toBeVisible();
   await expect(page.getByText("UI rewrite kickoff", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Automatic · nested worktree", { exact: true })).toBeVisible();
-  await expect(page.getByText("Release workspace synthesis", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText("Release workspace synthesis", { exact: true }).first(),
+  ).toBeVisible();
   await expect(page.getByText("Release worktree handoff", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Activity Browse", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Preview meld/i })).toHaveCount(0);
@@ -201,13 +230,19 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
 
 test("recall query links the owning session and exact event", async ({ page, request }) => {
   await page.goto("/recall");
-  await expect(page.getByRole("heading", { name: "Ask what agents already decided" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Ask what agents already decided" }),
+  ).toBeVisible();
 
   await page.getByPlaceholder(/a topic/).fill("UI rewrite");
   await page.getByRole("button", { name: "Run recall" }).click();
-  const decisionCard = page.getByRole("article").filter({ hasText: "Use SolidJS + Vite for the UI rewrite" });
+  const decisionCard = page
+    .getByRole("article")
+    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" });
   await expect(decisionCard).toBeVisible();
-  await expect(decisionCard.getByText("Matches agent-observatory; stays self-contained in the jar at runtime")).toBeVisible();
+  await expect(
+    decisionCard.getByText("Matches agent-observatory; stays self-contained in the jar at runtime"),
+  ).toBeVisible();
   await expect(decisionCard.getByText("open loops")).toBeVisible();
   await page.screenshot({ path: `${SHOT_DIR}/recall.png`, fullPage: true });
 
@@ -219,20 +254,23 @@ test("recall query links the owning session and exact event", async ({ page, req
     },
   });
   expect(recalled.ok()).toBeTruthy();
-  const result = await recalled.json() as {
+  const result = (await recalled.json()) as {
     items: Array<{ eventId: string; sessionId: string; headline?: string | null }>;
   };
-  const decision = result.items.find((item) => item.headline === "Use SolidJS + Vite for the UI rewrite");
+  const decision = result.items.find(
+    (item) => item.headline === "Use SolidJS + Vite for the UI rewrite",
+  );
   expect(decision).toBeDefined();
 
   await decisionCard
     .getByRole("link", { name: "Open Use SolidJS + Vite for the UI rewrite in Browse" })
     .click();
-  await expect(page).toHaveURL((url) => (
-    url.searchParams.get("view") === "browse"
-    && url.searchParams.get("session") === decision!.sessionId
-    && url.searchParams.get("event") === decision!.eventId
-  ));
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("view") === "browse" &&
+      url.searchParams.get("session") === decision!.sessionId &&
+      url.searchParams.get("event") === decision!.eventId,
+  );
   await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
   await expect(page.locator(".event-flow-row--target")).toBeVisible();

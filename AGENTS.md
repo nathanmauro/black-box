@@ -129,6 +129,13 @@ or trusting live client wiring.
 For demo or showcase work, run `./scripts/demo.sh` and verify the visible recall loop before updating
 README claims or assets.
 
+Frontend lint and formatting are standard npm scripts under `frontend/`: `npm run lint`
+(ESLint with typescript-eslint and eslint-plugin-solid), `npm run format` (Prettier, in place) and
+`npm run format:check`. Run `npm run format` on any frontend file you edit before committing; CI and
+`scripts/verify.sh` fail on lint errors or unformatted files. Do not switch rules off to get a green
+run; scope a justified exemption to the narrowest file set and say why in `eslint.config.js`. See
+[Frontend standards](docs/frontend-standards.md).
+
 Java formatting is opt-in through `mvn -Pjava-format spotless:check` / `spotless:apply`.
 Use the pinned Palantir formatter and the AST-based blank-before-return step; do not substitute
 Eclipse or regex rewrites over Java source. Scope routine formatting with `spotlessFiles` (an

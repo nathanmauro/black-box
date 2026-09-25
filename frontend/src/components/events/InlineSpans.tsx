@@ -18,7 +18,13 @@ export default function InlineSpans(props: { spans: InlineSpan[] }) {
         }
         if (span.kind === "url") {
           return (
-            <a class="inline-url" href={span.href} target="_blank" rel="noreferrer" onClick={(clickEvent) => clickEvent.stopPropagation()}>
+            <a
+              class="inline-url"
+              href={span.href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+            >
               {span.label}
             </a>
           );

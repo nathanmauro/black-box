@@ -74,7 +74,11 @@ function parse(raw: string | null): Set<string> | null {
   if (raw == null) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : []);
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((value): value is string => typeof value === "string")
+        : [],
+    );
   } catch {
     return null;
   }

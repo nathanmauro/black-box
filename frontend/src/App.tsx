@@ -11,7 +11,12 @@ type AppProps = {
 
 type UtilityLinkId = "stream" | "browse" | "projects" | "board" | "recall";
 
-const UTILITY_LINKS: Array<{ id: UtilityLinkId; href: string; label: string; icon: UtilityIconKind }> = [
+const UTILITY_LINKS: Array<{
+  id: UtilityLinkId;
+  href: string;
+  label: string;
+  icon: UtilityIconKind;
+}> = [
   { id: "stream", href: "/", label: "Stream", icon: "activity" },
   { id: "browse", href: "/?view=browse", label: "Browse", icon: "browse" },
   { id: "projects", href: "/projects", label: "Projects", icon: "projects" },
@@ -48,7 +53,15 @@ export default function App(props: AppProps) {
                 <A href="/" class="brand utility-brand" aria-label="Black Box overview">
                   <span class="brand-mark" aria-hidden="true">
                     <svg viewBox="0 0 32 32">
-                      <rect x="5.5" y="8.5" width="21" height="15" fill="none" stroke="currentColor" stroke-width="2" />
+                      <rect
+                        x="5.5"
+                        y="8.5"
+                        width="21"
+                        height="15"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
                       <path
                         d="M5.5 16 H10 L12.5 11 L16 21 L19 13.5 L21 16 H26.5"
                         fill="none"
@@ -98,11 +111,19 @@ export default function App(props: AppProps) {
                   </div>
                 </div>
 
-                <span class={`live-pill utility-status live-pill--${live.status()}`} aria-label={`Connection status ${live.status()}`}>
+                <span
+                  class={`live-pill utility-status live-pill--${live.status()}`}
+                  aria-label={`Connection status ${live.status()}`}
+                >
                   <span class="live-dot" />
                   {live.status()}
                 </span>
-                <button type="button" class="command-button utility-command-button" aria-label="Open command palette" onClick={() => setPaletteOpen(true)}>
+                <button
+                  type="button"
+                  class="command-button utility-command-button"
+                  aria-label="Open command palette"
+                  onClick={() => setPaletteOpen(true)}
+                >
                   <span>⌘K</span>
                 </button>
               </div>
@@ -118,7 +139,11 @@ export default function App(props: AppProps) {
   );
 }
 
-function utilityLinkClass(item: (typeof UTILITY_LINKS)[number], pathname: string, view: string | undefined): string {
+function utilityLinkClass(
+  item: (typeof UTILITY_LINKS)[number],
+  pathname: string,
+  view: string | undefined,
+): string {
   const active =
     item.id === "stream"
       ? pathname === "/stream" || (pathname === "/" && (!view || view === "stream"))

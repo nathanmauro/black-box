@@ -21,9 +21,27 @@ const projectA: ProjectSummary = {
   scopes: [{ projectKey: "keyA", canonicalKey: "/repo/a", label: "/repo/a", primary: true }],
 };
 
-const sessionA: AgentSession = { id: "s1", source: "claude", clientSessionId: "c1", title: "t", cwd: "/repo/a", startedAt: iso(600_000), lastSeenAt: iso(20_000), eventCount: 5 };
+const sessionA: AgentSession = {
+  id: "s1",
+  source: "claude",
+  clientSessionId: "c1",
+  title: "t",
+  cwd: "/repo/a",
+  startedAt: iso(600_000),
+  lastSeenAt: iso(20_000),
+  eventCount: 5,
+};
 
-const decision: EventFeedItem = { id: "d1", sessionId: "s1", source: "claude", clientSessionId: "c1", eventType: "Decision", text: "Pick A", cwd: "/repo/a", observedAt: iso(60_000) };
+const decision: EventFeedItem = {
+  id: "d1",
+  sessionId: "s1",
+  source: "claude",
+  clientSessionId: "c1",
+  eventType: "Decision",
+  text: "Pick A",
+  cwd: "/repo/a",
+  observedAt: iso(60_000),
+};
 
 function fakeLive() {
   const [status, setStatus] = createSignal<LiveStatus>("connecting");
@@ -32,25 +50,47 @@ function fakeLive() {
   const live: LiveStore = {
     status,
     events: () => [],
-    onEventAppended: (callback) => { eventListeners.add(callback); return () => eventListeners.delete(callback); },
-    onSessionUpdated: (callback) => { sessionListeners.add(callback); return () => sessionListeners.delete(callback); },
+    onEventAppended: (callback) => {
+      eventListeners.add(callback);
+      return () => eventListeners.delete(callback);
+    },
+    onSessionUpdated: (callback) => {
+      sessionListeners.add(callback);
+      return () => sessionListeners.delete(callback);
+    },
   };
   return {
     live,
     setStatus,
-    emitEvent: (event: EventAppended) => { for (const listener of eventListeners) listener(event); },
-    emitSession: (event: SessionUpdated) => { for (const listener of sessionListeners) listener(event); },
+    emitEvent: (event: EventAppended) => {
+      for (const listener of eventListeners) listener(event);
+    },
+    emitSession: (event: SessionUpdated) => {
+      for (const listener of sessionListeners) listener(event);
+    },
   };
 }
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
-  get length() { return this.map.size; }
-  clear() { this.map.clear(); }
-  getItem(key: string) { return this.map.get(key) ?? null; }
-  key(index: number) { return [...this.map.keys()][index] ?? null; }
-  removeItem(key: string) { this.map.delete(key); }
-  setItem(key: string, value: string) { this.map.set(key, value); }
+  get length() {
+    return this.map.size;
+  }
+  clear() {
+    this.map.clear();
+  }
+  getItem(key: string) {
+    return this.map.get(key) ?? null;
+  }
+  key(index: number) {
+    return [...this.map.keys()][index] ?? null;
+  }
+  removeItem(key: string) {
+    this.map.delete(key);
+  }
+  setItem(key: string, value: string) {
+    this.map.set(key, value);
+  }
 }
 
 function deps(overrides: Partial<CompanionDeps> = {}): CompanionDeps {
@@ -58,7 +98,16 @@ function deps(overrides: Partial<CompanionDeps> = {}): CompanionDeps {
     getProjects: vi.fn(async () => [projectA]),
     getSessions: vi.fn(async () => [sessionA]),
     getEventFeed: vi.fn(async () => ({ items: [decision] })),
-    getEvent: vi.fn(async (id: string): Promise<AgentEvent> => ({ id, sessionId: "s1", source: "claude", clientSessionId: "c1", eventType: "Handoff", text: "Handoff to next-session: wired", metadata: { contextSummary: "wired", nextAction: "verify" }, observedAt: iso(1_000) })),
+    getEvent: vi.fn(async (id: string): Promise<AgentEvent> => ({
+      id,
+      sessionId: "s1",
+      source: "claude",
+      clientSessionId: "c1",
+      eventType: "Handoff",
+      text: "Handoff to next-session: wired",
+      metadata: { contextSummary: "wired", nextAction: "verify" },
+      observedAt: iso(1_000),
+    })),
     seen: createSeenStore(null),
     storage: null,
     now: () => NOW,
@@ -73,7 +122,9 @@ function owned<T>(create: () => T): { value: T; dispose: () => void } {
 }
 
 async function settled<T>(read: () => T, predicate: (value: T) => boolean): Promise<void> {
-  await vi.waitFor(() => { if (!predicate(read())) throw new Error("not yet"); });
+  await vi.waitFor(() => {
+    if (!predicate(read())) throw new Error("not yet");
+  });
 }
 
 describe("createCompanionStore", () => {
@@ -98,10 +149,25 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, d);
       await settled(store.loading, (loading) => !loading);
       setStatus("live");
-      emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
-      await settled(() => store.model().river.length, (length) => length === 2);
+      emitEvent({
+        id: "h1",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(1_000),
+        cwd: "/repo/a",
+      });
+      await settled(
+        () => store.model().river.length,
+        (length) => length === 2,
+      );
       expect(d.getEvent).toHaveBeenCalledWith("h1");
-      expect(store.model().river[0]).toMatchObject({ id: "h1", headline: "wired", nextAction: "verify", projectKey: "keyA" });
+      expect(store.model().river[0]).toMatchObject({
+        id: "h1",
+        headline: "wired",
+        nextAction: "verify",
+        projectKey: "keyA",
+      });
       expect(store.model().unseenTotal).toBe(2);
       dispose();
     });
@@ -114,12 +180,31 @@ describe("createCompanionStore", () => {
         .fn()
         .mockRejectedValueOnce(new Error("404"))
         .mockRejectedValueOnce(new Error("404"))
-        .mockResolvedValueOnce({ id: "h1", sessionId: "s1", source: "claude", clientSessionId: "c1", eventType: "Handoff", text: "wired", metadata: {}, observedAt: iso(1_000) } satisfies AgentEvent);
+        .mockResolvedValueOnce({
+          id: "h1",
+          sessionId: "s1",
+          source: "claude",
+          clientSessionId: "c1",
+          eventType: "Handoff",
+          text: "wired",
+          metadata: {},
+          observedAt: iso(1_000),
+        } satisfies AgentEvent);
       const store = createCompanionStore(live, deps({ getEvent, sleep: async () => {} }));
       await settled(store.loading, (loading) => !loading);
       setStatus("live");
-      emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
-      await settled(() => store.model().river.length, (length) => length === 2);
+      emitEvent({
+        id: "h1",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(1_000),
+        cwd: "/repo/a",
+      });
+      await settled(
+        () => store.model().river.length,
+        (length) => length === 2,
+      );
       expect(getEvent).toHaveBeenCalledTimes(3);
       dispose();
     });
@@ -132,7 +217,14 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, deps({ getEvent, sleep: async () => {} }));
       await settled(store.loading, (loading) => !loading);
       setStatus("live");
-      emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
+      emitEvent({
+        id: "h1",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(1_000),
+        cwd: "/repo/a",
+      });
       await vi.waitFor(() => expect(getEvent).toHaveBeenCalledTimes(3));
       expect(store.model().river).toHaveLength(1);
       dispose();
@@ -157,13 +249,28 @@ describe("createCompanionStore", () => {
       setStatus("live");
       store.openProject("keyB"); // no card yet; just parks the view for the assertion below
       clock = NOW + 61_000; // past the catalog refresh throttle
-      getProjects.mockImplementation(() => new Promise((resolve) => { resolveProjects = resolve; }));
-      emitEvent({ id: "h1", sessionId: "s2", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/b" });
+      getProjects.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveProjects = resolve;
+          }),
+      );
+      emitEvent({
+        id: "h1",
+        sessionId: "s2",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(1_000),
+        cwd: "/repo/b",
+      });
       // The event's getEvent() resolves well before the catalog fetch does; attribution must still wait.
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(store.model().river.find((item) => item.id === "h1")).toBeUndefined();
       resolveProjects([projectA, projectB]);
-      await settled(() => store.model().river.find((item) => item.id === "h1")?.projectKey, (key) => key === "keyB");
+      await settled(
+        () => store.model().river.find((item) => item.id === "h1")?.projectKey,
+        (key) => key === "keyB",
+      );
       dispose();
     });
   });
@@ -175,7 +282,14 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, d);
       await settled(store.loading, (loading) => !loading);
       setStatus("live");
-      emitEvent({ id: "t1", sessionId: "s9", source: "codex", eventType: "PostToolUse", observedAt: iso(0), cwd: "/repo/a" });
+      emitEvent({
+        id: "t1",
+        sessionId: "s9",
+        source: "codex",
+        eventType: "PostToolUse",
+        observedAt: iso(0),
+        cwd: "/repo/a",
+      });
       expect(d.getEvent).not.toHaveBeenCalled();
       expect(store.model().projects[0].liveSessions).toBe(2);
       expect(store.model().lastEventAt).toBe(iso(0));
@@ -192,8 +306,18 @@ describe("createCompanionStore", () => {
       store.openProject("keyA");
       expect(store.model().unseenTotal).toBe(0);
       Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
-      emitEvent({ id: "h2", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(500), cwd: "/repo/a" });
-      await settled(() => store.model().river.length, (length) => length === 2);
+      emitEvent({
+        id: "h2",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(500),
+        cwd: "/repo/a",
+      });
+      await settled(
+        () => store.model().river.length,
+        (length) => length === 2,
+      );
       expect(store.model().unseenTotal).toBe(1);
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
       document.dispatchEvent(new Event("visibilitychange"));
@@ -212,8 +336,18 @@ describe("createCompanionStore", () => {
       expect(store.mode()).toBe("expanded");
       expect(store.expanded()).toEqual({ kind: "project", projectKey: "keyA", projectName: "a" });
       expect(store.model().unseenTotal).toBe(0);
-      emitEvent({ id: "h2", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(500), cwd: "/repo/a" });
-      await settled(() => store.model().river.length, (length) => length === 2);
+      emitEvent({
+        id: "h2",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        observedAt: iso(500),
+        cwd: "/repo/a",
+      });
+      await settled(
+        () => store.model().river.length,
+        (length) => length === 2,
+      );
       expect(store.model().unseenTotal).toBe(0);
       dispose();
     });
@@ -222,7 +356,10 @@ describe("createCompanionStore", () => {
   it("marks items seen once loaded into a persisted expanded project view after relaunch", async () => {
     await createRoot(async (dispose) => {
       const storage = new MemoryStorage();
-      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } }));
+      storage.setItem(
+        MODE_STORAGE_KEY,
+        JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA" } }),
+      );
       const { live } = fakeLive();
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
@@ -239,7 +376,13 @@ describe("createCompanionStore", () => {
     try {
       await createRoot(async (dispose) => {
         const storage = new MemoryStorage();
-        storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA", projectName: "a" } }));
+        storage.setItem(
+          MODE_STORAGE_KEY,
+          JSON.stringify({
+            mode: "expanded",
+            expanded: { kind: "project", projectKey: "keyA", projectName: "a" },
+          }),
+        );
         const getProjects = vi.fn(async () => [projectA]).mockRejectedValueOnce(new Error("500"));
         const { live } = fakeLive();
         const store = createCompanionStore(live, deps({ storage, getProjects }));
@@ -263,7 +406,10 @@ describe("createCompanionStore", () => {
   it("marks items seen once loaded into a persisted river view after relaunch", async () => {
     await createRoot(async (dispose) => {
       const storage = new MemoryStorage();
-      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "river" } }));
+      storage.setItem(
+        MODE_STORAGE_KEY,
+        JSON.stringify({ mode: "expanded", expanded: { kind: "river" } }),
+      );
       const { live } = fakeLive();
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
@@ -281,7 +427,10 @@ describe("createCompanionStore", () => {
       const setItemSpy = vi.spyOn(storage, "setItem");
       store.openProject("keyA");
       expect(setItemSpy).toHaveBeenCalledTimes(1);
-      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "project", projectKey: "keyA", projectName: "a" } });
+      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({
+        mode: "expanded",
+        expanded: { kind: "project", projectKey: "keyA", projectName: "a" },
+      });
       dispose();
     });
   });
@@ -299,7 +448,10 @@ describe("createCompanionStore", () => {
         eventCount: 1,
       }));
       const { live } = fakeLive();
-      const store = createCompanionStore(live, deps({ getSessions: vi.fn(async () => manySessions) }));
+      const store = createCompanionStore(
+        live,
+        deps({ getSessions: vi.fn(async () => manySessions) }),
+      );
       let recomputes = 0;
       createEffect(() => {
         store.model();
@@ -317,7 +469,10 @@ describe("createCompanionStore", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {
       await createRoot(async (dispose) => {
-        const getProjects = vi.fn().mockRejectedValueOnce(new Error("500")).mockResolvedValue([projectA]);
+        const getProjects = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("500"))
+          .mockResolvedValue([projectA]);
         const { live } = fakeLive();
         const store = createCompanionStore(live, deps({ getProjects }));
         await settled(store.loading, (loading) => !loading);
@@ -343,7 +498,10 @@ describe("createCompanionStore", () => {
       expect(store.model().pulse).toBe("disconnected");
       expect(store.model().projects).toHaveLength(1);
       setStatus("live");
-      await settled(() => (d.getEventFeed as ReturnType<typeof vi.fn>).mock.calls.length, (calls) => calls === 2);
+      await settled(
+        () => (d.getEventFeed as ReturnType<typeof vi.fn>).mock.calls.length,
+        (calls) => calls === 2,
+      );
       dispose();
     });
   });
@@ -355,15 +513,22 @@ describe("createCompanionStore", () => {
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
       store.openRiver();
-      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({ mode: "expanded", expanded: { kind: "river" } });
+      expect(JSON.parse(storage.getItem(MODE_STORAGE_KEY) ?? "{}")).toEqual({
+        mode: "expanded",
+        expanded: { kind: "river" },
+      });
       const reloaded = owned(() => createCompanionStore(fakeLive().live, deps({ storage })));
       expect(reloaded.value.mode()).toBe("expanded");
       expect(reloaded.value.expanded()).toEqual({ kind: "river" });
       reloaded.dispose();
 
       const throwing = new MemoryStorage();
-      throwing.setItem = () => { throw new Error("blocked"); };
-      const guarded = owned(() => createCompanionStore(fakeLive().live, deps({ storage: throwing })));
+      throwing.setItem = () => {
+        throw new Error("blocked");
+      };
+      const guarded = owned(() =>
+        createCompanionStore(fakeLive().live, deps({ storage: throwing })),
+      );
       guarded.value.setMode("compact");
       expect(guarded.value.mode()).toBe("compact");
       guarded.dispose();
@@ -383,7 +548,12 @@ describe("createCompanionStore", () => {
         setStatus("live");
         expect(postMessage).toHaveBeenLastCalledWith({ type: "state", pulse: "live", unseen: 1 });
         store.setMode("compact");
-        expect(postMessage).toHaveBeenLastCalledWith({ type: "mode", mode: "compact", width: 340, height: 420 });
+        expect(postMessage).toHaveBeenLastCalledWith({
+          type: "mode",
+          mode: "compact",
+          width: 340,
+          height: 420,
+        });
         dispose();
       });
     } finally {
@@ -400,11 +570,26 @@ describe("createCompanionStore", () => {
         const { live } = fakeLive();
         const store = createCompanionStore(live, deps());
         await settled(store.loading, (loading) => !loading);
-        expect(postMessage).toHaveBeenCalledWith({ type: "mode", mode: "mini", width: 132, height: 36 });
+        expect(postMessage).toHaveBeenCalledWith({
+          type: "mode",
+          mode: "mini",
+          width: 132,
+          height: 36,
+        });
         store.reportMiniWidth(168);
-        expect(postMessage).toHaveBeenLastCalledWith({ type: "mode", mode: "mini", width: 168, height: 36 });
+        expect(postMessage).toHaveBeenLastCalledWith({
+          type: "mode",
+          mode: "mini",
+          width: 168,
+          height: 36,
+        });
         store.reportMiniWidth(90);
-        expect(postMessage).toHaveBeenLastCalledWith({ type: "mode", mode: "mini", width: 132, height: 36 });
+        expect(postMessage).toHaveBeenLastCalledWith({
+          type: "mode",
+          mode: "mini",
+          width: 132,
+          height: 36,
+        });
         dispose();
       });
     } finally {
@@ -424,12 +609,29 @@ describe("createCompanionStore", () => {
         setStatus("live");
         const item = store.model().river[0];
         const posts = postMessage.mock.calls.length;
-        emitEvent({ id: "t1", sessionId: "s1", source: "codex", eventType: "PostToolUse", observedAt: iso(0), cwd: "/repo/a" });
+        emitEvent({
+          id: "t1",
+          sessionId: "s1",
+          source: "codex",
+          eventType: "PostToolUse",
+          observedAt: iso(0),
+          cwd: "/repo/a",
+        });
         expect(store.model().lastEventAt).toBe(iso(0));
         expect(store.model().river[0]).toBe(item);
         expect(postMessage).toHaveBeenCalledTimes(posts);
-        emitEvent({ id: "h1", sessionId: "s1", source: "claude", eventType: "Handoff", observedAt: iso(1_000), cwd: "/repo/a" });
-        await settled(() => store.model().river.length, (length) => length === 2);
+        emitEvent({
+          id: "h1",
+          sessionId: "s1",
+          source: "claude",
+          eventType: "Handoff",
+          observedAt: iso(1_000),
+          cwd: "/repo/a",
+        });
+        await settled(
+          () => store.model().river.length,
+          (length) => length === 2,
+        );
         expect(store.model().river.find((entry) => entry.id === "d1")).toBe(item);
         dispose();
       });
@@ -455,10 +657,27 @@ describe("createCompanionStore", () => {
       setStatus("live");
       getProjects.mockImplementation(async () => [projectA, projectB]);
       clock = NOW + 61_000;
-      emitEvent({ id: "t2", sessionId: "s7", source: "codex", eventType: "PostToolUse", observedAt: new Date(clock).toISOString(), cwd: "/repo/b" });
-      await settled(() => store.model().projects.map((card) => card.key), (keys) => keys.includes("keyB"));
+      emitEvent({
+        id: "t2",
+        sessionId: "s7",
+        source: "codex",
+        eventType: "PostToolUse",
+        observedAt: new Date(clock).toISOString(),
+        cwd: "/repo/b",
+      });
+      await settled(
+        () => store.model().projects.map((card) => card.key),
+        (keys) => keys.includes("keyB"),
+      );
       expect(store.model().projects.some((card) => card.key === UNASSIGNED_KEY)).toBe(false);
-      emitEvent({ id: "t3", sessionId: "s8", source: "codex", eventType: "PostToolUse", observedAt: new Date(clock).toISOString(), cwd: "/repo/c" });
+      emitEvent({
+        id: "t3",
+        sessionId: "s8",
+        source: "codex",
+        eventType: "PostToolUse",
+        observedAt: new Date(clock).toISOString(),
+        cwd: "/repo/c",
+      });
       expect(getProjects).toHaveBeenCalledTimes(2);
       dispose();
     });
@@ -486,7 +705,10 @@ describe("createCompanionStore", () => {
   it("falls back to an active project, then the river, when the remembered project has aged out", async () => {
     await createRoot(async (dispose) => {
       const storage = new MemoryStorage();
-      storage.setItem(MODE_STORAGE_KEY, JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "stale" } }));
+      storage.setItem(
+        MODE_STORAGE_KEY,
+        JSON.stringify({ mode: "expanded", expanded: { kind: "project", projectKey: "stale" } }),
+      );
       const { live } = fakeLive();
       const store = createCompanionStore(live, deps({ storage }));
       await settled(store.loading, (loading) => !loading);
@@ -497,7 +719,11 @@ describe("createCompanionStore", () => {
       const empty = owned(() =>
         createCompanionStore(
           fakeLive().live,
-          deps({ getProjects: vi.fn(async () => []), getSessions: vi.fn(async () => []), getEventFeed: vi.fn(async () => ({ items: [] })) }),
+          deps({
+            getProjects: vi.fn(async () => []),
+            getSessions: vi.fn(async () => []),
+            getEventFeed: vi.fn(async () => ({ items: [] })),
+          }),
         ),
       );
       await settled(empty.value.loading, (loading) => !loading);

@@ -34,7 +34,7 @@ const items: RecalledItem[] = [
     clientSessionId: "session-c",
     repo: "/Users/nathan/Developer/proj/ask-my-history",
     observedAt: "2026-06-17T14:00:00.000Z",
-    headline: "{\"decision\":\"Never show this raw JSON\"}",
+    headline: '{"decision":"Never show this raw JSON"}',
     rationale: "Readable fallback should come from kind and source when a headline is JSON.",
   },
 ];
@@ -49,13 +49,25 @@ describe("buildConstellation", () => {
     expect(graph.nodes.filter((node) => node.type === "cluster")).toHaveLength(2);
     expect(graph.nodes.filter((node) => node.type === "leaf")).toHaveLength(3);
 
-    const sbaCluster = graph.nodes.find((node) => node.type === "cluster" && node.label === "sba-agentic");
+    const sbaCluster = graph.nodes.find(
+      (node) => node.type === "cluster" && node.label === "sba-agentic",
+    );
     expect(sbaCluster).toBeDefined();
-    expect(graph.edges).toContainEqual({ id: `edge:origin:${sbaCluster!.id}`, from: "origin", to: sbaCluster!.id });
+    expect(graph.edges).toContainEqual({
+      id: `edge:origin:${sbaCluster!.id}`,
+      from: "origin",
+      to: sbaCluster!.id,
+    });
 
-    const decision = graph.nodes.find((node) => node.type === "leaf" && node.label === "Use SolidJS + Vite for the UI rewrite");
+    const decision = graph.nodes.find(
+      (node) => node.type === "leaf" && node.label === "Use SolidJS + Vite for the UI rewrite",
+    );
     expect(decision).toBeDefined();
-    expect(graph.edges).toContainEqual({ id: `edge:${sbaCluster!.id}:${decision!.id}`, from: sbaCluster!.id, to: decision!.id });
+    expect(graph.edges).toContainEqual({
+      id: `edge:${sbaCluster!.id}:${decision!.id}`,
+      from: sbaCluster!.id,
+      to: decision!.id,
+    });
   });
 
   it("uses human labels instead of raw JSON labels", () => {

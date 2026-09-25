@@ -29,7 +29,10 @@ render(
       <Route path="/board" component={BoardRoute} />
       <Route path="/sessions" component={SessionsPage} />
       <Route path="/sessions/:sessionId" component={SessionsPage} />
-      <Route path="/search" component={() => <Navigate href={({ location }) => `/${location.search}`} />} />
+      <Route
+        path="/search"
+        component={() => <Navigate href={({ location }) => `/${location.search}`} />}
+      />
       <Route path="/recall" component={RecallPage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:projectKey" component={ProjectsPage} />

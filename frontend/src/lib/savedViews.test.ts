@@ -61,7 +61,9 @@ describe("savedViews", () => {
         { name: "Missing createdAt", q: "kind:Handoff" },
       ]),
     );
-    expect(listSavedViews()).toEqual([{ name: "Good", q: "kind:Decision", createdAt: "2026-08-20T00:00:00Z" }]);
+    expect(listSavedViews()).toEqual([
+      { name: "Good", q: "kind:Decision", createdAt: "2026-08-20T00:00:00Z" },
+    ]);
   });
 
   it("returns an empty list and swallows writes when storage throws", () => {

@@ -73,10 +73,7 @@ function PayloadSection(props: { label: string; value: unknown; priority: string
   return (
     <section class="tool-payload-section" aria-label={props.label}>
       <h4>{props.label}</h4>
-      <Show
-        when={entries()}
-        fallback={<PayloadValue value={props.value} standalone />}
-      >
+      <Show when={entries()} fallback={<PayloadValue value={props.value} standalone />}>
         {(items) => (
           <div class="tool-payload-fields">
             <For each={items()}>{(entry) => <PayloadField entry={entry} />}</For>
@@ -89,7 +86,12 @@ function PayloadSection(props: { label: string; value: unknown; priority: string
 
 function PayloadField(props: { entry: PayloadEntry }) {
   return (
-    <div classList={{ "tool-payload-field": true, "tool-payload-field--metric": isMetricKey(props.entry.key) }}>
+    <div
+      classList={{
+        "tool-payload-field": true,
+        "tool-payload-field--metric": isMetricKey(props.entry.key),
+      }}
+    >
       <span class="tool-payload-label">{fieldLabel(props.entry.key)}</span>
       <PayloadValue value={props.entry.value} />
     </div>
@@ -98,13 +100,18 @@ function PayloadField(props: { entry: PayloadEntry }) {
 
 function PayloadValue(props: { value: unknown; standalone?: boolean }) {
   const text = () => scalarText(props.value);
-  const block = () => typeof props.value === "string" && (props.value.includes("\n") || props.value.length > 120);
+  const block = () =>
+    typeof props.value === "string" && (props.value.includes("\n") || props.value.length > 120);
   const structured = () => props.value !== null && typeof props.value === "object";
 
   return (
     <Show
       when={!structured()}
-      fallback={<pre class="tool-payload-block tool-payload-block--json">{formatStructured(props.value)}</pre>}
+      fallback={
+        <pre class="tool-payload-block tool-payload-block--json">
+          {formatStructured(props.value)}
+        </pre>
+      }
     >
       <Show
         when={block() || props.standalone}

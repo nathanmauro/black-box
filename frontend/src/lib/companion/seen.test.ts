@@ -4,12 +4,24 @@ import { createSeenStore, SEEN_MAX, SEEN_STORAGE_KEY } from "./seen";
 
 class MemoryStorage implements Storage {
   private map = new Map<string, string>();
-  get length() { return this.map.size; }
-  clear() { this.map.clear(); }
-  getItem(key: string) { return this.map.get(key) ?? null; }
-  key(index: number) { return [...this.map.keys()][index] ?? null; }
-  removeItem(key: string) { this.map.delete(key); }
-  setItem(key: string, value: string) { this.map.set(key, value); }
+  get length() {
+    return this.map.size;
+  }
+  clear() {
+    this.map.clear();
+  }
+  getItem(key: string) {
+    return this.map.get(key) ?? null;
+  }
+  key(index: number) {
+    return [...this.map.keys()][index] ?? null;
+  }
+  removeItem(key: string) {
+    this.map.delete(key);
+  }
+  setItem(key: string, value: string) {
+    this.map.set(key, value);
+  }
 }
 
 describe("createSeenStore", () => {
@@ -61,13 +73,20 @@ describe("createSeenStore", () => {
     const storage = new MemoryStorage();
     const store = createSeenStore(storage);
     expect(store.seen().has("from-other-tab")).toBe(false);
-    window.dispatchEvent(new StorageEvent("storage", { key: SEEN_STORAGE_KEY, newValue: JSON.stringify(["from-other-tab"]) }));
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: SEEN_STORAGE_KEY,
+        newValue: JSON.stringify(["from-other-tab"]),
+      }),
+    );
     expect(store.seen().has("from-other-tab")).toBe(true);
   });
 
   it("ignores storage events for unrelated keys", () => {
     const store = createSeenStore(null);
-    window.dispatchEvent(new StorageEvent("storage", { key: "some-other-key", newValue: JSON.stringify(["nope"]) }));
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "some-other-key", newValue: JSON.stringify(["nope"]) }),
+    );
     expect(store.seen().has("nope")).toBe(false);
   });
 

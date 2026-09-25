@@ -1,7 +1,12 @@
 import { onCleanup, onMount, Show } from "solid-js";
 import type { PulseState } from "../../lib/companion/model";
 
-export const PULSE_LABEL: Record<PulseState, string> = { connecting: "connecting", live: "live", idle: "idle", disconnected: "offline" };
+export const PULSE_LABEL: Record<PulseState, string> = {
+  connecting: "connecting",
+  live: "live",
+  idle: "idle",
+  disconnected: "offline",
+};
 
 type MiniChipProps = {
   pulse: PulseState;
@@ -42,7 +47,11 @@ export default function MiniChip(props: MiniChipProps) {
       }}
       type="button"
       class={`companion-chip companion-chip--${props.pulse}${props.hasError ? " companion-chip--warn" : ""}`}
-      aria-label={props.hasError ? `Black Box companion: could not load, ${PULSE_LABEL[props.pulse]}` : `Black Box companion: ${PULSE_LABEL[props.pulse]}, ${props.unseen} unseen`}
+      aria-label={
+        props.hasError
+          ? `Black Box companion: could not load, ${PULSE_LABEL[props.pulse]}`
+          : `Black Box companion: ${PULSE_LABEL[props.pulse]}, ${props.unseen} unseen`
+      }
       title={props.hasError ? "Could not load Black Box data" : "Expand"}
       onClick={() => props.onExpand()}
     >

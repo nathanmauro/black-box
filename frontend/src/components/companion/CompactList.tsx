@@ -18,7 +18,12 @@ type CompactListProps = {
 // visibly says (spec 4: name, live count, unseen, latest headline, kind, age) — a shorter one built
 // separately from the visible text drifts out of sync (e.g. always saying "0 live" for a row that
 // visibly reads "quiet") and silently drops content for assistive tech.
-function projectRowLabel(card: { name: string; liveSessions: number; unseen: number; latest: { eventType: string; headline: string } | null }): string {
+function projectRowLabel(card: {
+  name: string;
+  liveSessions: number;
+  unseen: number;
+  latest: { eventType: string; headline: string } | null;
+}): string {
   const live = card.liveSessions > 0 ? `${card.liveSessions} live` : "quiet";
   const latest = card.latest ? `, latest ${card.latest.eventType}: ${card.latest.headline}` : "";
   return `${card.name}: ${live}, ${card.unseen} unseen${latest}`;
@@ -50,15 +55,26 @@ export default function CompactList(props: CompactListProps) {
         >
           River
         </button>
-        <button type="button" class="companion-icon-button" aria-label="Collapse" onClick={() => props.onCollapse()}>
+        <button
+          type="button"
+          class="companion-icon-button"
+          aria-label="Collapse"
+          onClick={() => props.onCollapse()}
+        >
           –
         </button>
       </header>
       {/* Loading only replaces the list before the first load has ever produced a project; a later
           refresh (reconnect live->down->live, the 30s error-retry tick) with rows already on screen
           must keep them mounted instead of unmounting into "Loading…" and dropping focus to body. */}
-      <Show when={!(props.loading && props.model.projects.length === 0)} fallback={<p class="companion-empty">Loading…</p>}>
-        <Show when={props.model.projects.length > 0} fallback={<p class="companion-empty">Quiet. No active projects in the last 24h.</p>}>
+      <Show
+        when={!(props.loading && props.model.projects.length === 0)}
+        fallback={<p class="companion-empty">Loading…</p>}
+      >
+        <Show
+          when={props.model.projects.length > 0}
+          fallback={<p class="companion-empty">Quiet. No active projects in the last 24h.</p>}
+        >
           <ul class="companion-projects">
             <Index each={props.model.projects}>
               {(card, index) => (
@@ -70,9 +86,14 @@ export default function CompactList(props: CompactListProps) {
                     ref={index === 0 ? props.focusRef : undefined}
                     onClick={() => props.onOpenProject(card().key)}
                   >
-                    <span class={`companion-live-dot${card().liveSessions > 0 ? " companion-live-dot--on" : ""}`} aria-hidden="true" />
+                    <span
+                      class={`companion-live-dot${card().liveSessions > 0 ? " companion-live-dot--on" : ""}`}
+                      aria-hidden="true"
+                    />
                     <span class="companion-project-name">{card().name}</span>
-                    <span class="companion-project-meta">{card().liveSessions > 0 ? `${card().liveSessions} live` : "quiet"}</span>
+                    <span class="companion-project-meta">
+                      {card().liveSessions > 0 ? `${card().liveSessions} live` : "quiet"}
+                    </span>
                     <Show when={card().unseen > 0}>
                       <span class="companion-count">{card().unseen}</span>
                     </Show>
@@ -92,7 +113,9 @@ export default function CompactList(props: CompactListProps) {
           </ul>
         </Show>
       </Show>
-      <footer class={`companion-footer companion-footer--${props.model.pulse}`}>{pulseText(props.model)}</footer>
+      <footer class={`companion-footer companion-footer--${props.model.pulse}`}>
+        {pulseText(props.model)}
+      </footer>
     </div>
   );
 }
