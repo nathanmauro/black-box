@@ -292,18 +292,32 @@ describe("ActivityPage", () => {
     await waitFor(() => expect(params.project).toBe("sba-key"));
   });
 
-  it("restores remembered project when the URL has none and clears browse state", async () => {
-    [params, setParams] = createStore<ActivitySearchParams>({
-      session: "session-2",
-      event: "event-old",
-    });
+  it("restores remembered project when the URL has neither a project nor a deep-linked target", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({});
     localStorage.setItem("blackbox.activity.projectKey", "sba-key");
     render(() => <ActivityPage />);
 
     expect(await screen.findByRole("button", { name: /^Project sba-agentic/ })).toBeInTheDocument();
     await waitFor(() => expect(params.project).toBe("sba-key"));
-    expect(params.session).toBeUndefined();
-    expect(params.event).toBeUndefined();
+  });
+
+  // A companion "Unassigned" row links to `/?view=browse&session=S&event=E` with no project param
+  // (spec 4; docs/companion.md's "exact event" promise). Restoring a remembered project scope over
+  // that link would filter the deep-linked session out of view instead of opening it.
+  it("preserves a deep-linked session and event instead of clobbering them with a remembered project", async () => {
+    [params, setParams] = createStore<ActivitySearchParams>({
+      session: "session-2",
+      event: "event-old",
+      view: "browse",
+    });
+    localStorage.setItem("blackbox.activity.projectKey", "sba-key");
+    render(() => <ActivityPage />);
+
+    expect(await screen.findByRole("button", { name: /All projects/ })).toBeInTheDocument();
+    await waitFor(() => expect(apiMocks.getProjects).toHaveBeenCalled());
+    expect(params.project).toBeUndefined();
+    expect(params.session).toBe("session-2");
+    expect(params.event).toBe("event-old");
   });
 
   it("honors an explicit all-project Browse link without losing its target to remembered scope", async () => {
