@@ -31,6 +31,29 @@ export default function App(props: AppProps) {
   const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
+  let sourcesMenuRef: HTMLDivElement | undefined;
+  let sourcesTriggerRef: HTMLButtonElement | undefined;
+
+  // The Sources panel dismisses like every other popover in the shell: Escape (focus returns to
+  // its trigger) or a pointer-down anywhere outside the menu. Listeners exist only while open.
+  createEffect(() => {
+    if (!sourcesOpen()) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!sourcesMenuRef?.contains(event.target as Node)) setSourcesOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setSourcesOpen(false);
+      sourcesTriggerRef?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    });
+  });
 
   createEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -93,8 +116,9 @@ export default function App(props: AppProps) {
                   </For>
                 </nav>
 
-                <div class="sources-menu">
+                <div ref={sourcesMenuRef} class="sources-menu">
                   <button
+                    ref={sourcesTriggerRef}
                     type="button"
                     class="utility-icon-button sources-menu-trigger"
                     aria-label="Filter sources"

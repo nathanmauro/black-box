@@ -76,8 +76,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
         ?.local?.slice(0, 5)
         .map((event) => ({
           id: `event-${event.id}`,
-          label:
-            event.text && event.text.length < 120 ? event.text : event.toolName || event.eventType,
+          label: event.text ? truncateLabel(event.text) : event.toolName || event.eventType,
           meta: `${sourceLabel(event.source)} · ${timeAgo(event.observedAt)}`,
           kind: "event" as const,
           eventKind: event.eventType,
@@ -224,6 +223,13 @@ function fuzzy(session: AgentSession, q: string): boolean {
   return normalize(
     `${session.title} ${session.cwd || ""} ${session.source} ${session.clientSessionId}`,
   ).includes(q);
+}
+
+// Long captured text (a Decision headline, a multi-paragraph prompt) still identifies the event
+// better than its bare kind, so trim it instead of dropping it.
+function truncateLabel(text: string, max = 120): string {
+  const single = text.replace(/\s+/g, " ").trim();
+  return single.length <= max ? single : `${single.slice(0, max - 1).trimEnd()}…`;
 }
 
 function normalize(value: string): string {

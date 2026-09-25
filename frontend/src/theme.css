@@ -627,6 +627,7 @@ a {
 }
 .hero-search-row button,
 .search-form button,
+.stream-input-line .search-input-wrap > button[type="submit"],
 .ask-form button {
   height: 46px;
   padding: 0 18px;
@@ -1488,7 +1489,7 @@ a {
   white-space: pre-wrap;
 }
 .reading-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
   width: fit-content;
@@ -2397,6 +2398,10 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.palette-item-text small {
+  margin-left: 8px;
+  color: var(--text-dim);
+}
 
 /* ---- search ------------------------------------------------------------ */
 .page--search {
@@ -2738,6 +2743,29 @@ a {
 .stream-input-line .search-input-wrap {
   flex: 1;
   min-width: 0;
+}
+
+/* Phone: the query input takes the whole first line so Filter/Views/Options never overlap it,
+   and run-header actions wrap under the session identity instead of clipping off the feed.
+   Declared after the base rules above so it wins on equal specificity. */
+@media (max-width: 700px) {
+  .stream-input-line {
+    flex-wrap: wrap;
+  }
+
+  .stream-input-line .search-input-wrap {
+    flex: 1 1 100%;
+  }
+
+  .stream-run-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* The session title owns the first line; cwd, counts, and actions share the lines below. */
+  .stream-run-title {
+    flex: 1 1 100%;
+  }
 }
 
 .stream-options {
@@ -4903,6 +4931,7 @@ a {
 
 .project-catalog-pane > .project-picker {
   width: auto;
+  min-width: 0;
   margin: 0 12px 12px;
 }
 

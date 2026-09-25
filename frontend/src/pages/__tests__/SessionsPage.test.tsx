@@ -228,6 +228,18 @@ describe("SessionsPage", () => {
     expect(getTaskDag).not.toHaveBeenCalled();
   });
 
+  it("says the recorder is empty rather than blaming filters when no session exists", async () => {
+    vi.mocked(getSessions).mockResolvedValue([]);
+    vi.mocked(getSession).mockRejectedValue(new Error("missing"));
+
+    render(() => <SessionsPage />);
+
+    expect(await screen.findByText("No sessions recorded yet.")).toBeInTheDocument();
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "source:codex" } });
+    expect(screen.getByText("No sessions match the active filters.")).toBeInTheDocument();
+  });
+
   it("renders active task context with an enabled steer box", async () => {
     [searchParams, setSearchParams] = createStore<TendrilSearchParams>({ task: "task-1" });
     vi.mocked(getTaskDag).mockResolvedValue(taskDag("in_progress"));
