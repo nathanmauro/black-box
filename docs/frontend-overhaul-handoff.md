@@ -24,6 +24,14 @@ into `src/main/resources/static/` by `npm run build` and by the Maven `-Pfronten
   refresh.
 - Playwright simulated-use coverage lives in `frontend/tests/e2e/smoke.spec.ts` and drives the real
   packaged app, not the Vite dev server.
+- Every popover in the shell shares one dismissal contract: the Stream `Views` and `Options`
+  disclosures, the utility-bar `Sources` panel, the query suggest popover, and the project picker
+  all close on Escape (returning focus to their trigger) and on a pointer-down outside the panel.
+  `Views` and `Options` share a single open slot, so opening one closes the other.
+- Empty states say which situation applies: an empty recorder reads "No events recorded yet" /
+  "No sessions recorded yet", while an active filter, source chip, or project scope reads "No …
+  match the current filters". See `docs/superpowers/plans/2026-09-24-ui-review-pass.md` for the
+  review that introduced these and the findings still open.
 
 ## Reproducible E2E Gate
 
