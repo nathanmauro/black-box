@@ -78,6 +78,10 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
     if (!remembered) return;
     const rememberedProject = findProjectByIdentifier(availableProjects(), remembered);
     if (rememberedProject) {
+      // A URL with no project but a session/event is a deep link (e.g. the companion's Unassigned
+      // row) to an exact target, not an ordinary revisit; forcing the remembered scope onto it would
+      // filter that target out of view instead of opening it, so leave it unscoped.
+      if (params.session || params.event) return;
       persistProjectKey(rememberedProject.projectKey);
       setParams({ project: rememberedProject.projectKey, session: undefined, event: undefined });
     } else {

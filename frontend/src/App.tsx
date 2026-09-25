@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, type JSX } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
@@ -27,6 +27,7 @@ const UTILITY_LINKS: Array<{
 export default function App(props: AppProps) {
   const live = createLiveStore();
   const location = useLocation();
+  const bare = () => location.pathname === "/companion";
   const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
@@ -45,89 +46,93 @@ export default function App(props: AppProps) {
   return (
     <LiveStoreContext.Provider value={live}>
       <CodeNavigationProvider>
-        <div class="app-shell">
-          <header class="app-utility-bar" aria-label="Black Box utility bar">
-            <div class="utility-cluster">
-              <A href="/" class="brand utility-brand" aria-label="Black Box overview">
-                <span class="brand-mark" aria-hidden="true">
-                  <svg viewBox="0 0 32 32">
-                    <rect
-                      x="5.5"
-                      y="8.5"
-                      width="21"
-                      height="15"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                    />
-                    <path
-                      d="M5.5 16 H10 L12.5 11 L16 21 L19 13.5 L21 16 H26.5"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.6"
-                      stroke-linejoin="round"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                </span>
-                <span class="brand-word">
-                  BLACK<span>BOX</span>
-                </span>
-              </A>
+        <div class={bare() ? "app-shell app-shell--bare" : "app-shell"}>
+          <Show when={!bare()}>
+            <header class="app-utility-bar" aria-label="Black Box utility bar">
+              <div class="utility-cluster">
+                <A href="/" class="brand utility-brand" aria-label="Black Box overview">
+                  <span class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 32 32">
+                      <rect
+                        x="5.5"
+                        y="8.5"
+                        width="21"
+                        height="15"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
+                      <path
+                        d="M5.5 16 H10 L12.5 11 L16 21 L19 13.5 L21 16 H26.5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linejoin="round"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="brand-word">
+                    BLACK<span>BOX</span>
+                  </span>
+                </A>
 
-              <nav class="utility-nav" aria-label="Utility">
-                <For each={UTILITY_LINKS}>
-                  {(item) => (
-                    <A
-                      href={item.href}
-                      activeClass=""
-                      class={utilityLinkClass(item, location.pathname, params.view)}
-                      aria-label={item.label}
-                      title={item.label}
-                    >
-                      <UtilityIcon kind={item.icon} />
-                    </A>
-                  )}
-                </For>
-              </nav>
+                <nav class="utility-nav" aria-label="Utility">
+                  <For each={UTILITY_LINKS}>
+                    {(item) => (
+                      <A
+                        href={item.href}
+                        activeClass=""
+                        class={utilityLinkClass(item, location.pathname, params.view)}
+                        aria-label={item.label}
+                        title={item.label}
+                      >
+                        <UtilityIcon kind={item.icon} />
+                      </A>
+                    )}
+                  </For>
+                </nav>
 
-              <div class="sources-menu">
+                <div class="sources-menu">
+                  <button
+                    type="button"
+                    class="utility-icon-button sources-menu-trigger"
+                    aria-label="Filter sources"
+                    aria-expanded={sourcesOpen()}
+                    aria-controls="source-filter-panel"
+                    title="Filter sources"
+                    onClick={() => setSourcesOpen((open) => !open)}
+                  >
+                    <UtilityIcon kind="sources" />
+                  </button>
+                  <div id="source-filter-panel" class="sources-menu-panel" hidden={!sourcesOpen()}>
+                    <span class="sources-menu-title">Sources</span>
+                    <SourceChips />
+                  </div>
+                </div>
+
+                <span
+                  class={`live-pill utility-status live-pill--${live.status()}`}
+                  aria-label={`Connection status ${live.status()}`}
+                >
+                  <span class="live-dot" />
+                  {live.status()}
+                </span>
                 <button
                   type="button"
-                  class="utility-icon-button sources-menu-trigger"
-                  aria-label="Filter sources"
-                  aria-expanded={sourcesOpen()}
-                  aria-controls="source-filter-panel"
-                  title="Filter sources"
-                  onClick={() => setSourcesOpen((open) => !open)}
+                  class="command-button utility-command-button"
+                  aria-label="Open command palette"
+                  onClick={() => setPaletteOpen(true)}
                 >
-                  <UtilityIcon kind="sources" />
+                  <span>⌘K</span>
                 </button>
-                <div id="source-filter-panel" class="sources-menu-panel" hidden={!sourcesOpen()}>
-                  <span class="sources-menu-title">Sources</span>
-                  <SourceChips />
-                </div>
               </div>
-
-              <span
-                class={`live-pill utility-status live-pill--${live.status()}`}
-                aria-label={`Connection status ${live.status()}`}
-              >
-                <span class="live-dot" />
-                {live.status()}
-              </span>
-              <button
-                type="button"
-                class="command-button utility-command-button"
-                aria-label="Open command palette"
-                onClick={() => setPaletteOpen(true)}
-              >
-                <span>⌘K</span>
-              </button>
-            </div>
-          </header>
+            </header>
+          </Show>
           <main class="app-main">{props.children}</main>
-          <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+          <Show when={!bare()}>
+            <CommandPalette open={paletteOpen()} onClose={() => setPaletteOpen(false)} />
+          </Show>
         </div>
       </CodeNavigationProvider>
     </LiveStoreContext.Provider>

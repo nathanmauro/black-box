@@ -23,7 +23,8 @@ public class SpaForwardingController {
                 "/projects",
                 "/projects/**",
                 "/graph",
-                "/board"
+                "/board",
+                "/companion"
             })
     public String forward() {
 
