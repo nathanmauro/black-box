@@ -85,7 +85,7 @@ or live services.
 8. Document and close
    - Repo behavior, commands, tests, architecture, and agent instructions belong in repo docs.
    - Durable human-facing knowledge belongs in the Obsidian vault when Nathan says "update my docs".
-   - Concrete actions belong in Todoist, not in Black Box.
+   - Concrete actions belong in Linear, not in Black Box.
    - Decisions, handoffs, observations, and parked tangents belong in Black Box.
    - If future work remains, leave a concise handoff with current state, verification, open loops,
      and one next useful action.
@@ -104,8 +104,12 @@ Use Black Box for structured continuity, not for bulk transcript storage or task
 - `Parked tangent`: use when a related side path would derail the current task but should be
   findable later.
 
-Do not put secrets, raw env files, large logs, full duplicate docs, or ordinary Todoist tasks into
+Do not put secrets, raw env files, large logs, full duplicate docs, or ordinary Linear tasks into
 Black Box.
+
+Clients outside this Mac (ChatGPT, cloud coding agents, voice, automation) follow the
+[cross-environment capture contract](docs/cross-environment-capture.md): declare an `origin`, keep
+provenance, capture only durable kinds, and end substantial work with a templated handoff.
 
 ## Verification commands
 
