@@ -1,4 +1,5 @@
 import { A, useSearchParams } from "@solidjs/router";
+import { humanOnly } from "../lib/humanOnly";
 import {
   createEffect,
   createMemo,
@@ -99,13 +100,16 @@ export default function SearchPage(props: SearchPageProps = {}) {
     submitted: visibleSubmitted(),
     api: apiQuery(),
     projectScopePending: props.projectScopePending === true,
+    humanOnly: humanOnly(),
   }));
   const [response, { refetch: refetchSearch }] = createResource<
     SearchResponse,
-    { submitted: string; api: string; projectScopePending: boolean }
+    { submitted: string; api: string; projectScopePending: boolean; humanOnly: boolean }
   >(searchRequest, async (request) =>
     !request.projectScopePending && request.submitted.trim()
-      ? search(request.api, 120)
+      ? request.humanOnly
+        ? search(request.api, 120, true)
+        : search(request.api, 120)
       : emptySearchResponse(),
   );
 

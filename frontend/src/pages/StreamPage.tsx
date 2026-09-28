@@ -25,6 +25,7 @@ import {
   type ProjectSummary,
 } from "../lib/api";
 import { truncatePath } from "../lib/format";
+import { humanOnly, withHumanText } from "../lib/humanOnly";
 import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../lib/projects";
 import { listSavedViews, removeSavedView, saveSavedView } from "../lib/savedViews";
 import {
@@ -282,6 +283,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
       return;
     }
     const q = apiQuery();
+    const human = humanOnly();
     const token = ++loadToken;
     setLoading(true);
     setLoadingMore(false);
@@ -294,7 +296,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setUnfolds(new Set<string>());
     // meaningful=true always rides the wire; opting out is expressed as is:all in q, which the
     // backend gives precedence (D16) — deep links and reloads reproduce the state from q alone.
-    getEventFeed({ limit: FEED_LIMIT, q, meaningful: true })
+    getEventFeed({ limit: FEED_LIMIT, q, meaningful: true, humanOnly: human || undefined })
       .then((response) => {
         if (token !== loadToken) return;
         setItems(response.items.slice(0, MAX_ROWS));
@@ -319,6 +321,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   createEffect(() => {
     const pendingScope = props.projectScopePending;
     const q = apiQuery();
+    const human = humanOnly();
     const token = ++facetsToken;
     setFacetCounts(null);
     facetsAbort?.abort();
@@ -327,7 +330,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     facetsTimer = setTimeout(() => {
       const controller = new AbortController();
       facetsAbort = controller;
-      getEventFacets({ q, meaningful: true }, controller.signal)
+      getEventFacets({ q, meaningful: true, humanOnly: human || undefined }, controller.signal)
         .then((counts) => {
           if (token === facetsToken) setFacetCounts(counts);
         })
@@ -509,6 +512,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
         limit: FEED_LIMIT,
         q: apiQuery(),
         meaningful: true,
+        humanOnly: humanOnly() || undefined,
         before,
       });
       if (!isCurrentStreamRequest(token)) return;
@@ -530,6 +534,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
         limit: FEED_LIMIT,
         q: apiQuery(),
         meaningful: true,
+        humanOnly: humanOnly() || undefined,
         since,
       });
       if (!isCurrentStreamRequest(token)) return;
@@ -723,7 +728,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
                 <label class="meaningful-toggle">
                   <input
                     type="checkbox"
-                    checked={!parsed().isAll}
+                    disabled={humanOnly()}
+                    checked={humanOnly() || !parsed().isAll}
                     onChange={(event) => {
                       const meaningful = event.currentTarget.checked;
                       patchQuery((state) => (state.isAll = !meaningful));
@@ -880,6 +886,12 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
       <Show when={error()}>{(message) => <p class="empty-state">{message()}</p>}</Show>
 
+      <Show when={humanOnly()}>
+        <p class="human-mode-banner" role="status">
+          Showing only your turns · press H for everything
+        </p>
+      </Show>
+
       <Show when={matchTotal() !== null || scopePhrases().length > 0 || livePaused()}>
         <div class="stream-result-header">
           {/* The count is omitted entirely while unavailable (loading, aborted, error, FTS
@@ -1011,7 +1023,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
                           {(row) =>
                             row.type === "event" ? (
                               <StreamRow
-                                item={row.item}
+                                item={withHumanText(row.item, humanOnly())}
+                                humanMode={humanOnly()}
                                 expanded={isExpanded(row.item.id)}
                                 textExpanded={density() === "expanded"}
                                 sessionHref={sessionHref(row.item, props.project)}
@@ -1032,7 +1045,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
             )}
           </For>
           <Show when={!items().length}>
-            <p class="empty-state">No stream events match the current filters.</p>
+            <p class="empty-state">
+              {humanOnly()
+                ? "No human turns match the current filters."
+                : "No stream events match the current filters."}
+            </p>
           </Show>
         </Show>
       </div>

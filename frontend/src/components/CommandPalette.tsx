@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { getSessions, search, type AgentSession } from "../lib/api";
+import { humanOnly, leadLine, toggleHumanOnly } from "../lib/humanOnly";
 import { sourceLabel, timeAgo, truncatePath } from "../lib/format";
 import KindBadge from "./KindBadge";
 import SourceDot from "./SourceDot";
@@ -67,6 +68,19 @@ export default function CommandPalette(props: CommandPaletteProps) {
         close();
       },
     }));
+    const humanCommand = {
+      id: "cmd-human-only",
+      label: humanOnly() ? "Show all events" : "Show only human turns",
+      meta: "toggle the human-turns filter (H)",
+      kind: "nav" as const,
+      run: () => {
+        toggleHumanOnly();
+        close();
+      },
+    };
+    const commands = [humanCommand].filter(
+      (item) => !q || normalize(`${item.label} ${item.meta} human turns my turns`).includes(q),
+    );
     const matchedSessions = sessions()
       .filter((session) => !q || fuzzy(session, q))
       .slice(0, 7)
@@ -102,7 +116,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
           },
         ]
       : [];
-    return [...nav, ...matchedSessions, ...remoteEvents, ...searchItem];
+    return [...nav, ...commands, ...matchedSessions, ...remoteEvents, ...searchItem];
   });
 
   createEffect(() => {
@@ -210,8 +224,15 @@ function sessionItem(
 ): CommandItem {
   return {
     id: `session-${session.id}`,
-    label: session.title || session.clientSessionId,
-    meta: `${sourceLabel(session.source)} · ${truncatePath(session.cwd)} · ${timeAgo(session.lastSeenAt)}`,
+    label: leadLine(session.firstHumanTurn) || session.title || session.clientSessionId,
+    meta: [
+      sourceLabel(session.source),
+      truncatePath(session.cwd),
+      timeAgo(session.lastSeenAt),
+      leadLine(session.firstHumanTurn) && session.title ? session.title : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
     kind: "session",
     run: () => {
       navigate(`/?view=browse&session=${encodeURIComponent(session.id)}`);
@@ -222,7 +243,7 @@ function sessionItem(
 
 function fuzzy(session: AgentSession, q: string): boolean {
   return normalize(
-    `${session.title} ${session.cwd || ""} ${session.source} ${session.clientSessionId}`,
+    `${session.title} ${session.firstHumanTurn || ""} ${session.cwd || ""} ${session.source} ${session.clientSessionId}`,
   ).includes(q);
 }
 

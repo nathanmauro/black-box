@@ -1,4 +1,5 @@
 import { createResource, createSignal } from "solid-js";
+import { humanOnly } from "./humanOnly";
 import { type AgentSession, getSessions, search, type SearchResponse } from "./api";
 
 const [selectedSources, setSelectedSources] = createSignal<Set<string>>(new Set());
@@ -37,9 +38,16 @@ export function createSessionsResource(limit = 250) {
 }
 
 export function createSearchResource(query: () => string, limit = 80) {
-  return createResource(query, async (q): Promise<SearchResponse> =>
-    q.trim()
-      ? search(q, limit)
-      : { query: "", local: [], elastic: [], elasticHealth: { enabled: false, available: false } },
+  return createResource(
+    () => ({ q: query(), human: humanOnly() }),
+    async ({ q, human }): Promise<SearchResponse> =>
+      q.trim()
+        ? search(q, limit, human)
+        : {
+            query: "",
+            local: [],
+            elastic: [],
+            elasticHealth: { enabled: false, available: false },
+          },
   );
 }

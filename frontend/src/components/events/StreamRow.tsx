@@ -11,6 +11,8 @@ type StreamRowProps = {
   item: EventFeedItem;
   expanded: boolean;
   textExpanded?: boolean;
+  // Human-turns mode: item.text already carries the verbatim human text; keep its line breaks.
+  humanMode?: boolean;
   sessionHref: string;
   // "Trajectory →" target for expanded landmark cards (spec §9, D14); omitted when the row's
   // cwd does not resolve to a catalog project — the link is never guessed.
@@ -32,7 +34,13 @@ export default function StreamRow(props: StreamRowProps) {
   const mark = () => kindMarkOf(item());
 
   return (
-    <article classList={{ "stream-row-wrap": true, "stream-row-wrap--expanded": props.expanded }}>
+    <article
+      classList={{
+        "stream-row-wrap": true,
+        "stream-row-wrap--expanded": props.expanded,
+        "stream-row-wrap--human": props.humanMode,
+      }}
+    >
       <button
         type="button"
         classList={{

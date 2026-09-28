@@ -10,6 +10,9 @@ import {
   enqueueTask,
   getEvent,
   getEventFacets,
+  getEventFeed,
+  getSessionEvents,
+  search,
   getSessionChildCounts,
   getSessionDag,
   getSession,
@@ -699,5 +702,31 @@ describe("subagent lineage API helpers", () => {
     await getSessionChildCounts(ids);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("humanOnly query parameter", () => {
+  const urlOf = (fetchMock: ReturnType<typeof stubJson>) => String(fetchMock.mock.calls[0][0]);
+
+  it("is sent only when true", async () => {
+    const calls: Array<[string, (humanOnly: boolean) => Promise<unknown>]> = [
+      ["/api/events", (h) => getEventFeed({ humanOnly: h })],
+      ["/api/events/facets", (h) => getEventFacets({ humanOnly: h })],
+      ["/transcript", (h) => getSessionTranscript("s1", { humanOnly: h })],
+      ["/api/sessions/s1/events", (h) => getSessionEvents("s1", 10, h)],
+      ["/api/search", (h) => search("q", 5, h)],
+      ["/api/sessions?", (h) => getSessions(5, false, h)],
+    ];
+    for (const [path, call] of calls) {
+      const off = stubJson({});
+      await call(false);
+      expect(urlOf(off)).toContain(path);
+      expect(urlOf(off)).not.toContain("humanOnly");
+
+      const on = stubJson({});
+      await call(true);
+      expect(urlOf(on)).toContain(path);
+      expect(urlOf(on)).toContain("humanOnly=true");
+    }
   });
 });

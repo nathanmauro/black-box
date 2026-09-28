@@ -3,6 +3,7 @@ export type SeedEventPayload = {
   clientSessionId: string;
   eventType: string;
   role?: string;
+  toolName?: string;
   text: string;
   cwd: string;
   metadata: {
@@ -42,6 +43,10 @@ type SeedSession = {
 };
 
 export const E2E_PROJECT_CWD = "/tmp/black-box-e2e";
+
+export const E2E_HUMAN_ASIDE = "quick tangent: what if the stream led with what I actually said";
+export const E2E_MACHINE_PROMPT =
+  "<task-notification>\n<task-id>x</task-id>\n<status>completed</status>\n</task-notification>";
 
 export const E2E_SEED_EVENTS: SeedEventPayload[] = [
   {
@@ -103,6 +108,37 @@ export const E2E_SEED_EVENTS: SeedEventPayload[] = [
       nextAction: "Review the catalog-backed workspace",
       repo: `${E2E_PROJECT_CWD}/.worktrees/release`,
     },
+  },
+  // Human-turn slice: one session with a real human aside, a machine-injected prompt, and a tool
+  // event. human-turns.spec.ts asserts the aside survives the "My turns" filter and the others
+  // do not.
+  {
+    source: "claude",
+    clientSessionId: "black-box-e2e-claude-human-turns",
+    eventType: "UserPromptSubmit",
+    role: "user",
+    text: E2E_HUMAN_ASIDE,
+    cwd: E2E_PROJECT_CWD,
+    metadata: { title: "Human aside", repo: E2E_PROJECT_CWD },
+  },
+  {
+    source: "claude",
+    clientSessionId: "black-box-e2e-claude-human-turns",
+    eventType: "UserPromptSubmit",
+    role: "user",
+    text: E2E_MACHINE_PROMPT,
+    cwd: E2E_PROJECT_CWD,
+    metadata: { title: "Machine notification", repo: E2E_PROJECT_CWD },
+  },
+  {
+    source: "claude",
+    clientSessionId: "black-box-e2e-claude-human-turns",
+    eventType: "PostToolUse",
+    role: "tool",
+    toolName: "Read",
+    text: "Read src/human-turns-fixture.ts",
+    cwd: E2E_PROJECT_CWD,
+    metadata: { title: "Human turns tool event", repo: E2E_PROJECT_CWD },
   },
 ];
 

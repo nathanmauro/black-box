@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   getEvent,
   getProjectSessions,
@@ -22,6 +22,7 @@ import type {
   SessionTranscriptParams,
   SessionTranscriptResponse,
 } from "../../lib/api";
+import { setHumanOnly } from "../../lib/humanOnly";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 
@@ -186,6 +187,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
+  setHumanOnly(false);
   [searchParams, setSearchParams] = createStore<TendrilSearchParams>({});
   navigate.mockReset();
   vi.mocked(createSessionsResource).mockClear();
@@ -221,6 +224,49 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("leads the session header with the first human turn ahead of the summary", async () => {
+    const original = sessions[0];
+    sessions[0] = {
+      ...original,
+      firstHumanTurn: "quick tangent:\nwhat if the stream led with me",
+    };
+    onTestFinished(() => {
+      sessions[0] = original;
+    });
+    render(() => <SessionsPage />);
+
+    const lead = await waitFor(() => {
+      const node = document.querySelector(".detail-first-turn");
+      expect(node).not.toBeNull();
+      return node as HTMLElement;
+    });
+    expect(lead.textContent).toContain("First turn");
+    expect(lead.textContent).toContain("what if the stream led with me");
+    const summary = document.querySelector(".detail-summary") as HTMLElement;
+    expect(lead.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("omits the first-turn lead when there is none", async () => {
+    render(() => <SessionsPage />);
+    await screen.findByRole("heading", { name: "Focused session" });
+    expect(document.querySelector(".detail-first-turn")).not.toBeInTheDocument();
+  });
+
+  it("passes humanOnly to the transcript fetch and refetches when toggled", async () => {
+    render(() => <SessionsPage />);
+    await screen.findByRole("heading", { name: "Focused session" });
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
+    expect(vi.mocked(getSessionTranscript).mock.calls.at(-1)?.[1]?.humanOnly).toBeUndefined();
+
+    vi.mocked(getSessionTranscript).mockClear();
+    setHumanOnly(true);
+    await waitFor(() =>
+      expect(vi.mocked(getSessionTranscript).mock.calls.at(-1)?.[1]).toMatchObject({
+        humanOnly: true,
+      }),
+    );
+  });
+
   it("does not render tendril context without a task query parameter", () => {
     render(() => <SessionsPage />);
 

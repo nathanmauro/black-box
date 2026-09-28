@@ -5,6 +5,7 @@ export type AgentSession = {
   title: string;
   cwd?: string | null;
   summary?: string | null;
+  firstHumanTurn?: string | null;
   spawnedBy?: string | null;
   startedAt: string;
   lastSeenAt: string;
@@ -20,6 +21,7 @@ export type AgentEvent = {
   eventType: string;
   role?: string | null;
   text?: string | null;
+  humanText?: string | null;
   toolName?: string | null;
   toolInputJson?: string | null;
   toolOutputJson?: string | null;
@@ -42,6 +44,7 @@ export type SessionTranscriptParams = {
   limit?: number;
   before?: string;
   q?: string;
+  humanOnly?: boolean;
 };
 
 export type EventFeedItem = AgentEvent & {
@@ -62,6 +65,7 @@ export type EventFeedParams = {
   before?: string;
   since?: string;
   meaningful?: boolean;
+  humanOnly?: boolean;
 };
 
 export type FacetValueCount = {
@@ -440,6 +444,7 @@ export type SessionLinkType = "spawned" | "steered" | "continued";
 export type SessionLinkPeer = {
   id: string;
   title: string;
+  firstHumanTurn?: string | null;
   source: string;
 };
 
@@ -552,9 +557,14 @@ export class ApiError extends Error {
   }
 }
 
-export function getSessions(limit = 250, includeChildren = false): Promise<AgentSession[]> {
+export function getSessions(
+  limit = 250,
+  includeChildren = false,
+  humanOnly = false,
+): Promise<AgentSession[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (includeChildren) params.set("includeChildren", "true");
+  if (humanOnly) params.set("humanOnly", "true");
   return getJson(`/api/sessions?${params.toString()}`);
 }
 
@@ -566,9 +576,15 @@ export function getEvent(id: string): Promise<AgentEvent> {
   return getJson(`/api/events/${encodeURIComponent(id)}`);
 }
 
-export function getSessionEvents(id: string, limit = 2_000): Promise<AgentEvent[]> {
+export function getSessionEvents(
+  id: string,
+  limit = 2_000,
+  humanOnly = false,
+): Promise<AgentEvent[]> {
   return getJson(
-    `/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}`,
+    `/api/sessions/${encodeURIComponent(id)}/events?limit=${encodeURIComponent(limit)}${
+      humanOnly ? "&humanOnly=true" : ""
+    }`,
   );
 }
 
@@ -579,11 +595,16 @@ export function getSessionTranscript(
   const query = new URLSearchParams({ limit: String(params.limit ?? 100) });
   if (params.before) query.set("before", params.before);
   if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.humanOnly) query.set("humanOnly", "true");
   return getJson(`/api/sessions/${encodeURIComponent(id)}/transcript?${query.toString()}`);
 }
 
-export function search(q: string, limit = 80): Promise<SearchResponse> {
-  return getJson(`/api/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}`);
+export function search(q: string, limit = 80, humanOnly = false): Promise<SearchResponse> {
+  return getJson(
+    `/api/search?q=${encodeURIComponent(q)}&limit=${encodeURIComponent(limit)}${
+      humanOnly ? "&humanOnly=true" : ""
+    }`,
+  );
 }
 
 export function getEventFeed(params: EventFeedParams = {}): Promise<EventFeedResponse> {
@@ -593,17 +614,19 @@ export function getEventFeed(params: EventFeedParams = {}): Promise<EventFeedRes
   if (params.before) query.set("before", params.before);
   if (params.since) query.set("since", params.since);
   if (params.meaningful !== undefined) query.set("meaningful", String(params.meaningful));
+  if (params.humanOnly) query.set("humanOnly", "true");
   const suffix = query.toString();
   return getJson(`/api/events${suffix ? `?${suffix}` : ""}`);
 }
 
 export function getEventFacets(
-  params: { q?: string; meaningful?: boolean } = {},
+  params: { q?: string; meaningful?: boolean; humanOnly?: boolean } = {},
   signal?: AbortSignal,
 ): Promise<EventFacetCounts> {
   const query = new URLSearchParams();
   if (params.q?.trim()) query.set("q", params.q.trim());
   if (params.meaningful !== undefined) query.set("meaningful", String(params.meaningful));
+  if (params.humanOnly) query.set("humanOnly", "true");
   const suffix = query.toString();
   return getJson(`/api/events/facets${suffix ? `?${suffix}` : ""}`, signal);
 }

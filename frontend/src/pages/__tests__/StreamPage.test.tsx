@@ -8,6 +8,7 @@ import type {
   EventFeedResponse,
   ProjectSummary,
 } from "../../lib/api";
+import { setHumanOnly } from "../../lib/humanOnly";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -91,6 +92,7 @@ vi.mock("../../lib/sse", async (importOriginal) => {
 
 beforeEach(() => {
   localStorage.clear();
+  setHumanOnly(false);
   [params, setParams] = createStore<{ q?: string }>({});
   const [liveEvents, setLiveEvents] = createSignal<unknown[]>([]);
   mocks.liveEvents = liveEvents;
@@ -126,6 +128,50 @@ describe("StreamPage", () => {
       "href",
       "/?view=browse&session=session-1&event=event-1",
     );
+  });
+
+  it("refetches with humanOnly and renders human text verbatim when toggled", async () => {
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("event-1", "Make stream default")]))
+      .mockResolvedValue(
+        feed([
+          eventItem("event-1", "<raw wrapper>", undefined, {
+            eventType: "UserPromptSubmit",
+            role: "user",
+            humanText: "quick tangent:\nwhat if the stream led with me",
+          }),
+        ]),
+      );
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    setHumanOnly(true);
+
+    const row = await screen.findByRole("button", { name: /quick tangent/ });
+    expect(row).toBeInTheDocument();
+    expect(screen.queryByText(/raw wrapper/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Showing only your turns/)).toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "",
+      meaningful: true,
+      humanOnly: true,
+    });
+    await waitFor(() =>
+      expect(mocks.getEventFacets).toHaveBeenLastCalledWith(
+        { q: "", meaningful: true, humanOnly: true },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it("shows a human-turns empty state", async () => {
+    setHumanOnly(true);
+    getEventFeed.mockResolvedValue(feed([]));
+    render(() => <StreamPage />);
+    expect(
+      await screen.findByText("No human turns match the current filters."),
+    ).toBeInTheDocument();
   });
 
   it("passes selected project as a hidden stream facet", async () => {

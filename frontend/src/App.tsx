@@ -3,6 +3,7 @@ import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
 import { CodeNavigationProvider } from "./lib/codeNavigation";
+import { humanOnly, toggleHumanOnly } from "./lib/humanOnly";
 import { createLiveStore, LiveStoreContext } from "./lib/sse";
 
 type AppProps = {
@@ -36,6 +37,19 @@ export default function App(props: AppProps) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (
+        event.key.toLowerCase() === "h" &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.defaultPrevented &&
+        !paletteOpen() &&
+        !isEditableTarget(event.target)
+      ) {
+        event.preventDefault();
+        toggleHumanOnly();
       }
     };
     window.addEventListener("keydown", handler);
@@ -109,6 +123,17 @@ export default function App(props: AppProps) {
                 </div>
               </div>
 
+              <button
+                type="button"
+                class="human-toggle"
+                aria-pressed={humanOnly()}
+                title="Show only human turns (H)"
+                onClick={() => toggleHumanOnly()}
+              >
+                <UtilityIcon kind="human" />
+                <span>My turns</span>
+              </button>
+
               <span
                 class={`live-pill utility-status live-pill--${live.status()}`}
                 aria-label={`Connection status ${live.status()}`}
@@ -134,6 +159,12 @@ export default function App(props: AppProps) {
   );
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
+
 function utilityLinkClass(
   item: (typeof UTILITY_LINKS)[number],
   pathname: string,
@@ -150,7 +181,8 @@ function utilityLinkClass(
   return active ? "utility-icon-link active" : "utility-icon-link";
 }
 
-type UtilityIconKind = "activity" | "browse" | "projects" | "board" | "recall" | "sources";
+type UtilityIconKind =
+  "activity" | "browse" | "projects" | "board" | "recall" | "sources" | "human";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
@@ -196,6 +228,15 @@ function UtilityIcon(props: { kind: UtilityIconKind }) {
       <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
         <path d="M6.5 5.4a5.4 5.4 0 1 1-1.2 6" />
         <path d="M5.4 3.2v2.6h2.7" />
+      </svg>
+    );
+  }
+
+  if (props.kind === "human") {
+    return (
+      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="10" cy="6.8" r="3" />
+        <path d="M4.2 16.2c.6-3.2 2.9-4.9 5.8-4.9s5.2 1.7 5.8 4.9" />
       </svg>
     );
   }

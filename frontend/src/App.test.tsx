@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import type { JSX } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { humanOnly, setHumanOnly } from "./lib/humanOnly";
 import App from "./App";
 
 vi.mock("@solidjs/router", () => ({
@@ -27,6 +28,11 @@ vi.mock("./lib/api", async (importOriginal) => {
       elasticHealth: {},
     })),
   };
+});
+
+beforeEach(() => {
+  localStorage.clear();
+  setHumanOnly(false);
 });
 
 describe("App shell", () => {
@@ -82,5 +88,43 @@ describe("App shell", () => {
     expect(within(palette).getByRole("option", { name: /Board/i })).toBeInTheDocument();
     expect(within(palette).getByRole("option", { name: /Projects/i })).toBeInTheDocument();
     expect(within(palette).queryByRole("option", { name: /Overview/i })).not.toBeInTheDocument();
+  });
+
+  describe("human turns toggle", () => {
+    const renderApp = () => render(() => <App>content</App>);
+    const toggle = () => screen.getByRole("button", { name: /My turns/ });
+
+    it("flips aria-pressed and the store on click", () => {
+      renderApp();
+      expect(toggle()).toHaveAttribute("aria-pressed", "false");
+      expect(toggle()).toHaveAttribute("title", "Show only human turns (H)");
+      fireEvent.click(toggle());
+      expect(toggle()).toHaveAttribute("aria-pressed", "true");
+      expect(humanOnly()).toBe(true);
+    });
+
+    it("toggles on a plain h keypress", () => {
+      renderApp();
+      fireEvent.keyDown(window, { key: "h" });
+      expect(toggle()).toHaveAttribute("aria-pressed", "true");
+      fireEvent.keyDown(window, { key: "H", shiftKey: true });
+      expect(toggle()).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("ignores h with modifiers, in editable targets, or when the palette is open", () => {
+      renderApp();
+      fireEvent.keyDown(window, { key: "h", metaKey: true });
+      fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+      fireEvent.keyDown(window, { key: "h", altKey: true });
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      fireEvent.keyDown(input, { key: "h" });
+      input.remove();
+      expect(humanOnly()).toBe(false);
+
+      fireEvent.keyDown(window, { key: "k", metaKey: true });
+      fireEvent.keyDown(window, { key: "h" });
+      expect(humanOnly()).toBe(false);
+    });
   });
 });

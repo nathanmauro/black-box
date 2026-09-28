@@ -35,6 +35,7 @@ import {
   type SessionTranscriptResponse,
 } from "../lib/api";
 import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
+import { humanOnly, leadLine, withHumanText } from "../lib/humanOnly";
 import { projectMatchesSession } from "../lib/projects";
 import { parseQuery } from "../lib/query";
 import {
@@ -74,10 +75,12 @@ type SessionTranscriptRequest = {
   sessionId: string;
   targetEventId?: string;
   query: string;
+  humanOnly: boolean;
 };
 
 type SessionTranscriptState = SessionTranscriptResponse & {
   query: string;
+  humanOnly: boolean;
   legacyFallback: boolean;
 };
 
@@ -95,6 +98,7 @@ const EMPTY_TRANSCRIPT: SessionTranscriptState = {
   events: [],
   nextBefore: null,
   query: "",
+  humanOnly: false,
   legacyFallback: false,
 };
 
@@ -224,32 +228,48 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     (): SessionTranscriptRequest | undefined => {
       const sessionId = selectedId();
       return sessionId
-        ? { sessionId, targetEventId: props.targetEventId, query: debouncedTranscriptQuery() }
+        ? {
+            sessionId,
+            targetEventId: props.targetEventId,
+            query: debouncedTranscriptQuery(),
+            humanOnly: humanOnly(),
+          }
         : undefined;
     },
-    async ({ sessionId, targetEventId, query }): Promise<SessionTranscriptState> => {
+    async ({
+      sessionId,
+      targetEventId,
+      query,
+      humanOnly: human,
+    }): Promise<SessionTranscriptState> => {
       try {
         const response = await getSessionTranscript(sessionId, {
           limit: TRANSCRIPT_PAGE_LIMIT,
           q: query || undefined,
+          humanOnly: human || undefined,
         });
-        const listed =
+        const listed = (
           !query && targetEventId
             ? await mergeExactTarget(response.events, sessionId, targetEventId)
-            : response.events;
+            : response.events
+        ).map((event) => withHumanText(event, human));
         return {
           ...response,
           count: listed.length,
           events: listed,
           query,
+          humanOnly: human,
           legacyFallback: false,
         };
       } catch {
-        const recorded = await getSessionEvents(sessionId, 2_000);
-        const listed =
+        const recorded = await (human
+          ? getSessionEvents(sessionId, 2_000, true)
+          : getSessionEvents(sessionId, 2_000));
+        const listed = (
           !query && targetEventId
             ? await mergeExactTarget(recorded, sessionId, targetEventId)
-            : recorded;
+            : recorded
+        ).map((event) => withHumanText(event, human));
         return {
           sessionId,
           available: false,
@@ -260,6 +280,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
           events: listed,
           nextBefore: null,
           query,
+          humanOnly: human,
           legacyFallback: true,
         };
       }
@@ -445,6 +466,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
     const sessionId = current.sessionId;
     const query = current.query;
+    const human = current.humanOnly;
     setOlderEventsLoading(true);
     setOlderEventsError("");
     try {
@@ -452,11 +474,14 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         limit: TRANSCRIPT_PAGE_LIMIT,
         before,
         q: query || undefined,
+        humanOnly: human || undefined,
       });
       if (selectedId() !== sessionId || debouncedTranscriptQuery() !== query) return;
+      const olderEvents = response.events.map((event) => withHumanText(event, human));
       mutateTranscript((latest) => {
-        if (latest.sessionId !== sessionId || latest.query !== query) return latest;
-        const merged = mergeSessionEvents(latest.events, response.events);
+        if (latest.sessionId !== sessionId || latest.query !== query || latest.humanOnly !== human)
+          return latest;
+        const merged = mergeSessionEvents(latest.events, olderEvents);
         return {
           ...latest,
           available: latest.available && response.available,
@@ -588,7 +613,14 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                       >
                         <SourceDot source={session.source} />
                         <span class="session-row-main">
-                          <strong>{session.title || session.clientSessionId}</strong>
+                          <strong>
+                            {leadLine(session.firstHumanTurn) ||
+                              session.title ||
+                              session.clientSessionId}
+                          </strong>
+                          <Show when={leadLine(session.firstHumanTurn) && session.title}>
+                            <span class="session-row-title-secondary">{session.title}</span>
+                          </Show>
                           <small>
                             {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} ·{" "}
                             {timeAgo(session.lastSeenAt)}
@@ -642,6 +674,9 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                       {session().title || session().clientSessionId}
                     </h1>
                     <p>{truncatePath(session().cwd)}</p>
+                    <Show when={session().firstHumanTurn?.trim()}>
+                      {(turn) => <FirstTurnLead text={turn()} />}
+                    </Show>
                   </div>
                   <div class="detail-summary">
                     <span class="eyebrow">summary</span>
@@ -898,7 +933,14 @@ function SessionChildRows(props: { parentId: string; onSelect: (id: string) => v
             >
               <SourceDot source={link.session.source} />
               <span class="session-row-main">
-                <strong>{link.session.title.trim() || link.session.id}</strong>
+                <strong>
+                  {leadLine(link.session.firstHumanTurn) ||
+                    link.session.title.trim() ||
+                    link.session.id}
+                </strong>
+                <Show when={leadLine(link.session.firstHumanTurn) && link.session.title.trim()}>
+                  <span class="session-row-title-secondary">{link.session.title.trim()}</span>
+                </Show>
                 <small>
                   <span class="agent-type-badge">{agentTypeLabel(link)}</span>
                 </small>
@@ -911,12 +953,49 @@ function SessionChildRows(props: { parentId: string; onSelect: (id: string) => v
   );
 }
 
+const FIRST_TURN_CLAMP_CHARS = 280;
+
+function FirstTurnLead(props: { text: string }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const long = () =>
+    props.text.length > FIRST_TURN_CLAMP_CHARS || props.text.split(/\r?\n/).length > 4;
+  return (
+    <blockquote class="detail-first-turn">
+      <span class="detail-first-turn-label">First turn</span>
+      <p
+        classList={{
+          "detail-first-turn-text": true,
+          "detail-first-turn-text--clamped": long() && !expanded(),
+        }}
+      >
+        {props.text}
+      </p>
+      <Show when={long()}>
+        <button
+          type="button"
+          class="detail-first-turn-toggle"
+          aria-expanded={expanded()}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded() ? "Show less" : "Show all"}
+        </button>
+      </Show>
+    </blockquote>
+  );
+}
+
 function agentTypeLabel(link: SessionLink): string {
   return link.session.title.trim() || "subagent";
 }
 
 function filterSessions<
-  T extends { source: string; title?: string | null; clientSessionId: string; cwd?: string | null },
+  T extends {
+    source: string;
+    title?: string | null;
+    firstHumanTurn?: string | null;
+    clientSessionId: string;
+    cwd?: string | null;
+  },
 >(sessions: T[], query: string): T[] {
   const parsed = parseQuery(query);
   const lower = (values: string[] | undefined) =>
@@ -936,7 +1015,13 @@ function filterSessions<
     if (excludedProjectFacets.some((facet) => cwd.includes(facet))) return false;
 
     if (!textTerms.length) return true;
-    const haystack = [session.title, session.clientSessionId, session.cwd, session.source]
+    const haystack = [
+      session.title,
+      session.firstHumanTurn,
+      session.clientSessionId,
+      session.cwd,
+      session.source,
+    ]
       .map(normalizeSessionText)
       .join(" ");
     return textTerms.every((term) => haystack.includes(term));
@@ -983,7 +1068,15 @@ function ConversationMessage(props: { event: AgentEvent; role: "user" | "assista
         when={props.event.text?.trim()}
         fallback={<p class="conversation-message-empty">Message text was not captured.</p>}
       >
-        {(text) => <ReaderText text={text()} />}
+        {(text) =>
+          humanOnly() && props.event.humanText ? (
+            <div class="human-verbatim">
+              <ReaderText text={text()} />
+            </div>
+          ) : (
+            <ReaderText text={text()} />
+          )
+        }
       </Show>
     </article>
   );

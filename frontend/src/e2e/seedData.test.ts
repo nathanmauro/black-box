@@ -8,12 +8,15 @@ import {
 
 describe("e2e seed data", () => {
   it("contains the exact deterministic records asserted by smoke.spec.ts", () => {
-    expect(E2E_SEED_EVENTS).toHaveLength(4);
+    expect(E2E_SEED_EVENTS).toHaveLength(7);
     expect(E2E_SEED_EVENTS.map((event) => event.metadata?.title)).toEqual([
       "UI rewrite kickoff",
       "Frontend build",
       "Claude design prompt",
       "Release worktree handoff",
+      "Human aside",
+      "Machine notification",
+      "Human turns tool event",
     ]);
 
     const codexDecision = E2E_SEED_EVENTS.find((event) => event.eventType === "Decision");
