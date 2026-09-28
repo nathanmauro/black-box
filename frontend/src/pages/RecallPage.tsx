@@ -1,13 +1,14 @@
 import HandoffContext from "../components/events/HandoffContext";
 import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show, untrack, type JSX } from "solid-js";
+import { IdeaLegsMeter, IdeaOriginBadge, IdeaStatusPill } from "../components/IdeaBadges";
 import KindBadge from "../components/KindBadge";
 import SourceDot from "../components/SourceDot";
 import { getRecall, type RecalledItem, type RecallResult } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
 import { sourceFilter } from "../lib/stores";
 
-const RECALL_KINDS = ["decision", "handoff", "observation"] as const;
+const RECALL_KINDS = ["decision", "handoff", "observation", "idea"] as const;
 const TIME_WINDOWS = [
   { label: "24h", value: 24 },
   { label: "1w", value: 168 },
@@ -69,8 +70,8 @@ export default function RecallPage() {
           <p class="eyebrow">structured recall</p>
           <h1>Ask what agents already decided</h1>
           <p>
-            Query Black Box for decisions, handoffs, and observations without digging through raw
-            transcripts.
+            Query Black Box for decisions, handoffs, observations, and ideas without digging through
+            raw transcripts.
           </p>
         </div>
       </header>
@@ -180,6 +181,9 @@ export default function RecallPage() {
               </li>
               <li>
                 <strong>Observation:</strong> recorded facts or notes.
+              </li>
+              <li>
+                <strong>Idea:</strong> proposals and asides nobody acted on yet.
               </li>
             </ul>
             <p>
@@ -300,6 +304,23 @@ function RecallCard(props: { item: RecalledItem }) {
       <Show when={props.item.rationale}>
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
       </Show>
+      <Show when={props.item.kind.toLowerCase() === "idea"}>
+        <div class="idea-badges">
+          <Show when={props.item.origin}>
+            <IdeaOriginBadge origin={props.item.origin} />
+          </Show>
+          <Show when={props.item.status}>
+            <IdeaStatusPill status={props.item.status} />
+          </Show>
+          <IdeaLegsMeter legs={props.item.legs} />
+          <A
+            class="idea-open-link"
+            href={`/ideas?q=${encodeURIComponent(props.item.headline || "")}`}
+          >
+            Open in Ideas
+          </A>
+        </div>
+      </Show>
       <Show when={props.item.confidence != null}>
         <div class="confidence-row recall-confidence">
           <span>confidence</span>
@@ -360,6 +381,7 @@ function titleKind(kind: string): string {
   if (normalized === "decision") return "Decision";
   if (normalized === "handoff") return "Handoff";
   if (normalized === "observation") return "Observation";
+  if (normalized === "idea") return "Idea";
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 

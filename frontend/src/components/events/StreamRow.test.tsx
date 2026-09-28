@@ -134,4 +134,42 @@ describe("StreamRow", () => {
     // Session title and context-zone actions moved to RunHeader (spec §4.3).
     expect(head.textContent).not.toContain("Ink slice work");
   });
+
+  it("renders an Idea as a landmark with a title — oneLiner headline and a structured card", () => {
+    renderRow(
+      feedItem({
+        eventType: "Idea",
+        text: "[Idea] Tangent router — File human asides as ideas.\n- origin: agent-proposed\n- legs: 7",
+        metadata: {
+          kind: "idea",
+          title: "Tangent router",
+          oneLiner: "File human asides as ideas.",
+          origin: "agent-proposed",
+          status: "untouched",
+          legs: 7,
+          quote: "what if the stream led with what I said",
+          connects: ["human-turn-first"],
+          resumeStep: "Sketch the classifier",
+        },
+      }),
+      true,
+    );
+
+    const row = screen.getByRole("button", {
+      name: "Tangent router — File human asides as ideas.",
+    });
+    expect(row).toHaveClass("stream-row--landmark", "stream-row--landmark-idea");
+    expect(row.querySelector(".kind-badge--idea")).toHaveTextContent("Idea");
+    expect(row.textContent).not.toContain("[Idea]");
+
+    const card = document.querySelector(".event-card--idea") as HTMLElement;
+    expect(card).toBeInTheDocument();
+    expect(card.textContent).not.toContain("{");
+    expect(screen.getByText("agent proposed")).toHaveClass("idea-origin--agent-proposed");
+    expect(screen.getByText("untouched")).toHaveClass("idea-status--untouched");
+    expect(screen.getByRole("meter", { name: "legs 7/10" })).toBeInTheDocument();
+    expect(screen.getByText("what if the stream led with what I said")).toHaveClass("idea-quote");
+    expect(screen.getByText("human-turn-first")).toBeInTheDocument();
+    expect(screen.getByText("Sketch the classifier")).toBeInTheDocument();
+  });
 });

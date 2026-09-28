@@ -2,6 +2,7 @@ const KIND_CLASSES: Record<string, string> = {
   Decision: "kind-badge--decision",
   Handoff: "kind-badge--handoff",
   Observation: "kind-badge--observation",
+  Idea: "kind-badge--idea",
   PostToolUse: "kind-badge--muted",
   UserPromptSubmit: "kind-badge--prompt",
   SessionStart: "kind-badge--session",

@@ -32,7 +32,7 @@ import {
 import { primaryProjectScope } from "../lib/projects";
 import { timeAgo, truncatePath } from "../lib/format";
 
-const STRUCTURED = new Set(["Decision", "Handoff", "Observation"]);
+const STRUCTURED = new Set(["Decision", "Handoff", "Observation", "Idea"]);
 
 // UI facet key -> the physical field name the /search/values endpoint understands.
 const VALUE_FIELD: Record<FacetField["key"], string> = {
@@ -44,7 +44,7 @@ const VALUE_FIELD: Record<FacetField["key"], string> = {
 
 const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   source: ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"],
-  kind: ["Decision", "Handoff", "Observation", "UserPromptSubmit", "PostToolUse"],
+  kind: ["Decision", "Handoff", "Observation", "Idea", "UserPromptSubmit", "PostToolUse"],
   tool: [],
   project: [],
 };

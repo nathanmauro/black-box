@@ -1158,6 +1158,7 @@ function normalizeEventType(value: string | null | undefined): string {
   if (normalized === "handoff") return "Handoff";
   if (normalized === "observation") return "Observation";
   if (normalized === "projection") return "Projection";
+  if (normalized === "idea") return "Idea";
   return value || "Timeline";
 }
 

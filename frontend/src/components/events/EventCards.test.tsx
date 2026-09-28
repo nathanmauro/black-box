@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "../../lib/api";
 import { CodeNavigationContext } from "../../lib/codeNavigation";
 import DecisionCard from "./DecisionCard";
-import EventRow, { eventHeadline } from "./EventRow";
+import EventRow, { EventRenderer, eventHeadline } from "./EventRow";
 
 describe("DecisionCard", () => {
   it("renders structured decision fields without using raw JSON as the headline", () => {
@@ -177,5 +177,45 @@ describe("EventRow", () => {
 
     expect(container.querySelector(".reader-text")).not.toHaveClass("reader-text--collapsed");
     expect(screen.queryByRole("button", { name: "Show full message" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Idea events", () => {
+  const ideaEvent: AgentEvent = {
+    id: "evt-idea",
+    sessionId: "ses-1",
+    source: "claude",
+    clientSessionId: "client-1",
+    eventType: "Idea",
+    text: "[Idea] Evidence kind — Capture evidence separately.\n- origin: human-aside",
+    metadata: JSON.stringify({
+      kind: "idea",
+      title: "Evidence kind",
+      oneLiner: "Capture evidence separately.",
+      origin: "nathan-aside",
+      status: "tracked",
+      link: "obsidian://open?vault=obsidian&file=Ideas%2FEvidence",
+    }),
+    observedAt: "2026-09-28T12:00:00Z",
+  };
+
+  it("uses the structured title and one-liner as the headline", () => {
+    expect(eventHeadline(ideaEvent)).toBe("Evidence kind — Capture evidence separately.");
+    expect(eventHeadline({ ...ideaEvent, metadata: null })).toBe(
+      "Evidence kind — Capture evidence separately.",
+    );
+  });
+
+  it("renders an idea card with normalized origin, status, and an in-place obsidian link", () => {
+    render(() => <EventRenderer event={ideaEvent} />);
+
+    expect(screen.getByText("Evidence kind")).toBeInTheDocument();
+    expect(screen.getByText("Capture evidence separately.")).toBeInTheDocument();
+    expect(screen.getByText("human aside")).toHaveClass("idea-origin--human-aside");
+    expect(screen.getByText("tracked")).toHaveClass("idea-status--tracked");
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "obsidian://open?vault=obsidian&file=Ideas%2FEvidence");
+    expect(link).not.toHaveAttribute("target");
   });
 });

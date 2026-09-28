@@ -35,6 +35,12 @@ const NAV_ITEMS = [
   },
   { id: "nav-board", label: "Board", path: "/board", meta: "inspect the live agent task queue" },
   { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
+  {
+    id: "nav-ideas",
+    label: "Ideas",
+    path: "/ideas",
+    meta: "open ideas: agent proposals and human asides nobody acted on",
+  },
 ];
 
 export default function CommandPalette(props: CommandPaletteProps) {

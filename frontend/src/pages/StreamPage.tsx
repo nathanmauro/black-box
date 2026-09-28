@@ -59,7 +59,7 @@ const VALUE_FIELD: Record<FacetField["key"], string> = {
 // token is typed with an empty prefix. tool:/project:/session: suggest live values instead.
 const QUICK_VALUES: Record<FacetField["key"], string[]> = {
   source: ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"],
-  kind: ["Decision", "Handoff", "Observation", "UserPromptSubmit", "PostToolUse"],
+  kind: ["Decision", "Handoff", "Observation", "Idea", "UserPromptSubmit", "PostToolUse"],
   tool: [],
   project: [],
 };

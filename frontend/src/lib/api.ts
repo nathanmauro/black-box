@@ -118,6 +118,11 @@ export type RecalledItem = {
   nextAction?: string | null;
   toAgent?: string | null;
   score?: number | null;
+  // Idea recall items carry title as headline and oneLiner as rationale; these extra fields are
+  // optional so the card still renders when the recall payload omits them.
+  origin?: string | null;
+  status?: string | null;
+  legs?: number | null;
 };
 
 export type RecallResult = {
@@ -127,6 +132,93 @@ export type RecallResult = {
   count: number;
   items: RecalledItem[];
   mode?: "hybrid" | "lexical" | string | null;
+};
+
+export type IdeaOrigin = "human-aside" | "agent-proposed" | "joint";
+
+export type IdeaStatus =
+  "untouched" | "partially-built" | "built-unused" | "superseded" | "tracked";
+
+export type CaptureIdeaRequest = {
+  source: string;
+  clientSessionId: string;
+  repo?: string;
+  title: string;
+  oneLiner: string;
+  origin: IdeaOrigin;
+  quote?: string;
+  sourceRef?: string;
+  legs?: number;
+  status?: IdeaStatus;
+  connects?: string[];
+  resumeStep?: string;
+  link?: string;
+  notes?: string;
+  ideaKey?: string;
+};
+
+export type IngestResponse = {
+  eventId: string;
+  sessionId: string;
+  source: string;
+  clientSessionId: string;
+  eventType: string;
+  [key: string]: unknown;
+};
+
+// The latest event per ideaKey (GET /api/ideas). Origin and status stay open strings so a value
+// the server adds later still renders instead of failing the page.
+export type IdeaView = {
+  eventId: string;
+  sessionId: string;
+  source: string;
+  clientSessionId: string;
+  repo?: string | null;
+  title: string;
+  oneLiner: string;
+  origin: IdeaOrigin | string;
+  quote?: string | null;
+  sourceRef?: string | null;
+  legs: number | null;
+  status: IdeaStatus | string;
+  connects: string[];
+  resumeStep?: string | null;
+  link?: string | null;
+  notes?: string | null;
+  ideaKey: string;
+  capturedAt: string;
+  firstCapturedAt: string;
+  revisions: number;
+  migratedFrom: string | null;
+};
+
+export type IdeaListResponse = {
+  items: IdeaView[];
+  count: number;
+};
+
+export type IdeaListParams = {
+  status?: string[];
+  origin?: string;
+  project?: string;
+  q?: string;
+  limit?: number;
+};
+
+export type IdeaMigrationCandidate = {
+  observationId: string;
+  sessionId: string;
+  idea: Partial<CaptureIdeaRequest> & Record<string, unknown>;
+  warnings: string[];
+  alreadyMigrated: boolean;
+  createdEventId: string | null;
+};
+
+export type IdeaMigrationResult = {
+  apply: boolean;
+  candidates: IdeaMigrationCandidate[];
+  created: number;
+  skipped: number;
 };
 
 export type ProjectScope = {
@@ -642,6 +734,27 @@ export function getRecall(
   if (scope.trim()) params.set("scope", scope.trim());
   if (kinds.length) params.set("kinds", kinds.join(","));
   return getJson(`/api/recall?${params.toString()}`);
+}
+
+export function getIdeas(params: IdeaListParams = {}): Promise<IdeaListResponse> {
+  const query = new URLSearchParams();
+  const statuses = (params.status ?? []).map((value) => value.trim()).filter(Boolean);
+  if (statuses.length) query.set("status", statuses.join(","));
+  if (params.origin?.trim()) query.set("origin", params.origin.trim());
+  if (params.project?.trim()) query.set("project", params.project.trim());
+  if (params.q?.trim()) query.set("q", params.q.trim());
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const suffix = query.toString();
+  return getJson(`/api/ideas${suffix ? `?${suffix}` : ""}`);
+}
+
+export function captureIdea(request: CaptureIdeaRequest): Promise<IngestResponse> {
+  return postJson("/api/ideas", request);
+}
+
+// Dry run only: the migration endpoint writes nothing unless apply=true, which the UI never sends.
+export function previewIdeaMigration(): Promise<IdeaMigrationResult> {
+  return postJson("/api/ideas/migrate-observations?apply=false", {});
 }
 
 export function getProjects(): Promise<ProjectSummary[]> {

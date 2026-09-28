@@ -65,6 +65,19 @@ describe("CommandPalette", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("offers the Ideas view for an 'open ideas' query", async () => {
+    const onClose = vi.fn();
+    render(() => <CommandPalette open onClose={onClose} />);
+
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
+      target: { value: "open ideas" },
+    });
+    fireEvent.click(await screen.findByRole("option", { name: /Ideas.*open ideas/ }));
+
+    expect(navigate).toHaveBeenCalledWith("/ideas");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("opens session picks in the Activity browse view", async () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);

@@ -31,6 +31,21 @@ export type SeedProjectionPayload = {
   }>;
 };
 
+export type SeedIdeaPayload = {
+  source: string;
+  clientSessionId: string;
+  repo: string;
+  title: string;
+  oneLiner: string;
+  origin: "human-aside" | "agent-proposed" | "joint";
+  quote?: string;
+  legs?: number;
+  status?: "untouched" | "partially-built" | "built-unused" | "superseded" | "tracked";
+  connects?: string[];
+  resumeStep?: string;
+  link?: string;
+};
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 type SeedProject = {
@@ -166,6 +181,35 @@ export const E2E_SEED_PROJECTION: SeedProjectionPayload = {
   ],
 };
 
+// ideas.spec.ts asserts these two: the agent-proposed untouched idea lands in the pinned
+// "Nobody answered these" section and the human-aside idea survives an origin filter.
+export const E2E_SEED_IDEAS: SeedIdeaPayload[] = [
+  {
+    source: "claude",
+    clientSessionId: "black-box-e2e-claude-idea-agent",
+    repo: E2E_PROJECT_CWD,
+    title: "Tangent router for human asides",
+    oneLiner: "Detect asides in the human-turn stream and file them as ideas.",
+    origin: "agent-proposed",
+    quote: "what if the stream led with what I actually said",
+    legs: 7,
+    status: "untouched",
+    connects: ["human-turn-first", "idea kind"],
+    resumeStep: "Sketch the aside classifier over the seeded human turns",
+  },
+  {
+    source: "codex",
+    clientSessionId: "black-box-e2e-codex-idea-human",
+    repo: E2E_PROJECT_CWD,
+    title: "Evidence capture kind",
+    oneLiner: "Record evidence separately from observations.",
+    origin: "human-aside",
+    legs: 4,
+    status: "tracked",
+    link: "https://example.com/issues/evidence-kind",
+  },
+];
+
 export function assertSafeSeedBaseUrl(baseURL: string): void {
   const url = new URL(baseURL);
   const hostname = url.hostname.toLowerCase();
@@ -241,6 +285,16 @@ export async function seedBlackBoxE2e(
     }),
   });
   await requireOk(meldResponse, "save the seeded read-only meld");
+
+  // Ideas go last so the meld provenance above keeps its original session set.
+  for (const idea of E2E_SEED_IDEAS) {
+    const ideaResponse = await fetchImpl(new URL("/api/ideas", baseURL).toString(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(idea),
+    });
+    await requireOk(ideaResponse, `seed the idea "${idea.title}"`);
+  }
 }
 
 async function requireOk(response: Response, action: string): Promise<void> {

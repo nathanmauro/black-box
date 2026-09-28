@@ -64,6 +64,10 @@ describe("App shell", () => {
       "href",
       "/recall",
     );
+    expect(within(utilityNav).getByRole("link", { name: "Ideas" })).toHaveAttribute(
+      "href",
+      "/ideas",
+    );
     expect(within(utilityNav).queryByRole("link", { name: "Search" })).not.toBeInTheDocument();
     expect(within(utilityNav).getByRole("link", { name: "Board" })).toHaveAttribute(
       "href",

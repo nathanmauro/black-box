@@ -4,6 +4,7 @@ import App from "./App";
 import ActivityPage from "./pages/ActivityPage";
 import BoardPage from "./pages/BoardPage";
 import GraphPage from "./pages/GraphPage";
+import IdeasPage from "./pages/IdeasPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import RecallPage from "./pages/RecallPage";
 import SessionsPage from "./pages/SessionsPage";
@@ -36,6 +37,7 @@ render(
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/projects/:projectKey" component={ProjectsPage} />
       <Route path="/graph" component={GraphPage} />
+      <Route path="/ideas" component={IdeasPage} />
     </Router>
   ),
   root,

@@ -15,7 +15,13 @@ export const GAP_HOURS = 48;
 export const FOLD_MIN_STREAK = 4;
 
 // Landmark kinds never fold and always render the colored KindBadge (spec §4.3).
-export const LANDMARK_KINDS = new Set(["Decision", "Handoff", "Observation", "UserPromptSubmit"]);
+export const LANDMARK_KINDS = new Set([
+  "Decision",
+  "Handoff",
+  "Observation",
+  "Idea",
+  "UserPromptSubmit",
+]);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

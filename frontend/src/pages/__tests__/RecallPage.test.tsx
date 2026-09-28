@@ -136,4 +136,46 @@ describe("RecallPage", () => {
     expect(screen.queryByText("Use the Hybrid Storyline timeline")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
   });
+
+  it("recalls ideas with their title, one-liner, and idea badges", async () => {
+    vi.mocked(getRecall).mockResolvedValueOnce({
+      scope: null,
+      withinHours: 168,
+      kinds: ["idea"],
+      count: 1,
+      items: [
+        {
+          eventId: "evt-idea",
+          sessionId: "session-idea",
+          kind: "idea",
+          source: "claude",
+          observedAt: "2026-09-28T12:00:00Z",
+          headline: "Tangent router",
+          rationale: "Detect human asides and file them as ideas.",
+          origin: "agent-proposed",
+          status: "untouched",
+          legs: 7,
+        },
+      ],
+    });
+    render(() => <RecallPage />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Decision" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Handoff" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Idea" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+
+    expect(getRecall).toHaveBeenCalledWith("", 168, ["idea"]);
+    const card = (await screen.findByText("Tangent router")).closest("article") as HTMLElement;
+    expect(card).toHaveClass("recall-card--idea");
+    expect(card.querySelector(".kind-badge--idea")).toHaveTextContent("Idea");
+    expect(card).toHaveTextContent("Detect human asides and file them as ideas.");
+    expect(card.querySelector(".idea-origin--agent-proposed")).toHaveTextContent("agent proposed");
+    expect(card.querySelector(".idea-status--untouched")).toHaveTextContent("untouched");
+    expect(screen.getByRole("meter", { name: "legs 7/10" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open in Ideas" })).toHaveAttribute(
+      "href",
+      "/ideas?q=Tangent%20router",
+    );
+  });
 });

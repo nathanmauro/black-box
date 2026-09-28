@@ -1,15 +1,17 @@
 import { createSignal, For, Show } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
+import { ideaFieldsFromEvent, ideaHeadline } from "../../lib/ideas";
 import { presentationOf } from "../../lib/presenters/registry";
 import KindBadge from "../KindBadge";
 import SourceDot from "../SourceDot";
 import DecisionCard from "./DecisionCard";
 import HandoffCard from "./HandoffCard";
+import IdeaCard from "./IdeaCard";
 import InlineSpans from "./InlineSpans";
 import ObservationCard from "./ObservationCard";
 import BlockView from "./blocks/BlockView";
-import { looksLikeJson, parseJsonObject } from "./eventData";
+import { looksLikeJson, parseJsonObject, parseMetadata } from "./eventData";
 import ToolPayload, { payloadText } from "./ToolPayload";
 
 type EventRowProps = {
@@ -105,6 +107,15 @@ export type HeadlineSpan = { kind: "label" | "arg"; text: string };
  * fallback; `code`/`fileLink`/`url` presenter spans are the machine literals.
  */
 export function eventHeadlineSpans(event: AgentEvent): HeadlineSpan[] {
+  if (event.eventType === "Idea") {
+    // "title — oneLiner" from the structured fields, never the multi-line rendered text.
+    return [
+      {
+        kind: "label",
+        text: ideaHeadline(ideaFieldsFromEvent(parseMetadata(event.metadata), event.text)),
+      },
+    ];
+  }
   if (event.toolName) {
     const spans = presentationOf(event)
       .headline.map((span): HeadlineSpan =>
@@ -156,6 +167,8 @@ export function EventRenderer(props: { event: AgentEvent; textExpanded?: boolean
       return <HandoffCard event={props.event} />;
     case "Observation":
       return <ObservationCard event={props.event} />;
+    case "Idea":
+      return <IdeaCard event={props.event} />;
     default:
       return <EventRow event={props.event} textExpanded={props.textExpanded} />;
   }

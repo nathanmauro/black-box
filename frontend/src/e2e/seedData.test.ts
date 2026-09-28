@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   E2E_SEED_EVENTS,
+  E2E_SEED_IDEAS,
   E2E_SEED_PROJECTION,
   assertSafeSeedBaseUrl,
   seedBlackBoxE2e,
@@ -60,6 +61,21 @@ describe("e2e seed data", () => {
         { title: "Retire parked graph page", confidence: 0.31 },
       ],
     });
+
+    expect(E2E_SEED_IDEAS).toHaveLength(2);
+    expect(E2E_SEED_IDEAS[0]).toMatchObject({
+      title: "Tangent router for human asides",
+      origin: "agent-proposed",
+      status: "untouched",
+      legs: 7,
+      repo: "/tmp/black-box-e2e",
+    });
+    expect(E2E_SEED_IDEAS[0].quote).toBeTruthy();
+    expect(E2E_SEED_IDEAS[1]).toMatchObject({
+      title: "Evidence capture kind",
+      origin: "human-aside",
+      status: "tracked",
+    });
   });
 
   it("refuses to seed the production service port", () => {
@@ -91,7 +107,7 @@ describe("e2e seed data", () => {
 
     await seedBlackBoxE2e("http://127.0.0.1:8799", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 4);
+    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 4 + E2E_SEED_IDEAS.length);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8799/api/events",
       expect.objectContaining({
@@ -115,5 +131,18 @@ describe("e2e seed data", () => {
         body: expect.stringContaining('"title":"Release workspace synthesis"'),
       }),
     );
+    for (const idea of E2E_SEED_IDEAS) {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8799/api/ideas",
+        expect.objectContaining({
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(idea),
+        }),
+      );
+    }
+    // Ideas post after the meld so its provenance session set is unchanged.
+    const paths = fetchMock.mock.calls.map(([input]) => new URL(input).pathname);
+    expect(paths.lastIndexOf("/api/melds")).toBeLessThan(paths.indexOf("/api/ideas"));
   });
 });
