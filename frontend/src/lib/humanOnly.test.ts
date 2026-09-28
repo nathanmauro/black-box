@@ -56,4 +56,16 @@ describe("human text helpers", () => {
     expect(withHumanText(item, false).text).toBe("raw");
     expect(withHumanText({ text: "raw", humanText: null }, true).text).toBe("raw");
   });
+
+  it("keeps a title as secondary text only when it says something the lead does not", async () => {
+    const { distinctTitle } = await freshStore();
+    const turn = "didn't I have some   type of session\nsecond line";
+    expect(distinctTitle("didn't I have some type of session", turn)).toBeNull();
+    expect(distinctTitle("didn't I have some type...", turn)).toBeNull();
+    expect(distinctTitle("User wanted to fix a monitor", turn)).toBe(
+      "User wanted to fix a monitor",
+    );
+    expect(distinctTitle("Any title", null)).toBe("Any title");
+    expect(distinctTitle("  ", turn)).toBeNull();
+  });
 });

@@ -35,7 +35,7 @@ import {
   type SessionTranscriptResponse,
 } from "../lib/api";
 import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
-import { humanOnly, leadLine, withHumanText } from "../lib/humanOnly";
+import { distinctTitle, humanOnly, leadLine, withHumanText } from "../lib/humanOnly";
 import { projectMatchesSession } from "../lib/projects";
 import { parseQuery } from "../lib/query";
 import {
@@ -618,8 +618,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                               session.title ||
                               session.clientSessionId}
                           </strong>
-                          <Show when={leadLine(session.firstHumanTurn) && session.title}>
-                            <span class="session-row-title-secondary">{session.title}</span>
+                          <Show
+                            when={
+                              leadLine(session.firstHumanTurn) &&
+                              distinctTitle(session.title, session.firstHumanTurn)
+                            }
+                          >
+                            {(secondary) => (
+                              <span class="session-row-title-secondary">{secondary()}</span>
+                            )}
                           </Show>
                           <small>
                             {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} ·{" "}
@@ -871,6 +878,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                               <Show
                                 when={
                                   turn.prompt &&
+                                  !humanOnly() &&
                                   !turn.events.some(
                                     (event) => conversationRole(event) === "assistant",
                                   )
@@ -938,8 +946,13 @@ function SessionChildRows(props: { parentId: string; onSelect: (id: string) => v
                     link.session.title.trim() ||
                     link.session.id}
                 </strong>
-                <Show when={leadLine(link.session.firstHumanTurn) && link.session.title.trim()}>
-                  <span class="session-row-title-secondary">{link.session.title.trim()}</span>
+                <Show
+                  when={
+                    leadLine(link.session.firstHumanTurn) &&
+                    distinctTitle(link.session.title, link.session.firstHumanTurn)
+                  }
+                >
+                  {(secondary) => <span class="session-row-title-secondary">{secondary()}</span>}
                 </Show>
                 <small>
                   <span class="agent-type-badge">{agentTypeLabel(link)}</span>

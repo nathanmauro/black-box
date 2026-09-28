@@ -37,6 +37,24 @@ export function leadLine(text: string | null | undefined): string | null {
   return line ? line.trim() : null;
 }
 
+/**
+ * The stored title as secondary text under a human-turn lead, or null when the title is just the
+ * lead again (titles derived from the first turn are its first line, whitespace-collapsed and
+ * capped with "...").
+ */
+export function distinctTitle(
+  title: string | null | undefined,
+  firstHumanTurn: string | null | undefined,
+): string | null {
+  const shown = title?.trim();
+  if (!shown) return null;
+  const lead = leadLine(firstHumanTurn);
+  if (!lead) return shown;
+  const collapse = (value: string) => value.replace(/\s+/g, " ").trim();
+  const stem = collapse(shown.replace(/\.\.\.$/, ""));
+  return stem && collapse(lead).startsWith(stem) ? null : shown;
+}
+
 /** In human mode a feed item shows the cleaned human text in place of the raw event text. */
 export function withHumanText<T extends { text?: string | null; humanText?: string | null }>(
   item: T,
