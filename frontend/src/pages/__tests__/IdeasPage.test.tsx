@@ -3,6 +3,7 @@ import type { JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getIdeas, type IdeaView } from "../../lib/api";
+import { sourceFilter } from "../../lib/stores";
 import IdeasPage from "../IdeasPage";
 
 type Params = { status?: string; origin?: string; q?: string; project?: string };
@@ -90,6 +91,7 @@ beforeEach(() => {
   setParams.mockImplementation((next: Params) => updateParams(next));
   vi.mocked(getIdeas).mockReset();
   vi.mocked(getIdeas).mockResolvedValue({ items: [HUMAN_IDEA, AGENT_IDEA], count: 2 });
+  sourceFilter.clear();
 });
 
 describe("IdeasPage", () => {
@@ -221,12 +223,23 @@ describe("IdeasPage", () => {
       expect(getIdeas).toHaveBeenLastCalledWith(expect.objectContaining({ q: "router" })),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    const clear = screen.getByRole("button", { name: "Clear filters" });
+    // Clear filters is a form-level action, not one of the Origin options.
+    expect(
+      within(screen.getByRole("group", { name: "Origin" })).queryByRole("button", {
+        name: "Clear filters",
+      }),
+    ).not.toBeInTheDocument();
+    clear.focus();
+    fireEvent.click(clear);
     expect(setParams).toHaveBeenLastCalledWith({
       status: undefined,
       origin: undefined,
       q: undefined,
     });
+    // The button unmounts once nothing is filtered; focus lands on the search box, not <body>.
+    expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByLabelText("Search ideas"));
   });
 
   it("shows an honest empty state", async () => {
@@ -234,6 +247,69 @@ describe("IdeasPage", () => {
     render(() => <IdeasPage />);
 
     expect(await screen.findByRole("heading", { name: "No ideas captured yet" })).toBeVisible();
+  });
+
+  it("says a project scope, not missing capture, emptied the list", async () => {
+    updateParams({ project: "empty-project" });
+    vi.mocked(getIdeas).mockResolvedValue({ items: [], count: 0 });
+    render(() => <IdeasPage />);
+
+    expect(await screen.findByRole("heading", { name: "No ideas in this project" })).toBeVisible();
+    expect(screen.getByText("Pick All projects to see ideas from every project.")).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "No ideas captured yet" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says the global source filter, not missing capture, hid every idea", async () => {
+    sourceFilter.toggle("gemini");
+    render(() => <IdeasPage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "No ideas from the selected sources" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "No ideas captured yet" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("never shows the previous query's rows under a new filter", async () => {
+    render(() => <IdeasPage />);
+    await screen.findByText("Tangent router");
+
+    let resolvePending!: (value: { items: IdeaView[]; count: number }) => void;
+    vi.mocked(getIdeas).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePending = resolve;
+      }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Status" })).getByRole("button", {
+        name: "tracked",
+      }),
+    );
+    // In flight: the unfiltered rows are gone rather than listed as "Matching ideas".
+    expect(await screen.findByText("Loading ideas…")).toBeInTheDocument();
+    expect(screen.queryByText("Tangent router")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Matching ideas" })).not.toBeInTheDocument();
+    resolvePending({ items: [HUMAN_IDEA], count: 1 });
+    const matching = await screen.findByRole("region", { name: "Matching ideas" });
+    expect(within(matching).getByText("Evidence kind")).toBeInTheDocument();
+    expect(within(matching).queryByText("Tangent router")).not.toBeInTheDocument();
+
+    vi.mocked(getIdeas).mockRejectedValueOnce(new Error("500 Internal Server Error"));
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Origin" })).getByRole("button", {
+        name: "joint",
+      }),
+    );
+    // Failed: only the error shows, not the tracked rows from the earlier query.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Ideas failed to load: 500 Internal Server Error",
+    );
+    expect(screen.queryByText("Evidence kind")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Matching ideas" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading ideas…")).not.toBeInTheDocument();
   });
 
   it("shows a filtered empty state and a retryable error", async () => {

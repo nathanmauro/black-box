@@ -118,11 +118,8 @@ export type RecalledItem = {
   nextAction?: string | null;
   toAgent?: string | null;
   score?: number | null;
-  // Idea recall items carry title as headline and oneLiner as rationale; these extra fields are
-  // optional so the card still renders when the recall payload omits them.
-  origin?: string | null;
-  status?: string | null;
-  legs?: number | null;
+  // Idea recall items carry the idea title as headline and its oneLiner as rationale; the backend
+  // RecalledItem has no origin, status, or legs, so the card links to the Ideas view for those.
 };
 
 export type RecallResult = {

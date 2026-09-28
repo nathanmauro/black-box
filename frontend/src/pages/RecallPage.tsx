@@ -1,7 +1,6 @@
 import HandoffContext from "../components/events/HandoffContext";
 import { A, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createSignal, For, Show, untrack, type JSX } from "solid-js";
-import { IdeaLegsMeter, IdeaOriginBadge, IdeaStatusPill } from "../components/IdeaBadges";
 import KindBadge from "../components/KindBadge";
 import SourceDot from "../components/SourceDot";
 import { getRecall, type RecalledItem, type RecallResult } from "../lib/api";
@@ -305,14 +304,9 @@ function RecallCard(props: { item: RecalledItem }) {
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
       </Show>
       <Show when={props.item.kind.toLowerCase() === "idea"}>
+        {/* RecalledItem carries only the idea title (headline) and one-liner (rationale); origin,
+            status, and legs live on the Ideas view, so link there instead. */}
         <div class="idea-badges">
-          <Show when={props.item.origin}>
-            <IdeaOriginBadge origin={props.item.origin} />
-          </Show>
-          <Show when={props.item.status}>
-            <IdeaStatusPill status={props.item.status} />
-          </Show>
-          <IdeaLegsMeter legs={props.item.legs} />
           <A
             class="idea-open-link"
             href={`/ideas?q=${encodeURIComponent(props.item.headline || "")}`}

@@ -137,7 +137,7 @@ describe("RecallPage", () => {
     expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
   });
 
-  it("recalls ideas with their title, one-liner, and idea badges", async () => {
+  it("recalls ideas with their title and one-liner and links to the Ideas view", async () => {
     vi.mocked(getRecall).mockResolvedValueOnce({
       scope: null,
       withinHours: 168,
@@ -152,9 +152,6 @@ describe("RecallPage", () => {
           observedAt: "2026-09-28T12:00:00Z",
           headline: "Tangent router",
           rationale: "Detect human asides and file them as ideas.",
-          origin: "agent-proposed",
-          status: "untouched",
-          legs: 7,
         },
       ],
     });
@@ -170,9 +167,6 @@ describe("RecallPage", () => {
     expect(card).toHaveClass("recall-card--idea");
     expect(card.querySelector(".kind-badge--idea")).toHaveTextContent("Idea");
     expect(card).toHaveTextContent("Detect human asides and file them as ideas.");
-    expect(card.querySelector(".idea-origin--agent-proposed")).toHaveTextContent("agent proposed");
-    expect(card.querySelector(".idea-status--untouched")).toHaveTextContent("untouched");
-    expect(screen.getByRole("meter", { name: "legs 7/10" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open in Ideas" })).toHaveAttribute(
       "href",
       "/ideas?q=Tangent%20router",

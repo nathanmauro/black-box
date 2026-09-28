@@ -5,6 +5,7 @@ import {
   E2E_SEED_PROJECTION,
   assertSafeSeedBaseUrl,
   seedBlackBoxE2e,
+  seedE2eIdeas,
 } from "./seedData";
 
 describe("e2e seed data", () => {
@@ -107,7 +108,7 @@ describe("e2e seed data", () => {
 
     await seedBlackBoxE2e("http://127.0.0.1:8799", fetchMock);
 
-    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 4 + E2E_SEED_IDEAS.length);
+    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_EVENTS.length + 4);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8799/api/events",
       expect.objectContaining({
@@ -131,6 +132,20 @@ describe("e2e seed data", () => {
         body: expect.stringContaining('"title":"Release workspace synthesis"'),
       }),
     );
+    // The global seed never needs POST /api/ideas: ideas.spec.ts seeds its own ideas.
+    const paths = fetchMock.mock.calls.map(([input]) => new URL(input).pathname);
+    expect(paths).not.toContain("/api/ideas");
+  });
+
+  it("seeds ideas separately so a missing ideas endpoint cannot abort global setup", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ id: "event-id" }), { status: 200 }),
+    );
+
+    await seedE2eIdeas("http://127.0.0.1:8799", fetchMock);
+
+    expect(fetchMock).toHaveBeenCalledTimes(E2E_SEED_IDEAS.length);
     for (const idea of E2E_SEED_IDEAS) {
       expect(fetchMock).toHaveBeenCalledWith(
         "http://127.0.0.1:8799/api/ideas",
@@ -141,8 +156,14 @@ describe("e2e seed data", () => {
         }),
       );
     }
-    // Ideas post after the meld so its provenance session set is unchanged.
-    const paths = fetchMock.mock.calls.map(([input]) => new URL(input).pathname);
-    expect(paths.lastIndexOf("/api/melds")).toBeLessThan(paths.indexOf("/api/ideas"));
+
+    const missing = vi.fn(
+      async (_input: string, _init?: RequestInit) =>
+        new Response("", { status: 404, statusText: "Not Found" }),
+    );
+    await expect(seedE2eIdeas("http://127.0.0.1:8799", missing)).rejects.toThrow(
+      'Failed to seed the idea "Tangent router for human asides": HTTP 404 Not Found',
+    );
+    await expect(seedE2eIdeas("http://127.0.0.1:8766", fetchMock)).rejects.toThrow(/Refusing/);
   });
 });

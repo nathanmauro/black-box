@@ -64,7 +64,11 @@ export default function IdeasPage() {
       });
       if (token === requestToken) setItems(response.items ?? []);
     } catch (err) {
-      if (token === requestToken) setError(err instanceof Error ? err.message : String(err));
+      if (token === requestToken) {
+        // Drop any earlier rows so a failure shows only the error, never rows from another query.
+        setItems(null);
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       if (token === requestToken) setLoading(false);
     }
@@ -75,13 +79,41 @@ export default function IdeasPage() {
   createEffect(
     on(
       () => [statuses().join(","), origin(), project(), query()].join("|"),
-      () => void load(),
+      () => {
+        // Clear the previous query's rows so they never sit under the new filter's heading while
+        // this request is in flight.
+        setItems(null);
+        void load();
+      },
     ),
   );
 
   const visible = createMemo(() => sourceFilter.matches(items() ?? []));
   const unanswered = createMemo(() => visible().filter(isUnanswered));
   const others = createMemo(() => visible().filter((idea) => !isUnanswered(idea)));
+  // The global source filter can hide every idea the server returned.
+  const hiddenBySource = createMemo(() => (items()?.length ?? 0) > visible().length);
+  const emptyState = createMemo(() => {
+    if (filtered())
+      return {
+        title: "No ideas match these filters",
+        hint: "Clear a filter or search for different words.",
+      };
+    if (project())
+      return {
+        title: "No ideas in this project",
+        hint: "Pick All projects to see ideas from every project.",
+      };
+    if (hiddenBySource())
+      return {
+        title: "No ideas from the selected sources",
+        hint: "Change the source filter to see ideas from other agents.",
+      };
+    return {
+      title: "No ideas captured yet",
+      hint: "Agents capture ideas with captureIdea; they appear here once recorded.",
+    };
+  });
 
   function toggleStatus(status: IdeaStatus) {
     const current = statuses();
@@ -100,9 +132,13 @@ export default function IdeasPage() {
     setParams({ q: draft().trim() || undefined });
   }
 
+  let searchInput: HTMLInputElement | undefined;
+
   function clearFilters() {
     setDraft("");
     setParams({ status: undefined, origin: undefined, q: undefined });
+    // The button unmounts once nothing is filtered; keep keyboard focus in the filter form.
+    searchInput?.focus();
   }
 
   return (
@@ -132,6 +168,7 @@ export default function IdeasPage() {
             Search ideas
           </label>
           <input
+            ref={searchInput}
             id="ideas-q"
             type="search"
             value={draft()}
@@ -142,6 +179,11 @@ export default function IdeasPage() {
           <button type="submit" class="secondary-action">
             Search
           </button>
+          <Show when={filtered()}>
+            <button type="button" class="ideas-clear" onClick={clearFilters}>
+              Clear filters
+            </button>
+          </Show>
         </div>
         <div class="ideas-chip-row" role="group" aria-label="Status">
           <span class="ideas-chip-label">status</span>
@@ -172,11 +214,6 @@ export default function IdeasPage() {
               </button>
             )}
           </For>
-          <Show when={filtered()}>
-            <button type="button" class="ideas-clear" onClick={clearFilters}>
-              Clear filters
-            </button>
-          </Show>
         </div>
       </form>
 
@@ -205,12 +242,8 @@ export default function IdeasPage() {
             fallback={
               <div class="ideas-empty">
                 <p class="eyebrow">nothing here</p>
-                <h2>{filtered() ? "No ideas match these filters" : "No ideas captured yet"}</h2>
-                <p>
-                  {filtered()
-                    ? "Clear a filter or search for different words."
-                    : "Agents capture ideas with captureIdea; they appear here once recorded."}
-                </p>
+                <h2>{emptyState().title}</h2>
+                <p>{emptyState().hint}</p>
               </div>
             }
           >

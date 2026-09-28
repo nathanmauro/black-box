@@ -181,8 +181,9 @@ export const E2E_SEED_PROJECTION: SeedProjectionPayload = {
   ],
 };
 
-// ideas.spec.ts asserts these two: the agent-proposed untouched idea lands in the pinned
-// "Nobody answered these" section and the human-aside idea survives an origin filter.
+// ideas.spec.ts seeds and asserts these two (see seedE2eIdeas): the agent-proposed untouched idea
+// lands in the pinned "Nobody answered these" section and the human-aside idea survives an origin
+// filter.
 export const E2E_SEED_IDEAS: SeedIdeaPayload[] = [
   {
     source: "claude",
@@ -285,8 +286,13 @@ export async function seedBlackBoxE2e(
     }),
   });
   await requireOk(meldResponse, "save the seeded read-only meld");
+}
 
-  // Ideas go last so the meld provenance above keeps its original session set.
+// Seeded by ideas.spec.ts itself rather than global setup, so a jar without POST /api/ideas fails
+// only the ideas spec instead of aborting every spec in the suite. Capturing an idea twice (a
+// retried worker) only adds a revision to the same ideaKey, so reseeding is safe.
+export async function seedE2eIdeas(baseURL: string, fetchImpl: FetchLike = fetch): Promise<void> {
+  assertSafeSeedBaseUrl(baseURL);
   for (const idea of E2E_SEED_IDEAS) {
     const ideaResponse = await fetchImpl(new URL("/api/ideas", baseURL).toString(), {
       method: "POST",

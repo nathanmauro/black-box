@@ -1,9 +1,16 @@
 import { expect, test } from "@playwright/test";
-import { E2E_SEED_IDEAS } from "../../src/e2e/seedData";
+import { E2E_SEED_IDEAS, seedE2eIdeas } from "../../src/e2e/seedData";
 
-// Assumes seedBlackBoxE2e ran (global-setup): one agent-proposed untouched idea with a quote and
-// legs 7, and one human-aside tracked idea, both captured through POST /api/ideas.
+// This spec seeds its own ideas (one agent-proposed untouched idea with a quote and legs 7, and one
+// human-aside tracked idea) through POST /api/ideas, so a jar without that endpoint fails only here
+// instead of aborting global setup for every spec.
 const [AGENT_IDEA, HUMAN_IDEA] = E2E_SEED_IDEAS;
+
+test.beforeAll(async () => {
+  const baseURL =
+    test.info().project.use.baseURL || process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:8799";
+  await seedE2eIdeas(baseURL);
+});
 
 test("ideas view pins unanswered agent ideas and keeps origin filters in the URL", async ({
   page,
