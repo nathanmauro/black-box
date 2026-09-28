@@ -1,0 +1,127 @@
+# Idea capture kind
+
+**Status:** in progress on branch `claude/idea-kind`, stacked on `claude/human-turn-first`.
+
+**Origin:** during a loose-ends hunt on 2026-09-28, Nathan asked to track "anything like tower
+closeout or ideas that the agent has… as another capture to black box as Idea". Agents propose
+ideas that nobody answers, and humans drop asides that nobody records. Both vanish into transcripts.
+An `Idea` is a first-class structured capture next to `Decision`, `Handoff`, `Observation`, and
+`Projection`, so those ideas can be listed, recalled, and resumed.
+
+## Out of scope
+
+- Automatic aside detection from the human-turn stream (the tangent router). It is the next
+  candidate slice; this kind is its storage.
+- An `Evidence` kind. It is captured as an idea, not built.
+- Editing or deleting events. Captures stay append-only: a status change is a new `Idea` event
+  with the same `ideaKey`.
+
+## Contract
+
+### Capture
+
+`CaptureIdeaRequest` is a root API record in `recording`. Its fields:
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `source` | string, required | Capturing client (`claude`, `codex`, `manual`, …), as for other kinds. |
+| `clientSessionId` | string, required | As for other kinds. |
+| `repo` | string | Project path, as for other kinds. |
+| `title` | string, required | Short name of the idea. |
+| `oneLiner` | string, required | One sentence: what it is. |
+| `origin` | string, required | One of `human-aside`, `agent-proposed`, or `joint`. The legacy value `nathan-aside` normalizes to `human-aside`. Anything else is a validation error listing the allowed values. |
+| `quote` | string | Verbatim words from the person or agent who had the idea. |
+| `sourceRef` | string | Where the idea came from: a session id, a `path:line`, or a URL. It is named `sourceRef` so it does not collide with the capture `source`. |
+| `legs` | integer 0–10 | How much the idea has going for it. Out of range is a validation error. |
+| `status` | string | One of `untouched` (default), `partially-built`, `built-unused`, `superseded`, or `tracked`. |
+| `connects` | list of strings | Related threads, ideas, or issue ids. |
+| `resumeStep` | string | The smallest useful next step. |
+| `link` | string | Optional Linear, Obsidian (`obsidian://…`), or web link. |
+| `notes` | string | Optional free-form markdown body (prior art, motivating case). |
+| `ideaKey` | string | Stable identity across status changes. It defaults to a slug of `repo` plus `title`. |
+
+- Validation happens at the common `StructuredCaptureService` boundary, as for the other kinds. It
+  returns actionable messages through REST (typed error envelope) and MCP.
+- **Stored event:** `eventType = "Idea"`, with metadata `kind = "idea"` and every field above.
+- **Event text:** a readable multi-line rendering starting with `[Idea] <title> — <oneLiner>`.
+  The rendering keeps full-text search and the human stream useful.
+- **REST:** `POST /api/ideas` accepts the request and returns the same ingest response as the
+  other capture routes.
+- **MCP:** a `captureIdea` tool with clear parameter descriptions. It says when to use it: an idea
+  someone proposed that is not being acted on now, whether it is the human's aside or an agent's
+  suggestion.
+- Add the kind to the ChatGPT MCP gateway (`scripts/chatgpt_mcp/gateway.py`) and its tests,
+  wherever that gateway lists the capture kinds.
+
+### Read
+
+- `recallContext` and `/api/recall` accept `kinds: ["idea"]`. A recalled idea's title is the
+  idea title and its rationale is the one-liner. The default recall kinds do **not** change.
+- Ideas join semantic memory embeddings wherever structured intent kinds are embedded, if that
+  path embeds by kind. Update the docs honestly either way.
+- `GET /api/ideas` lists ideas collapsed to the **latest** event per `ideaKey`. It accepts:
+  - `status` (repeatable or comma-separated);
+  - `origin`;
+  - `project` / `repo` scope, using the existing project scope resolution;
+  - `q` (text);
+  - `limit` (default 100, max 500).
+- The response is `{ items: IdeaView[], count }`, newest first. Each `IdeaView` carries every
+  capture field plus:
+  - `eventId`, `sessionId`, `capturedAt`, and `firstCapturedAt`;
+  - `revisions` (the event count for the key);
+  - `migratedFrom` (nullable).
+
+### Migrating `[Idea]` observations
+
+Until this kind shipped, agents captured ideas as `Observation`s whose text starts with `[Idea]`.
+The body is bullets: `- origin: <origin>, … Verbatim: "<quote>".`, `- What: …`, `- legs: N`,
+`- connects: a, b (x, y), c`, and `- status: <status>. …`.
+
+- `POST /api/ideas/migrate-observations` defaults to **dry run** (`apply=false`). It returns the
+  parsed candidate ideas, and for each one the source observation id and any parse warnings.
+- `apply=true` captures one new `Idea` per candidate, with `migratedFrom = <observation event id>`,
+  `sourceRef` falling back to the observation's session, and `notes` set to the full original body.
+  It is idempotent: an observation that already has a migrated idea is skipped.
+- The migration never modifies or deletes the observation.
+- The parser is best effort:
+  - The title is the first line without the prefix.
+  - The one-liner is the first sentence of `What:`, or the title.
+  - The origin is the first token after `origin:`, normalized.
+  - The quote is the text inside `Verbatim: "…"`.
+  - Legs is the integer after `legs:`.
+  - Status is the first word after `status:`.
+  - Connects splits on commas outside parentheses.
+  - Unknown or missing values produce warnings, not failures.
+
+### Frontend
+
+- **Types and clients:** `api.ts` gets types and clients for `captureIdea`, `getIdeas`, and the
+  migration dry run.
+- **Ideas view:** a route `/ideas` with a header nav icon link, following the `UTILITY_LINKS`
+  pattern. Each idea row shows:
+  - the title and one-liner;
+  - an origin badge (`human-aside`, `agent-proposed`, or `joint`);
+  - a status pill, and legs as a 0–10 meter or number;
+  - the quote (verbatim, pre-wrap);
+  - connects chips, the resume step, the link, and relative time;
+  - a link to the capturing session.
+- **Filters:** chips for status and origin; unknown values are ignored. The default view
+  highlights `agent-proposed` + `untouched`, the ideas nobody answered. The filter state lives in
+  the URL query.
+- **Stream and recall:** `Idea` events render legibly with the title and one-liner, like other
+  structured kinds, instead of raw metadata.
+- **Command palette:** an entry that opens the Ideas view.
+
+## Verification
+
+- Backend: unit and service tests for validation, origin and status normalization, legs bounds,
+  and the text rendering. Also test `/api/ideas` collapsing by `ideaKey`, recall with
+  `kinds:["idea"]`, and migration parsing on fixtures shaped like the real observations. The dry
+  run must write nothing, `apply` must be idempotent, and the observation must be untouched.
+- Also cover MCP tool registration (17 tools), the contract snapshots, and the Python gateway
+  tests.
+- Frontend: vitest, `npm run check`, and a Playwright spec that seeds an agent-proposed idea and a
+  human-aside idea, opens `/ideas`, filters, and sees the right rows.
+- Verify through use: run the packaged jar against a fresh consistent copy of the local database
+  on a spare port. Dry-run and then apply the migration of the real `[Idea]` observations. Open
+  `/ideas`, recall them through MCP, and capture a new idea through MCP.
