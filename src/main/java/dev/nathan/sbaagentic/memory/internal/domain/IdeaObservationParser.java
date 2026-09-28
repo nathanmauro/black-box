@@ -83,10 +83,10 @@ public final class IdeaObservationParser {
         } else {
             Matcher number = FIRST_INT.matcher(legsLine);
             if (number.find()) {
-                int parsed = Integer.parseInt(number.group(1));
-                if (parsed < Ideas.MIN_LEGS || parsed > Ideas.MAX_LEGS) {
-                    warnings.add(
-                            "legs " + parsed + " is outside " + Ideas.MIN_LEGS + ".." + Ideas.MAX_LEGS + ": dropped");
+                Integer parsed = parseIntOrNull(number.group(1));
+                if (parsed == null || parsed < Ideas.MIN_LEGS || parsed > Ideas.MAX_LEGS) {
+                    warnings.add("legs " + number.group(1) + " is outside " + Ideas.MIN_LEGS + ".." + Ideas.MAX_LEGS
+                            + ": dropped");
                 } else {
                     legs = parsed;
                 }
@@ -150,6 +150,17 @@ public final class IdeaObservationParser {
         String part = current.toString().strip();
         if (!part.isEmpty()) {
             parts.add(part);
+        }
+    }
+
+    /** {@code null} when the digits overflow an int; one malformed value must not abort a dry run. */
+    private static Integer parseIntOrNull(String digits) {
+        try {
+
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException overflow) {
+
+            return null;
         }
     }
 

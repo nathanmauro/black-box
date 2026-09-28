@@ -66,10 +66,12 @@ agent's suggestion that would otherwise vanish into a transcript. Capture it wit
 - `recallContext` and `/api/recall` return ideas only when `kinds` includes `idea`; the headline is
   the title, the rationale is the one-liner, and `nextAction` is the resume step.
 - `POST /api/ideas/migrate-observations` parses Observations whose text starts with `[Idea]`. It is
-  a dry run by default and writes nothing; `?apply=true` captures one `Idea` per candidate (session
-  `idea-migration`, `sourceRef` set to the observation's session, `notes` set to the original body,
-  `migratedFrom` set to the observation id). Re-running skips observations already migrated, and
-  the observations themselves are never changed.
+  a dry run by default and writes nothing; `?apply=true` captures one `Idea` per candidate (one
+  session per repo, `idea-migration:<repo>`, so recall and project scoping file each idea under its
+  own repo; `sourceRef` set to the observation's session, `notes` set to the original body,
+  `migratedFrom` set to the observation id, and the capture time set to the observation's, so a
+  newer native capture of the same `ideaKey` stays the latest state). Re-running skips observations
+  already migrated, and the observations themselves are never changed.
 
 ### Human turns
 

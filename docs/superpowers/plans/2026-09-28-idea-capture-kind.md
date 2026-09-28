@@ -135,8 +135,17 @@ Backend choices where the contract was silent or needed a concrete rule:
   idea keys identically on any checkout. Two repos with the same basename share a key namespace.
 - **Migration origin:** `origin` is required, so a missing or unknown `origin:` in an `[Idea]`
   observation falls back to `agent-proposed` with a warning.
-- **Migration session:** migrated ideas keep the observation's `source` and are written to client
-  session `idea-migration`, so the original sessions are not reopened.
+- **Migration session:** migrated ideas keep the observation's `source` and are written to one
+  client session per repo, `idea-migration:<repo>` (plain `idea-migration` when the repo is
+  unknown), so the original sessions are not reopened. A session carries a single cwd, and recall,
+  project facets, and timelines scope by it, so one shared session would misfile ideas under
+  whichever repo was written last.
+- **Migration time:** a migrated idea is captured at its observation's time, so a newer native
+  capture of the same `ideaKey` stays the latest state and `firstCapturedAt` is when it was said.
+- **Full scans:** the list and the migration read every `Idea` event (keyset pages of 1,000), not a
+  newest-N window, so migration stays idempotent and revision counts stay whole at any volume.
+- **Default key redaction:** the default `ideaKey` is slugged from the redacted title; slugging
+  would otherwise hide a secret from the ingest-time redaction patterns.
 - **Recall:** besides the title and one-liner, a recalled idea's `nextAction` is its `resumeStep`.
 - **List filters:** an unknown `status` or `origin` filter value returns `400 invalid_argument`
   listing the allowed values instead of silently matching nothing. `count` is the number of items

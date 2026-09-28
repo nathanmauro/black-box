@@ -337,7 +337,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
     }
 
     @Override
-    public List<TypedEvent> eventsOfType(String eventType, String textPrefix, int limit) {
+    public List<TypedEvent> eventsOfType(String eventType, String textPrefix, Cursor before, int limit) {
         if (eventType == null || eventType.isBlank() || limit <= 0) {
 
             return List.of();
@@ -358,7 +358,20 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             args.add(textPrefix.length());
             args.add(textPrefix);
         }
-        sql.append(" ORDER BY e.observed_at DESC, e.id DESC\n LIMIT ?");
+        if (before != null && before.observedAt() != null && before.id() != null) {
+            // Keyset on the padded instant: raw ISO strings with variable fractional precision do
+            // not sort chronologically, and a page boundary must not skip or repeat a row.
+            String position = COMPACT_TIME.format(before.observedAt());
+            sql.append("   AND (")
+                    .append(COMPACT_TIME_SQL)
+                    .append(" < ? OR (")
+                    .append(COMPACT_TIME_SQL)
+                    .append(" = ? AND e.id < ?))\n");
+            args.add(position);
+            args.add(position);
+            args.add(before.id());
+        }
+        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC\n LIMIT ?");
         args.add(limit);
 
         return jdbcTemplate.query(

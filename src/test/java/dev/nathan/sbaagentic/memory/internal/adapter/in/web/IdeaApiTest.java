@@ -58,6 +58,14 @@ class IdeaApiTest {
             - connects: Black Box Idea kind, human-turn-first, verification-before-completion habits
             - status: untouched. Planned for a separate Black Box "additions" session.""";
 
+    static final String COCKPIT_DIGEST = """
+            [Idea] Cockpit lane digest
+            - origin: joint. Verbatim: "digest the lanes every morning".
+            - What: a morning digest per lane.
+            - legs: 12345678901
+            - connects: Cockpit morning digest
+            - status: untouched""";
+
     @Autowired
     MockMvc mockMvc;
 
@@ -212,6 +220,7 @@ class IdeaApiTest {
     @Test
     void migrationDryRunWritesNothingAndApplyIsIdempotent() throws Exception {
         String repo = uniqueRepo("migration");
+        String otherRepo = uniqueRepo("migration-other");
         String lanesId = captureOperations
                 .captureObservation("claude", "claude-idea-observations", repo, LANES_BOARD)
                 .eventId();
@@ -219,6 +228,29 @@ class IdeaApiTest {
                 .captureObservation("claude", "claude-idea-observations", repo, EVIDENCE_KIND)
                 .eventId();
         captureOperations.captureObservation("claude", "claude-idea-observations", repo, "Not an [Idea] observation");
+        // Newest observation, from a second repo: a single shared migration session would end with
+        // this repo as its cwd and misfile the first repo's ideas in recall and project scoping.
+        String digestId = captureOperations
+                .captureObservation("claude", "claude-other-observations", otherRepo, COCKPIT_DIGEST)
+                .eventId();
+        AgentEvent digestObservation = catalog.findEventById(digestId).orElseThrow();
+        // A native capture of the same idea, newer than its observation, must stay the latest state.
+        IngestResponse nativeDigest = captureOperations.captureIdea(new CaptureIdeaRequest(
+                "claude",
+                "claude-native-ideas",
+                otherRepo,
+                "Cockpit lane digest",
+                "A morning digest per lane.",
+                "joint",
+                null,
+                null,
+                null,
+                "tracked",
+                null,
+                null,
+                null,
+                null,
+                null));
         AgentEvent lanesBefore = catalog.findEventById(lanesId).orElseThrow();
         long eventsBefore = eventCount();
 
@@ -228,8 +260,13 @@ class IdeaApiTest {
         assertThat(dryRun.path("apply").asBoolean()).isFalse();
         assertThat(dryRun.path("created").asInt()).isZero();
         assertThat(dryRun.path("skipped").asInt()).isZero();
-        assertThat(dryRun.path("candidates")).hasSize(2);
-        JsonNode evidenceCandidate = dryRun.path("candidates").get(0);
+        assertThat(dryRun.path("candidates")).hasSize(3);
+        JsonNode digestCandidate = dryRun.path("candidates").get(0);
+        assertThat(digestCandidate.path("observationId").asText()).isEqualTo(digestId);
+        assertThat(digestCandidate.path("warnings").toString()).contains("legs 12345678901 is outside 0..10: dropped");
+        assertThat(digestCandidate.path("idea").path("clientSessionId").asText())
+                .isEqualTo("idea-migration:" + otherRepo);
+        JsonNode evidenceCandidate = dryRun.path("candidates").get(1);
         assertThat(evidenceCandidate.path("observationId").asText()).isEqualTo(evidenceId);
         assertThat(evidenceCandidate.path("sessionId").asText()).isEqualTo(lanesBefore.sessionId());
         assertThat(evidenceCandidate.path("alreadyMigrated").asBoolean()).isFalse();
@@ -242,16 +279,17 @@ class IdeaApiTest {
         assertThat(evidenceIdea.path("sourceRef").asText()).isEqualTo(lanesBefore.sessionId());
         assertThat(evidenceIdea.path("repo").asText()).isEqualTo(repo);
         assertThat(evidenceIdea.path("notes").asText()).isEqualTo(EVIDENCE_KIND);
-        assertThat(dryRun.path("candidates").get(1).path("idea").path("connects"))
+        assertThat(evidenceIdea.path("clientSessionId").asText()).isEqualTo("idea-migration:" + repo);
+        assertThat(dryRun.path("candidates").get(2).path("idea").path("connects"))
                 .hasSize(3);
 
         JsonNode applied =
                 json(mockMvc.perform(post("/api/ideas/migrate-observations").param("apply", "true"))
                         .andExpect(status().isOk()));
         assertThat(applied.path("apply").asBoolean()).isTrue();
-        assertThat(applied.path("created").asInt()).isEqualTo(2);
+        assertThat(applied.path("created").asInt()).isEqualTo(3);
         assertThat(applied.path("skipped").asInt()).isZero();
-        assertThat(eventCount()).isEqualTo(eventsBefore + 2);
+        assertThat(eventCount()).isEqualTo(eventsBefore + 3);
         List<String> createdIds = new ArrayList<>();
         applied.path("candidates").forEach(candidate -> {
             assertThat(candidate.path("createdEventId").isTextual()).isTrue();
@@ -266,9 +304,11 @@ class IdeaApiTest {
             migratedFrom.add(item.path("migratedFrom").asText());
             assertThat(createdIds).contains(item.path("eventId").asText());
             assertThat(item.path("status").asText()).isEqualTo("untouched");
-            assertThat(item.path("clientSessionId").asText()).isEqualTo("idea-migration");
+            assertThat(item.path("clientSessionId").asText()).isEqualTo("idea-migration:" + repo);
         });
         assertThat(migratedFrom).containsExactly(evidenceId, lanesId);
+        assertThat(Instant.parse(listed.path("items").get(1).path("capturedAt").asText()))
+                .isEqualTo(lanesBefore.observedAt());
         assertThat(listed.path("items").get(1).path("quote").asText())
                 .isEqualTo("I'm starting to visualize a live board with lanes for all my projects ...");
 
@@ -276,12 +316,33 @@ class IdeaApiTest {
                 json(mockMvc.perform(post("/api/ideas/migrate-observations").param("apply", "true"))
                         .andExpect(status().isOk()));
         assertThat(again.path("created").asInt()).isZero();
-        assertThat(again.path("skipped").asInt()).isEqualTo(2);
-        assertThat(eventCount()).isEqualTo(eventsBefore + 2);
+        assertThat(again.path("skipped").asInt()).isEqualTo(3);
+        assertThat(eventCount()).isEqualTo(eventsBefore + 3);
         again.path("candidates").forEach(candidate -> {
             assertThat(candidate.path("alreadyMigrated").asBoolean()).isTrue();
             assertThat(createdIds).contains(candidate.path("createdEventId").asText());
         });
+
+        // The migrated digest is backdated to its observation, so the newer native status wins.
+        JsonNode digest = json(mockMvc.perform(get("/api/ideas").param("repo", otherRepo))
+                        .andExpect(status().isOk()))
+                .path("items");
+        assertThat(digest).hasSize(1);
+        assertThat(digest.get(0).path("eventId").asText()).isEqualTo(nativeDigest.eventId());
+        assertThat(digest.get(0).path("status").asText()).isEqualTo("tracked");
+        assertThat(digest.get(0).path("revisions").asInt()).isEqualTo(2);
+        assertThat(Instant.parse(digest.get(0).path("firstCapturedAt").asText()))
+                .isEqualTo(digestObservation.observedAt());
+
+        // Each repo's migrated ideas live in a session whose cwd is that repo.
+        assertThat(sessionCwd("idea-migration:" + repo)).isEqualTo(repo);
+        assertThat(sessionCwd("idea-migration:" + otherRepo)).isEqualTo(otherRepo);
+        String digestMigratedId =
+                applied.path("candidates").get(0).path("createdEventId").asText();
+        List<String> repoRecall = recalledIdeaIds(repo);
+        assertThat(repoRecall).contains(createdIds.get(1), createdIds.get(2)).doesNotContain(digestMigratedId);
+        List<String> otherRecall = recalledIdeaIds(otherRepo);
+        assertThat(otherRecall).contains(digestMigratedId).doesNotContain(createdIds.get(1), createdIds.get(2));
 
         AgentEvent lanesAfter = catalog.findEventById(lanesId).orElseThrow();
         assertThat(lanesAfter).isEqualTo(lanesBefore);
@@ -325,6 +386,24 @@ class IdeaApiTest {
     private JsonNode json(org.springframework.test.web.servlet.ResultActions actions) throws Exception {
 
         return objectMapper.readTree(actions.andReturn().getResponse().getContentAsString());
+    }
+
+    private List<String> recalledIdeaIds(String scope) throws Exception {
+        JsonNode recalled =
+                json(mockMvc.perform(get("/api/recall").param("scope", scope).param("kinds", "idea"))
+                        .andExpect(status().isOk()));
+        List<String> ids = new ArrayList<>();
+        recalled.path("items").forEach(item -> ids.add(item.path("eventId").asText()));
+
+        return ids;
+    }
+
+    private String sessionCwd(String clientSessionId) {
+
+        return jdbcTemplate.queryForObject(
+                "SELECT cwd FROM agent_sessions WHERE source = 'claude' AND client_session_id = ?",
+                String.class,
+                clientSessionId);
     }
 
     private long eventCount() {

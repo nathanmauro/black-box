@@ -34,10 +34,19 @@ public class IdeaService {
 
     static final int DEFAULT_LIMIT = 100;
     static final int MAX_LIMIT = 500;
-    /** Upper bound on events scanned per request; ideas are deliberate captures, not a firehose. */
-    static final int SCAN_LIMIT = 5_000;
+    /**
+     * Keyset page size for the full scans below. Ideas are deliberate captures, not a firehose, so
+     * the list and the migration read every Idea (and every {@code [Idea]} observation) rather than
+     * a newest-N window: a window would silently drop old revisions and break migration idempotency.
+     */
+    static final int SCAN_PAGE_SIZE = 1_000;
 
+    /**
+     * Migrated ideas get one session per repo ({@code idea-migration:<repo>}), because a
+     * session carries a single cwd and recall, project facets, and timelines scope by it.
+     */
     static final String MIGRATION_CLIENT_SESSION_ID = "idea-migration";
+
     private static final String OBSERVATION_EVENT_TYPE = "Observation";
 
     private final IdeaEventReader reader;
@@ -90,10 +99,10 @@ public class IdeaService {
      */
     public synchronized IdeaMigrationResult migrateObservations(boolean apply) {
         Map<String, String> migrated = migratedObservationIds();
-        List<TypedEvent> observations =
-                newestFirst(reader.eventsOfType(OBSERVATION_EVENT_TYPE, Ideas.TEXT_PREFIX, SCAN_LIMIT));
+        List<TypedEvent> observations = newestFirst(allEventsOfType(OBSERVATION_EVENT_TYPE, Ideas.TEXT_PREFIX));
 
         List<IdeaMigrationResult.Candidate> candidates = new ArrayList<>();
+        Map<String, Instant> observedAt = new HashMap<>();
         for (TypedEvent row : observations) {
             AgentEvent observation = row.event();
             if (observation == null || !IdeaObservationParser.isIdeaObservation(observation.text())) {
@@ -103,7 +112,7 @@ public class IdeaService {
             String repo = firstNonBlank(str(metadata(observation).get("repo")), row.cwd());
             CaptureIdeaRequest idea = new CaptureIdeaRequest(
                     observation.source(),
-                    MIGRATION_CLIENT_SESSION_ID,
+                    migrationClientSessionId(repo),
                     repo,
                     parsed.title(),
                     parsed.oneLiner(),
@@ -120,6 +129,7 @@ public class IdeaService {
             String existing = migrated.get(observation.id());
             candidates.add(new IdeaMigrationResult.Candidate(
                     observation.id(), observation.sessionId(), idea, parsed.warnings(), existing != null, existing));
+            observedAt.put(observation.id(), observation.observedAt());
         }
 
         int created = 0;
@@ -134,7 +144,10 @@ public class IdeaService {
             if (!apply) {
                 continue;
             }
-            IngestResponse response = captureOperations.captureIdea(candidate.idea(), candidate.observationId());
+            // Keep the observation's own time: a migrated idea must not outrank a newer native
+            // capture of the same ideaKey, and firstCapturedAt should be when it was first said.
+            IngestResponse response = captureOperations.captureIdea(
+                    candidate.idea(), candidate.observationId(), observedAt.get(candidate.observationId()));
             candidates.set(
                     i,
                     new IdeaMigrationResult.Candidate(
@@ -152,7 +165,7 @@ public class IdeaService {
 
     private List<IdeaView> collapsed() {
         Map<String, List<TypedEvent>> byKey = new LinkedHashMap<>();
-        for (TypedEvent row : newestFirst(reader.eventsOfType(Ideas.EVENT_TYPE, null, SCAN_LIMIT))) {
+        for (TypedEvent row : newestFirst(allEventsOfType(Ideas.EVENT_TYPE, null))) {
             byKey.computeIfAbsent(ideaKey(row), key -> new ArrayList<>()).add(row);
         }
         List<IdeaView> views = new ArrayList<>(byKey.size());
@@ -175,9 +188,39 @@ public class IdeaService {
                 .toList();
     }
 
+    /** Every event of the type, read in keyset pages so no row is skipped or repeated. */
+    private List<TypedEvent> allEventsOfType(String eventType, String textPrefix) {
+        List<TypedEvent> all = new ArrayList<>();
+        IdeaEventReader.Cursor before = null;
+        while (true) {
+            List<TypedEvent> page = reader.eventsOfType(eventType, textPrefix, before, SCAN_PAGE_SIZE);
+            all.addAll(page);
+            if (page.size() < SCAN_PAGE_SIZE) {
+
+                return all;
+            }
+            TypedEvent last = page.getLast();
+            if (last.event() == null
+                    || last.event().observedAt() == null
+                    || last.event().id() == null) {
+
+                return all;
+            }
+            before = last.cursor();
+        }
+    }
+
+    /** The canonical project key (not a slug) so two distinct repo paths never share a session. */
+    static String migrationClientSessionId(String repo) {
+
+        return notBlank(repo)
+                ? MIGRATION_CLIENT_SESSION_ID + ":" + canonicalProject(repo)
+                : MIGRATION_CLIENT_SESSION_ID;
+    }
+
     private Map<String, String> migratedObservationIds() {
         Map<String, String> migrated = new HashMap<>();
-        for (TypedEvent row : reader.eventsOfType(Ideas.EVENT_TYPE, null, SCAN_LIMIT)) {
+        for (TypedEvent row : allEventsOfType(Ideas.EVENT_TYPE, null)) {
             if (row.event() == null) {
                 continue;
             }

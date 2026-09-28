@@ -98,6 +98,18 @@ class IdeaObservationParserTest {
     }
 
     @Test
+    void overflowingLegsAreWarnedInsteadOfThrowing() {
+        ParsedIdea idea = IdeaObservationParser.parse("[Idea] Big number\n- legs: 12345678901\n- status: tracked");
+
+        assertThat(idea.legs()).isNull();
+        assertThat(idea.status()).isEqualTo("tracked");
+        assertThat(idea.warnings()).contains("legs 12345678901 is outside 0..10: dropped");
+        assertThat(IdeaObservationParser.parse("[Idea] Negative\n- legs: -99999999999")
+                        .warnings())
+                .contains("legs -99999999999 is outside 0..10: dropped");
+    }
+
+    @Test
     void emptyTitleIsWarned() {
         ParsedIdea idea = IdeaObservationParser.parse("[Idea]\n- What: something.");
 

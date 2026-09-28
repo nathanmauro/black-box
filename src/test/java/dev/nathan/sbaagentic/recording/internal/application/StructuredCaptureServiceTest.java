@@ -12,6 +12,7 @@ import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +33,8 @@ class StructuredCaptureServiceTest {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-1", "session-1", "codex", "client-1", "Projection", false));
 
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
         service.captureProjection(new CaptureProjectionRequest(
                 "codex",
                 "client-1",
@@ -80,7 +82,8 @@ class StructuredCaptureServiceTest {
 
     @Test
     void captureProjectionRejectsNullAndEmptyPaths() {
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> service.captureProjection(
@@ -100,7 +103,8 @@ class StructuredCaptureServiceTest {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-2", "session-1", "codex", "client-2", "Projection", false));
 
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
         service.captureProjection(new CaptureProjectionRequest(
                 "codex",
                 "client-2",
@@ -141,7 +145,8 @@ class StructuredCaptureServiceTest {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-3", "session-1", "codex", "client-3", "Projection", false));
 
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
         service.captureProjection(new CaptureProjectionRequest(
                 "codex", "client-3", "/repo", null, List.of(new ProjectionPath("First future", null, null))));
 
@@ -160,7 +165,7 @@ class StructuredCaptureServiceTest {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-1", "session-1", "claude", "client-1", "Idea", false));
 
-        new StructuredCaptureService(recorder)
+        new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()))
                 .captureIdea(new CaptureIdeaRequest(
                         "claude",
                         "client-1",
@@ -218,7 +223,7 @@ class StructuredCaptureServiceTest {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-2", "session-1", "codex", "client-1", "Idea", false));
 
-        new StructuredCaptureService(recorder)
+        new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()))
                 .captureIdea(
                         new CaptureIdeaRequest(
                                 "codex",
@@ -254,7 +259,8 @@ class StructuredCaptureServiceTest {
 
     @Test
     void captureIdeaRejectsInvalidFieldsWithActionableMessages() {
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> service.captureIdea(idea("brainstorm", null, null)))
@@ -331,10 +337,85 @@ class StructuredCaptureServiceTest {
     }
 
     @Test
+    void captureIdeaDerivesTheDefaultKeyFromTheRedactedTitle() {
+        when(recorder.ingest(any(EventIngestRequest.class)))
+                .thenReturn(new IngestResponse("event-4", "session-1", "codex", "client-1", "Idea", false));
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        String githubToken = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
+        List<String> titles = List.of(
+                "Rotate AKIAIOSFODNN7EXAMPLE out of CI",
+                "Revoke " + githubToken + " today",
+                "Stop logging password: hunter2secret",
+                "Send Bearer abcdefghijklmnopqrstuvwxyz0123 only once");
+        for (String title : titles) {
+            service.captureIdea(new CaptureIdeaRequest(
+                    "codex",
+                    "client-1",
+                    "/x/proj",
+                    title,
+                    "One liner.",
+                    "joint",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null));
+        }
+
+        ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
+        verify(recorder, org.mockito.Mockito.times(titles.size())).ingest(captor.capture());
+        List<String> keys = captor.getAllValues().stream()
+                .map(request -> String.valueOf(request.metadata().get("ideaKey")))
+                .toList();
+        assertThat(keys)
+                .containsExactly(
+                        "proj-rotate-redacted-out-of-ci",
+                        "proj-revoke-redacted-today",
+                        "proj-stop-logging-password-redacted",
+                        "proj-send-bearer-redacted-only-once");
+        for (EventIngestRequest request : captor.getAllValues()) {
+            String keyLine = request.text()
+                    .lines()
+                    .filter(line -> line.startsWith("Idea key: "))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(keyLine.toLowerCase())
+                    .doesNotContain("akiaiosfodnn7example")
+                    .doesNotContain(githubToken.toLowerCase().substring(4))
+                    .doesNotContain("hunter2secret")
+                    .doesNotContain("abcdefghijklmnopqrstuvwxyz0123");
+        }
+    }
+
+    @Test
+    void captureIdeaKeepsAnExplicitObservedAtAndDefaultsToNow() {
+        when(recorder.ingest(any(EventIngestRequest.class)))
+                .thenReturn(new IngestResponse("event-5", "session-1", "codex", "client-1", "Idea", false));
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        java.time.Instant then = java.time.Instant.parse("2026-09-20T10:15:30.123Z");
+        java.time.Instant before = java.time.Instant.now();
+
+        service.captureIdea(idea("joint", null, null), "observation-1", then);
+        service.captureIdea(idea("joint", null, null));
+
+        ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
+        verify(recorder, org.mockito.Mockito.times(2)).ingest(captor.capture());
+        assertThat(captor.getAllValues().get(0).observedAt()).isEqualTo(then);
+        assertThat(captor.getAllValues().get(1).observedAt()).isAfterOrEqualTo(before);
+    }
+
+    @Test
     void captureIdeaAcceptsLegsAtBothBounds() {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-3", "session-1", "codex", "client-1", "Idea", false));
-        StructuredCaptureService service = new StructuredCaptureService(recorder);
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
 
         service.captureIdea(idea("joint", "tracked", 0));
         service.captureIdea(idea("joint", "tracked", 10));

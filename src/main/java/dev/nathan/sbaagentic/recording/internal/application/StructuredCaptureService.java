@@ -27,9 +27,11 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     private static final int MAX_PROJECTION_PATHS = 5;
 
     private final EventRecorder recorder;
+    private final RedactionService redaction;
 
-    public StructuredCaptureService(EventRecorder recorder) {
+    public StructuredCaptureService(EventRecorder recorder, RedactionService redaction) {
         this.recorder = recorder;
+        this.redaction = redaction;
     }
 
     @Override
@@ -95,7 +97,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     }
 
     @Override
-    public IngestResponse captureIdea(CaptureIdeaRequest request, String migratedFrom) {
+    public IngestResponse captureIdea(CaptureIdeaRequest request, String migratedFrom, Instant observedAt) {
         if (request == null) {
             throw new IllegalArgumentException("Idea request is required.");
         }
@@ -126,7 +128,12 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         String title = request.title().strip();
         String oneLiner = request.oneLiner().strip();
         String repo = stripOrNull(request.repo());
-        String ideaKey = notBlank(request.ideaKey()) ? request.ideaKey().strip() : Ideas.defaultKey(repo, title);
+        // Slug the redacted title: slugging lowercases and rewrites the separators the redaction
+        // patterns anchor on (AKIA…, ghp_…, "Bearer ", "password:"), so a secret in the raw title
+        // would survive ingest-time redaction inside the key.
+        String ideaKey = notBlank(request.ideaKey())
+                ? request.ideaKey().strip()
+                : Ideas.defaultKey(redaction.redact(repo), redaction.redact(title));
         List<String> connects = trimList(request.connects());
 
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -152,7 +159,8 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
                 repo,
                 Ideas.EVENT_TYPE,
                 renderIdea(title, oneLiner, origin, status, legs, connects, request, ideaKey),
-                metadata);
+                metadata,
+                observedAt);
     }
 
     @Override
@@ -172,6 +180,18 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             String eventType,
             String text,
             Map<String, Object> metadata) {
+
+        return write(source, clientSessionId, repo, eventType, text, metadata, null);
+    }
+
+    private IngestResponse write(
+            String source,
+            String clientSessionId,
+            String repo,
+            String eventType,
+            String text,
+            Map<String, Object> metadata,
+            Instant observedAt) {
         // MCP and in-process callers do not pass through REST's @Valid request validation.
         requireNotBlank("source", source);
         requireNotBlank("clientSessionId", clientSessionId);
@@ -188,7 +208,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
                 null,
                 null,
                 metadata,
-                Instant.now()));
+                observedAt == null ? Instant.now() : observedAt));
     }
 
     private static String renderDecision(CaptureDecisionRequest request) {
