@@ -17,7 +17,7 @@ Default to normal prose: concise, direct, professional, and complete.
 
 - Treat this as a product repo, not the Cockpit private control-plane repo.
 - Keep public docs honest: semantic/vector recall currently surfaces structured intent
-  (`Decision`, `Handoff`, `Observation`) only. The memory index also stores session-summary
+  (`Decision`, `Handoff`, `Observation`, `Idea`) only. The memory index also stores session-summary
   vectors for backfill/future retrieval, but recall does not return summaries today; the full event
   corpus is not semantically indexed. Do not claim streaming UI behavior or other roadmap items
   until they exist and are verified.
@@ -101,6 +101,9 @@ Use Black Box for structured continuity, not for bulk transcript storage or task
   touched.
 - `Observation`: use for concrete facts that may matter later, such as command output summaries,
   API errors, counts, IDs, paths, process state, or UI behavior.
+- `Idea`: use for an idea someone proposed that nobody is acting on now, whether the human's aside
+  or an agent's suggestion. Capture it with `captureIdea` (origin, one-liner, verbatim quote, legs,
+  status); record a later status change as a new capture with the same `ideaKey`.
 - `Parked tangent`: use when a related side path would derail the current task but should be
   findable later.
 

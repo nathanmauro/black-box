@@ -1,6 +1,7 @@
 # Idea capture kind
 
-**Status:** in progress on branch `claude/idea-kind`, stacked on `claude/human-turn-first`.
+**Status:** in progress on branch `claude/idea-kind`, stacked on `claude/human-turn-first`. The
+backend is implemented; its deviations from this contract are recorded under Deviations.
 
 **Origin:** during a loose-ends hunt on 2026-09-28, Nathan asked to track "anything like tower
 closeout or ideas that the agent has… as another capture to black box as Idea". Agents propose
@@ -125,3 +126,22 @@ The body is bullets: `- origin: <origin>, … Verbatim: "<quote>".`, `- What: �
 - Verify through use: run the packaged jar against a fresh consistent copy of the local database
   on a spare port. Dry-run and then apply the migration of the real `[Idea]` observations. Open
   `/ideas`, recall them through MCP, and capture a new idea through MCP.
+
+## Deviations
+
+Backend choices where the contract was silent or needed a concrete rule:
+
+- **Default `ideaKey`:** the slug uses the repo's last path segment, not the full path, so the same
+  idea keys identically on any checkout. Two repos with the same basename share a key namespace.
+- **Migration origin:** `origin` is required, so a missing or unknown `origin:` in an `[Idea]`
+  observation falls back to `agent-proposed` with a warning.
+- **Migration session:** migrated ideas keep the observation's `source` and are written to client
+  session `idea-migration`, so the original sessions are not reopened.
+- **Recall:** besides the title and one-liner, a recalled idea's `nextAction` is its `resumeStep`.
+- **List filters:** an unknown `status` or `origin` filter value returns `400 invalid_argument`
+  listing the allowed values instead of silently matching nothing. `count` is the number of items
+  returned.
+- **Gateway:** `append_capture` accepts `kind=idea` but still writes through the generic event
+  route, which keeps its idempotency receipts. Such an idea has no structured fields; the Ideas
+  list derives its title from the first line, reports status `untouched`, and leaves `origin` null.
+- **SPA route:** `GET /ideas` forwards to `index.html` so the Ideas view survives a hard refresh.

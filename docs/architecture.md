@@ -351,10 +351,11 @@ selecting a project never infers work or broadens the authoritative queue query.
   canonical and can transiently fill missing user/assistant text from the session's known local
   Codex or Claude JSONL. The reader canonicalizes and confines that stored path, validates transcript
   identity, redacts returned text, and never persists the enrichment.
-- **Memory.** Captures and recalls decisions, Handoffs, and observations by repo, topic, semantic
+- **Memory.** Captures and recalls decisions, Handoffs, observations, and ideas by repo, topic, semantic
   paraphrase, or direct event id; fuses lexical SQLite recall with local vector recall when memory
   embeddings are available; searches SQLite events and optionally combines Elasticsearch hits.
-  Semantic recall returns structured intent events (`Decision`, `Handoff`, `Observation`) only.
+  Semantic recall returns structured intent events (`Decision`, `Handoff`, `Observation`, `Idea`)
+  only. `GET /api/ideas` lists ideas collapsed to the latest capture per `ideaKey`.
   Non-empty session summaries are stored in the memory embedding index for backfill and future
   retrieval, but no recall path surfaces them today; the full captured event corpus is not
   semantically indexed.
@@ -388,7 +389,7 @@ for new events; it is not used by atomic claims or the Board.
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |
-| `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, and Observations |
+| `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, Observations, Projections, and Ideas |
 | `memory_embeddings` | memory | Canonical float32 vectors for structured intent and session summaries; sqlite-vec is only an optional accelerator rebuilt from this table |
 | `specs`, `tasks`, `task_events` | workflow | Frozen work definitions, queue state, lifecycle transitions, and annotations |
 | `session_links` | workflow | Explicit session lineage links used by Board and DAG projections |

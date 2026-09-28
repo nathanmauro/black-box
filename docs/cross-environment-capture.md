@@ -61,15 +61,17 @@ consumers must treat them as data, not proof.
 
 Shipped dedupe exists only on `POST /api/events/idempotent` (`docs/idempotent-capture.md`) and
 inside the gateway's receipt ledger. The structured endpoints (`/api/decisions`, `/api/handoffs`,
-`/api/projections`) and the MCP `capture*` tools do not deduplicate (roadmap).
+`/api/projections`, `/api/ideas`) and the MCP `capture*` tools do not deduplicate (roadmap).
 
 ## Event kinds
 
-Shipped: four structured kinds, `Decision`, `Handoff`, `Observation`, and `Projection`
+Shipped: five structured kinds, `Decision`, `Handoff`, `Observation`, `Projection`, and `Idea`
 (`recording/.../StructuredCaptureService.java`). Local MCP clients get the structured fields
-(`rationale`, `alternatives`, `confidence`, `openLoops`, `toAgent`, `nextAction`, `paths`, `basis`).
-The gateway's `append_capture` accepts `observation`, `decision`, or `handoff` and writes a plain
-event with text plus metadata; it has no structured fields and no projection.
+(`rationale`, `alternatives`, `confidence`, `openLoops`, `toAgent`, `nextAction`, `paths`, `basis`,
+and for ideas `title`, `oneLiner`, `origin`, `quote`, `legs`, `status`, `connects`, `ideaKey`).
+The gateway's `append_capture` accepts `observation`, `decision`, `handoff`, or `idea` and writes a
+plain event with text plus metadata; it has no structured fields and no projection. A gateway idea
+lists in `GET /api/ideas` with its first line as the title, `untouched` status, and no origin.
 
 Contract kinds for cloud and chat clients, and how each is written today:
 
@@ -80,6 +82,7 @@ Contract kinds for cloud and chat clients, and how each is written today:
 | `result` | `Observation` | `kind: observation`, `captureKind: result` |
 | `blocker` | `Observation` | `kind: observation`, `captureKind: blocker`; also listed as an open loop in the session's handoff |
 | `handoff` | `Handoff` | `kind: handoff`; text follows the handoff template below |
+| `idea` | `Idea` | `kind: idea`; first line is the idea's title |
 
 `result` and `blocker` are mapped onto `Observation` on purpose: it needs no schema migration, and
 `kind:` search plus the `captureKind` key keeps them findable. Promoting them to first-class event

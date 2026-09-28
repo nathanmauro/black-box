@@ -43,8 +43,8 @@ connection was installed.
 | --- | --- |
 | `search_records` | Canonical lexical event search; stable IDs, 700-character excerpts, dates, source/project/session metadata; limit 1–50; cursor pagination |
 | `fetch_record` | Complete stored event by UUID plus its session project; includes stored metadata/tool data; never reads a filesystem transcript |
-| `project_context` | Verified canonical project group, including aliases; recent decisions/handoffs/observations/projections; limit 1–20 and a 4,000–24,000-character JSON budget |
-| `append_capture` | Explicit observation/decision/handoff; 16,000-character text limit; required stable request key and conversation/group provenance; optional declared voice origin and original cwd |
+| `project_context` | Verified canonical project group, including aliases; recent decisions/handoffs/observations/projections/ideas; limit 1–20 and a 4,000–24,000-character JSON budget |
+| `append_capture` | Explicit observation/decision/handoff/idea; 16,000-character text limit; required stable request key and conversation/group provenance; optional declared voice origin and original cwd |
 
 Search supports the existing `source:`, `kind:`, `project:`, `project_exact:`, `project_group:`, `session:`, `since:`,
 `until:`, and `last:` grammar. Keep the same query with each returned `next_cursor`. A last nonempty

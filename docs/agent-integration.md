@@ -31,17 +31,45 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureHandoff` | Leave context, open loops, and one next action for another agent |
 | `captureObservation` | Record a concise fact or note |
 | `captureProjection` | Capture one to five plausible future paths for the project graph |
-| `recallContext` | Recall Decisions, Handoffs, and Observations lexically or semantically; Projections are lexical-only |
+| `captureIdea` | Capture an idea someone proposed that is not being acted on now (a human's aside or an agent's suggestion) |
+| `recallContext` | Recall Decisions, Handoffs, Observations, and Ideas lexically or semantically; Projections are lexical-only |
 | `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
 | `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
 | `recentSessions` | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn |
 | `localModelStatus` | Inspect the optional local model backend |
 
 Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
-Handoffs require `contextSummary`, Observations require `text`, and Projections require at least one
-path with a title. Missing, null, or blank required fields return an MCP tool error naming the field
-and do not write an event. Correct the named field before retrying. Optional handoff fields such as
-recipient, open loops, and next action retain their existing behavior.
+Handoffs require `contextSummary`, Observations require `text`, Projections require at least one
+path with a title, and Ideas require `title`, `oneLiner`, and `origin`. Missing, null, or blank
+required fields return an MCP tool error naming the field and do not write an event. Correct the
+named field before retrying. Optional handoff fields such as recipient, open loops, and next action
+retain their existing behavior.
+
+### Ideas
+
+An `Idea` records something someone proposed that nobody is acting on now: the human's aside or an
+agent's suggestion that would otherwise vanish into a transcript. Capture it with `captureIdea` or
+`POST /api/ideas`.
+
+- `origin` is `human-aside`, `agent-proposed`, or `joint`; the legacy `nathan-aside` is stored as
+  `human-aside`. `status` is `untouched` (default), `partially-built`, `built-unused`,
+  `superseded`, or `tracked`. `legs` (how much the idea has going for it) is an integer 0–10. Any
+  other value is rejected with a message listing the allowed ones.
+- Captures are append-only. To change an idea's status, capture it again with the same `ideaKey`.
+  The default key is a slug of the repo's last path segment plus the title (for example
+  `sba-agentic-evidence-capture-kind`), so the same idea keys the same way on any checkout.
+- `GET /api/ideas` returns `{items, count}`, newest first, collapsed to the latest event per
+  `ideaKey`, with `revisions`, `firstCapturedAt`, and `migratedFrom`. Filters: `status` (repeatable
+  or comma-separated), `origin`, `project` or `repo` (a project path, alias-aware like the stream's
+  project group), `q` (all terms must appear in the idea's text fields), and `limit` (default 100,
+  clamped to 1–500). `count` is the number of items returned.
+- `recallContext` and `/api/recall` return ideas only when `kinds` includes `idea`; the headline is
+  the title, the rationale is the one-liner, and `nextAction` is the resume step.
+- `POST /api/ideas/migrate-observations` parses Observations whose text starts with `[Idea]`. It is
+  a dry run by default and writes nothing; `?apply=true` captures one `Idea` per candidate (session
+  `idea-migration`, `sourceRef` set to the observation's session, `notes` set to the original body,
+  `migratedFrom` set to the observation id). Re-running skips observations already migrated, and
+  the observations themselves are never changed.
 
 ### Human turns
 
@@ -197,7 +225,7 @@ recallContext({
 ## Recall scope and limits
 
 Core lexical recall needs no model or Elasticsearch. Semantic recall covers Decisions, Handoffs,
-and Observations only. Projections can be recalled lexically; session-summary vectors are stored
+Observations, and Ideas only. Projections can be recalled lexically; session-summary vectors are stored
 for future retrieval but summaries are not returned by recall. The full event corpus is not
 semantically indexed. An unavailable embedder or vector store leaves lexical results available.
 
