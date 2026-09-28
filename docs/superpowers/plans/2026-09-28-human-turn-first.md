@@ -1,6 +1,7 @@
 # Human turn first
 
-**Status:** in progress, prototype mode, branch `claude/human-turn-first`.
+**Status:** built and verified on branch `claude/human-turn-first`, not merged or deployed.
+Linear: NAT-225.
 
 **Origin:** hunting for a forgotten one-line aside across every transcript showed that Black Box
 leads with the wrong thing. Session titles such as `<system-reminder>`, `claude RawText`, and
@@ -104,3 +105,41 @@ versions the rules: bumping it reclassifies stored rows on the next start.
   database, never the live service or the live database. Hit REST and MCP with `humanOnly`, then
   open the UI. Acceptance: a real one-line aside from a noisy recent session appears within
   seconds of flipping the toggle.
+
+## Observed results (2026-09-28)
+
+- **Classifier:** `HumanTurnsTest` has 20 tests.
+- **Backend:** the full suite passed after integration. The broken combination was the
+  meaningful filter plus `humanOnly`. The meaningful predicate has no prompt clause, so the UI's
+  always-on `meaningful=true` returned an empty human feed. Now `humanOnly` supersedes it, and
+  `AgenticControllerTest` pins the combination.
+- **Frontend:** 625 vitest tests pass and `npm run check` is clean. The full Playwright suite
+  (25 tests, including `human-turns.spec.ts`) passed against the packaged jar. It left the port 8766
+  listener unchanged.
+- **Real-data run:** the packaged jar ran on a spare port against a consistent backup of the local
+  6.2 GB database, with Elasticsearch, summaries, embeddings, and the local model disabled.
+  - **First start:** reclassification changed 5,546 events. It gave 1,552 sessions a first human
+    turn and applied 35 human titles; AI titles were untouched. It added about 17 s to that one
+    start, including the column and index migration.
+  - **Second start:** 2.1 s, with no reclassification.
+- **Acceptance:**
+  - The global human stream returned in 73 ms.
+  - The session where this idea came up has 493 events (488 tool calls) and renders as three human
+    turns.
+  - In the browser, the aside "oh wow.. I did get a great idea for black box…" appeared right after
+    pressing `H`. No `<task-notification>` rows showed. The toggle persisted across a reload and did
+    not fire while typing in an input.
+- **MCP:** `searchSessions` with `humanOnly: true` moved the aside from fourth, behind tool
+  output, to first. `recentSessions` returns `firstHumanTurn`.
+- **Live ingest:** a `<system-reminder>`-wrapped prompt was stored with its raw `text` unchanged.
+  Its `humanText` is cleaned and becomes the session title. A task-notification prompt stays out of
+  the human stream.
+
+## Known limits and next steps
+
+- Short agent-written prompts sent to headless sessions ("Review Task 6…", "Answer this for Nathan…")
+  still classify as human. Candidates for the next rule version are a session-level headless
+  signal from hook metadata, if one exists, and deduplicating `/loop` re-fires.
+- Voice tail flushes can repeat a user line that an earlier delegation already carried.
+- The first start after upgrading a large database blocks startup for the one-time
+  reclassification. If that matters, move it to a background task.
