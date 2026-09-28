@@ -676,7 +676,7 @@ class ContextServiceHybridRecallTest {
     private record StaticEventReader(List<AgentEvent> events, String cwd) implements MemoryEventReader {
 
         @Override
-        public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
+        public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit, boolean humanOnly) {
 
             return List.of();
         }
@@ -721,7 +721,7 @@ class ContextServiceHybridRecallTest {
     private record SingleEventReader(AgentEvent event, String cwd) implements MemoryEventReader {
 
         @Override
-        public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
+        public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit, boolean humanOnly) {
 
             return List.of();
         }

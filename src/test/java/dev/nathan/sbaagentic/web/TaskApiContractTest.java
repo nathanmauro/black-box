@@ -766,8 +766,8 @@ class TaskApiContractTest {
                 .containsAll(TASK_TOOLS)
                 .contains("searchContext");
 
-        Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class);
-        Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class);
+        Method recent = MemoryMcpTools.class.getMethod("recentSessions", Integer.class, Boolean.class);
+        Method search = MemoryMcpTools.class.getMethod("searchSessions", String.class, Integer.class, Boolean.class);
         Method recall = MemoryMcpTools.class.getMethod(
                 "recallContext",
                 String.class,

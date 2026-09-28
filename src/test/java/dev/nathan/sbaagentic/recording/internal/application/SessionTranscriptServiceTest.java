@@ -61,7 +61,7 @@ class SessionTranscriptServiceTest {
         when(repository.transcriptPathsForSession("session-1")).thenReturn(List.of("known.jsonl"));
         when(repository.conversationEventsForSession("session-1"))
                 .thenReturn(List.of(event("prompt-1", "UserPromptSubmit", "user", "Show it", "2026-08-30T12:00:00Z")));
-        when(repository.feedForSession("session-1", "session:other", null, 10))
+        when(repository.feedForSession("session-1", "session:other", null, 10, false))
                 .thenReturn(new EventFeedResponse(
                         10,
                         2,
@@ -87,7 +87,7 @@ class SessionTranscriptServiceTest {
 
         assertThat(result.available()).isTrue();
         assertThat(result.events()).extracting(AgentEvent::id).containsExactly("tx:assistant", "tool-1", "prompt-1");
-        verify(repository).feedForSession("session-1", "session:other", null, 10);
+        verify(repository).feedForSession("session-1", "session:other", null, 10, false);
     }
 
     @Test
@@ -96,7 +96,7 @@ class SessionTranscriptServiceTest {
         when(repository.transcriptPathsForSession("session-1")).thenReturn(List.of());
         when(repository.conversationEventsForSession("session-1")).thenReturn(List.of());
         String before = "2026-08-30T12:03:00Z|cursor";
-        when(repository.feedForSession("session-1", "missing answer", before, 5))
+        when(repository.feedForSession("session-1", "missing answer", before, 5, false))
                 .thenReturn(new EventFeedResponse(5, 0, List.of(), null));
         when(messageSource.read(session, List.of()))
                 .thenReturn(new TranscriptRead(
@@ -149,7 +149,7 @@ class SessionTranscriptServiceTest {
                                 "assistant",
                                 "Same answer",
                                 "2026-08-30T12:03:00Z"))));
-        when(repository.feedForSession("session-1", null, null, 1))
+        when(repository.feedForSession("session-1", null, null, 1, false))
                 .thenReturn(new EventFeedResponse(
                         1,
                         1,
@@ -160,7 +160,7 @@ class SessionTranscriptServiceTest {
         assertThat(first.events()).extracting(AgentEvent::id).containsExactly("tool-1");
         assertThat(first.nextBefore()).isEqualTo("2026-08-30T12:02:30Z|tool-1");
 
-        when(repository.feedForSession("session-1", null, first.nextBefore(), 1))
+        when(repository.feedForSession("session-1", null, first.nextBefore(), 1, false))
                 .thenReturn(new EventFeedResponse(
                         1,
                         1,
@@ -224,7 +224,7 @@ class SessionTranscriptServiceTest {
                 Instant.parse("2026-08-30T12:02:00Z"),
                 "/tmp/project",
                 "Session");
-        when(repository.feedForSession("session-1", null, null, 100))
+        when(repository.feedForSession("session-1", null, null, 100, false))
                 .thenReturn(new EventFeedResponse(100, 2, List.of(duplicate, distinct), null));
 
         SessionTranscriptResponse response = service.transcript("session-1", null, null, 100);

@@ -252,7 +252,8 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.count").value(2))
                 .andExpect(jsonPath("$.items.length()").value(2))
                 .andExpect(jsonPath("$.items[0].cwd").value("/tmp/" + key))
-                .andExpect(jsonPath("$.items[0].sessionTitle").value("Feed noise"))
+                // A human prompt titles its session with what the human said, over a client-supplied title.
+                .andExpect(jsonPath("$.items[0].sessionTitle").value("HTTP feed noise " + key))
                 .andExpect(jsonPath("$.items[0].id").isNotEmpty());
 
         mockMvc.perform(get("/api/events").param("q", key).param("meaningful", "true"))
@@ -1272,5 +1273,81 @@ class AgenticControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.clientSessionId == 'lineage-parent:agent-1')].spawnedBy")
                         .value(hasItem("lineage-parent")));
+    }
+
+    @Test
+    void humanOnlyParameterFiltersEveryReadSurface() throws Exception {
+        String key = "human" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String humanSession =
+                postEvent(key + "-h", "UserPromptSubmit", "user", "aside about " + key, "2019-01-03T12:00:00Z");
+        postEvent(key + "-h", "PostToolUse", "tool", "tool mentions " + key, "2019-01-03T12:00:01Z");
+        postEvent(
+                key + "-m",
+                "UserPromptSubmit",
+                "user",
+                "<task-notification>" + key + "</task-notification>",
+                "2019-01-03T12:00:02Z");
+
+        mockMvc.perform(get("/api/events").param("q", key))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(3));
+        mockMvc.perform(get("/api/events").param("q", key).param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items[0].humanText").value("aside about " + key))
+                .andExpect(jsonPath("$.items[0].text").value("aside about " + key));
+        mockMvc.perform(get("/api/events/facets").param("q", key).param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
+        mockMvc.perform(get("/api/events/facets").param("q", key))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3));
+        mockMvc.perform(get("/api/sessions/" + humanSession + "/events").param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].humanText").value("aside about " + key));
+        mockMvc.perform(get("/api/sessions/" + humanSession + "/events"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+        mockMvc.perform(get("/api/sessions/" + humanSession + "/transcript").param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.events[0].humanText").value("aside about " + key));
+        mockMvc.perform(get("/api/sessions").param("limit", "250").param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.clientSessionId == '" + key + "-h')].firstHumanTurn")
+                        .value(hasItem("aside about " + key)))
+                .andExpect(
+                        jsonPath("$[?(@.clientSessionId == '" + key + "-m')]").isEmpty());
+        mockMvc.perform(get("/api/sessions").param("limit", "250"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.clientSessionId == '" + key + "-m')].firstHumanTurn")
+                        .value(hasItem(org.hamcrest.Matchers.nullValue())));
+        mockMvc.perform(get("/api/search").param("q", key).param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.local.length()").value(1))
+                .andExpect(jsonPath("$.local[0].humanText").value("aside about " + key));
+        mockMvc.perform(get("/api/search").param("q", key))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.local.length()").value(3));
+    }
+
+    private String postEvent(String client, String type, String role, String text, String at) throws Exception {
+        String body = objectMapper.writeValueAsString(Map.of(
+                "source", "claude",
+                "clientSessionId", client,
+                "eventType", type,
+                "role", role,
+                "text", text,
+                "observedAt", at));
+        String response = mockMvc.perform(post("/api/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        return objectMapper.readTree(response).path("sessionId").asText();
     }
 }

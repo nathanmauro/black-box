@@ -33,8 +33,8 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureProjection` | Capture one to five plausible future paths for the project graph |
 | `recallContext` | Recall Decisions, Handoffs, and Observations lexically or semantically; Projections are lexical-only |
 | `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
-| `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size |
-| `recentSessions` | List recent agent sessions |
+| `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
+| `recentSessions` | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn |
 | `localModelStatus` | Inspect the optional local model backend |
 
 Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
@@ -42,6 +42,29 @@ Handoffs require `contextSummary`, Observations require `text`, and Projections 
 path with a title. Missing, null, or blank required fields return an MCP tool error naming the field
 and do not write an event. Correct the named field before retrying. Optional handoff fields such as
 recipient, open loops, and next action retain their existing behavior.
+
+### Human turns
+
+Prompt hooks fire for far more than human input (background-task notifications, relayed subagent
+reports, automation prompts), so Black Box classifies each prompt event when it is captured.
+`HumanTurns` is the single rule set: it strips harness blocks such as `<system-reminder>` and
+`<task-notification>`, unwraps typed slash commands, and rejects known automation prompt shapes.
+The result is stored beside the event, never in place of it:
+
+- Events carry `humanText` (`agent_events.human_text`): the cleaned text of a human turn, else
+  `null`. The stored `text` is unchanged.
+- Sessions carry `firstHumanTurn` (`agent_sessions.first_human_turn`): the earliest human turn.
+  A human turn also titles its session (`TitleRank.HUMAN`), above fallback, tool, text and
+  client-supplied titles but below an AI summary title.
+- `humanOnly=true` (default `false`) narrows `GET /api/events`, `/api/events/facets`,
+  `/api/sessions` (only sessions with a human turn), `/api/sessions/{id}/events`,
+  `/api/sessions/{id}/transcript` (recorded human turns only; transcript-file messages are not
+  classified) and `/api/search` (local index only; Elasticsearch is skipped). MCP
+  `recentSessions` and `searchSessions` take the same `humanOnly` argument.
+- Classification is heuristic: an unrecognized automation prompt, or a short agent-written brief
+  sent to a headless session, can still classify as human. Bumping `HumanTurns.VERSION`
+  reclassifies stored rows on the next start (`human_turn_state` records the applied version).
+  Semantic recall does not index human turns.
 
 ### Bounded evidence discovery
 

@@ -23,8 +23,9 @@ public class SessionTranscriptController {
             @PathVariable String sessionId,
             @RequestParam(required = false, name = "q") String query,
             @RequestParam(required = false) String before,
-            @RequestParam(defaultValue = "100") int limit) {
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
 
-        return transcripts.transcript(sessionId, query, before, Math.max(1, Math.min(limit, 250)));
+        return transcripts.transcript(sessionId, query, before, Math.max(1, Math.min(limit, 250)), humanOnly);
     }
 }

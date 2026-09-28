@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.search;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -29,7 +30,8 @@ class SearchServiceTest {
         SearchIndex elastic = mock(SearchIndex.class);
         ProjectScopeOperations projectScopes = mock(ProjectScopeOperations.class);
         when(projectScopes.scopesFor(anyString())).thenReturn(List.of("/project"));
-        when(repository.searchEvents(anyString(), anyList(), anyInt())).thenReturn(List.<AgentEvent>of());
+        when(repository.searchEvents(anyString(), anyList(), anyInt(), anyBoolean()))
+                .thenReturn(List.<AgentEvent>of());
         when(elastic.health()).thenReturn(new ElasticHealth(true, true, "sba-agentic-events", "reachable"));
         SearchService service = new SearchService(repository, elastic, projectScopes);
 
@@ -47,12 +49,16 @@ class SearchServiceTest {
         assertThat(timed.elastic()).isEmpty();
         verify(repository)
                 .searchEvents(
-                        "kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of(), 25);
+                        "kind:Decision project_exact:\"/Users/nathan/Developer/proj/sba-agentic\"",
+                        List.of(),
+                        25,
+                        false);
         verify(repository)
-                .searchEvents("project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of("/project"), 25);
-        verify(repository).searchEvents("NOT kind:PostToolUse project:sba-agentic", List.of(), 25);
-        verify(repository).searchEvents("session:abc failing", List.of(), 25);
-        verify(repository).searchEvents("since:2026-08-01 deploy", List.of(), 25);
+                .searchEvents(
+                        "project_group:\"/Users/nathan/Developer/proj/sba-agentic\"", List.of("/project"), 25, false);
+        verify(repository).searchEvents("NOT kind:PostToolUse project:sba-agentic", List.of(), 25, false);
+        verify(repository).searchEvents("session:abc failing", List.of(), 25, false);
+        verify(repository).searchEvents("since:2026-08-01 deploy", List.of(), 25, false);
         verify(elastic, times(5)).health();
         verifyNoMoreInteractions(elastic);
     }
@@ -62,7 +68,8 @@ class SearchServiceTest {
         MemoryEventReader repository = mock(MemoryEventReader.class);
         SearchIndex elastic = mock(SearchIndex.class);
         ProjectScopeOperations projectScopes = mock(ProjectScopeOperations.class);
-        when(repository.searchEvents(anyString(), anyList(), anyInt())).thenReturn(List.<AgentEvent>of());
+        when(repository.searchEvents(anyString(), anyList(), anyInt(), anyBoolean()))
+                .thenReturn(List.<AgentEvent>of());
         when(elastic.search("recall bug", 10)).thenReturn(List.of(Map.of("id", "event-1")));
         when(elastic.health()).thenReturn(new ElasticHealth(true, true, "sba-agentic-events", "reachable"));
         SearchService service = new SearchService(repository, elastic, projectScopes);
@@ -70,7 +77,7 @@ class SearchServiceTest {
         SearchResponse response = service.search("recall bug", 10);
 
         assertThat(response.elastic()).containsExactly(Map.of("id", "event-1"));
-        verify(repository).searchEvents("recall bug", List.of(), 10);
+        verify(repository).searchEvents("recall bug", List.of(), 10, false);
         verify(elastic).search("recall bug", 10);
         verify(elastic).health();
         verifyNoMoreInteractions(elastic);

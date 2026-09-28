@@ -44,12 +44,13 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
     }
 
     @Override
-    public SessionTranscriptResponse transcript(String sessionId, String query, String before, int limit) {
+    public SessionTranscriptResponse transcript(
+            String sessionId, String query, String before, int limit, boolean humanOnly) {
         AgentSession session = repository
                 .findSessionById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found"));
         int safeLimit = Math.max(1, Math.min(limit, 250));
-        EventFeedResponse recorded = repository.feedForSession(sessionId, query, before, safeLimit);
+        EventFeedResponse recorded = repository.feedForSession(sessionId, query, before, safeLimit, humanOnly);
         TranscriptRead transcript = messageSource.read(session, repository.transcriptPathsForSession(sessionId));
         List<AgentEvent> recordedConversation =
                 transcript.messages().isEmpty() ? List.of() : repository.conversationEventsForSession(sessionId);
@@ -60,7 +61,8 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         for (EventFeedItem item : recorded.items()) {
             combined.add(toEvent(item));
         }
-        for (AgentEvent message : transcript.messages()) {
+        // Transcript-file messages carry no human classification, so a human-only view omits them.
+        for (AgentEvent message : humanOnly ? List.<AgentEvent>of() : transcript.messages()) {
             if (isBefore(message, cursor)
                     && matches(message, session, parsedQuery)
                     && recordedConversation.stream().noneMatch(recordedEvent -> duplicates(recordedEvent, message))) {
@@ -246,7 +248,8 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
                 item.toolInputJson(),
                 item.toolOutputJson(),
                 metadata,
-                item.observedAt());
+                item.observedAt(),
+                item.humanText());
     }
 
     private static Map<String, Object> withoutRawHook(Map<String, Object> metadata) {

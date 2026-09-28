@@ -18,4 +18,42 @@ public record EventFeedItem(
         Map<String, Object> metadata,
         Instant observedAt,
         String cwd,
-        String sessionTitle) {}
+        String sessionTitle,
+        String humanText) {
+
+    /** Convenience for callers that do not classify human turns ({@code humanText} is {@code null}). */
+    public EventFeedItem(
+            String id,
+            String sessionId,
+            String source,
+            String clientSessionId,
+            String turnId,
+            String eventType,
+            String role,
+            String text,
+            String toolName,
+            String toolInputJson,
+            String toolOutputJson,
+            Map<String, Object> metadata,
+            Instant observedAt,
+            String cwd,
+            String sessionTitle) {
+        this(
+                id,
+                sessionId,
+                source,
+                clientSessionId,
+                turnId,
+                eventType,
+                role,
+                text,
+                toolName,
+                toolInputJson,
+                toolOutputJson,
+                metadata,
+                observedAt,
+                cwd,
+                sessionTitle,
+                null);
+    }
+}

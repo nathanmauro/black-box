@@ -105,23 +105,37 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
         return RecallResultClamp.normalizeMaxChars(maxChars);
     }
 
-    @Tool(description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input.")
+    @Tool(
+            description = "List recent local agent sessions captured from Claude Code, Codex, or manual CLI input. "
+                    + "Each session carries firstHumanTurn: the first thing the human actually said "
+                    + "(harness boilerplate removed; null when the session has no classified human turn). "
+                    + "Classification is heuristic.")
     public List<AgentSession> recentSessions(
             @ToolParam(required = false, description = "Maximum number of sessions to return. Omit for 10.")
-                    Integer limit) {
+                    Integer limit,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "true = only sessions that contain a human turn (firstHumanTurn is set). Omit or false for all sessions.")
+                    Boolean humanOnly) {
 
-        return recordingCatalog.recentSessions(clampLimit(limit));
+        return recordingCatalog.recentSessions(clampLimit(limit), false, Boolean.TRUE.equals(humanOnly));
     }
 
     @Tool(
             description =
-                    "Raw diagnostic search of captured events. Results include full tool/metadata payloads; limit bounds rows only. Prefer searchContext for bounded discovery, recallContext for structured intent.")
+                    "Raw diagnostic search of captured events. Results include full tool/metadata payloads; limit bounds rows only. Prefer searchContext for bounded discovery, recallContext for structured intent. Events carry humanText: the human's words for classified human turns, else null.")
     public SearchResponse searchSessions(
             @ToolParam(description = "Search query text.") String query,
             @ToolParam(required = false, description = "Maximum number of results to return. Omit for 10.")
-                    Integer limit) {
+                    Integer limit,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "true = match only the human's own turns, with harness boilerplate removed (local index only, no Elasticsearch). Omit or false to search everything.")
+                    Boolean humanOnly) {
 
-        return memorySearch.search(query, clampLimit(limit));
+        return memorySearch.search(query, clampLimit(limit), Boolean.TRUE.equals(humanOnly));
     }
 
     @Tool(

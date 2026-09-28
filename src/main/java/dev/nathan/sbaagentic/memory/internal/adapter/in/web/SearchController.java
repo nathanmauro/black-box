@@ -20,9 +20,12 @@ public class SearchController {
     }
 
     @GetMapping("/search")
-    public SearchResponse search(@RequestParam String q, @RequestParam(defaultValue = "25") int limit) {
+    public SearchResponse search(
+            @RequestParam String q,
+            @RequestParam(defaultValue = "25") int limit,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
 
-        return searchService.search(q, safeLimit(limit));
+        return searchService.search(q, safeLimit(limit), humanOnly);
     }
 
     @GetMapping("/search/fields")

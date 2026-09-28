@@ -11,8 +11,8 @@
   {"name":"listTasks","required":[],"properties":{"lane":{"type":"string"},"limit":{"type":"integer"},"projectKey":{"type":"string"},"status":{"type":"string"}}},
   {"name":"localModelStatus","required":[],"properties":{}},
   {"name":"recallContext","required":["repoOrTopic"],"properties":{"kinds":{"type":"array","items":{"type":"string"}},"limit":{"type":"integer"},"maxChars":{"type":"integer"},"repoOrTopic":{"type":"string"},"telemetryClient":{"type":"string"},"telemetryProject":{"type":"string"},"telemetryPurpose":{"type":"string"},"withinHours":{"type":"integer"}}},
-  {"name":"recentSessions","required":[],"properties":{"limit":{"type":"integer"}}},
+  {"name":"recentSessions","required":[],"properties":{"humanOnly":{"type":"boolean"},"limit":{"type":"integer"}}},
   {"name":"searchContext","required":["query"],"properties":{"excludeSession":{"type":"string"},"groupSimilar":{"type":"boolean"},"limit":{"type":"integer"},"maxBytes":{"type":"integer"},"query":{"type":"string"}}},
-  {"name":"searchSessions","required":["query"],"properties":{"limit":{"type":"integer"},"query":{"type":"string"}}},
+  {"name":"searchSessions","required":["query"],"properties":{"humanOnly":{"type":"boolean"},"limit":{"type":"integer"},"query":{"type":"string"}}},
   {"name":"updateTaskStatus","required":["actor","status","taskId"],"properties":{"actor":{"type":"string"},"blockedReason":{"type":"string"},"status":{"type":"string"},"taskId":{"type":"string"}}}
 ]

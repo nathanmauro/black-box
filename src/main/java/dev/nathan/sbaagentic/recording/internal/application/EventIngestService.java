@@ -4,6 +4,7 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.EventTypes;
+import dev.nathan.sbaagentic.recording.HumanTurns;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.IngestResponse;
@@ -165,14 +166,23 @@ public class EventIngestService implements EventRecorder {
     }
 
     private TitleCandidate titleFor(EventIngestRequest request) {
+        // A human turn leads the session: it outranks fallback, tool, text, and explicit titles.
+        var humanText = HumanTurns.extract(request.eventType(), request.text());
+        if (humanText.isPresent()) {
+
+            return new TitleCandidate(Titles.sanitize(Titles.firstLine(humanText.get())), TitleRank.HUMAN);
+        }
         Object title = request.metadata().get("title");
         if (title instanceof String value && !value.isBlank()) {
 
             return new TitleCandidate(Titles.sanitize(value), TitleRank.EXPLICIT);
         }
-        if (request.text() != null && !request.text().isBlank()) {
+        // Harness boilerplate (<system-reminder>, task notifications, ...) must not become a title;
+        // a blank remainder falls through to the tool/fallback rules.
+        String cleaned = request.text() == null ? null : HumanTurns.stripBoilerplate(request.text());
+        if (cleaned != null && !cleaned.isBlank()) {
 
-            return new TitleCandidate(Titles.sanitize(Titles.firstLine(request.text())), TitleRank.TEXT);
+            return new TitleCandidate(Titles.sanitize(Titles.firstLine(cleaned)), TitleRank.TEXT);
         }
         if (request.toolName() != null && !request.toolName().isBlank()) {
 

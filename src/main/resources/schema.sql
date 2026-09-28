@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     last_seen_at TEXT NOT NULL,
     event_count INTEGER NOT NULL DEFAULT 0,
     spawned_by TEXT,
+    first_human_turn TEXT,
     UNIQUE (source, client_session_id)
 );
 
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS agent_events (
     tool_output_json TEXT,
     metadata_json TEXT,
     observed_at TEXT NOT NULL,
+    human_text TEXT,
     FOREIGN KEY (session_id) REFERENCES agent_sessions(id)
 );
 
@@ -56,6 +58,16 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_source_type
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_tool_observed
     ON agent_events (tool_name, observed_at DESC);
+
+-- idx_agent_events_human (human_text is added to pre-existing databases in
+-- RecordingSqlStore.ensureSchema, which also creates that partial index).
+
+-- Classifier version the stored human_text/first_human_turn were derived under (HumanTurns.VERSION).
+CREATE TABLE IF NOT EXISTS human_turn_state (
+    id INTEGER PRIMARY KEY,
+    version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
 
 -- Reserved and bound in the same event transaction; no raw original request is retained.
 CREATE TABLE IF NOT EXISTS event_capture_receipts (

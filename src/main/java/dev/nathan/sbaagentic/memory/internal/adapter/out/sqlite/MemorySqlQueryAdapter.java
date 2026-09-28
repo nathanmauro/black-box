@@ -55,7 +55,21 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
     @Override
     public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
 
-        return searchProjection(EventQuery.parse(query), projectScopes, limit, clock, null, false, this::mapEvent);
+        return searchEvents(query, projectScopes, limit, false);
+    }
+
+    @Override
+    public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit, boolean humanOnly) {
+
+        return searchProjection(
+                EventQuery.parse(query),
+                projectScopes,
+                limit,
+                clock,
+                null,
+                false,
+                humanOnly,
+                this::mapEventWithHumanText);
     }
 
     @Override
@@ -69,6 +83,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                 requestClock,
                 excludeSession,
                 true,
+                false,
                 (rs, row) -> new Candidate(
                         rs.getString("id"),
                         rs.getString("session_id"),
@@ -87,6 +102,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             Clock requestClock,
             String excludeSession,
             boolean compact,
+            boolean humanOnly,
             RowMapper<T> mapper) {
         String projection = compact
                 ? "SELECT substr(e.id,1,257) AS id, substr(e.session_id,1,257) AS session_id, "
@@ -95,7 +111,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                         + "substr(e.observed_at,1,64) AS observed_at, substr(e.text,1,601) AS text\n"
                 : "SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, "
                         + "e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, "
-                        + "e.observed_at\n";
+                        + "e.observed_at, e.human_text\n";
         if (!facets.hasAnyFacet()) {
             // Facetless legacy path: free text still sweeps the wider column set (event_type and
             // source included), but terms now AND per-term instead of matching one joined phrase.
@@ -104,6 +120,9 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                     .append(projection)
                     .append("  FROM agent_events e\n")
                     .append(" WHERE 1=1\n");
+            if (humanOnly) {
+                sql.append("   AND e.human_text IS NOT NULL\n");
+            }
             for (String term : facets.freeTerms()) {
                 String like = "%" + term.toLowerCase() + "%";
                 sql.append("   AND (lower(coalesce(text, '')) LIKE ?")
@@ -136,6 +155,9 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
         }
         sql.append(" WHERE 1=1\n");
+        if (humanOnly) {
+            sql.append("   AND e.human_text IS NOT NULL\n");
+        }
         appendInList(sql, args, "lower(e.source)", facets.values(Field.SOURCE), false);
         appendInList(sql, args, "lower(e.event_type)", facets.values(Field.KIND), false);
         appendInList(sql, args, "lower(coalesce(e.tool_name, ''))", facets.values(Field.TOOL), false);
@@ -363,6 +385,26 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                 rs.getString("tool_output_json"),
                 fromJsonMap(rs.getString("metadata_json")),
                 Instant.parse(rs.getString("observed_at")));
+    }
+
+    private AgentEvent mapEventWithHumanText(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        AgentEvent event = mapEvent(rs, rowNum);
+
+        return new AgentEvent(
+                event.id(),
+                event.sessionId(),
+                event.source(),
+                event.clientSessionId(),
+                event.turnId(),
+                event.eventType(),
+                event.role(),
+                event.text(),
+                event.toolName(),
+                event.toolInputJson(),
+                event.toolOutputJson(),
+                event.metadata(),
+                event.observedAt(),
+                rs.getString("human_text"));
     }
 
     private Map<String, Object> fromJsonMap(String json) {

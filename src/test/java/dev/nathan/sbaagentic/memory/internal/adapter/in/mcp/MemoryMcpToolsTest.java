@@ -165,21 +165,40 @@ class MemoryMcpToolsTest {
 
     @Test
     void recentSessionsWithoutLimitDefaultsToTen() {
-        when(recordingCatalog.recentSessions(10)).thenReturn(List.of());
+        when(recordingCatalog.recentSessions(10, false, false)).thenReturn(List.of());
 
         callback("recentSessions").call("{}");
 
-        verify(recordingCatalog).recentSessions(10);
+        verify(recordingCatalog).recentSessions(10, false, false);
+    }
+
+    @Test
+    void recentSessionsPassesHumanOnly() {
+        when(recordingCatalog.recentSessions(5, false, true)).thenReturn(List.of());
+
+        callback("recentSessions").call("{\"limit\":5,\"humanOnly\":true}");
+
+        verify(recordingCatalog).recentSessions(5, false, true);
     }
 
     @Test
     void searchSessionsWithoutLimitDefaultsToTen() {
-        when(memorySearch.search("jar swap", 10))
+        when(memorySearch.search("jar swap", 10, false))
                 .thenReturn(new SearchResponse("jar swap", List.of(), List.of(), null));
 
         callback("searchSessions").call("{\"query\":\"jar swap\"}");
 
-        verify(memorySearch).search("jar swap", 10);
+        verify(memorySearch).search("jar swap", 10, false);
+    }
+
+    @Test
+    void searchSessionsPassesHumanOnly() {
+        when(memorySearch.search("jar swap", 3, true))
+                .thenReturn(new SearchResponse("jar swap", List.of(), List.of(), null));
+
+        callback("searchSessions").call("{\"query\":\"jar swap\",\"limit\":3,\"humanOnly\":true}");
+
+        verify(memorySearch).search("jar swap", 3, true);
     }
 
     @Test

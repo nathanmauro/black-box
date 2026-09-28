@@ -13,6 +13,13 @@ public final class TitleRank {
     /** Title built from a tool event: {@code toolName + " via " + eventType}. */
     public static final int TOOL = 2;
 
+    /**
+     * Title taken from the first line of a session's first human turn (see {@code HumanTurns}). It
+     * outranks fallback, tool, text-derived, and client-explicit titles so a session leads with
+     * what the human said, but stays below {@link #LEGACY} and {@link #AI}.
+     */
+    public static final int HUMAN = 5;
+
     /** Title derived from the first line of an event's text. */
     public static final int TEXT = 3;
 

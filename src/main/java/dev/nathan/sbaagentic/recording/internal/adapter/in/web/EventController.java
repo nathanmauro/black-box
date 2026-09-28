@@ -56,13 +56,14 @@ public class EventController {
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(required = false) String before,
             @RequestParam(required = false) String since,
-            @RequestParam(defaultValue = "false") boolean meaningful) {
+            @RequestParam(defaultValue = "false") boolean meaningful,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
         List<String> scopes = EventQuery.parse(q).projectGroups().stream()
                 .flatMap(group -> projectScopes.scopesFor(group).stream())
                 .distinct()
                 .toList();
 
-        return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit));
+        return repository.feed(q, meaningful, before, since, scopes, safeEventLimit(limit), humanOnly);
     }
 
     /**
@@ -72,13 +73,15 @@ public class EventController {
      */
     @GetMapping("/events/facets")
     public EventFacetCounts eventFacets(
-            @RequestParam(required = false) String q, @RequestParam(defaultValue = "false") boolean meaningful) {
+            @RequestParam(required = false) String q,
+            @RequestParam(defaultValue = "false") boolean meaningful,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
         List<String> scopes = EventQuery.parse(q).projectGroups().stream()
                 .flatMap(group -> projectScopes.scopesFor(group).stream())
                 .distinct()
                 .toList();
 
-        return repository.facetCounts(q, meaningful, scopes);
+        return repository.facetCounts(q, meaningful, scopes, humanOnly);
     }
 
     @GetMapping("/events/{id}")
@@ -90,9 +93,10 @@ public class EventController {
     @GetMapping("/sessions")
     public List<AgentSession> sessions(
             @RequestParam(defaultValue = "25") int limit,
-            @RequestParam(defaultValue = "false") boolean includeChildren) {
+            @RequestParam(defaultValue = "false") boolean includeChildren,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
 
-        return repository.recentSessions(safeLimit(limit), includeChildren);
+        return repository.recentSessions(safeLimit(limit), includeChildren, humanOnly);
     }
 
     @GetMapping("/sessions/{sessionId}")
@@ -102,9 +106,12 @@ public class EventController {
     }
 
     @GetMapping("/sessions/{sessionId}/events")
-    public List<AgentEvent> events(@PathVariable String sessionId, @RequestParam(defaultValue = "100") int limit) {
+    public List<AgentEvent> events(
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
 
-        return repository.eventsForSession(sessionId, safeEventLimit(limit));
+        return repository.eventsForSession(sessionId, safeEventLimit(limit), humanOnly);
     }
 
     private static int safeLimit(int limit) {

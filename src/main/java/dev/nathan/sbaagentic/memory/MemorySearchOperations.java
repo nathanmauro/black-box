@@ -5,7 +5,13 @@ import java.util.Map;
 
 public interface MemorySearchOperations {
 
-    SearchResponse search(String query, int limit);
+    default SearchResponse search(String query, int limit) {
+
+        return search(query, limit, false);
+    }
+
+    /** {@code humanOnly} matches only the human's own turns and skips the Elasticsearch leg. */
+    SearchResponse search(String query, int limit, boolean humanOnly);
 
     List<Map<String, Object>> fields();
 

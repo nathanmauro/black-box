@@ -74,7 +74,8 @@ public class SearchService implements MemorySearchOperations {
         this.projectScopes = projectScopes;
     }
 
-    public SearchResponse search(String query, int limit) {
+    @Override
+    public SearchResponse search(String query, int limit, boolean humanOnly) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         EventQuery facets = EventQuery.parse(query);
         List<String> scopes = facets.projectGroups().stream()
@@ -84,8 +85,8 @@ public class SearchService implements MemorySearchOperations {
 
         return new SearchResponse(
                 query,
-                repository.searchEvents(query, scopes, safeLimit),
-                elasticSearchAllowed(facets) ? elasticIndexClient.search(query, safeLimit) : List.of(),
+                repository.searchEvents(query, scopes, safeLimit, humanOnly),
+                !humanOnly && elasticSearchAllowed(facets) ? elasticIndexClient.search(query, safeLimit) : List.of(),
                 elasticIndexClient.health());
     }
 

@@ -14,6 +14,7 @@ import dev.nathan.sbaagentic.recording.EventFeedItem;
 import dev.nathan.sbaagentic.recording.EventFeedResponse;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventTypes;
+import dev.nathan.sbaagentic.recording.HumanTurns;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
@@ -126,6 +127,27 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         if (!hasSpawnedBy) {
             jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN spawned_by TEXT");
         }
+        boolean hasFirstHumanTurn = columns.stream()
+                .anyMatch(column -> "first_human_turn".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasFirstHumanTurn) {
+            jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN first_human_turn TEXT");
+        }
+        List<Map<String, Object>> eventColumns = jdbcTemplate.queryForList("PRAGMA table_info(agent_events)");
+        if (eventColumns.isEmpty()) {
+
+            return;
+        }
+        boolean hasHumanText = eventColumns.stream()
+                .anyMatch(column -> "human_text".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasHumanText) {
+            jdbcTemplate.execute("ALTER TABLE agent_events ADD COLUMN human_text TEXT");
+        }
+        // Created here, not in schema.sql, because schema.sql runs before the column exists on an
+        // upgraded database.
+        jdbcTemplate.execute("""
+                CREATE INDEX IF NOT EXISTS idx_agent_events_human
+                    ON agent_events (observed_at DESC, id DESC) WHERE human_text IS NOT NULL
+                """);
     }
 
     /**
@@ -211,12 +233,14 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         jdbcTemplate.update(
                 """
                 INSERT INTO agent_sessions (
-                    id, source, client_session_id, title, title_rank, cwd, spawned_by, started_at, last_seen_at, event_count
+                    id, source, client_session_id, title, title_rank, cwd, spawned_by, started_at, last_seen_at, event_count,
+                    first_human_turn
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 ON CONFLICT (source, client_session_id) DO UPDATE SET
                     cwd = COALESCE(excluded.cwd, agent_sessions.cwd),
                     spawned_by = COALESCE(agent_sessions.spawned_by, excluded.spawned_by),
+                    first_human_turn = COALESCE(agent_sessions.first_human_turn, excluded.first_human_turn),
                     title = CASE WHEN excluded.title_rank > agent_sessions.title_rank
                                  THEN excluded.title ELSE agent_sessions.title END,
                     title_rank = CASE WHEN excluded.title_rank > agent_sessions.title_rank
@@ -230,7 +254,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 blankToNull(request.cwd()),
                 spawnedBy,
                 observedAt.toString(),
-                observedAt.toString());
+                observedAt.toString(),
+                HumanTurns.extract(request.eventType(), blankToNull(request.text()))
+                        .orElse(null));
 
         return findSession(request.source(), request.clientSessionId()).orElseThrow();
     }
@@ -269,15 +295,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 toJson(request.toolInput()),
                 toJson(request.toolOutput()),
                 request.metadata() == null ? Map.of() : request.metadata(),
-                observedAt);
+                observedAt,
+                HumanTurns.extract(request.eventType(), blankToNull(request.text()))
+                        .orElse(null));
 
         jdbcTemplate.update(
                 """
                 INSERT INTO agent_events (
                     id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                    tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
+                    tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 event.id(),
                 event.sessionId(),
@@ -291,7 +319,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 event.toolInputJson(),
                 event.toolOutputJson(),
                 toJson(event.metadata()),
-                event.observedAt().toString());
+                event.observedAt().toString(),
+                event.humanText());
 
         // The session upsert above holds the SQLite writer/PostgreSQL row lock until this
         // transaction commits. Compare parsed instants: variable-precision ISO timestamps do
@@ -311,7 +340,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         try {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                           first_human_turn
                       FROM agent_sessions
                      WHERE source = ? AND client_session_id = ?
                     """, this::mapSession, source, clientSessionId));
@@ -325,7 +355,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         try {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
+                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                           first_human_turn
                       FROM agent_sessions
                      WHERE id = ?
                     """, this::mapSession, id));
@@ -340,7 +371,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
                     SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
+                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
                       FROM agent_events
                      WHERE id = ?
                     """, this::mapEvent, id));
@@ -355,13 +386,22 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         return recentSessions(limit, false);
     }
 
-    public List<AgentSession> recentSessions(int limit, boolean includeChildren) {
+    @Override
+    public List<AgentSession> recentSessions(int limit, boolean includeChildren, boolean humanOnly) {
         // Parents-only is the default view everywhere (REST list, MCP recentSessions, CLI):
         // spawned_by children surface through their parent's links, not the flat rail.
-        String filter = includeChildren ? "" : " WHERE spawned_by IS NULL\n";
+        List<String> predicates = new ArrayList<>();
+        if (!includeChildren) {
+            predicates.add("spawned_by IS NULL");
+        }
+        if (humanOnly) {
+            predicates.add("first_human_turn IS NOT NULL");
+        }
+        String filter = predicates.isEmpty() ? "" : " WHERE " + String.join(" AND ", predicates) + "\n";
 
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                           first_human_turn
                   FROM agent_sessions
                 """ + filter + """
                  ORDER BY last_seen_at DESC
@@ -372,7 +412,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public List<AgentSession> recentSessionsMissingSummary(int limit) {
 
         return jdbcTemplate.query("""
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                           first_human_turn
                   FROM agent_sessions
                  WHERE summary IS NULL OR trim(summary) = ''
                  ORDER BY last_seen_at DESC
@@ -380,22 +421,26 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 """, this::mapSession, limit);
     }
 
-    public List<AgentEvent> eventsForSession(String sessionId, int limit) {
+    @Override
+    public List<AgentEvent> eventsForSession(String sessionId, int limit, boolean humanOnly) {
 
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(
+                """
                 SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at
+                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
                   FROM agent_events
                  WHERE session_id = ?
+                """ + (humanOnly ? "   AND human_text IS NOT NULL\n" : "") + """
                  ORDER BY observed_at DESC
                  LIMIT ?
                 """, this::mapEvent, sessionId, limit);
     }
 
     @Override
-    public EventFeedResponse feedForSession(String sessionId, String query, String before, int limit) {
+    public EventFeedResponse feedForSession(
+            String sessionId, String query, String before, int limit, boolean humanOnly) {
 
-        return feed(query, false, before, null, List.of(), limit, sessionId);
+        return feed(query, false, before, null, List.of(), limit, humanOnly, sessionId);
     }
 
     @Override
@@ -470,10 +515,17 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 sessionId);
     }
 
+    @Override
     public EventFeedResponse feed(
-            String query, boolean meaningfulOnly, String before, String since, List<String> projectScopes, int limit) {
+            String query,
+            boolean meaningfulOnly,
+            String before,
+            String since,
+            List<String> projectScopes,
+            int limit,
+            boolean humanOnly) {
 
-        return feed(query, meaningfulOnly, before, since, projectScopes, limit, null);
+        return feed(query, meaningfulOnly, before, since, projectScopes, limit, humanOnly, null);
     }
 
     private EventFeedResponse feed(
@@ -483,6 +535,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String since,
             List<String> projectScopes,
             int limit,
+            boolean humanOnly,
             String hardSessionId) {
         EventQuery facets = EventQuery.parse(query);
         FeedCursor beforeCursor = parseBefore(before);
@@ -492,7 +545,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         StringBuilder sql = new StringBuilder()
                 .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
                 .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
-                .append("e.observed_at, s.cwd AS cwd, s.title AS session_title\n")
+                .append("e.observed_at, e.human_text, s.cwd AS cwd, s.title AS session_title\n")
                 .append("  FROM agent_events e\n")
                 .append("  JOIN agent_sessions s ON s.id = e.session_id\n")
                 .append(" WHERE 1=1\n");
@@ -500,8 +553,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             sql.append("   AND e.session_id = ?\n");
             args.add(hardSessionId);
         }
-        boolean usedFts =
-                appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null, hardSessionId == null);
+        boolean usedFts = appendQueryPredicates(
+                sql, args, facets, meaningfulOnly, humanOnly, projectScopes, null, hardSessionId == null);
         if (sinceInstant != null) {
             sql.append("   AND e.observed_at >= ?\n");
             args.add(sinceInstant.toString());
@@ -525,7 +578,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             // Fail soft: a broken FTS table must never take the feed down — drop to LIKE and retry.
             ftsIndex.markUnavailable();
 
-            return feed(query, meaningfulOnly, before, since, projectScopes, limit, hardSessionId);
+            return feed(query, meaningfulOnly, before, since, projectScopes, limit, humanOnly, hardSessionId);
         }
         boolean hasMore = fetched.size() > limit;
         List<EventFeedItem> kept = hasMore ? fetched.subList(0, limit) : fetched;
@@ -541,7 +594,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      * the corpus would blow the latency budget — and reports the degradation instead of a number.
      */
     @Override
-    public EventFacetCounts facetCounts(String query, boolean meaningfulOnly, List<String> projectScopes) {
+    public EventFacetCounts facetCounts(
+            String query, boolean meaningfulOnly, List<String> projectScopes, boolean humanOnly) {
         EventQuery facets = EventQuery.parse(query);
         if (!facets.freeTerms().isEmpty() && !ftsIndex.ready()) {
 
@@ -554,26 +608,29 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             // With includes set, drop-own-field makes the predicates genuinely differ per field.
             if (!hasCountedIncludes(facets)) {
 
-                return onePassCounts(facets, meaningfulOnly, projectScopes);
+                return onePassCounts(facets, meaningfulOnly, humanOnly, projectScopes);
             }
-            Long total = queryTotal(facets, meaningfulOnly, projectScopes);
+            Long total = queryTotal(facets, meaningfulOnly, humanOnly, projectScopes);
 
             return new EventFacetCounts(
                     total == null ? 0L : total,
                     new EventFacetCounts.Fields(
-                            groupCounts(facets, meaningfulOnly, projectScopes, Field.SOURCE, "e.source", null),
-                            groupCounts(facets, meaningfulOnly, projectScopes, Field.KIND, "e.event_type", null),
+                            groupCounts(
+                                    facets, meaningfulOnly, humanOnly, projectScopes, Field.SOURCE, "e.source", null),
+                            groupCounts(
+                                    facets, meaningfulOnly, humanOnly, projectScopes, Field.KIND, "e.event_type", null),
                             // Anchoring on tool_name IS NOT NULL lets the planner drive the whole
                             // group-by off idx_agent_events_tool_observed (measured ~11ms) while
                             // also keeping NULL out of the value list.
                             groupCounts(
                                     facets,
                                     meaningfulOnly,
+                                    humanOnly,
                                     projectScopes,
                                     Field.TOOL,
                                     "e.tool_name",
                                     "e.tool_name IS NOT NULL"),
-                            projectCounts(facets, meaningfulOnly, projectScopes)),
+                            projectCounts(facets, meaningfulOnly, humanOnly, projectScopes)),
                     null);
         } catch (org.springframework.dao.DataAccessException ex) {
             if (facets.freeTerms().isEmpty()) {
@@ -601,7 +658,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      * an include list (then every per-field WHERE is the same); ordering and the per-field cap
      * are applied in Java after the single round trip.
      */
-    private EventFacetCounts onePassCounts(EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+    private EventFacetCounts onePassCounts(
+            EventQuery facets, boolean meaningfulOnly, boolean humanOnly, List<String> projectScopes) {
         List<Object> args = new ArrayList<>();
         StringBuilder matched = new StringBuilder()
                 .append("SELECT e.source AS source, e.event_type AS event_type, ")
@@ -609,7 +667,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("  FROM agent_events e\n");
         appendSessionsJoinIfNeeded(matched, facets, null);
         matched.append(" WHERE 1=1\n");
-        appendQueryPredicates(matched, args, facets, meaningfulOnly, projectScopes, null, true);
+        appendQueryPredicates(matched, args, facets, meaningfulOnly, humanOnly, projectScopes, null, true);
         String sql = """
                 WITH matched AS MATERIALIZED (
                 %s)
@@ -668,12 +726,12 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .toList();
     }
 
-    private Long queryTotal(EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+    private Long queryTotal(EventQuery facets, boolean meaningfulOnly, boolean humanOnly, List<String> projectScopes) {
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder().append("SELECT COUNT(*)\n").append("  FROM agent_events e\n");
         appendSessionsJoinIfNeeded(sql, facets, null);
         sql.append(" WHERE 1=1\n");
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, null, true);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, humanOnly, projectScopes, null, true);
 
         return jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
     }
@@ -681,6 +739,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private List<EventFacetCounts.ValueCount> groupCounts(
             EventQuery facets,
             boolean meaningfulOnly,
+            boolean humanOnly,
             List<String> projectScopes,
             Field droppedInclude,
             String valueExpr,
@@ -696,7 +755,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         if (extraPredicate != null) {
             sql.append("   AND ").append(extraPredicate).append("\n");
         }
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, droppedInclude, true);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, humanOnly, projectScopes, droppedInclude, true);
         sql.append(" GROUP BY value\n")
                 .append(" ORDER BY cnt DESC, value ASC\n")
                 .append(" LIMIT ")
@@ -712,7 +771,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      * corpus for the same result.
      */
     private List<EventFacetCounts.ValueCount> projectCounts(
-            EventQuery facets, boolean meaningfulOnly, List<String> projectScopes) {
+            EventQuery facets, boolean meaningfulOnly, boolean humanOnly, List<String> projectScopes) {
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder()
                 .append("SELECT ")
@@ -722,7 +781,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .append("          FROM agent_events e\n");
         appendSessionsJoinIfNeeded(sql, facets, Field.PROJECT);
         sql.append("         WHERE 1=1\n");
-        appendQueryPredicates(sql, args, facets, meaningfulOnly, projectScopes, Field.PROJECT, true);
+        appendQueryPredicates(sql, args, facets, meaningfulOnly, humanOnly, projectScopes, Field.PROJECT, true);
         sql.append("         GROUP BY e.session_id) t\n")
                 .append("  JOIN agent_sessions s ON s.id = t.session_id\n")
                 .append(" GROUP BY value\n")
@@ -766,6 +825,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             List<Object> args,
             EventQuery facets,
             boolean meaningfulOnly,
+            boolean humanOnly,
             List<String> projectScopes,
             Field droppedInclude,
             boolean applySessionFacet) {
@@ -838,6 +898,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         if (meaningfulOnly && !facets.includeAll()) {
             sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
+        }
+        if (humanOnly) {
+            sql.append("   AND e.human_text IS NOT NULL\n");
         }
         facets.sinceSpec().ifPresent(spec -> {
             sql.append("   AND e.observed_at >= ?\n");
@@ -1000,7 +1063,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 Instant.parse(rs.getString("started_at")),
                 Instant.parse(rs.getString("last_seen_at")),
                 rs.getLong("event_count"),
-                rs.getString("spawned_by"));
+                rs.getString("spawned_by"),
+                rs.getString("first_human_turn"));
     }
 
     private AgentEvent mapEvent(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
@@ -1018,7 +1082,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 rs.getString("tool_input_json"),
                 rs.getString("tool_output_json"),
                 fromJsonMap(rs.getString("metadata_json")),
-                Instant.parse(rs.getString("observed_at")));
+                Instant.parse(rs.getString("observed_at")),
+                rs.getString("human_text"));
     }
 
     private EventFeedItem mapFeedItem(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
@@ -1039,7 +1104,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 event.metadata(),
                 event.observedAt(),
                 rs.getString("cwd"),
-                rs.getString("session_title"));
+                rs.getString("session_title"),
+                event.humanText());
     }
 
     private static FeedCursor parseBefore(String before) {

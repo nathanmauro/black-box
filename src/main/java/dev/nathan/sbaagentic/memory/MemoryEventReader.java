@@ -7,7 +7,13 @@ import java.util.List;
 /** Read-only event projections owned by memory rather than canonical recording persistence. */
 public interface MemoryEventReader {
 
-    List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit);
+    default List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit) {
+
+        return searchEvents(query, projectScopes, limit, false);
+    }
+
+    /** {@code humanOnly} restricts matches to classified human turns (their raw {@code text} is still searched). */
+    List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit, boolean humanOnly);
 
     default List<AgentEvent> searchEvents(String query, int limit) {
 
