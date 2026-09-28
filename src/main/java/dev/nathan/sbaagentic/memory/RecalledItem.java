@@ -44,7 +44,7 @@ public record RecalledItem(
         String supersededByEventId,
 
         /**
-         * Canonical stored Observation or rendered Projection text, after ingest limits/redaction.
+         * Canonical stored Observation, rendered Projection, or Evidence text, after ingest limits/redaction.
          * MCP may clip this presentation with an explicit truncation marker; the source event
          * retains its canonical text and metadata. Absent for other kinds and legacy DTO callers.
          */

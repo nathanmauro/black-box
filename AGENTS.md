@@ -17,10 +17,10 @@ Default to normal prose: concise, direct, professional, and complete.
 
 - Treat this as a product repo, not the Cockpit private control-plane repo.
 - Keep public docs honest: semantic/vector recall currently surfaces structured intent
-  (`Decision`, `Handoff`, `Observation`, `Idea`) only. The memory index also stores session-summary
-  vectors for backfill/future retrieval, but recall does not return summaries today; the full event
-  corpus is not semantically indexed. Do not claim streaming UI behavior or other roadmap items
-  until they exist and are verified.
+  (`Decision`, `Handoff`, `Observation`, `Idea`, `Evidence`) only. The memory index also stores
+  session-summary vectors for backfill/future retrieval, but recall does not return summaries
+  today; the full event corpus is not semantically indexed. Do not claim streaming UI behavior or
+  other roadmap items until they exist and are verified.
 - Avoid committing private machine state: local databases, `.codex` or `.claude` configs, IDE files,
   hook payload dumps, credentials, env files, and absolute workstation paths unless clearly marked as
   examples.
@@ -104,6 +104,8 @@ Use Black Box for structured continuity, not for bulk transcript storage or task
 - `Idea`: use for an idea someone proposed that nobody is acting on now, whether the human's aside
   or an agent's suggestion. Capture it with `captureIdea` (origin, one-liner, verbatim quote, legs,
   status); record a later status change as a new capture with the same `ideaKey`.
+- `Evidence`: use for a verifiable fact with provenance, optionally linked to an Idea, Decision,
+  or Handoff as supporting or refuting evidence. Include the claim and source reference.
 - `Parked tangent`: use when a related side path would derail the current task but should be
   findable later.
 

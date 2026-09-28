@@ -103,7 +103,7 @@ export type SearchResponse = {
 };
 
 export type RecalledItem = {
-  // Canonical stored Observation/Projection text; MCP may clip it. Older servers and other kinds omit it.
+  // Canonical stored Observation/Projection/Evidence text; MCP may clip it. Older servers and other kinds omit it.
   body?: string | null;
   eventId: string;
   sessionId: string;
@@ -140,6 +140,8 @@ export type IdeaOrigin = "human-aside" | "agent-proposed" | "joint";
 export type IdeaStatus =
   "untouched" | "partially-built" | "built-unused" | "superseded" | "tracked";
 
+export type LaneListing = { project: string; score: number };
+
 export type CaptureIdeaRequest = {
   source: string;
   clientSessionId: string;
@@ -156,6 +158,8 @@ export type CaptureIdeaRequest = {
   link?: string;
   notes?: string;
   ideaKey?: string;
+  project?: string;
+  alsoIn?: LaneListing[];
 };
 
 export type IngestResponse = {
@@ -191,7 +195,56 @@ export type IdeaView = {
   firstCapturedAt: string;
   revisions: number;
   migratedFrom: string | null;
+  project?: string | null;
+  alsoIn?: LaneListing[] | null;
 };
+
+export type CaptureEvidenceRequest = {
+  source: string;
+  clientSessionId: string;
+  repo?: string;
+  claim: string;
+  excerpt?: string;
+  sourceRef: string;
+  outputDigest?: string;
+  observedAt?: string;
+  capturedBy?: string;
+  supports?: string[];
+  refutes?: string[];
+  notes?: string;
+  project?: string;
+  alsoIn?: LaneListing[];
+};
+
+export type EvidenceView = {
+  eventId: string;
+  sessionId: string;
+  source: string;
+  clientSessionId: string;
+  repo: string | null;
+  claim: string | null;
+  excerpt: string | null;
+  sourceRef: string | null;
+  outputDigest: string | null;
+  observedAt: string;
+  capturedBy: string;
+  supports: string[] | null;
+  refutes: string[] | null;
+  notes: string | null;
+  project: string | null;
+  alsoIn: LaneListing[] | null;
+  capturedAt: string;
+};
+
+export type EvidenceListResponse = { items: EvidenceView[]; count: number };
+export type EvidenceListParams = {
+  target?: string;
+  project?: string;
+  repo?: string;
+  q?: string;
+  limit?: number;
+};
+export type IdeaDetail = { idea: IdeaView; supports: EvidenceView[]; refutes: EvidenceView[] };
 
 export type IdeaListResponse = {
   items: IdeaView[];
@@ -653,6 +706,25 @@ export function getIdeas(params: IdeaListParams = {}): Promise<IdeaListResponse>
 
 export function captureIdea(request: CaptureIdeaRequest): Promise<IngestResponse> {
   return postJson("/api/ideas", request);
+}
+
+export function captureEvidence(request: CaptureEvidenceRequest): Promise<IngestResponse> {
+  return postJson("/api/evidence", request);
+}
+
+export function getEvidence(params: EvidenceListParams = {}): Promise<EvidenceListResponse> {
+  const query = new URLSearchParams();
+  for (const key of ["target", "project", "repo", "q"] as const) {
+    const value = params[key]?.trim();
+    if (value) query.set(key, value);
+  }
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const suffix = query.toString();
+  return getJson(`/api/evidence${suffix ? `?${suffix}` : ""}`);
+}
+
+export function getIdeaDetail(ideaKey: string): Promise<IdeaDetail> {
+  return getJson(`/api/ideas/detail?ideaKey=${encodeURIComponent(ideaKey)}`);
 }
 
 // Dry run only: the migration endpoint writes nothing unless apply=true, which the UI never sends.

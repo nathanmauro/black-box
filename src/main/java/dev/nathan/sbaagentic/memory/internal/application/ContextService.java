@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore.
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.EvidenceKind;
 import dev.nathan.sbaagentic.recording.Ideas;
 import dev.nathan.sbaagentic.recording.Titles;
 import java.time.Instant;
@@ -48,13 +49,15 @@ public class ContextService implements MemoryRecallOperations {
     public static final String KIND_OBSERVATION = "observation";
     public static final String KIND_PROJECTION = "projection";
     public static final String KIND_IDEA = Ideas.KIND;
+    public static final String KIND_EVIDENCE = EvidenceKind.KIND;
 
     private static final Map<String, String> EVENT_TYPE_BY_KIND = Map.of(
             KIND_DECISION, "Decision",
             KIND_HANDOFF, "Handoff",
             KIND_OBSERVATION, "Observation",
             KIND_PROJECTION, "Projection",
-            KIND_IDEA, Ideas.EVENT_TYPE);
+            KIND_IDEA, Ideas.EVENT_TYPE,
+            KIND_EVIDENCE, EvidenceKind.EVENT_TYPE);
 
     private static final List<String> DEFAULT_RECALL_KINDS = List.of(KIND_DECISION, KIND_HANDOFF);
     private static final int DEFAULT_WITHIN_HOURS = 168;
@@ -519,12 +522,14 @@ public class ContextService implements MemoryRecallOperations {
                                 firstPathTitle(meta.get("paths")),
                                 firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
                     case KIND_IDEA -> firstNonBlank(str(meta.get("title")), Titles.firstLine(event.text()));
+                    case KIND_EVIDENCE -> firstNonBlank(str(meta.get("claim")), Titles.firstLine(event.text()));
                     default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
                 };
         String rationale =
                 switch (kind) {
                     case KIND_PROJECTION -> str(meta.get("basis"));
                     case KIND_IDEA -> str(meta.get("oneLiner"));
+                    case KIND_EVIDENCE -> str(meta.get("excerpt"));
                     default -> str(meta.get("rationale"));
                 };
         String nextAction = KIND_IDEA.equals(kind) ? str(meta.get("resumeStep")) : str(meta.get("nextAction"));
@@ -550,7 +555,9 @@ public class ContextService implements MemoryRecallOperations {
                 score,
                 relation == null ? null : relation.supersedesEventId(),
                 relation == null ? null : relation.supersededByEventId(),
-                KIND_OBSERVATION.equals(kind) || KIND_PROJECTION.equals(kind) ? event.text() : null);
+                KIND_OBSERVATION.equals(kind) || KIND_PROJECTION.equals(kind) || KIND_EVIDENCE.equals(kind)
+                        ? event.text()
+                        : null);
     }
 
     private static MemoryHit toMemoryHit(AgentEvent event, double score) {
@@ -570,6 +577,7 @@ public class ContextService implements MemoryRecallOperations {
                                 firstPathTitle(meta.get("paths")),
                                 firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
                     case KIND_IDEA -> firstNonBlank(str(meta.get("title")), Titles.firstLine(event.text()));
+                    case KIND_EVIDENCE -> firstNonBlank(str(meta.get("claim")), Titles.firstLine(event.text()));
                     default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
                 };
 

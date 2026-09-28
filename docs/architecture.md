@@ -182,10 +182,10 @@ remain a continuity read model with their existing identity-curation controls.
   canonical and can transiently fill missing user/assistant text from the session's known local
   Codex or Claude JSONL. The reader canonicalizes and confines that stored path, validates transcript
   identity, redacts returned text, and never persists the enrichment.
-- **Memory.** Captures and recalls decisions, Handoffs, observations, and ideas by repo, topic, semantic
+- **Memory.** Captures and recalls decisions, Handoffs, observations, ideas, and evidence by repo, topic, semantic
   paraphrase, or direct event id; fuses lexical SQLite recall with local vector recall when memory
   embeddings are available; searches SQLite events and optionally combines Elasticsearch hits.
-  Semantic recall returns structured intent events (`Decision`, `Handoff`, `Observation`, `Idea`)
+  Semantic recall returns structured intent events (`Decision`, `Handoff`, `Observation`, `Idea`, `Evidence`)
   only. `GET /api/ideas` lists ideas collapsed to the latest capture per `ideaKey`.
   Non-empty session summaries are stored in the memory embedding index for backfill and future
   retrieval, but no recall path surfaces them today; the full captured event corpus is not
@@ -220,7 +220,7 @@ for new events.
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |
-| `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, Observations, Projections, and Ideas |
+| `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, Observations, Projections, Ideas, and Evidence |
 | `event_stream_state`, `event_stream_positions` | recording | Transactionally serialized append cursor, database generation and retained event-ID anchors for [durable SSE recovery](durable-stream-recovery.md) |
 | `memory_embeddings` | memory | Canonical float32 vectors for structured intent and session summaries; sqlite-vec is only an optional accelerator rebuilt from this table |
 | `session_links` | lineage | Explicit session relationships used by Browse, session DAGs, and Orbit |

@@ -1,7 +1,8 @@
 # Evidence capture kind and lane fields
 
-**Status:** planned on branch `claude/blackbox-additions`, based on `claude/idea-kind` (`4c6a9e2`).
-Not merged or deployed.
+**Status:** original draft from `claude/blackbox-additions`, based on `claude/idea-kind` (`4c6a9e2`).
+Current integration follows [the October 3 acceptance plan](2026-10-03-evidence-integration.md);
+not yet merged or deployed.
 
 **Origin:** during the 2026-09-28 loose-ends hunt, the facts that proved ideas were being dropped
 had nowhere to live: `searchSessions` matched the hunt's own output, atuin showed zero `sf` runs,
@@ -131,7 +132,7 @@ Normalization and validation rules:
   - It is also linked when it references `event:<id>` of any revision of that idea, either the
     exact id or a prefix of at least 8 characters.
 - **MCP `recallIdea(ideaKey)`:** returns the same `IdeaDetail`. An unknown key is an error that
-  says to list ideas or check the key. The MCP tool count goes from 17 to 19.
+  says to list ideas or check the key. The current retired-board baseline grows from 10 to 12 MCP tools.
 - **Scans:** the listings read every Evidence and Idea event through keyset pages, like the Idea
   scans. They do not read a newest-N window.
 
@@ -147,8 +148,17 @@ Normalization and validation rules:
     through an `event:` prefix ref;
   - a 404 for an unknown key.
 - **Recall:** `kinds:["evidence"]`, and embedding inclusion.
-- **Contracts:** the MCP contract snapshot (19 tools), the REST contract matrix, mappings, and
+- **Contracts:** the MCP contract snapshot (12 tools), the REST contract matrix, mappings, and
   wire fixtures, and the gateway pytest.
 - **Verify through use:** run the packaged jar on a spare port against a scratch database. Over
   MCP, capture one Idea and one Evidence that supports it, then call `recallIdea` and see them
   together. Deploying to `:8766` is Nathan's call.
+
+## Deviations
+
+- The existing `IdeaEventReader` already reads arbitrary event types through keyset pages, so
+  Evidence reuses it instead of adding a duplicate reader port.
+- The original draft used REST/MCP callback tests only. The current integration additionally
+  verifies a packaged jar against private disposable fixtures; it never touches the live service.
+- Empty secondary-lane and Evidence-link arrays are treated as absent, preserving earlier Idea
+  lanes on status-only re-capture. The effective home lane uses `repo` when `project` is omitted.

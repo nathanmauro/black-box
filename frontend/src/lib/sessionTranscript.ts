@@ -17,7 +17,8 @@ export function isSessionMemoryEvent(event: AgentEvent): boolean {
     type === "observation" ||
     type === "handoff" ||
     type === "idea" ||
-    type === "projection"
+    type === "projection" ||
+    type === "evidence"
   );
 }
 

@@ -642,13 +642,18 @@ describe("SessionsPage", () => {
     expect(screen.getByText(/hidden-tool-output/)).toBeInTheDocument();
   });
 
-  it.each([false, true])(
-    "keeps Projection in the memory layer while preserving exact sources (target=%s)",
-    async (exactTarget) => {
+  it.each([
+    ["Projection", false],
+    ["Projection", true],
+    ["Evidence", false],
+    ["Evidence", true],
+  ] as const)(
+    "keeps %s in the memory layer while preserving exact sources (target=%s)",
+    async (eventType, exactTarget) => {
       const projection: AgentEvent = {
         ...events[2],
         id: "evt-projection",
-        eventType: "Projection",
+        eventType,
         role: "assistant",
         text: "Possibilities: continue locally, or evaluate a shared server.",
         metadata: {
@@ -673,7 +678,7 @@ describe("SessionsPage", () => {
       const row = () => document.getElementById(`event-${projection.id}`);
       if (exactTarget) {
         expect(row()).toHaveClass("event-flow-row--target");
-        expect(within(row()!).getByText("Projection", { exact: true })).toBeInTheDocument();
+        expect(within(row()!).getByText(eventType, { exact: true })).toBeInTheDocument();
         expect(within(row()!).queryByText("agent response")).not.toBeInTheDocument();
       } else {
         expect(row()).not.toBeInTheDocument();
@@ -682,7 +687,7 @@ describe("SessionsPage", () => {
       expect(screen.getByText("I made the reading view calmer.")).toBeInTheDocument();
       fireEvent.click(toggle);
       expect(toggle).toBeChecked();
-      expect(within(row()!).getByText("Projection", { exact: true })).toBeInTheDocument();
+      expect(within(row()!).getByText(eventType, { exact: true })).toBeInTheDocument();
       expect(within(row()!).getAllByText(projection.text!)).not.toHaveLength(0);
       expect(within(row()!).queryByText("agent response")).not.toBeInTheDocument();
       expect(within(row()!).getByText("assistant", { exact: true })).toBeInTheDocument();

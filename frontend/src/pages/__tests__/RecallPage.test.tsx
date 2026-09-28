@@ -179,6 +179,28 @@ describe("RecallPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("restores Evidence-only links with canonical provenance in the reader and copy", async () => {
+    updateParams({ project: "/repos/alpha", kinds: "evidence", run: "1" });
+    const body = "[Evidence] Fact\nSource: fixture.txt:12\nNotes:\nVerify before reuse";
+    vi.mocked(getRecall).mockResolvedValue(result([{ ...item, kind: "evidence", body }]));
+    render(() => <RecallPage />);
+    const card = await screen.findByRole("article", { name: item.headline! });
+    expect(getRecall).toHaveBeenCalledExactlyOnceWith(
+      { project: "/repos/alpha", query: "", includeSuperseded: false },
+      168,
+      ["evidence"],
+    );
+    expect(screen.getByRole("checkbox", { name: "Evidence" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Decision" })).not.toBeChecked();
+    expect(card).toHaveTextContent("fixture.txt:12");
+    expect(
+      within(card).queryByRole("button", { name: "Replace decision" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy context" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain(body);
+  });
+
   it("offers an unselected Projection filter and source guidance for older headline-only results", async () => {
     vi.mocked(getRecall).mockResolvedValue(result([{ ...item, kind: "projection" }]));
     render(() => <RecallPage />);

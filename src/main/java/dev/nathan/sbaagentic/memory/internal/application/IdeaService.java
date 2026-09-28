@@ -9,6 +9,8 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.Ideas;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.LaneListing;
+import dev.nathan.sbaagentic.recording.Lanes;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.Titles;
@@ -163,6 +165,28 @@ public class IdeaService {
         return new IdeaMigrationResult(apply, List.copyOf(candidates), created, skipped);
     }
 
+    public record IdeaRevisions(IdeaView idea, List<String> eventIds) {}
+
+    /** Build one idea view and its revision ids from a single keyset scan. */
+    public IdeaRevisions revisions(String key) {
+        if (key == null || key.isBlank()) {
+
+            return null;
+        }
+        String requested = key.strip();
+        List<TypedEvent> rows = newestFirst(allEventsOfType(Ideas.EVENT_TYPE, null)).stream()
+                .filter(row -> requested.equals(ideaKey(row)))
+                .toList();
+        if (rows.isEmpty()) {
+
+            return null;
+        }
+
+        return new IdeaRevisions(
+                toView(requested, rows),
+                rows.stream().map(row -> row.event().id()).toList());
+    }
+
     private List<IdeaView> collapsed() {
         Map<String, List<TypedEvent>> byKey = new LinkedHashMap<>();
         for (TypedEvent row : newestFirst(allEventsOfType(Ideas.EVENT_TYPE, null))) {
@@ -189,7 +213,7 @@ public class IdeaService {
     }
 
     /** Every event of the type, read in keyset pages so no row is skipped or repeated. */
-    private List<TypedEvent> allEventsOfType(String eventType, String textPrefix) {
+    List<TypedEvent> allEventsOfType(String eventType, String textPrefix) {
         List<TypedEvent> all = new ArrayList<>();
         IdeaEventReader.Cursor before = null;
         while (true) {
@@ -246,13 +270,18 @@ public class IdeaService {
         Instant firstCapturedAt = rows.getLast().event().observedAt();
         String title = firstNonBlank(str(meta.get("title")), titleFromText(latest.text()));
         String status = Ideas.normalizeStatus(str(meta.get("status")));
+        String repo =
+                newest(rows, row -> firstNonBlank(str(metadata(row.event()).get("repo")), row.cwd()));
+        String project = firstNonBlank(newestString(rows, "project"), repo);
+        List<LaneListing> alsoIn = Lanes.withoutHome(
+                project, newest(rows, row -> Lanes.read(metadata(row.event()).get("alsoIn"))));
 
         return new IdeaView(
                 latest.id(),
                 latest.sessionId(),
                 latest.source(),
                 latest.clientSessionId(),
-                newest(rows, row -> firstNonBlank(str(metadata(row.event()).get("repo")), row.cwd())),
+                repo,
                 title,
                 str(meta.get("oneLiner")),
                 Ideas.normalizeOrigin(str(meta.get("origin"))),
@@ -272,7 +301,9 @@ public class IdeaService {
                 latest.observedAt(),
                 firstCapturedAt,
                 rows.size(),
-                newestString(rows, "migratedFrom"));
+                newestString(rows, "migratedFrom"),
+                project,
+                alsoIn);
     }
 
     private static String newestString(List<TypedEvent> rows, String field) {
