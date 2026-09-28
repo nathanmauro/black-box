@@ -896,7 +896,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 args.add(like);
             }
         }
-        if (meaningfulOnly && !facets.includeAll()) {
+        // Human turns are meaningful by definition, and the meaningful predicate has no prompt
+        // clause, so human-only supersedes it instead of intersecting to nothing.
+        if (meaningfulOnly && !humanOnly && !facets.includeAll()) {
             sql.append("   AND ").append(MEANINGFUL_EVENT_PREDICATE).append("\n");
         }
         if (humanOnly) {

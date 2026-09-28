@@ -1296,6 +1296,21 @@ class AgenticControllerTest {
                 .andExpect(jsonPath("$.count").value(1))
                 .andExpect(jsonPath("$.items[0].humanText").value("aside about " + key))
                 .andExpect(jsonPath("$.items[0].text").value("aside about " + key));
+        // The UI always asks for meaningful events; human-only must supersede that filter, whose
+        // predicate has no clause for prompts.
+        mockMvc.perform(get("/api/events")
+                        .param("q", key)
+                        .param("meaningful", "true")
+                        .param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.count").value(1))
+                .andExpect(jsonPath("$.items[0].humanText").value("aside about " + key));
+        mockMvc.perform(get("/api/events/facets")
+                        .param("q", key)
+                        .param("meaningful", "true")
+                        .param("humanOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1));
         mockMvc.perform(get("/api/events/facets").param("q", key).param("humanOnly", "true"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(1));
