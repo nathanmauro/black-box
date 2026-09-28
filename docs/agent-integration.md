@@ -57,7 +57,10 @@ agent's suggestion that would otherwise vanish into a transcript. Capture it wit
   other value is rejected with a message listing the allowed ones.
 - Captures are append-only. To change an idea's status, capture it again with the same `ideaKey`.
   The default key is a slug of the repo's last path segment plus the title (for example
-  `sba-agentic-evidence-capture-kind`), so the same idea keys the same way on any checkout.
+  `sba-agentic-evidence-capture-kind`). Clones that share a directory name key the same way. A
+  worktree or clone under a different directory name gets a different key, so pass an explicit
+  `ideaKey` when an idea is captured from more than one checkout. A re-capture only needs the
+  required fields: optional fields it omits keep their earlier values in the listing.
 - `GET /api/ideas` returns `{items, count}`, newest first, collapsed to the latest event per
   `ideaKey`, with `revisions`, `firstCapturedAt`, and `migratedFrom`. Filters: `status` (repeatable
   or comma-separated), `origin`, `project` or `repo` (a project path, alias-aware like the stream's

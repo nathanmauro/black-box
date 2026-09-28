@@ -233,7 +233,11 @@ public class IdeaService {
         return migrated;
     }
 
-    /** Rows are newest first: the first row is the latest state, the last is the first capture. */
+    /**
+     * Rows are newest first: the first row is the latest state, the last is the first capture.
+     * A status change is a re-capture that must resend only the required fields, so each optional
+     * field falls back to the newest revision that carried it instead of vanishing.
+     */
     private static IdeaView toView(String key, List<TypedEvent> rows) {
         TypedEvent latestRow = rows.getFirst();
         AgentEvent latest = latestRow.event();
@@ -251,19 +255,45 @@ public class IdeaService {
                 title,
                 str(meta.get("oneLiner")),
                 Ideas.normalizeOrigin(str(meta.get("origin"))),
-                str(meta.get("quote")),
-                str(meta.get("sourceRef")),
-                asInteger(meta.get("legs")),
+                newestString(rows, "quote"),
+                newestString(rows, "sourceRef"),
+                newest(rows, row -> asInteger(metadata(row.event()).get("legs"))),
                 status == null ? Ideas.STATUS_UNTOUCHED : status,
-                asStringList(meta.get("connects")),
-                str(meta.get("resumeStep")),
-                str(meta.get("link")),
-                str(meta.get("notes")),
+                newest(rows, row -> {
+                    List<String> connects = asStringList(metadata(row.event()).get("connects"));
+
+                    return connects == null || connects.isEmpty() ? null : connects;
+                }),
+                newestString(rows, "resumeStep"),
+                newestString(rows, "link"),
+                newestString(rows, "notes"),
                 key,
                 latest.observedAt(),
                 firstCapturedAt,
                 rows.size(),
-                str(meta.get("migratedFrom")));
+                newestString(rows, "migratedFrom"));
+    }
+
+    private static String newestString(List<TypedEvent> rows, String field) {
+
+        return newest(rows, row -> {
+            String value = str(metadata(row.event()).get(field));
+
+            return notBlank(value) ? value : null;
+        });
+    }
+
+    /** The first non-null value across newest-first revisions. */
+    private static <T> T newest(List<TypedEvent> rows, java.util.function.Function<TypedEvent, T> read) {
+        for (TypedEvent row : rows) {
+            T value = read.apply(row);
+            if (value != null) {
+
+                return value;
+            }
+        }
+
+        return null;
     }
 
     /** Stored key first; ideas written without one (for example generic event ingest) derive it. */

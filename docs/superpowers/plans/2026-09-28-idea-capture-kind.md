@@ -131,8 +131,12 @@ The body is bullets: `- origin: <origin>, â€¦ Verbatim: "<quote>".`, `- What: â€
 
 Backend choices where the contract was silent or needed a concrete rule:
 
-- **Default `ideaKey`:** the slug uses the repo's last path segment, not the full path, so the same
-  idea keys identically on any checkout. Two repos with the same basename share a key namespace.
+- **Default `ideaKey`:** the slug uses the repo's last path segment, not the full path. Clones
+  that share a directory name key identically, but a worktree under a different directory name does
+  not; pass an explicit `ideaKey` in that case. Two repos with the same basename share a key
+  namespace.
+- **Collapsed fields:** the listing takes each optional field from the newest revision that carried
+  it, so a status-only re-capture does not blank the quote, connects, legs, or `migratedFrom`.
 - **Migration origin:** `origin` is required, so a missing or unknown `origin:` in an `[Idea]`
   observation falls back to `agent-proposed` with a warning.
 - **Migration session:** migrated ideas keep the observation's `source` and are written to one

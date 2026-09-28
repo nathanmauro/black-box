@@ -349,6 +349,57 @@ class IdeaApiTest {
         assertThat(lanesAfter.eventType()).isEqualTo("Observation");
     }
 
+    @Test
+    void statusOnlyRecaptureKeepsOptionalFieldsFromEarlierRevisions() throws Exception {
+        String repo = uniqueRepo("recapture");
+        captureOperations.captureIdea(new CaptureIdeaRequest(
+                "claude",
+                "claude-ideas",
+                repo,
+                "Tangent router",
+                "Detect asides in human turns.",
+                "human-aside",
+                "what if asides captured themselves",
+                "session-123",
+                8,
+                null,
+                List.of("human-turn-first", "Idea kind"),
+                "Prototype a detector over humanText",
+                "https://example.com/idea",
+                "Prior art: none.",
+                null));
+        captureOperations.captureIdea(new CaptureIdeaRequest(
+                "claude",
+                "claude-ideas",
+                repo,
+                "Tangent router",
+                "Detect asides in human turns.",
+                "human-aside",
+                null,
+                null,
+                null,
+                "tracked",
+                null,
+                null,
+                null,
+                null,
+                null));
+
+        JsonNode idea = json(mockMvc.perform(get("/api/ideas").param("repo", repo))
+                        .andExpect(status().isOk()))
+                .path("items")
+                .get(0);
+        assertThat(idea.path("status").asText()).isEqualTo("tracked");
+        assertThat(idea.path("revisions").asInt()).isEqualTo(2);
+        assertThat(idea.path("quote").asText()).isEqualTo("what if asides captured themselves");
+        assertThat(idea.path("sourceRef").asText()).isEqualTo("session-123");
+        assertThat(idea.path("legs").asInt()).isEqualTo(8);
+        assertThat(idea.path("connects").size()).isEqualTo(2);
+        assertThat(idea.path("resumeStep").asText()).isEqualTo("Prototype a detector over humanText");
+        assertThat(idea.path("link").asText()).isEqualTo("https://example.com/idea");
+        assertThat(idea.path("notes").asText()).isEqualTo("Prior art: none.");
+    }
+
     private IngestResponse capture(String repo, String title, String origin, String status, Integer legs) {
 
         return captureOperations.captureIdea(new CaptureIdeaRequest(
