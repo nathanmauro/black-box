@@ -51,6 +51,28 @@ class EmbeddingSourceSqlReaderTest {
                 .isEqualTo("Use metadata text raw text is empty");
     }
 
+    @Test
+    void includesIdeasAndEmbedsTheirTitleAndOneLiner() {
+        Fixture fixture = fixture();
+        fixture.insertSession("session-1");
+        fixture.insertEvent(
+                "event-1",
+                "session-1",
+                "Idea",
+                "[Idea] Lanes board — One swimlane per project.\n\nOrigin: human-aside",
+                Map.of("kind", "idea", "title", "Lanes board", "oneLiner", "One swimlane per project."));
+        fixture.insertEvent("event-2", "session-1", "Projection", "Projected futures:", Map.of());
+
+        EmbeddingSource source = fixture.reader().nextBatch(null, null, 10).getFirst();
+
+        assertThat(fixture.reader().nextBatch(null, null, 10))
+                .extracting(EmbeddingSource::targetId)
+                .containsExactly("event-1");
+        assertThat(EmbeddableText.forEvent(source.eventType(), source.text(), source.metadata()))
+                .isEqualTo("Lanes board One swimlane per project. "
+                        + "[Idea] Lanes board — One swimlane per project. Origin: human-aside");
+    }
+
     private static Fixture fixture() {
         Path database = Path.of(
                 System.getProperty("java.io.tmpdir"), "bb-embedding-source-reader-test-" + UUID.randomUUID() + ".db");

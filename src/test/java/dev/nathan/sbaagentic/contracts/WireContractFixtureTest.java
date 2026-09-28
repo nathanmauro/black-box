@@ -19,6 +19,9 @@ import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.IdeaListResponse;
+import dev.nathan.sbaagentic.memory.internal.application.IdeaMigrationResult;
+import dev.nathan.sbaagentic.memory.internal.application.IdeaView;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.web.ApiExceptionHandler;
 import dev.nathan.sbaagentic.project.CodeNavigationResult;
@@ -43,6 +46,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
@@ -193,6 +197,7 @@ class WireContractFixtureTest {
                 entry("CaptureDecisionRequest", CaptureDecisionRequest.class),
                 entry("CaptureHandoffRequest", CaptureHandoffRequest.class),
                 entry("CaptureProjectionRequest", CaptureProjectionRequest.class),
+                entry("CaptureIdeaRequest", CaptureIdeaRequest.class),
                 entry("ClaimTaskRequest", ClaimTaskRequest.class),
                 entry("CodeNavigationResult", CodeNavigationResult.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
@@ -210,6 +215,10 @@ class WireContractFixtureTest {
                 entry("EventFeedResponse", EventFeedResponse.class),
                 entry("EventIngestRequest", EventIngestRequest.class),
                 entry("IngestResponse", IngestResponse.class),
+                entry("IdeaListResponse", IdeaListResponse.class),
+                entry("IdeaMigrationCandidate", IdeaMigrationResult.Candidate.class),
+                entry("IdeaMigrationResult", IdeaMigrationResult.class),
+                entry("IdeaView", IdeaView.class),
                 entry("IdempotentEventIngestRequest", IdempotentEventIngestRequest.class),
                 entry("IdempotentIngestResponse", IdempotentIngestResponse.class),
                 entry("MemoryEmbeddingBackfillRequest", MemoryEmbeddingBackfillRequest.class),

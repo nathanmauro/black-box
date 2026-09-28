@@ -93,7 +93,7 @@ def test_search_full_fetch_pagination_context(upstream):
         items.append({**items[0], "id": str(uuid4())})
     result = backend.context("/fixture/project", 20, 4000)
     assert len(canonical(result)) <= 4000 and result["truncated"]
-    assert 'project_group:"/fixture/project" kind:decision,handoff,observation,projection' == requests[-1][2]["q"]
+    assert 'project_group:"/fixture/project" kind:decision,handoff,observation,projection,idea' == requests[-1][2]["q"]
     with pytest.raises(GatewayError, match="Invalid event ID"):
         backend.fetch("../../etc/passwd")
     with pytest.raises(GatewayError, match="not found"):
@@ -129,6 +129,18 @@ def test_retry_conflict_restart_and_lost_ledger(upstream, tmp_path):
             capture(candidate, text="changed")
     assert len([r for r in requests if r[0] == "POST"]) == 1
     assert items[0]["metadata"]["conversationId"] == "conversation-fixture"
+
+
+def test_idea_capture_uses_the_idea_kind(upstream):
+    backend, items, requests = upstream
+    saved = backend.append("idea-key-1234", "conversation-fixture", "/fixture/project",
+                           "[TEST] Lanes board\nOne swimlane per project.", "idea")
+    assert not saved["replayed"]
+    posted = [r for r in requests if r[0] == "POST"][-1]
+    assert posted[1] == "/api/events"
+    assert posted[2]["eventType"] == "Idea"
+    assert posted[2]["metadata"]["kind"] == "idea"
+    assert items[0]["cwd"] == "/fixture/project"
 
 
 @pytest.mark.parametrize("origin", ["chatgpt_voice", "chatgpt_work_voice", "codex_voice", "voice_unknown"])
@@ -286,6 +298,7 @@ def test_real_mcp_protocol_auth_and_tools(upstream):
                         capture_tool = next(tool for tool in tools.tools if tool.name == "append_capture")
                         assert "project" not in capture_tool.inputSchema["required"]
                         assert "origin" in capture_tool.inputSchema["properties"]
+                        assert "idea" in json.dumps(capture_tool.inputSchema["properties"]["kind"])
                         search = await session.call_tool("search_records", {"query": "existing", "limit": 1})
                         assert not search.isError and search.structuredContent["results"][0]["id"] == items[0]["id"]
                         record = await session.call_tool("fetch_record", {"event_id": items[0]["id"]})

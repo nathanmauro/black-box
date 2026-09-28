@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore.
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import dev.nathan.sbaagentic.recording.AgentEvent;
+import dev.nathan.sbaagentic.recording.Ideas;
 import dev.nathan.sbaagentic.recording.Titles;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -30,7 +31,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * The write+query loop that is Black Box's reason to exist. Agents write structured <em>intent</em>
- * — decisions, handoffs, observations, and projections — into the recorder, and any later agent
+ * — decisions, handoffs, observations, projections, and ideas — into the recorder, and any later agent
  * (or a future self) reads that intent back, scoped by repo or topic and bounded in time, at runtime
  * and entirely on localhost.
  *
@@ -46,12 +47,14 @@ public class ContextService implements MemoryRecallOperations {
     public static final String KIND_HANDOFF = "handoff";
     public static final String KIND_OBSERVATION = "observation";
     public static final String KIND_PROJECTION = "projection";
+    public static final String KIND_IDEA = Ideas.KIND;
 
     private static final Map<String, String> EVENT_TYPE_BY_KIND = Map.of(
             KIND_DECISION, "Decision",
             KIND_HANDOFF, "Handoff",
             KIND_OBSERVATION, "Observation",
-            KIND_PROJECTION, "Projection");
+            KIND_PROJECTION, "Projection",
+            KIND_IDEA, Ideas.EVENT_TYPE);
 
     private static final List<String> DEFAULT_RECALL_KINDS = List.of(KIND_DECISION, KIND_HANDOFF);
     private static final int DEFAULT_WITHIN_HOURS = 168;
@@ -441,9 +444,16 @@ public class ContextService implements MemoryRecallOperations {
                         firstNonBlank(
                                 firstPathTitle(meta.get("paths")),
                                 firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
+                    case KIND_IDEA -> firstNonBlank(str(meta.get("title")), Titles.firstLine(event.text()));
                     default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
                 };
-        String rationale = KIND_PROJECTION.equals(kind) ? str(meta.get("basis")) : str(meta.get("rationale"));
+        String rationale =
+                switch (kind) {
+                    case KIND_PROJECTION -> str(meta.get("basis"));
+                    case KIND_IDEA -> str(meta.get("oneLiner"));
+                    default -> str(meta.get("rationale"));
+                };
+        String nextAction = KIND_IDEA.equals(kind) ? str(meta.get("resumeStep")) : str(meta.get("nextAction"));
         Double confidence = KIND_PROJECTION.equals(kind)
                 ? firstPathConfidence(meta.get("paths"))
                 : asDouble(meta.get("confidence"));
@@ -461,7 +471,7 @@ public class ContextService implements MemoryRecallOperations {
                 asStringList(meta.get("alternatives")),
                 confidence,
                 asStringList(meta.get("openLoops")),
-                str(meta.get("nextAction")),
+                nextAction,
                 str(meta.get("toAgent")),
                 score);
     }
@@ -482,6 +492,7 @@ public class ContextService implements MemoryRecallOperations {
                         firstNonBlank(
                                 firstPathTitle(meta.get("paths")),
                                 firstNonBlank(str(meta.get("basis")), Titles.firstLine(event.text())));
+                    case KIND_IDEA -> firstNonBlank(str(meta.get("title")), Titles.firstLine(event.text()));
                     default -> firstNonBlank(Titles.firstLine(event.text()), event.eventType());
                 };
 

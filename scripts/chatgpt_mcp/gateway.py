@@ -34,7 +34,9 @@ Dated Codex voice working directories are preserved as provenance when supplied.
 Dated voice working directories are preserved as session provenance and grouped by Black Box.
 For a real-project capture, verify its canonical repository path; a project merely mentioned in
 voice chat is not its owner. Never use a bare topic such as `constellate` as a project key.
-For notes and ideas, agents on the Mac use the local Obsidian vault. Agents executing from a cloud server use the
+append_capture kind=idea records an idea proposed in the conversation that nobody is acting on now,
+so agents can list and resume it; its first line is the idea's title.
+For notes and idea write-ups, agents on the Mac use the local Obsidian vault. Agents executing from a cloud server use the
 Google Drive connector to write Markdown in the verified Google Drive folder that syncs that
 same Obsidian vault, preserving its folder structure. Drive is the cloud access path to the
 same vault, not a separate notes destination. Verify the actual folder and Markdown-write
@@ -138,7 +140,7 @@ class BlackBox:
                 "note": "Complete stored event; ingestion redaction/truncation may predate retrieval."}
 
     def context(self, project, limit=10, max_chars=12000, cursor=None):
-        query = "project_group:" + query_value(project) + " kind:decision,handoff,observation,projection"
+        query = "project_group:" + query_value(project) + " kind:decision,handoff,observation,projection,idea"
         page = self.feed(query, limit, cursor)
         result = {"project": project, "records": [], "next_cursor": None, "truncated": False}
         for item in page["items"]:
@@ -252,7 +254,7 @@ def create_mcp(backend):
                         limit: Annotated[int, Field(ge=1, le=20)] = 10,
                         max_chars: Annotated[int, Field(ge=4000, le=24000)] = 12000,
                         cursor: Annotated[str | None, Field(max_length=160)] = None) -> dict[str, Any]:
-        """Get bounded recent decisions, handoffs, observations and projections for a verified
+        """Get bounded recent decisions, handoffs, observations, projections and ideas for a verified
         canonical project path, including its reversible aliases. Obtain the path from the catalog
         or search; do not invent it. Returns excerpts and a cursor.
         Older evidence may be stale. Fetch referenced IDs before relying on detailed claims.
@@ -264,12 +266,14 @@ def create_mcp(backend):
                        conversation_id: Annotated[str, Field(min_length=1, max_length=200)],
                        text: Annotated[str, Field(min_length=1, max_length=16000)],
                        project: Annotated[str | None, Field(min_length=1, max_length=1000)] = None,
-                       kind: Literal["observation", "decision", "handoff"] = "observation",
+                       kind: Literal["observation", "decision", "handoff", "idea"] = "observation",
                        origin: Literal["chatgpt_voice", "chatgpt_work_voice", "codex_voice", "voice_unknown"] | None = None,
                        original_cwd: Annotated[str | None, Field(min_length=1, max_length=1000)] = None) -> dict[str, Any]:
-        """Append an explicitly requested Black Box capture. Never store tasks or ordinary notes/ideas.
+        """Append an explicitly requested Black Box capture. Never store tasks or ordinary notes.
+        kind=idea records an idea someone proposed that is not being acted on now (a human's aside
+        or an agent's suggestion) as a Black Box Idea; put the idea's title on the first line.
         Tasks go to Linear through the calling agent's Linear connector; Todoist is retired.
-        Notes/ideas: on the Mac, use the local Obsidian vault; when the calling agent executes from a cloud server, use the Google
+        Notes and idea write-ups: on the Mac, use the local Obsidian vault; when the calling agent executes from a cloud server, use the Google
         Drive connector to write Markdown into the verified synced Obsidian vault folder.
         This is the same vault, not a separate Google Docs collection. Verify folder identity
         and Markdown-write support; report missing access instead of choosing another destination.

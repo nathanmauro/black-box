@@ -11,6 +11,7 @@ GET /api/exports/targets
 GET /api/health/elasticsearch
 GET /api/health/judge
 GET /api/health/local-ai
+GET /api/ideas
 GET /api/projects
 GET /api/projects/code-scopes
 GET /api/projects/{projectKey}/graph
@@ -38,6 +39,7 @@ GET /api/tasks/{taskId}/dag
 GET /api/tasks/{taskId}/events
 GET /board
 GET /graph
+GET /ideas
 GET /projects
 GET /projects/**
 GET /recall
@@ -51,6 +53,8 @@ POST /api/decisions
 POST /api/events
 POST /api/events/idempotent
 POST /api/handoffs
+POST /api/ideas
+POST /api/ideas/migrate-observations
 POST /api/melds
 POST /api/memory/embeddings/backfill
 POST /api/open-in-editor

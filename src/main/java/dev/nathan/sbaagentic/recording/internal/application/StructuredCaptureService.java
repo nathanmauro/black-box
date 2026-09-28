@@ -2,9 +2,11 @@ package dev.nathan.sbaagentic.recording.internal.application;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.Ideas;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
@@ -93,6 +95,67 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     }
 
     @Override
+    public IngestResponse captureIdea(CaptureIdeaRequest request, String migratedFrom) {
+        if (request == null) {
+            throw new IllegalArgumentException("Idea request is required.");
+        }
+        requireNotBlank("title", request.title());
+        requireNotBlank("oneLiner", request.oneLiner());
+        if (!notBlank(request.origin())) {
+            throw new IllegalArgumentException(
+                    "origin must not be blank; allowed values: " + String.join(", ", Ideas.ORIGINS) + ".");
+        }
+        String origin = Ideas.normalizeOrigin(request.origin());
+        if (origin == null) {
+            throw new IllegalArgumentException("origin '" + request.origin().strip() + "' is not allowed; use one of: "
+                    + String.join(", ", Ideas.ORIGINS) + ".");
+        }
+        String status = Ideas.STATUS_UNTOUCHED;
+        if (notBlank(request.status())) {
+            status = Ideas.normalizeStatus(request.status());
+            if (status == null) {
+                throw new IllegalArgumentException("status '" + request.status().strip()
+                        + "' is not allowed; use one of: " + String.join(", ", Ideas.STATUSES) + ".");
+            }
+        }
+        Integer legs = request.legs();
+        if (legs != null && (legs < Ideas.MIN_LEGS || legs > Ideas.MAX_LEGS)) {
+            throw new IllegalArgumentException(
+                    "legs must be between " + Ideas.MIN_LEGS + " and " + Ideas.MAX_LEGS + " (got " + legs + ").");
+        }
+        String title = request.title().strip();
+        String oneLiner = request.oneLiner().strip();
+        String repo = stripOrNull(request.repo());
+        String ideaKey = notBlank(request.ideaKey()) ? request.ideaKey().strip() : Ideas.defaultKey(repo, title);
+        List<String> connects = trimList(request.connects());
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("kind", Ideas.KIND);
+        metadata.put("ideaKey", ideaKey);
+        metadata.put("title", title);
+        metadata.put("oneLiner", oneLiner);
+        metadata.put("origin", origin);
+        metadata.put("status", status);
+        putIfPresent(metadata, "legs", legs);
+        putIfPresent(metadata, "quote", stripOrNull(request.quote()));
+        putIfPresent(metadata, "sourceRef", stripOrNull(request.sourceRef()));
+        putIfPresent(metadata, "connects", connects);
+        putIfPresent(metadata, "resumeStep", stripOrNull(request.resumeStep()));
+        putIfPresent(metadata, "link", stripOrNull(request.link()));
+        putIfPresent(metadata, "notes", stripOrNull(request.notes()));
+        putIfPresent(metadata, "repo", repo);
+        putIfPresent(metadata, "migratedFrom", stripOrNull(migratedFrom));
+
+        return write(
+                request.source(),
+                request.clientSessionId(),
+                repo,
+                Ideas.EVENT_TYPE,
+                renderIdea(title, oneLiner, origin, status, legs, connects, request, ideaKey),
+                metadata);
+    }
+
+    @Override
     public IngestResponse captureObservation(String source, String clientSessionId, String repo, String text) {
         requireNotBlank("text", text);
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -160,6 +223,47 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         appendBlock(body, "Basis", request.basis());
 
         return body.toString();
+    }
+
+    private static String renderIdea(
+            String title,
+            String oneLiner,
+            String origin,
+            String status,
+            Integer legs,
+            List<String> connects,
+            CaptureIdeaRequest request,
+            String ideaKey) {
+        StringBuilder body = new StringBuilder(Ideas.TEXT_PREFIX)
+                .append(' ')
+                .append(title)
+                .append(" — ")
+                .append(oneLiner)
+                .append("\n");
+        appendLine(body, "Origin", origin);
+        appendLine(body, "Status", status);
+        if (legs != null) {
+            appendLine(body, "Legs", legs + "/" + Ideas.MAX_LEGS);
+        }
+        if (notBlank(request.quote())) {
+            appendLine(body, "Quote", "\"" + request.quote().strip() + "\"");
+        }
+        appendLine(body, "Source", request.sourceRef());
+        if (connects != null) {
+            appendLine(body, "Connects", String.join("; ", connects));
+        }
+        appendLine(body, "Resume", request.resumeStep());
+        appendLine(body, "Link", request.link());
+        appendLine(body, "Idea key", ideaKey);
+        appendBlock(body, "Notes", request.notes());
+
+        return body.toString();
+    }
+
+    private static void appendLine(StringBuilder body, String label, String value) {
+        if (notBlank(value)) {
+            body.append("\n").append(label).append(": ").append(value.strip());
+        }
     }
 
     private static void appendPath(StringBuilder body, int index, ProjectionPath path) {

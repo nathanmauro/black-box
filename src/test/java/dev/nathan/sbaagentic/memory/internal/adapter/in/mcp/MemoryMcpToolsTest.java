@@ -14,6 +14,7 @@ import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
@@ -259,6 +260,84 @@ class MemoryMcpToolsTest {
         assertThat(request.paths().getFirst().title()).isEqualTo("Ship projection capture");
         assertThat(request.paths().getFirst().description()).isEqualTo("Add MCP and REST capture surfaces.");
         assertThat(request.paths().getFirst().confidence()).isEqualTo(0.72);
+    }
+
+    @Test
+    void captureIdeaDelegatesEveryField() {
+        when(captureOperations.captureIdea(any(CaptureIdeaRequest.class)))
+                .thenReturn(new IngestResponse("e4", "s1", "claude", "c1", "Idea", false));
+
+        String result = callback("captureIdea").call("""
+                {"source":"claude","clientSessionId":"c1","repo":"/tmp/repo",
+                 "title":"Lanes board","oneLiner":"One swimlane per project.","origin":"human-aside",
+                 "quote":"a live board with lanes","sourceRef":"session-9","legs":8,"status":"untouched",
+                 "connects":["Orbit (NAT-196)","project identity"],"resumeStep":"sketch lanes",
+                 "link":"https://example.com/idea","notes":"Prior art","ideaKey":"repo-lanes-board"}
+                """);
+
+        assertThat(result).contains("e4");
+        ArgumentCaptor<CaptureIdeaRequest> captor = ArgumentCaptor.forClass(CaptureIdeaRequest.class);
+        verify(captureOperations).captureIdea(captor.capture());
+        assertThat(captor.getValue())
+                .isEqualTo(new CaptureIdeaRequest(
+                        "claude",
+                        "c1",
+                        "/tmp/repo",
+                        "Lanes board",
+                        "One swimlane per project.",
+                        "human-aside",
+                        "a live board with lanes",
+                        "session-9",
+                        8,
+                        "untouched",
+                        List.of("Orbit (NAT-196)", "project identity"),
+                        "sketch lanes",
+                        "https://example.com/idea",
+                        "Prior art",
+                        "repo-lanes-board"));
+    }
+
+    @Test
+    void captureIdeaToleratesOmittedOptionalFields() {
+        when(captureOperations.captureIdea(any(CaptureIdeaRequest.class)))
+                .thenReturn(new IngestResponse("e5", "s1", "codex", "c1", "Idea", false));
+
+        callback("captureIdea").call("""
+                {"source":"codex","clientSessionId":"c1","title":"Evidence kind",
+                 "oneLiner":"Make Evidence first-class.","origin":"agent-proposed"}
+                """);
+
+        ArgumentCaptor<CaptureIdeaRequest> captor = ArgumentCaptor.forClass(CaptureIdeaRequest.class);
+        verify(captureOperations).captureIdea(captor.capture());
+        CaptureIdeaRequest request = captor.getValue();
+        assertThat(request.title()).isEqualTo("Evidence kind");
+        assertThat(request.origin()).isEqualTo("agent-proposed");
+        assertThat(request.repo()).isNull();
+        assertThat(request.legs()).isNull();
+        assertThat(request.status()).isNull();
+        assertThat(request.connects()).isNull();
+        assertThat(request.ideaKey()).isNull();
+    }
+
+    @Test
+    void captureIdeaToolSaysWhenToUseIt() {
+        assertThat(callback("captureIdea").getToolDefinition().description())
+                .contains("not being acted on right now")
+                .contains("human's aside or an agent's suggestion");
+        assertThat(callback("captureIdea").getToolDefinition().inputSchema())
+                .contains("human-aside")
+                .contains("agent-proposed")
+                .contains("untouched");
+    }
+
+    @Test
+    void recallContextPassesTheIdeaKind() {
+        when(memoryRecall.recall(eq("/tmp/repo"), eq(0), eq(List.of("idea")), isNull()))
+                .thenReturn(new RecallResult("/tmp/repo", 168, List.of("idea"), 0, List.of(), "lexical"));
+
+        callback("recallContext").call("{\"repoOrTopic\":\"/tmp/repo\",\"kinds\":[\"idea\"]}");
+
+        verify(memoryRecall).recall(eq("/tmp/repo"), eq(0), eq(List.of("idea")), isNull());
     }
 
     private ToolCallback callback(String name) {

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.memory.MemoryEventReader;
 import dev.nathan.sbaagentic.memory.MemoryEventReader.RecallCandidate;
 import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader;
+import dev.nathan.sbaagentic.memory.internal.application.port.IdeaEventReader;
 import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
 import dev.nathan.sbaagentic.recording.AgentEvent;
@@ -21,7 +22,7 @@ import org.springframework.stereotype.Repository;
 
 /** Read-only SQLite projections over the recording-owned event tables. */
 @Repository
-public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventReader {
+public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventReader, IdeaEventReader {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -332,6 +333,37 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
         return jdbcTemplate.query(
                 sql,
                 (rs, rowNum) -> new RecallCandidate(mapEvent(rs, rowNum), rs.getString("recall_cwd")),
+                args.toArray());
+    }
+
+    @Override
+    public List<TypedEvent> eventsOfType(String eventType, String textPrefix, int limit) {
+        if (eventType == null || eventType.isBlank() || limit <= 0) {
+
+            return List.of();
+        }
+        List<Object> args = new ArrayList<>();
+        args.add(eventType);
+        StringBuilder sql = new StringBuilder("""
+                SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
+                       e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json,
+                       e.observed_at, s.cwd AS typed_cwd
+                  FROM agent_events e
+                  JOIN agent_sessions s ON e.session_id = s.id
+                 WHERE e.event_type = ?
+                """);
+        if (textPrefix != null && !textPrefix.isEmpty()) {
+            // substr keeps the prefix literal: '[', '%', and '_' are not pattern characters here.
+            sql.append("   AND substr(e.text, 1, ?) = ?\n");
+            args.add(textPrefix.length());
+            args.add(textPrefix);
+        }
+        sql.append(" ORDER BY e.observed_at DESC, e.id DESC\n LIMIT ?");
+        args.add(limit);
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                (rs, rowNum) -> new TypedEvent(mapEvent(rs, rowNum), rs.getString("typed_cwd")),
                 args.toArray());
     }
 

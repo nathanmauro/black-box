@@ -55,7 +55,7 @@ class McpContractSnapshotTest {
     void toolNamesAndInputSchemasMatchTheFrozenSnapshot() throws IOException {
         JsonNode expected = objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
         assertThat(normalizedDefinitions()).isEqualTo(expected);
-        assertThat(callbackProvider.getToolCallbacks()).hasSize(16);
+        assertThat(callbackProvider.getToolCallbacks()).hasSize(17);
     }
 
     @Test
@@ -77,7 +77,7 @@ class McpContractSnapshotTest {
                 }
             }
         }
-        assertThat(annotatedNames).hasSize(16).containsAll(REST_JSON_TOOLS);
+        assertThat(annotatedNames).hasSize(17).containsAll(REST_JSON_TOOLS);
     }
 
     @Test

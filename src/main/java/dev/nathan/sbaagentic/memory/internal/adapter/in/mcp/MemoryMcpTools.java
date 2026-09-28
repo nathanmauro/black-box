@@ -8,6 +8,7 @@ import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
@@ -139,7 +140,8 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
     }
 
     @Tool(
-            description = "Recall structured prior intent — decisions, handoffs, observations, and projections "
+            description = "Recall structured prior intent — decisions, handoffs, observations, projections, "
+                    + "and ideas "
                     + "that earlier agents "
                     + "(or an earlier you) committed — before starting work, so you do not re-decide what was "
                     + "already settled. Returns structured fields and the full captured text, not raw search hits.")
@@ -158,7 +160,7 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             @ToolParam(
                             required = false,
                             description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
-                                    + "'observation', or 'projection'. Omit to recall decisions and handoffs.")
+                                    + "'observation', 'projection', or 'idea'. Omit to recall decisions and handoffs.")
                     List<String> kinds,
             @ToolParam(
                             required = false,
@@ -284,6 +286,65 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
 
         return captureOperations.captureProjection(
                 new CaptureProjectionRequest(source, clientSessionId, repo, basis, paths));
+    }
+
+    @Tool(
+            description = "Capture an idea someone proposed that is not being acted on right now — a human's "
+                    + "aside or an agent's suggestion — so it can be listed, recalled, and resumed later. "
+                    + "Ideas are append-only: to change an idea's status, capture it again with the same ideaKey.")
+    public IngestResponse captureIdea(
+            @ToolParam(description = "Source client: claude, codex, or manual.") String source,
+            @ToolParam(description = "Client session id or stable grouping key for your run.") String clientSessionId,
+            @ToolParam(
+                            required = false,
+                            description = "Repo path this idea is about (your working directory), if any. "
+                                    + "Used for project scoping and the default ideaKey.")
+                    String repo,
+            @ToolParam(description = "Short name of the idea.") String title,
+            @ToolParam(description = "One sentence: what the idea is.") String oneLiner,
+            @ToolParam(
+                            description = "Who had the idea: 'human-aside' (the human said it in passing), "
+                                    + "'agent-proposed' (an agent suggested it), or 'joint'.")
+                    String origin,
+            @ToolParam(required = false, description = "Verbatim words from the person or agent who had the idea.")
+                    String quote,
+            @ToolParam(required = false, description = "Where the idea came from: a session id, a path:line, or a URL.")
+                    String sourceRef,
+            @ToolParam(required = false, description = "How much the idea has going for it, 0 to 10.") Integer legs,
+            @ToolParam(
+                            required = false,
+                            description = "One of 'untouched' (default), 'partially-built', 'built-unused', "
+                                    + "'superseded', or 'tracked'.")
+                    String status,
+            @ToolParam(required = false, description = "Related threads, ideas, or issue ids.") List<String> connects,
+            @ToolParam(required = false, description = "The smallest useful next step if someone picks it up.")
+                    String resumeStep,
+            @ToolParam(required = false, description = "Optional Linear, Obsidian (obsidian://…), or web link.")
+                    String link,
+            @ToolParam(required = false, description = "Optional free-form markdown body: prior art, motivating case.")
+                    String notes,
+            @ToolParam(
+                            required = false,
+                            description = "Stable identity across status changes. Omit to default to a slug of "
+                                    + "the repo name plus the title; reuse it to record a new status.")
+                    String ideaKey) {
+
+        return captureOperations.captureIdea(new CaptureIdeaRequest(
+                source,
+                clientSessionId,
+                repo,
+                title,
+                oneLiner,
+                origin,
+                quote,
+                sourceRef,
+                legs,
+                status,
+                connects,
+                resumeStep,
+                link,
+                notes,
+                ideaKey));
     }
 
     @Tool(description = "Capture a free-form observation or note into the local recorder.")

@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -17,6 +18,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
+import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
@@ -300,6 +302,46 @@ class ContextLoopTest {
                                 """.formatted(repo)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.type").value("invalid_argument"));
+    }
+
+    @Test
+    void ideaRecallsOnlyWhenTheIdeaKindIsRequested() throws Exception {
+        String repo = "/tmp/idea-recall-roundtrip";
+        IngestResponse captured = captureOperations.captureIdea(new CaptureIdeaRequest(
+                "claude",
+                "claude-idea-recall",
+                repo,
+                "Lanes board",
+                "One swimlane per project.",
+                "human-aside",
+                "a live board with lanes",
+                null,
+                8,
+                null,
+                List.of("Orbit"),
+                "Sketch the lanes",
+                null,
+                null,
+                null));
+
+        RecallResult recalled = contextService.recall(repo, 168, List.of("idea"));
+        assertThat(recalled.kinds()).containsExactly("idea");
+        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo(captured.eventId());
+            assertThat(item.kind()).isEqualTo("idea");
+            assertThat(item.headline()).isEqualTo("Lanes board");
+            assertThat(item.rationale()).isEqualTo("One swimlane per project.");
+            assertThat(item.nextAction()).isEqualTo("Sketch the lanes");
+            assertThat(item.repo()).isEqualTo(repo);
+        });
+
+        assertThat(contextService.recall(repo, 168, null).items()).isEmpty();
+
+        mockMvc.perform(get("/api/recall").param("scope", repo).param("kinds", "idea"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kinds[0]").value("idea"))
+                .andExpect(jsonPath("$.items[0].headline").value("Lanes board"))
+                .andExpect(jsonPath("$.items[0].rationale").value("One swimlane per project."));
     }
 
     @Test

@@ -66,6 +66,7 @@ class TaskApiContractTest {
             "captureDecision",
             "captureHandoff",
             "captureProjection",
+            "captureIdea",
             "captureObservation",
             "localModelStatus");
     private static final Set<String> TASK_TOOLS = Set.of(
@@ -761,7 +762,7 @@ class TaskApiContractTest {
                 .map(callback -> callback.getToolDefinition().name())
                 .collect(Collectors.toSet());
         assertThat(registered)
-                .hasSize(16)
+                .hasSize(17)
                 .containsAll(EXISTING_TOOLS)
                 .containsAll(TASK_TOOLS)
                 .contains("searchContext");
@@ -800,11 +801,28 @@ class TaskApiContractTest {
                 String.class);
         Method projection = MemoryMcpTools.class.getMethod(
                 "captureProjection", String.class, String.class, String.class, String.class, List.class);
+        Method idea = MemoryMcpTools.class.getMethod(
+                "captureIdea",
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class,
+                Integer.class,
+                String.class,
+                List.class,
+                String.class,
+                String.class,
+                String.class,
+                String.class);
         Method observation = MemoryMcpTools.class.getMethod(
                 "captureObservation", String.class, String.class, String.class, String.class);
         Method modelStatus = dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools.class.getMethod(
                 "localModelStatus");
-        assertThat(List.of(recent, search, recall, decision, handoff, projection, observation, modelStatus))
+        assertThat(List.of(recent, search, recall, decision, handoff, projection, idea, observation, modelStatus))
                 .allSatisfy(
                         method -> assertThat(method.getAnnotation(org.springframework.ai.tool.annotation.Tool.class))
                                 .isNotNull());

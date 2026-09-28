@@ -44,4 +44,11 @@ class SpaForwardingTest {
 
         mvc.perform(get("/api/tasks")).andExpect(status().isNotFound());
     }
+
+    @Test
+    void ideasRouteForwardsToIndexWithoutShadowingTheIdeasApi() throws Exception {
+        mvc.perform(get("/ideas")).andExpect(status().isOk()).andExpect(forwardedUrl("/index.html"));
+
+        mvc.perform(get("/api/ideas")).andExpect(status().isNotFound());
+    }
 }

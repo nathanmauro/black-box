@@ -26,6 +26,7 @@ public final class EmbeddableText {
                 switch (EventTypes.normalize(eventType)) {
                     case "decision" -> firstNonBlank(joinFields(metadata, "decision", "rationale"), text);
                     case "handoff" -> firstNonBlank(joinFields(metadata, "contextSummary", "nextAction"), text);
+                    case "idea" -> firstNonBlank(joinFields(metadata, "title", "oneLiner"), text);
                     default -> text;
                 };
 

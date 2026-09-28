@@ -80,6 +80,18 @@ class EmbeddingIndexerIntegrationTest {
     }
 
     @Test
+    void recordingIdeaProducesOneEmbeddingRow() {
+        recorder.ingest(event(
+                "idea-session",
+                "Idea",
+                "[Idea] Lanes board — One swimlane per project.",
+                Map.of("kind", "idea", "title", "Lanes board", "oneLiner", "One swimlane per project.")));
+
+        assertThat(embeddingCount()).isEqualTo(1);
+        assertThat(embedder.calls()).isEqualTo(1);
+    }
+
+    @Test
     void recordingPostToolUseProducesNoEmbeddingRow() {
         recorder.ingest(event("tool-session", "PostToolUse", "Ran tests", Map.of()));
 

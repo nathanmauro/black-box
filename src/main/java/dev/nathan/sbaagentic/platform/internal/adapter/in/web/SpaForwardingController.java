@@ -8,7 +8,8 @@ import org.springframework.web.bind.annotation.GetMapping;
  * refreshes (e.g. {@code /sessions/<id>}, {@code /search}) resolve instead of 404ing. The route list
  * is explicit — never a catch-all — so {@code /api/**} and hashed static assets are never shadowed.
  * The Board is an explicit route; it never catches {@code /api/tasks} or any other API surface.
- * {@code /stream} is exact — it never catches the {@code /api/stream} SSE endpoint.
+ * {@code /stream} is exact — it never catches the {@code /api/stream} SSE endpoint, and {@code /ideas}
+ * is exact — it never catches {@code /api/ideas}.
  */
 @Controller
 public class SpaForwardingController {
@@ -23,7 +24,8 @@ public class SpaForwardingController {
                 "/projects",
                 "/projects/**",
                 "/graph",
-                "/board"
+                "/board",
+                "/ideas"
             })
     public String forward() {
 
