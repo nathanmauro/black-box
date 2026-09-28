@@ -51,4 +51,11 @@ class SpaForwardingTest {
 
         mvc.perform(get("/api/ideas")).andExpect(status().isNotFound());
     }
+
+    @Test
+    void companionRouteForwardsToIndexWithoutShadowingTheApi() throws Exception {
+        mvc.perform(get("/companion")).andExpect(status().isOk()).andExpect(forwardedUrl("/index.html"));
+
+        mvc.perform(get("/api/companion")).andExpect(status().isNotFound());
+    }
 }

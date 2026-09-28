@@ -25,7 +25,8 @@ public class SpaForwardingController {
                 "/projects/**",
                 "/graph",
                 "/board",
-                "/ideas"
+                "/ideas",
+                "/companion"
             })
     public String forward() {
 

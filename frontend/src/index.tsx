@@ -3,6 +3,7 @@ import { Navigate, Route, Router } from "@solidjs/router";
 import App from "./App";
 import ActivityPage from "./pages/ActivityPage";
 import BoardPage from "./pages/BoardPage";
+import CompanionPage from "./pages/CompanionPage";
 import GraphPage from "./pages/GraphPage";
 import IdeasPage from "./pages/IdeasPage";
 import ProjectsPage from "./pages/ProjectsPage";
@@ -38,6 +39,7 @@ render(
       <Route path="/projects/:projectKey" component={ProjectsPage} />
       <Route path="/graph" component={GraphPage} />
       <Route path="/ideas" component={IdeasPage} />
+      <Route path="/companion" component={CompanionPage} />
     </Router>
   ),
   root,

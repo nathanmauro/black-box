@@ -38,6 +38,7 @@ GET /api/tasks
 GET /api/tasks/{taskId}/dag
 GET /api/tasks/{taskId}/events
 GET /board
+GET /companion
 GET /graph
 GET /ideas
 GET /projects
