@@ -1,6 +1,6 @@
 # Idea capture kind
 
-**Status:** in progress on branch `claude/idea-kind`, stacked on `claude/human-turn-first`. The
+**Status:** built and verified on branch `claude/idea-kind`, stacked on `claude/human-turn-first`; not merged or deployed.
 backend is implemented; its deviations from this contract are recorded under Deviations.
 
 **Origin:** during a loose-ends hunt on 2026-09-28, Nathan asked to track "anything like tower
@@ -158,3 +158,54 @@ Backend choices where the contract was silent or needed a concrete rule:
   route, which keeps its idempotency receipts. Such an idea has no structured fields; the Ideas
   list derives its title from the first line, reports status `untouched`, and leaves `origin` null.
 - **SPA route:** `GET /ideas` forwards to `index.html` so the Ideas view survives a hard refresh.
+
+## Observed results (2026-09-28)
+
+**Build process:** a multi-agent workflow built the backend and frontend in separate worktrees.
+Three lens-distinct reviewers read each side's diff, and two skeptics tried to refute each finding.
+
+- None of the 18 findings were refuted: 11 backend and 7 frontend, some of them duplicates.
+- The fixers repaired most of them:
+  - Migration had written every repo's ideas into one session.
+  - A capped scan broke idempotency.
+  - The default key was built from the unredacted title.
+  - Migrated ideas carried the wrong timestamp.
+  - An overflowing `legs` value aborted the migration.
+  - The frontend had empty-state, stale-row, and focus bugs.
+- The coordinator fixed three confirmed findings the fixers had dropped:
+  - A status-only re-capture blanked optional fields in the listing. Fields now fall back to
+    earlier revisions.
+  - The contract matrix said `legs` is clamped; it is actually rejected when out of range.
+  - The docs claimed the default key is identical on every checkout.
+
+**Tests**
+- Full backend suite: 746 tests, 0 failures, 20 environment skips.
+- Frontend: 650 vitest tests pass and `npm run check` is clean.
+- Playwright: 27 tests pass, including both Ideas specs.
+- Gateway: 17 pytest tests pass.
+
+**Real-data run:** the packaged jar ran on a spare port against a fresh consistent backup of the
+local database, with the model, embedding, and Elasticsearch paths off.
+- The dry run parsed both real `[Idea]` observations with no warnings: `nathan-aside` became
+  `human-aside`, and legs 8 and 7, the quotes, and the connects all came through. The dry run
+  wrote nothing.
+- `apply=true` created two ideas, each in its own repo's migration session. A second apply
+  created nothing, and the source observations hashed identically before and after.
+- MCP:
+  - `tools/list` shows 17 tools.
+  - `captureIdea` stored an agent-proposed idea.
+  - An invalid origin returned "origin 'hallway' is not allowed; use one of: human-aside,
+    agent-proposed, joint."
+  - A status-only re-capture moved it to `tracked` and kept its quote, connects, and resume step.
+  - `recallContext` with `kinds: ["idea"]` returned repo-scoped ideas, with the resume step as
+    `nextAction`.
+- Browser:
+  - `/ideas` lists the ideas.
+  - The origin chip filters and persists in the URL across a reload.
+  - A 390-pixel viewport has no horizontal scroll.
+  - `kind:Idea` in the stream renders "title — one-liner" rows.
+
+**Limits**
+- `recallContext` is event-level, so it returns every revision of an idea. Only `GET /api/ideas`
+  collapses by key.
+- Ideas written by the ChatGPT gateway have no structured fields yet.
