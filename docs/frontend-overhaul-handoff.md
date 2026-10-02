@@ -1,5 +1,7 @@
 > Internal development handoff notes — not user documentation.
 
+> Historical checkpoint from July 2026. NAT-243 retired the Board, its routes, stores, tests, and task SSE frames; the commands below naming those files are historical. Projects and session-lineage UI remain. Use [current architecture](architecture.md) and [retirement notes](board-retirement.md).
+
 # Black Box Frontend Handoff
 
 **Last updated:** 2026-07-15 · **Status:** SolidJS frontend, logical Projects, and coordination Board implemented

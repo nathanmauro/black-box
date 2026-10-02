@@ -164,68 +164,19 @@ For external source readers, inspect the current tool schema, follow returned pa
 check errors before parsing JSON, and bound the whole displayed response. Black Box does not
 control those tools' page sizes or promise that every external task has a local transcript.
 
-### Coordination tools
+### Session lineage
 
-| Tool | Purpose |
-| --- | --- |
-| `createSpec` | Freeze a work definition under an exact project key; its frozen body is returned with every claimed task |
-| `enqueueTask` | Add an open task to one exact lane |
-| `claimNextTask` | Atomically claim the highest-priority, oldest open task in one exact lane |
-| `updateTaskStatus` | Block, reset, or cancel through the allowed lifecycle |
-| `completeTask` | Complete owned work and atomically link a recallable Handoff |
-| `listTasks` | Query full task/spec snapshots by project, lane, or status |
-| `getSpec` | Retrieve the frozen spec body and provenance |
+The dedicated `lineage` module owns session relationships independently of task tracking.
+`POST /api/session-links` creates links; `GET /api/sessions/{id}/links` reads parents and children;
+`GET /api/session-links/child-counts?ids=...` supplies Browse child counts; and
+`GET /api/dag?sessionId=...` returns the session-only lineage graph. Link types remain `spawned`,
+`steered`, and `continued`. Hook-derived subagent links, UI navigation, and Orbit retain the same
+relationships.
 
-REST mirrors the seven coordination operations. REST task listing additionally accepts `offset`
-and repeatable or comma-separated `excludeStatus`; MCP `listTasks` does not expose those parameters.
-Successful REST and MCP results share field names and ISO-8601 timestamps; failures use stable typed error envelopes. See
-[Architecture](architecture.md) for the full contract and transaction boundaries.
-
-## Coordination example
-
-Coordination extends capture → handoff → recall and is optional for memory use. The syntax below
-is illustrative; MCP clients render tool calls differently. `projectKey` is stored as an exact
-string: the server requires only that it be non-blank and never resolves it against the project
-catalog. Use the catalog's canonical scope or path so Board grouping and exact `listTasks` queries
-line up.
-
-The server never launches a worker or executes a task command. The external worker does the work
-between claiming and completing it. SSE frames are wake hints; claims and task reads are authoritative.
-
-```text
-createSpec({
-  "projectKey": "/workspace/example-app",
-  "title": "Add a health probe",
-  "body": "Implement GET /healthz and prove a 200 response.",
-  "actor": "planner"
-})
-
-enqueueTask({
-  "specId": "<returned-spec-id>",
-  "title": "Implement and verify the health probe",
-  "lane": "codex",
-  "priority": 10,
-  "actor": "planner"
-})
-
-claimNextTask({"lane": "codex", "agent": "worker-1"})
-
-completeTask({
-  "taskId": "<returned-task-id>",
-  "actor": "worker-1",
-  "source": "codex",
-  "clientSessionId": "health-probe-run",
-  "summary": "Implemented and verified GET /healthz.",
-  "openLoops": [],
-  "nextAction": "Run the release gate."
-})
-
-recallContext({
-  "repoOrTopic": "<returned-resultHandoffId>",
-  "withinHours": 24,
-  "kinds": ["handoff"]
-})
-```
+The task/spec REST API and seven coordination MCP tools have been retired. Reload or reconnect
+cached MCP clients after upgrading to refresh their tool inventory. Capture, recall, search,
+projections, ideas, recent sessions, and model-status tools remain. See
+[retirement and upgrade notes](board-retirement.md) for storage and local-state boundaries.
 
 ## Recall scope and limits
 

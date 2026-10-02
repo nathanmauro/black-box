@@ -12,6 +12,16 @@ import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
 import dev.nathan.sbaagentic.judgment.EventJudgment;
+import dev.nathan.sbaagentic.lineage.CreateSessionLinkRequest;
+import dev.nathan.sbaagentic.lineage.DagEdge;
+import dev.nathan.sbaagentic.lineage.DagNode;
+import dev.nathan.sbaagentic.lineage.DagResponse;
+import dev.nathan.sbaagentic.lineage.LinkErrorCode;
+import dev.nathan.sbaagentic.lineage.LinkType;
+import dev.nathan.sbaagentic.lineage.SessionLink;
+import dev.nathan.sbaagentic.lineage.SessionLinkView;
+import dev.nathan.sbaagentic.lineage.SessionLinksResponse;
+import dev.nathan.sbaagentic.lineage.SessionRef;
 import dev.nathan.sbaagentic.memory.CompactSearchResult;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
@@ -57,34 +67,10 @@ import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.StorageStats;
-import dev.nathan.sbaagentic.runner.RunnerConfig;
 import dev.nathan.sbaagentic.summary.AiHealth;
 import dev.nathan.sbaagentic.summary.ExportTarget;
 import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
 import dev.nathan.sbaagentic.summary.SummaryExport;
-import dev.nathan.sbaagentic.workflow.AnnotationKind;
-import dev.nathan.sbaagentic.workflow.ClaimTaskRequest;
-import dev.nathan.sbaagentic.workflow.CreateSessionLinkRequest;
-import dev.nathan.sbaagentic.workflow.DagEdge;
-import dev.nathan.sbaagentic.workflow.DagNode;
-import dev.nathan.sbaagentic.workflow.DagResponse;
-import dev.nathan.sbaagentic.workflow.LinkErrorCode;
-import dev.nathan.sbaagentic.workflow.LinkType;
-import dev.nathan.sbaagentic.workflow.SessionLink;
-import dev.nathan.sbaagentic.workflow.SessionLinkView;
-import dev.nathan.sbaagentic.workflow.SessionLinksResponse;
-import dev.nathan.sbaagentic.workflow.SessionRef;
-import dev.nathan.sbaagentic.workflow.SpecStatus;
-import dev.nathan.sbaagentic.workflow.Task;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
-import dev.nathan.sbaagentic.workflow.TaskChange;
-import dev.nathan.sbaagentic.workflow.TaskErrorCode;
-import dev.nathan.sbaagentic.workflow.TaskEvent;
-import dev.nathan.sbaagentic.workflow.TaskEventType;
-import dev.nathan.sbaagentic.workflow.TaskSnapshot;
-import dev.nathan.sbaagentic.workflow.TaskSpec;
-import dev.nathan.sbaagentic.workflow.TaskStatus;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.web.TaskController;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -110,16 +96,10 @@ class WireContractFixtureTest {
     }
 
     @Test
-    void enumValuesSseFramesAndRunnerKeysStayStable() throws IOException {
+    void enumValuesAndSseFramesStayStable() throws IOException {
         JsonNode fixture = fixture();
-        Map<String, Object[]> enums = Map.ofEntries(
-                entry("SpecStatus", SpecStatus.values()),
-                entry("TaskStatus", TaskStatus.values()),
-                entry("TaskEventType", TaskEventType.values()),
-                entry("AnnotationKind", AnnotationKind.values()),
-                entry("TaskErrorCode", TaskErrorCode.values()),
-                entry("LinkType", LinkType.values()),
-                entry("LinkErrorCode", LinkErrorCode.values()));
+        Map<String, Object[]> enums =
+                Map.ofEntries(entry("LinkType", LinkType.values()), entry("LinkErrorCode", LinkErrorCode.values()));
         enums.forEach((name, values) -> assertThat(fixture.path("enums").path(name))
                 .as(name)
                 .isEqualTo(objectMapper.valueToTree(Arrays.asList(values))));
@@ -127,27 +107,11 @@ class WireContractFixtureTest {
         Map<String, Class<?>> frames = Map.ofEntries(
                 entry("event.appended", StreamEvents.EventAppended.class),
                 entry("session.updated", StreamEvents.SessionUpdated.class),
-                entry("judgment.appended", StreamEvents.JudgmentAppended.class),
-                entry("task.created", StreamEvents.TaskChanged.class),
-                entry("task.claimed", StreamEvents.TaskChanged.class),
-                entry("task.blocked", StreamEvents.TaskChanged.class),
-                entry("task.completed", StreamEvents.TaskChanged.class),
-                entry("task.reset", StreamEvents.TaskChanged.class),
-                entry("task.cancelled", StreamEvents.TaskChanged.class),
-                entry("task.note", StreamEvents.TaskNoted.class));
+                entry("judgment.appended", StreamEvents.JudgmentAppended.class));
         JsonNode sseFrames = fixture.path("sseFrames");
         assertThat(toSet(sseFrames.fieldNames())).isEqualTo(frames.keySet());
         frames.forEach((name, type) ->
                 assertThat(toSet(sseFrames.path(name).fieldNames())).as(name).isEqualTo(serializedProperties(type)));
-
-        JsonNode runnerFixture = fixture.path("runnerConfig");
-        RunnerConfig config = objectMapper.treeToValue(runnerFixture, RunnerConfig.class);
-        assertThat(toSet(runnerFixture.fieldNames()))
-                .containsExactlyInAnyOrder("concurrency", "engines", "notify", "repos");
-        assertThat(toSet(runnerFixture.path("repos").get(0).fieldNames()))
-                .containsExactlyInAnyOrder("path", "push", "auto_merge", "verify", "danger");
-        assertThat(config.notifyCommand()).isEqualTo("notify-send refactor-complete");
-        assertThat(config.repos().get(0).autoMerge()).isTrue();
     }
 
     private JsonNode fixture() throws IOException {
@@ -182,9 +146,6 @@ class WireContractFixtureTest {
                 entry("CompactSearchResult.Coverage", CompactSearchResult.Coverage.class),
                 entry("AgentEvent", AgentEvent.class),
                 entry("AgentSession", AgentSession.class),
-                entry("TaskController.AnnotationBody", TaskController.AnnotationBody.class),
-                entry("TaskController.CompleteTaskBody", TaskController.CompleteTaskBody.class),
-                entry("TaskController.TaskStatusBody", TaskController.TaskStatusBody.class),
                 entry("AiHealth", AiHealth.class),
                 entry("ApiError", ApiExceptionHandler.ApiError.class),
                 entry("ApiError.ErrorBody", ApiExceptionHandler.ApiError.ErrorBody.class),
@@ -198,7 +159,6 @@ class WireContractFixtureTest {
                 entry("CaptureHandoffRequest", CaptureHandoffRequest.class),
                 entry("CaptureProjectionRequest", CaptureProjectionRequest.class),
                 entry("CaptureIdeaRequest", CaptureIdeaRequest.class),
-                entry("ClaimTaskRequest", ClaimTaskRequest.class),
                 entry("CodeNavigationResult", CodeNavigationResult.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
                 entry("CodeReference", CodeReference.class),
@@ -249,12 +209,6 @@ class WireContractFixtureTest {
                 entry("TrajectoryCapture", TrajectoryCapture.class),
                 entry("TrajectoryPath", TrajectoryPath.class),
                 entry("TrajectoryTask", TrajectoryTask.class),
-                entry("ExportTarget", ExportTarget.class),
-                entry("Task", Task.class),
-                entry("TaskAnnotation", TaskAnnotation.class),
-                entry("TaskChange", TaskChange.class),
-                entry("TaskEvent", TaskEvent.class),
-                entry("TaskSnapshot", TaskSnapshot.class),
-                entry("TaskSpec", TaskSpec.class)));
+                entry("ExportTarget", ExportTarget.class)));
     }
 }

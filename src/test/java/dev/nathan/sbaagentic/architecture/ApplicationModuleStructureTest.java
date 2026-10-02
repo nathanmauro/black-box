@@ -16,16 +16,7 @@ class ApplicationModuleStructureTest {
         modules.verify();
         assertThat(modules.stream().map(module -> module.getIdentifier().toString()))
                 .containsExactlyInAnyOrder(
-                        "ask",
-                        "judgment",
-                        "memory",
-                        "platform",
-                        "project",
-                        "query",
-                        "recording",
-                        "runner",
-                        "summary",
-                        "workflow");
+                        "ask", "judgment", "memory", "platform", "project", "query", "recording", "summary", "lineage");
         new Documenter(modules).writeModulesAsPlantUml();
     }
 }

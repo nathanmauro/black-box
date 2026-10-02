@@ -37,6 +37,12 @@ class RestContractSnapshotTest {
 
     @Test
     void applicationMappingsMatchTheFrozenSnapshot() throws IOException {
+        if (Boolean.getBoolean("contracts.update")) {
+            java.nio.file.Files.writeString(
+                    java.nio.file.Path.of("src/test/resources/contracts/rest-mappings.txt"),
+                    "# Sorted method/path snapshot. Implementation controller classes are intentionally excluded.\n"
+                            + String.join("\n", applicationMappings()) + "\n");
+        }
         assertThat(applicationMappings()).containsExactlyElementsOf(resourceLines("contracts/rest-mappings.txt"));
     }
 

@@ -324,7 +324,7 @@ export type TrajectoryCapture = {
 export type TrajectoryTask = {
   id: string;
   title: string;
-  status: TaskStatus | string;
+  status: string;
   priority: number;
   updatedAt?: string | null;
 };
@@ -456,78 +456,6 @@ export type ApiStatus = {
   [key: string]: unknown;
 };
 
-export type SpecStatus = "active" | "done" | "archived";
-
-export type TaskStatus = "open" | "claimed" | "in_progress" | "blocked" | "done" | "cancelled";
-
-export type TaskEventType =
-  | "task.created"
-  | "task.claimed"
-  | "task.blocked"
-  | "task.completed"
-  | "task.reset"
-  | "task.cancelled"
-  | "task.note";
-
-export type Spec = {
-  id: string;
-  projectKey: string;
-  title: string;
-  body: string;
-  specRef?: Record<string, unknown> | null;
-  status: SpecStatus;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type AgentTask = {
-  id: string;
-  specId: string;
-  projectKey: string;
-  title: string;
-  lane: string;
-  status: TaskStatus;
-  priority: number;
-  createdBy: string;
-  claimedBy?: string | null;
-  blockedReason?: string | null;
-  resultHandoffId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type TaskEvent = {
-  id: string;
-  taskId: string;
-  type: TaskEventType;
-  actor: string;
-  fromStatus?: TaskStatus | null;
-  toStatus?: TaskStatus | null;
-  detail?: Record<string, unknown> | null;
-  observedAt: string;
-};
-
-export type AnnotationKind =
-  "note" | "steer" | "progress" | "worker_session" | "engine" | "plan" | "review" | "approval";
-
-export type TaskAnnotation = {
-  id: string;
-  taskId: string;
-  kind: AnnotationKind;
-  actor: string;
-  text: string;
-  dataJson?: Record<string, unknown> | null;
-  observedAt: string;
-};
-
-export type CreateAnnotationRequest = {
-  actor: string;
-  kind: AnnotationKind;
-  text: string;
-  dataJson?: Record<string, unknown> | null;
-};
-
 export type SessionLinkType = "spawned" | "steered" | "continued";
 
 export type SessionLinkPeer = {
@@ -542,7 +470,6 @@ export type SessionLink = {
   parentSessionId: string;
   childSessionId: string;
   linkType: SessionLinkType;
-  taskId?: string | null;
   createdAt: string;
   session: SessionLinkPeer;
 };
@@ -556,11 +483,10 @@ export type CreateSessionLinkRequest = {
   parentSessionId: string;
   childSessionId: string;
   linkType: SessionLinkType;
-  taskId?: string;
 };
 
-export type DagNodeType = "spec" | "task" | "session";
-export type DagEdgeType = "has_task" | "worker_session" | "spawned" | "steered" | "continued";
+export type DagNodeType = "session";
+export type DagEdgeType = "spawned" | "steered" | "continued";
 
 export type DagNode = {
   id: string;
@@ -579,57 +505,6 @@ export type DagEdge = {
 export type DagResponse = {
   nodes: DagNode[];
   edges: DagEdge[];
-};
-
-export type TaskSnapshot = {
-  task: AgentTask;
-  spec: Spec;
-};
-
-export type TaskChange = {
-  snapshot: TaskSnapshot;
-  event: TaskEvent;
-};
-
-export type CreateSpecRequest = {
-  projectKey: string;
-  title: string;
-  body: string;
-  specRef?: Record<string, unknown> | null;
-  actor: string;
-};
-
-export type EnqueueTaskRequest = {
-  specId: string;
-  title: string;
-  lane: string;
-  priority: number;
-  actor: string;
-};
-
-export type ClaimTaskRequest = {
-  lane: string;
-  agent: string;
-};
-
-export type UpdateTaskStatusRequest =
-  | { actor: string; status: "blocked"; blockedReason: string }
-  | { actor: string; status: "open" | "cancelled"; blockedReason?: never };
-
-export type CompleteTaskRequest = {
-  actor: string;
-  source: string;
-  clientSessionId: string;
-  summary: string;
-  openLoops: string[];
-  nextAction: string;
-};
-
-export type TaskFilters = {
-  projectKey?: string;
-  lane?: string;
-  status?: TaskStatus;
-  limit?: number;
 };
 
 export class ApiError extends Error {
@@ -838,29 +713,6 @@ export function getStatus(): Promise<ApiStatus> {
   return getJson("/api/status");
 }
 
-export function createSpec(request: CreateSpecRequest): Promise<Spec> {
-  return postJson("/api/specs", request);
-}
-
-export function getSpec(specId: string): Promise<Spec> {
-  return getJson(`/api/specs/${encodeURIComponent(specId)}`);
-}
-
-export function enqueueTask(request: EnqueueTaskRequest): Promise<TaskChange> {
-  return postJson("/api/tasks", request);
-}
-
-export function createTaskAnnotation(
-  taskId: string,
-  request: CreateAnnotationRequest,
-): Promise<TaskAnnotation> {
-  return postJson(`/api/tasks/${encodeURIComponent(taskId)}/annotations`, request);
-}
-
-export function getTaskEvents(taskId: string): Promise<TaskEvent[]> {
-  return getJson(`/api/tasks/${encodeURIComponent(taskId)}/events`);
-}
-
 export function createSessionLink(request: CreateSessionLinkRequest): Promise<SessionLink> {
   return postJson("/api/session-links", request);
 }
@@ -890,43 +742,8 @@ export async function getSessionChildCounts(ids: string[]): Promise<Record<strin
   return results.reduce<Record<string, number>>((merged, batch) => ({ ...merged, ...batch }), {});
 }
 
-export function getTaskDag(taskId: string): Promise<DagResponse> {
-  return getJson(`/api/tasks/${encodeURIComponent(taskId)}/dag`);
-}
-
 export function getSessionDag(sessionId: string): Promise<DagResponse> {
   return getJson(`/api/dag?sessionId=${encodeURIComponent(sessionId)}`);
-}
-
-export async function claimNextTask(request: ClaimTaskRequest): Promise<TaskChange | null> {
-  const response = await apiRequest("/api/tasks/claim", {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  if (response.status === 204) return null;
-  return readJson<TaskChange>(response);
-}
-
-export function updateTaskStatus(
-  taskId: string,
-  request: UpdateTaskStatusRequest,
-): Promise<TaskChange> {
-  return patchJson(`/api/tasks/${encodeURIComponent(taskId)}`, request);
-}
-
-export function completeTask(taskId: string, request: CompleteTaskRequest): Promise<TaskChange> {
-  return postJson(`/api/tasks/${encodeURIComponent(taskId)}/complete`, request);
-}
-
-export function listTasks(filters: TaskFilters = {}): Promise<TaskSnapshot[]> {
-  const query = new URLSearchParams();
-  if (filters.projectKey !== undefined) query.set("projectKey", filters.projectKey);
-  if (filters.lane !== undefined) query.set("lane", filters.lane);
-  if (filters.status !== undefined) query.set("status", filters.status);
-  if (filters.limit !== undefined) query.set("limit", String(filters.limit));
-  const suffix = query.toString();
-  return getJson(`/api/tasks${suffix ? `?${suffix}` : ""}`);
 }
 
 // The login page and authenticated GETs refresh this cookie after session/CSRF rotation.
@@ -961,15 +778,6 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 async function putJson<T>(path: string, body: unknown): Promise<T> {
   const response = await apiRequest(path, {
     method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return readJson<T>(response);
-}
-
-async function patchJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await apiRequest(path, {
-    method: "PATCH",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

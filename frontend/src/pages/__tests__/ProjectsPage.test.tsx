@@ -247,9 +247,9 @@ describe("ProjectsPage", () => {
     const taskDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
     expect(rail.firstElementChild).toBe(taskDetail);
     expect(taskDetail).toHaveTextContent("Prepare task packet");
-    expect(
-      within(taskDetail).getByRole("link", { name: "Task open: Prepare task packet" }),
-    ).toHaveAttribute("href", "/board?task=task-1");
+    expect(within(taskDetail).getByText("Task open: Prepare task packet")).not.toHaveAttribute(
+      "href",
+    );
   });
 
   it("switches the center pane to the timeline view", async () => {
@@ -371,10 +371,7 @@ describe("ProjectsPage", () => {
       "href",
       "/?view=browse&project=sba-key",
     );
-    expect(screen.getByRole("link", { name: "Board" })).toHaveAttribute(
-      "href",
-      "/board?project=%2FUsers%2Fnathan%2FDeveloper%2Fproj%2Fsba-agentic",
-    );
+    expect(screen.queryByRole("link", { name: "Board" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Recall" })).toHaveAttribute(
       "href",
       "/recall?scope=%2FUsers%2Fnathan%2FDeveloper%2Fproj%2Fsba-agentic",

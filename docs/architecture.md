@@ -5,17 +5,12 @@ The Java codebase follows the feature-first modular-monolith rules in
 feature ownership, internal layering, and permitted cross-feature dependencies executable in the
 build while the wire and SQLite contracts described here remain stable.
 
-Black Box is a local-first memory and coordination substrate for coding agents. It owns two related
-loops:
+Black Box is a local-first memory bus for coding agents. Its core loop is to capture structured
+intent, preserve session relationships, and recall that evidence later. Selected work is tracked
+in Linear; Black Box no longer owns a task queue or worker runner.
 
-- **continuity:** commit a structured decision, observation, or Handoff, then recall it later; and
-- **coordination:** create a frozen spec, enqueue lane-routed work, atomically claim it, record its
-  lifecycle, complete it with a normal Handoff, then recall that result.
-
-The task-coordination path never launches worker agents, executes task commands, edits a checkout,
-or acknowledges work on an agent's behalf. Workers and orchestrators remain external clients. The
-core loops require only the Spring Boot process and SQLite; SSE is a best-effort wake hint, not a
-queue or durability boundary. Configured session summarization is a separate explicit path and may
+The core loop requires only the Spring Boot process and SQLite. SSE is a best-effort refresh hint,
+not a durability boundary. Configured session summarization is a separate explicit path and may
 invoke a Codex or Claude CLI command through `/bin/sh -c`, with the transcript privacy boundary
 described below.
 
@@ -24,8 +19,7 @@ described below.
 ```mermaid
 flowchart LR
     subgraph Clients["Clients"]
-        AGENTS["External agents and orchestrators"]
-        RUNNER["Board runner<br/>(FULL_AUTO / SDLC; external, config-gated)"]
+        AGENTS["External agents"]
         HUMAN["Human operator"]
         UI["SolidJS web UI"]
     end
@@ -34,11 +28,11 @@ flowchart LR
         MCP["MCP tools"]
         REST["REST API"]
         HOOK["Opt-in capture and recall hooks"]
-        STREAM["SSE /api/stream<br/>wake hint"]
+        STREAM["SSE /api/stream<br/>refresh hint"]
     end
 
     subgraph Core["Black Box modules"]
-        WORKFLOW["workflow<br/>lifecycle and Handoff completion"]
+        LINEAGE["lineage<br/>session links and DAG projection"]
         MEMORY["memory<br/>structured recall and search"]
         JUDGMENT["judgment<br/>optional cortex judgments"]
         RECORDING["recording<br/>canonical event writes"]
@@ -46,56 +40,47 @@ flowchart LR
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
-    DB[("Canonical relational store (SQLite default)<br/>specs · tasks · task_events<br/>agent_sessions · agent_events<br/>event_judgments<br/>memory_embeddings<br/>session_links · project_aliases")]
+    DB[("Canonical relational store (SQLite default)<br/>agent_sessions · agent_events<br/>event_judgments<br/>memory_embeddings<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
     EDITOR["Allowlisted local editor / Finder CLI<br/>fixed argv, never a shell"]
 
     AGENTS --> MCP & REST
-    RUNNER --> REST
     HUMAN --> REST & UI
     UI --> REST
     HOOK --> RECORDING
-    MCP --> WORKFLOW & MEMORY & RECORDING
-    REST --> WORKFLOW & MEMORY & RECORDING & PROJECT
-    WORKFLOW -->|"complete: capture normal Handoff"| RECORDING
+    MCP --> MEMORY & RECORDING
+    REST --> LINEAGE & MEMORY & RECORDING & PROJECT
+    LINEAGE --> RECORDING
     MEMORY --> RECORDING
-    JUDGMENT --> RECORDING
+    JUDGMENT --> RECORDING & LINEAGE
     PROJECT --> DB
     PROJECT -. "validated CodeReference" .-> EDITOR
     RECORDING --> DB
     JUDGMENT --> DB
-    WORKFLOW --> DB
-    WORKFLOW -. "after durable mutation" .-> BROADCAST
-    RECORDING -. "event recorded; see transaction note" .-> BROADCAST
+    LINEAGE --> DB
+    RECORDING -. "event recorded after commit" .-> BROADCAST
+    LINEAGE -. "parent and link hints" .-> BROADCAST
     JUDGMENT -. "after beat judgment" .-> BROADCAST
     BROADCAST --> STREAM
-    STREAM -. "refresh or try claim" .-> AGENTS & RUNNER & UI
+    STREAM -. "refresh" .-> AGENTS & UI
     MEMORY -. "new event mirror when enabled" .-> ES
     DB -. "session summary only" .-> EXTERNAL
     DB -. "when SBA_SUMMARY_BACKEND=local" .-> LOCAL
 ```
 
-The operator launches the runner as a separate process with
-`java -jar sba-agentic.jar runner`. It is gated by an explicit machine-local config selected through
-`SBA_RUNNER_CONFIG` or, by default, `~/.blackbox/runner.json`, which is never committed. Like every
-other client, the runner has no direct database access and uses only the REST surface described
-below.
-
-SQLite remains authoritative if an SSE client disconnects, a broadcast fails, Elasticsearch is
-offline, or a model backend is unavailable. Task row mutation and its `task_events` append commit in
-one SQLite transaction. The corresponding `task.*` frame is published afterward and may be missed;
-clients recover by fetching `GET /api/tasks`.
+The selected relational database remains authoritative if an SSE client disconnects, a broadcast
+fails, Elasticsearch is offline, or a model backend is unavailable. Optional indexes and stream
+updates do not replace stored events or links.
 
 ## Java module graph
 
-The application is one deployable Spring Boot jar with nine Spring Modulith modules. Each feature
+The application is one deployable Spring Boot jar. Each feature
 owns its REST and MCP adapters, application services, domain rules, and outbound adapters beneath
 its module root. `platform` is the composition edge for bootstrap, CLI dispatch, generic web errors,
 SPA routing, SSE transport, configuration registration, and aggregation of feature-owned MCP tool
-callbacks. `runner` is packaged with the application but behaves as an external REST client and
-does not import server implementation types.
+callbacks. Session lineage has its own module and no task-board dependency.
 
 ```mermaid
 flowchart LR
@@ -103,28 +88,25 @@ flowchart LR
     PLATFORM --> JUDGMENT["judgment"]
     PLATFORM --> MEMORY["memory"]
     PLATFORM --> RECORDING["recording"]
-    PLATFORM --> RUNNER["runner"]
     PLATFORM --> SUMMARY["summary"]
-    PLATFORM --> WORKFLOW["workflow"]
+    PLATFORM --> LINEAGE["lineage"]
     ASK --> MEMORY
     JUDGMENT --> RECORDING
-    JUDGMENT --> WORKFLOW
+    JUDGMENT --> LINEAGE
     MEMORY --> PROJECT["project"]
     MEMORY --> RECORDING
     PROJECT --> RECORDING
     SUMMARY --> PROJECT
     SUMMARY --> RECORDING
-    WORKFLOW --> RECORDING
+    LINEAGE --> RECORDING
 ```
 
 Arrows point from a consumer to the public API it imports. No module may import another module's
-`internal` package. Recording is the canonical session/event boundary. Standalone capture publishes
-`EventRecorded` after its persistence transaction commits. During task completion, however,
-`TaskService.completeInTransaction` calls capture inside an outer transaction: the ordinary
-synchronous listeners run before that outer transaction commits. Completion's Handoff and task
-transition remain atomic in the database, but this is not a universal after-commit fan-out guarantee.
-SSE is a hint and Elasticsearch is rebuildable; neither is authoritative evidence of completion.
-See `EventIngestService.ingest`, `TaskService.completeInTransaction`, and `EventBroadcaster`.
+`internal` package. Recording is the canonical session/event boundary. Capture publishes
+`EventRecorded` after its persistence transaction commits. The lineage listener reacts through that
+public event API, before the platform broadcaster enriches `session.updated` with link hints.
+Recording never imports lineage. SSE is a hint and Elasticsearch is rebuildable; neither is
+canonical evidence. See `EventIngestService.ingest`, `SubagentLinkListener`, and `EventBroadcaster`.
 The stable package rules and contributor guidance live in
 [`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
 
@@ -141,190 +123,40 @@ only fixed command shapes and an allowlisted absolute Cursor/VS Code-compatible 
 fixed `/usr/bin/open -R` for Finder), passed to `ProcessBuilder` as discrete argv. This path never
 uses the shell-based summary adapter.
 
-## The coordination loop
+## Session lineage
 
-1. `createSpec` stores a project key, title, full frozen body, optional provenance object, and actor.
-   The body is the language-neutral work definition; `specRef` is never resolved at claim time.
-2. `enqueueTask` creates an `open` task under that spec with one exact lane and integer priority.
-3. `claimNextTask` runs one SQLite `UPDATE … RETURNING` statement. It chooses only `open` work in
-   the requested lane, ordered by priority descending and creation time ascending. Competing callers
-   cannot receive the same row.
-4. The worker can transition `in_progress → blocked` with a reason. A worker or human can reset
-   `blocked|in_progress → open`, which clears ownership, or cancel non-terminal work.
-5. `completeTask` accepts only an `in_progress` task whose `claimedBy` equals `actor`. In one
-   transaction it captures a normal session-backed Handoff, transitions the task to `done`, and
-   stores the Handoff event id in `resultHandoffId`. A Handoff failure rolls back completion.
-6. The Board resolves `resultHandoffId` directly through `GET /api/events/{id}`. A later agent can
-   pass the same id to `GET /api/recall` or `recallContext`; event ids remain direct recall keys.
+The `lineage` module owns `session_links`, hook-derived subagent relationships, child counts, and
+the session-only DAG projection. It depends on the public recording API, and is consumed by the
+judgment module and the platform SSE broadcaster. It has no task-board or runner dependency.
 
-`TaskService` completion does not enqueue follow-up work automatically. The completing agent, a
-human, or an external orchestrator decides whether to create another task. The optional runner may
-do so after observing lifecycle or approval facts, but it remains an external client. That boundary
-is what keeps the Black Box server a substrate rather than an executor.
-
-## One contract, two adapters
-
-Workflow-owned REST and MCP adapters delegate these seven operations to the same application
-service. Success JSON uses the same field names and ISO-8601 timestamps on both surfaces.
-
-| Operation | REST | MCP tool | Input and result |
-| --- | --- | --- | --- |
-| Create spec | `POST /api/specs` | `createSpec` | `projectKey`, `title`, frozen `body`, optional `specRef`, `actor` → spec |
-| Enqueue task | `POST /api/tasks` | `enqueueTask` | `specId`, `title`, exact `lane`, `priority`, `actor` → task/spec snapshot plus lifecycle event |
-| Claim next | `POST /api/tasks/claim` | `claimNextTask` | `lane`, `agent` → claimed snapshot/event; REST `204` and MCP `null` when none is eligible |
-| Update status | `PATCH /api/tasks/{taskId}` | `updateTaskStatus` | `taskId`, `actor`, `status`, optional `blockedReason` → changed snapshot/event |
-| Complete | `POST /api/tasks/{taskId}/complete` | `completeTask` | `taskId`, claimant `actor`, `source`, `clientSessionId`, `summary`, `openLoops`, `nextAction` → done snapshot/event with `resultHandoffId` |
-| List tasks | `GET /api/tasks` | `listTasks` | optional exact `projectKey`, `lane`, `status`, bounded `limit`; REST also accepts `offset` (default zero, negatives clamp to zero) plus repeatable or comma-separated `excludeStatus` values → task/spec snapshots |
-| Get spec | `GET /api/specs/{specId}` | `getSpec` | `specId` → full frozen spec |
-
-List limits default to 100 and clamp to 1–250. REST list offsets default to zero and negative values
-clamp to zero; filtering and deterministic paging are applied in SQLite. REST task errors have
-`{error: {status, type, message}}`. MCP task errors are marked as errors and include a parseable
-`error` object with stable lowercase `type`, uppercase `code`, message, and task/current/target
-status fields when relevant. The domain types are `VALIDATION_FAILED`, `SPEC_NOT_FOUND`,
-`TASK_NOT_FOUND`, `INVALID_TRANSITION`, `CLAIMANT_MISMATCH`, `CONCURRENT_MODIFICATION`, and
-`HANDOFF_FAILED`.
-
-The following runner-supporting operations are REST-only in v1; they do not have MCP parity.
-
-| Operation | REST | Input, storage, and result |
+| Operation | REST | Contract |
 | --- | --- | --- |
-| Append annotation | `POST /api/tasks/{taskId}/annotations` | `actor`, `kind` (`note`, `steer`, `progress`, `worker_session`, `engine`, `plan`, `review`, or `approval`), `text`, optional `dataJson` → append-only `task_events` row of type `task.note`, valid at any task status; `plan` and `review` carry stage text, while `approval` uses `{decision, stage, feedback}` data; broadcasts `task.note` with `{task, annotation, observedAt}` |
-| Read task timeline | `GET /api/tasks/{taskId}/events` | Full chronological lifecycle-plus-annotation timeline rendered by Board card detail |
-| Create or read session lineage | `POST /api/session-links`; `GET /api/sessions/{id}/links` | `session_links` stores `parent_session_id`, `child_session_id`, `link_type`, optional `task_id`, unique per parent/child/type triple; link types are `spawned` (runner to worker), `steered`, and `continued` |
-| Read lineage DAG | `GET /api/tasks/{taskId}/dag`; `GET /api/dag?sessionId=` | Pure projection over existing specs, tasks, and sessions: spec-to-task edges from the queue, task-to-session edges from `worker_session` annotations, and session-to-session edges from `session_links`; creates no new state |
+| Create session link | `POST /api/session-links` | Parent session, child session, and one of `spawned`, `steered`, or `continued`; each parent/child/type triple is unique |
+| Read session links | `GET /api/sessions/{id}/links` | Parent and child links for the selected session |
+| Read child counts | `GET /api/session-links/child-counts?ids=...` | Counts keyed by parent session ID |
+| Read session DAG | `GET /api/dag?sessionId=...` | Read-only projection of the selected session and directly linked parents and children |
 
-## Lifecycle and ownership
+Browse retains nested child sessions, parent/child navigation, link badges, and the session DAG.
+The hook bridge continues deriving Claude subagent session identities from the parent session ID
+and agent ID. `SubagentLinkListener` turns recorded subagent events into `spawned` links; the
+recording module remains independent of lineage.
 
-```mermaid
-stateDiagram-v2
-    [*] --> open: enqueue
-    open --> in_progress: atomic lane claim
-    in_progress --> blocked: block with reason
-    blocked --> open: manual reset
-    in_progress --> open: manual reset
-    in_progress --> done: current claimant completes + Handoff
-    open --> cancelled: cancel
-    in_progress --> cancelled: cancel
-    blocked --> cancelled: cancel
-```
+NAT-243 removes task/spec REST endpoints, workflow MCP tools, task-specific DAG reads, and the
+runner. Historical Handoff events remain ordinary recallable captures. See
+[retirement and upgrade notes](board-retirement.md) for schema and client migration boundaries.
 
-The enum retains `claimed` as a reserved value, but the MVP claim moves directly from `open` to
-`in_progress`. `done` and `cancelled` are terminal. Only completion enforces claimant ownership in
-the MVP; status updates still validate their allowed source state. Optimistic status predicates turn
-a race into `concurrent_modification` instead of silently overwriting a newer transition.
+## SSE and lineage hints
 
-Task lifecycle facts live in `task_events`, not `agent_events`. Ordinary queue mutations therefore
-do not manufacture agent sessions. Completion is different by design: its Handoff is a normal
-`agent_events` row attached to the real `source` and `clientSessionId`, which makes the result
-available to existing recall without adding a second continuity system.
+`GET /api/stream` retains `event.appended` and `session.updated`; the cortex stage adds
+`judgment.appended` when `sba.judge.enabled=true`. `event.appended` includes `role`, `textPreview`,
+and `parentSessionId`; `session.updated` includes `spawnedBy` and `linkTypes`. The lineage module
+continues supplying those hints to the broadcaster and Orbit continues using the same session
+relationships.
 
-## SSE and the Board
-
-`GET /api/stream` carries the existing `event.appended` and `session.updated` frames plus
-`task.created`, `task.claimed`, `task.blocked`, `task.completed`, `task.reset`, `task.cancelled`, and
-`task.note`. The cortex stage adds `judgment.appended` when `sba.judge.enabled=true`.
-`event.appended` also includes `role`, `textPreview`, and `parentSessionId`; `session.updated`
-includes `spawnedBy` and `linkTypes`. `GET /api/stream?since=<ISO-8601>` replays up to 2000
-`event.appended` frames oldest-first before following live, and `Last-Event-ID` resumes from the
-exclusive cursor `<observedAt>|<id>`. Lifecycle task frames contain the current task plus a
-transition id, transition type, and timestamp; `task.note` contains `{task, annotation, observedAt}`.
-These frames are additive and do not change existing consumers' required fields. Task frames
-deliberately omit the frozen spec body.
-
-The frontend task store loads authoritative task/spec snapshots over REST, applies newer lifecycle
-frames idempotently, ignores duplicate or older transitions, and performs a bounded refresh after a
-connection gap or malformed task frame. An SSE publish failure never rolls back a committed task.
-
-The Board route is `/board`. It has Open, In Progress, Blocked, and Done columns, with cancelled work
-in a disclosure below the main board. The URL query parameters `project`, `lane`, and `task` preserve
-filters and selected detail. Task detail shows ownership, blocker, timestamps, the frozen spec,
-optional provenance, the annotation timeline, and a directly resolved completion Handoff. The Board
-can create a story, post steering annotations while runner work is in progress, and post approval or
-rejection annotations for completed SDLC plan and review stages. “Reset to open” remains available
-for `blocked` or `in_progress` work. Each write waits for the server response instead of inventing
-local state.
-
-## Optional FULL_AUTO runner
-
-The FULL_AUTO runner turns an explicitly submitted story into an end-to-end run while remaining an
-external REST client of Black Box:
-
-1. **Intake.** The Board's New Story form, or `createSpec` followed by `enqueueTask`, freezes the
-   story and creates a task in lane `gate`.
-2. **Gate.** The runner evaluates deterministic readiness checks: the repo must exist, be a readable
-   Git working tree, and appear in the runner config allowlist; the Acceptance criteria section must
-   be non-empty; a verify command must be present or derivable from the repo; and push intent is
-   honored only when that repo's config permits it and carries no danger flag. The gate is
-   deterministic only: a `GateAdvisor` seam exists for future advisory scoring, but the shipped
-   implementation is a no-op and never contributes to the pass/fail decision. A pass enqueues an
-   `auto`-lane task and completes the gate task with a Handoff; a failure blocks the gate task with
-   concrete repair guidance.
-3. **Execution.** For the claimed `auto` task, the runner creates an isolated worktree and branch,
-   opens a tmux session, launches the configured engine, and appends `progress` annotations at
-   milestones.
-4. **Completion signal.** The worker reports deterministically with
-   `scripts/runner/report.sh <taskId> done|blocked "<summary>"`. A bounded pane-state, commit-probe,
-   and timeout fallback records diagnostic evidence but never infers success; an exhausted timeout
-   blocks the task and preserves the worktree for inspection.
-5. **Ship.** The runner, never the worker, owns push, pull-request creation, and merge through
-   `scripts/runner/ship.sh`. Push and merge require the repo's `push` and `auto_merge` settings,
-   respectively, and no danger flag; merge also requires green checks. A config or credential gap
-   records the exact manual follow-up commands and still completes already delivered local or PR
-   work. A red check gets one bounded repair round in the same worker session and blocks if it
-   remains red.
-6. **Complete.** `completeTask` records the usual recallable Handoff with the summary, branch, pull
-   request, merge state, open loops, and next action.
-
-Fail-closed behavior is the invariant: an unknown repo, a danger flag, a red check, or a missing
-credential degrades the run to local-only or blocked state, never to a risky action.
-
-Crash-recovery worktree pruning is fail-closed the same way. A worker commits before it reports, so
-a worktree holding never-published work is *clean* by `git status --porcelain`; cleanliness alone is
-therefore not licence to run `git worktree remove --force` and `git branch -D`. The runner prunes an
-orphaned worktree only when its branch carries no commit that is missing from both the repo's
-default branch and every remote-tracking branch — that is, only when deleting it destroys nothing
-that exists solely there. A local-only ship, a blocked run, and a crash mid-ship all leave commits
-in exactly that state. An unresolvable default branch or a failed probe preserves. The residual cost
-is disk: a squash-merged branch whose remote ref has been pruned reads as unpublished and is kept
-(the normal auto-merge path removes those at ship time, not here).
-
-The full contract, including worker-session ingest, steering, recovery, and v1 non-goals, is in the
-[`FULL_AUTO board-driven runner` design spec](superpowers/specs/2026-07-15-full-auto-board-runner.md).
-
-## Optional SDLC runner mode
-
-SDLC reuses the same external runner and storage contracts while inserting explicit human gates
-after planning and review:
-
-1. **Intake and gate.** The frozen story records `mode: sdlc` and begins in lane `gate`. The same
-   deterministic readiness checks apply, but a pass enqueues `sdlc:plan` instead of `auto`.
-2. **Plan.** A plan-stage worker receives a read-only, no-commit goal, explores the repo, posts a
-   full `plan` annotation, and completes the stage task with a Handoff. The `done` task then waits for
-   a human decision on its Board card.
-3. **Plan decision.** An `approval` annotation with `stage: plan` and `decision: approve` allows the
-   runner to enqueue the `auto` build task. A rejection records its feedback once as an SDLC
-   `rejection_recorded` `progress` marker on the already-`done` plan task and enqueues nothing.
-4. **Build.** The `auto` task follows the FULL_AUTO execution path through a verified commit, but it
-   does not ship. The runner records the branch and worktree, preserves both, completes the build
-   with a Handoff, and enqueues `sdlc:review`.
-5. **Review.** A review-stage worker uses the preserved worktree under a read-only, no-code-change
-   goal, checks the diff, acceptance criteria, approved plan, and verification command, posts an
-   advisory `review` annotation, and completes the stage with a Handoff.
-6. **Review decision and ship.** Approval invokes the existing shipping executor directly against
-   the preserved worktree. Repo allowlists, danger settings, push and auto-merge configuration,
-   credentials, and green-check requirements remain unchanged and fail closed. Rejection records the
-   same durable marker, ships nothing, and preserves the worktree for inspection.
-
-“Awaiting approval” is a Board state, not a task lifecycle status: the plan or review task remains
-`done`, and without a matching approval the runner makes no progress. Approval annotations are
-append-only REST/UI facts; the server stores and broadcasts them but never consumes them or launches
-work. The runner treats an approval SSE frame only as a wake hint, reconciles completed SDLC stages
-at startup and every 60 seconds, and uses existing successor tasks plus SDLC progress markers to make
-replays idempotent. SQLite remains authoritative throughout.
-
-The complete stage contracts, approval payloads, reconciliation rules, and non-goals are in the
-[`SDLC mode` design spec](superpowers/specs/2026-07-16-sdlc-mode.md).
+`GET /api/stream?since=<ISO-8601>` replays up to 2000 `event.appended` frames oldest-first before
+following live, and `Last-Event-ID` resumes from the exclusive cursor `<observedAt>|<id>`.
+The retired `task.*` lifecycle and annotation frames are no longer emitted. Stream delivery remains
+best effort; clients refresh the canonical REST state after a gap.
 
 ## Logical project identity
 
@@ -340,9 +172,8 @@ session, Hybrid Storyline, and saved-meld reads resolve through the same identit
 worktree URLs continue to resolve to the primary project. The hidden `project_group:` Activity facet
 uses this grouped identity, while `project_exact:` remains a raw exact-path filter.
 
-Grouping never rewrites `agent_sessions.cwd`, raw events, task/spec project keys, or historical meld
-rows. `/api/tasks?projectKey=` also remains exact: the Board may display a logical project name, but
-selecting a project never infers work or broadens the authoritative queue query.
+Grouping never rewrites `agent_sessions.cwd`, raw events, or historical meld rows. Projects
+remain a continuity read model with their existing identity-curation controls.
 
 ## Continuity and search components
 
@@ -367,8 +198,8 @@ selecting a project never infers work or broadens the authoritative queue query.
   builds bounded meld artifacts from recorded sessions.
 - **Summary.** Owns session finalization, local/external summary providers, and transcript exports.
 - **Ask.** Owns retrieval orchestration, query embedding, and grounded answer synthesis.
-- **Workflow.** Owns specs, tasks, annotations, lifecycle, session lineage, and DAG projection.
-- **SolidJS web UI.** Reads the same REST surfaces for Activity, Board, Recall, search, and supporting
+- **Lineage.** Owns session links, subagent relationships, child counts, and session DAG projection.
+- **SolidJS web UI.** Reads the same REST surfaces for Activity, Recall, search, and supporting
   views, including the read-oriented Projects workspace and its explicit identity-curation controls.
   Browse pages the full selected session with tools visible by default, keeps memory events opt-in,
   and runs session-bound search over both recorded events and transcript-only conversation text.
@@ -384,15 +215,14 @@ SQLite is the default canonical store. The optional PostgreSQL profile owns a se
 database; it does not synchronize SQLite history or provide safe multiple API replicas. See the
 [PostgreSQL backend guide](postgres-backend.md). SQLite-specific tables and indexing behavior below
 apply to the default backend. Elasticsearch is disabled by default and is only a secondary index
-for new events; it is not used by atomic claims or the Board.
+for new events.
 
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |
 | `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, Observations, Projections, and Ideas |
 | `memory_embeddings` | memory | Canonical float32 vectors for structured intent and session summaries; sqlite-vec is only an optional accelerator rebuilt from this table |
-| `specs`, `tasks`, `task_events` | workflow | Frozen work definitions, queue state, lifecycle transitions, and annotations |
-| `session_links` | workflow | Explicit session lineage links used by Board and DAG projections |
+| `session_links` | lineage | Explicit session relationships used by Browse, session DAGs, and Orbit |
 | `project_aliases` | project | Reversible logical-project grouping over recorded working directories |
 | `event_fts`, `search_index_state` | recording | Contentless FTS5 index over `agent_events` (text, tool_name, clipped tool JSON) plus its backfill progress row; trigger-maintained inside the canonical write transaction and fully rebuildable |
 
@@ -409,26 +239,16 @@ the configured `SBA_SUMMARY_EXTERNAL_COMMAND` to `/bin/sh -c`; the default comma
 Codex CLI wrapper, and the bundled Claude wrapper is an optional alternative. Transcript text can
 therefore leave the machine for the selected vendor. Set `SBA_SUMMARY_BACKEND=local` to explicitly
 choose LM Studio or another OpenAI-compatible local server; local failures degrade to compacted
-transcript output. Neither summary path launches workers, executes queued task commands, or
-participates in task coordination or structured recall.
+transcript output. Neither summary path launches workers or participates in structured recall.
 
-## MVP non-goals
+## Product boundaries
 
-The Black Box server intentionally embeds no worker runner and adds no worker-process spawning,
-task-command execution, checkout mutation, lease, heartbeat, automatic reaper, dependency-aware
-scheduling DAG, capability registry, multi-node broker, priority aging, or
-server-side automatic follow-up enqueue. Manual reset is the recovery mechanism for abandoned
-ownership. Optional [authentication](authentication.md) exists and is disabled by default for the
-loopback deployment. Those additions must preserve the selected relational store as the truth and
-keep task execution outside the
-Black Box server. The separately configured session-summary subprocess described above is not a
-worker or task executor.
+Black Box captures and retrieves agent evidence; it does not own execution tracking, task queues,
+worker scheduling, or shipping. The former board and runner are retained only as
+[historical design records](history/retired-board/README.md). Local runner state is not part of the
+repository retirement, and no cleanup or service change is implied by this code change.
 
-The external, config-gated FULL_AUTO and SDLC runner modes documented above do not change that
-boundary. They run in a separate operator-launched process that is an ordinary client of the same
-REST surface used by other agents and orchestrators; the server itself still spawns no workers,
-executes no task commands, and mutates no checkout.
-
-The implemented design and file map are recorded in
-[`docs/superpowers/specs/2026-06-28-agent-task-queue-design.md`](superpowers/specs/2026-06-28-agent-task-queue-design.md)
-and its [implementation plan](superpowers/plans/2026-07-10-agent-task-queue-implementation.md).
+Optional [authentication](authentication.md) is disabled by default for loopback deployments.
+Any future integration must preserve the selected relational store as canonical and keep execution
+authority outside this service. The separately configured session-summary subprocess described
+above retains its existing privacy and process boundary.

@@ -39,6 +39,9 @@ management:
         enabled: true
 
 sba:
+  storage:
+    # Explicit, irreversible retirement of dormant board rows after a database backup.
+    retire-workflow: ${SBA_RETIRE_WORKFLOW:false}
   editor:
     # File navigation is catalog-bound and revalidated on every request. Only fixed,
     # explicitly allowlisted VS Code-compatible CLI binaries can be launched.

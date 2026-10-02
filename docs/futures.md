@@ -46,7 +46,7 @@ with an optional confidence, plus an optional basis for the set; see
 possible next paths. Its text-overlap handling is not an explicit outcome relation. Projections
 are recalled lexically; semantic recall covers Decisions, Handoffs, Observations, and Ideas only.
 [Evidence-to-Linear](linear-integration.md) can propose source-linked candidates for explicit
-selection, and task completion can create a normal Handoff.
+selection. Agents can record outcomes with a normal Handoff.
 
 **What would be built.** A reviewer could mark a proposal selected, declined, superseded, or
 resolved and link its outcome back to the original Projection and later evidence. Selection
@@ -96,9 +96,8 @@ No productivity claim should be inferred from capture totals or successful API c
 
 **What exists today.** The [PostgreSQL profile](postgres-backend.md) supports a separate canonical
 shared database, and [authentication](authentication.md) provides one trusted workspace with a
-browser credential and agent bearer token. Task claims and completion Handoffs have transactional
-ownership rules. The [Linear adapter](../scripts/linear/blackbox_linear.py) persists a pending
-publication identity before sending a write and reconciles ambiguous responses; that is a bounded
+browser credential and agent bearer token. The [Linear adapter](../scripts/linear/blackbox_linear.py)
+persists a pending publication identity before sending a write and reconciles ambiguous responses; that is a bounded
 external-write precedent, not a general capture outbox.
 
 Local capture now has [payload-bound identities and acknowledgements](idempotent-capture.md),
@@ -121,7 +120,7 @@ workflow benefits enough to justify the operational cost and new failure modes.
 **Stop criteria.** Stop before adding distributed machinery if one authoritative server meets the
 need. Stop expansion if reconciliation cannot be explained or tested, if isolation requires
 trusting caller-supplied scope, or if worker fencing is incomplete. PostgreSQL alone supplies none
-of those guarantees. Bundled hooks and the runner currently lack bearer-header wiring; even the
+of those guarantees. Bundled hooks currently lack bearer-header wiring; even the
 existing authenticated surface needs a compatible client.
 
 ## Not shipped — the cloud prototype as a reproducible rejected alternative
@@ -161,17 +160,15 @@ Historical deployment success is not an invitation to use an available hosted pr
 
 ## Rejected directions — Not shipped
 
-These are boundaries on further work, not claims that existing features have been removed.
-[NEXT.md](../NEXT.md) records the decision not to extract the runner, and the
-[September reset](superpowers/plans/2026-09-08-cloud-prototype.md) records the board and
-historical-backlog limits. The other reasons, including the cited 2026-08-06 trajectory decision,
-are stated here.
+The task board and runner have been [retired](board-retirement.md); selected execution belongs
+in Linear. The boundaries below prevent rebuilding that dormant subsystem as a new architecture
+project. Other reasons, including the cited 2026-08-06 trajectory decision, remain unchanged.
 
 | Not shipped direction | Reason to keep it rejected |
 | --- | --- |
-| Extract the runner into another service/repository as the next architecture project | It already has an isolated module boundary; extraction does not establish better continuity. |
+| Rebuild the retired runner as another service/repository | An execution subsystem does not establish better continuity. |
 | Add a read-side backend before usage demonstrates uptake | First evaluate actual retrieval and continuation. The shipped service telemetry does not justify an outcome ledger by itself. |
-| Expand the Board into a second general-purpose execution system | Preserve existing tasks; revalidate evidence and explicitly select work in Linear. |
+| Restore the Board as a second general-purpose execution system | Revalidate evidence and explicitly select work in Linear. |
 | Generate speculative futures on the server | The trajectory design and its 2026-08-06 implementation decision favored agent-written possibilities: Black Box records what an agent thought, with provenance. |
 | Treat every old open loop as current work | Source dates, present relevance, acceptance criteria, and explicit selection must survive the conversion. |
 | Treat a graph or a successful recall as proof of improvement | Measure continuation outcomes and retain negative evidence. |

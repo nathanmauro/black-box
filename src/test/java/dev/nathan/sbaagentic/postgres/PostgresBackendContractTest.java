@@ -15,10 +15,6 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.SessionStopped;
-import dev.nathan.sbaagentic.workflow.CompleteTaskRequest;
-import dev.nathan.sbaagentic.workflow.TaskQuery;
-import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
-import dev.nathan.sbaagentic.workflow.internal.application.TaskService;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.time.Instant;
@@ -550,153 +546,6 @@ class PostgresBackendContractTest {
     }
 
     @Test
-    void claimersCannotShareOneTaskAndCanConsumeDifferentTasks() throws Exception {
-        TaskRepository tasks = app.getBean(TaskRepository.class);
-        var spec = tasks.createSpec(repo, "Claim concurrency", "A frozen contract", null, "test");
-        String lane = "claim-" + UUID.randomUUID();
-        tasks.enqueueTask(spec.id(), "one winner", lane, 1, "test");
-        try (var workers = Executors.newFixedThreadPool(2)) {
-            CyclicBarrier barrier = new CyclicBarrier(2);
-            var first = workers.submit(() -> {
-                barrier.await();
-
-                return tasks.claimNextTask(lane, "a");
-            });
-            var second = workers.submit(() -> {
-                barrier.await();
-
-                return tasks.claimNextTask(lane, "b");
-            });
-            var claims = List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
-            assertThat(claims.stream().filter(java.util.Optional::isPresent).count())
-                    .isEqualTo(1);
-        }
-        for (int i = 0; i < 8; i++) tasks.enqueueTask(spec.id(), "queue-" + i, lane, i, "test");
-        try (var workers = Executors.newFixedThreadPool(8)) {
-            CyclicBarrier barrier = new CyclicBarrier(8);
-            var results = new ArrayList<java.util.concurrent.Future<String>>();
-            for (int i = 0; i < 8; i++) {
-                String actor = "worker-" + i;
-                results.add(workers.submit(() -> {
-                    barrier.await();
-
-                    return tasks.claimNextTask(lane, actor)
-                            .orElseThrow()
-                            .snapshot()
-                            .task()
-                            .id();
-                }));
-            }
-            var ids = new ArrayList<String>();
-            for (var result : results) ids.add(result.get(15, TimeUnit.SECONDS));
-            assertThat(ids).hasSize(8).doesNotHaveDuplicates();
-        }
-        assertThat(tasks.listTasks(new TaskQuery(repo, lane, null, List.of(), null, 1)))
-                .hasSize(8);
-    }
-
-    @Test
-    void httpTaskLifecycleCompletesIntoRecallableHandoff() {
-        JsonNode spec = post(
-                "/api/specs",
-                Map.of("projectKey", repo, "title", "HTTP lifecycle", "body", "Do the bounded work", "actor", "test"));
-        String lane = "http-" + UUID.randomUUID();
-        JsonNode queued = post(
-                "/api/tasks",
-                Map.of(
-                        "specId",
-                        spec.path("id").asText(),
-                        "title",
-                        "Implement",
-                        "lane",
-                        lane,
-                        "priority",
-                        1,
-                        "actor",
-                        "test"));
-        String taskId = queued.path("snapshot").path("task").path("id").asText();
-        post("/api/tasks/claim", Map.of("lane", lane, "agent", "worker"));
-        var blocked = http.exchange(
-                base + "/api/tasks/" + taskId,
-                HttpMethod.PATCH,
-                new HttpEntity<>(Map.of("actor", "worker", "status", "blocked", "blockedReason", "Fixture wait")),
-                JsonNode.class);
-        assertThat(blocked.getStatusCode().is2xxSuccessful()).isTrue();
-        var reset = http.exchange(
-                base + "/api/tasks/" + taskId,
-                HttpMethod.PATCH,
-                new HttpEntity<>(Map.of("actor", "worker", "status", "open")),
-                JsonNode.class);
-        assertThat(reset.getStatusCode().is2xxSuccessful()).isTrue();
-        post("/api/tasks/claim", Map.of("lane", lane, "agent", "worker"));
-        JsonNode done = post(
-                "/api/tasks/" + taskId + "/complete",
-                Map.of(
-                        "actor",
-                        "worker",
-                        "source",
-                        "codex",
-                        "clientSessionId",
-                        "complete-" + UUID.randomUUID(),
-                        "summary",
-                        "Verified cloud database contract",
-                        "openLoops",
-                        List.of(),
-                        "nextAction",
-                        "Continue"));
-        String handoff =
-                done.path("snapshot").path("task").path("resultHandoffId").asText();
-        assertThat(done.path("snapshot").path("task").path("status").asText()).isEqualTo("done");
-        assertThat(get("/api/recall?scope=" + handoff)
-                        .path("items")
-                        .get(0)
-                        .path("kind")
-                        .asText())
-                .isEqualTo("handoff");
-    }
-
-    @Test
-    void failedCompletionRollsBackHandoffSessionEventCountAndTask() {
-        TaskRepository tasks = app.getBean(TaskRepository.class);
-        var spec = tasks.createSpec(repo, "Rollback", "Atomic completion", null, "test");
-        String lane = "rollback-" + UUID.randomUUID();
-        String id = tasks.enqueueTask(spec.id(), "rollback", lane, 0, "test")
-                .snapshot()
-                .task()
-                .id();
-        tasks.claimNextTask(lane, "worker");
-        long events = jdbc.queryForObject("SELECT count(*) FROM agent_events", Long.class);
-        long sessions = jdbc.queryForObject("SELECT count(*) FROM agent_sessions", Long.class);
-        jdbc.execute(
-                "CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.type = 'task.completed' THEN RAISE EXCEPTION 'forced completion failure'; END IF; RETURN NEW; END $$");
-        jdbc.execute(
-                "CREATE TRIGGER reject_completion BEFORE INSERT ON task_events FOR EACH ROW EXECUTE FUNCTION reject_completion()");
-        try {
-            assertThatThrownBy(() -> app.getBean(TaskService.class)
-                            .completeTask(new CompleteTaskRequest(
-                                    id,
-                                    "worker",
-                                    "codex",
-                                    "rolled-back-session",
-                                    "Must roll back",
-                                    List.of(),
-                                    "Retry")))
-                    .isInstanceOf(RuntimeException.class);
-            assertThat(jdbc.queryForObject("SELECT status FROM tasks WHERE id = ?", String.class, id))
-                    .isEqualTo("in_progress");
-            assertThat(jdbc.queryForObject("SELECT result_handoff_id FROM tasks WHERE id = ?", String.class, id))
-                    .isNull();
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_events", Long.class))
-                    .isEqualTo(events);
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM agent_sessions", Long.class))
-                    .isEqualTo(sessions);
-        } finally {
-            jdbc.execute("DROP TRIGGER reject_completion ON task_events");
-            jdbc.execute("DROP FUNCTION reject_completion()");
-        }
-    }
-
-    @Test
     void aliasesSavedMeldsAndLineageUseTheSameStoredEvidence() {
         String root = repo + "/catalog";
         String alias = root + "/worktree";
@@ -786,33 +635,6 @@ class PostgresBackendContractTest {
     }
 
     @Test
-    void failedClaimHistoryInsertRollsBackOwnership() {
-        TaskRepository tasks = app.getBean(TaskRepository.class);
-        var spec = tasks.createSpec(repo, "Claim rollback", "Atomic ownership", null, "test");
-        String lane = "failed-claim-" + UUID.randomUUID();
-        String id = tasks.enqueueTask(spec.id(), "rollback claim", lane, 0, "test")
-                .snapshot()
-                .task()
-                .id();
-        jdbc.execute(
-                "CREATE FUNCTION reject_claim() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.type = 'task.claimed' THEN RAISE EXCEPTION 'forced claim failure'; END IF; RETURN NEW; END $$");
-        jdbc.execute(
-                "CREATE TRIGGER reject_claim BEFORE INSERT ON task_events FOR EACH ROW EXECUTE FUNCTION reject_claim()");
-        try {
-            assertThatThrownBy(() -> tasks.claimNextTask(lane, "worker")).isInstanceOf(RuntimeException.class);
-            assertThat(jdbc.queryForObject("SELECT status FROM tasks WHERE id = ?", String.class, id))
-                    .isEqualTo("open");
-            assertThat(jdbc.queryForObject("SELECT claimed_by FROM tasks WHERE id = ?", String.class, id))
-                    .isNull();
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM task_events WHERE task_id = ?", Long.class, id))
-                    .isEqualTo(1);
-        } finally {
-            jdbc.execute("DROP TRIGGER reject_claim ON task_events");
-            jdbc.execute("DROP FUNCTION reject_claim()");
-        }
-    }
-
-    @Test
     void canonicalEmbeddingUpsertAndJavaRankingNeedNoExtension() {
         EmbeddingStore store = app.getBean(EmbeddingStore.class);
         MemoryVectorStore vectors = app.getBean(MemoryVectorStore.class);
@@ -839,6 +661,112 @@ class PostgresBackendContractTest {
                 .isEmpty();
         store.deleteFor("event", "vector-fixture");
         assertThat(store.findHash("event", "vector-fixture")).isEmpty();
+    }
+
+    @Test
+    void optInBoardRetirementPreservesHistoricalHandoffAndLineageAcrossRestart() throws Exception {
+        assertThat(app.getBeansOfType(
+                        dev.nathan.sbaagentic.platform.internal.adapter.out.sqlite.RetiredWorkflowSchemaMigration
+                                .class))
+                .isEmpty();
+        String oldSchema = new ClassPathResource("contracts/pre-task-retirement.sqlite.sql")
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String boardSchema = oldSchema.substring(
+                oldSchema.indexOf("CREATE TABLE IF NOT EXISTS specs"),
+                oldSchema.indexOf("CREATE TABLE IF NOT EXISTS session_links"));
+        new ResourceDatabasePopulator(new org.springframework.core.io.ByteArrayResource(
+                        boardSchema.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .execute(app.getBean(javax.sql.DataSource.class));
+        jdbc.execute("ALTER TABLE session_links ADD COLUMN task_id TEXT");
+        JsonNode handoff = post(
+                "/api/handoffs",
+                Map.of(
+                        "source",
+                        "codex",
+                        "clientSessionId",
+                        "legacy-completion-" + UUID.randomUUID(),
+                        "repo",
+                        repo,
+                        "contextSummary",
+                        "Verified historical task completion",
+                        "openLoops",
+                        List.of("Review output"),
+                        "nextAction",
+                        "Continue"));
+        String eventId = handoff.path("eventId").asText();
+        String parent = handoff.path("sessionId").asText();
+        String child = "legacy-child-" + UUID.randomUUID();
+        String now = Instant.now().toString();
+        jdbc.update(
+                "INSERT INTO specs VALUES ('retired-spec', ?, 'Frozen spec', 'body', NULL, 'active', 'planner', ?, ?)",
+                repo,
+                now,
+                now);
+        jdbc.update(
+                "INSERT INTO tasks VALUES ('retired-task', 'retired-spec', ?, 'Completed task', 'codex', 'done', 1, 'planner', 'worker', NULL, ?, ?, ?)",
+                repo,
+                eventId,
+                now,
+                now);
+        jdbc.update(
+                "INSERT INTO task_events VALUES ('retired-transition', 'retired-task', 'task.completed', 'worker', 'in_progress', 'done', '{}', ?)",
+                now);
+        jdbc.update(
+                "INSERT INTO session_links (id,parent_session_id,child_session_id,link_type,task_id,created_at) VALUES ('retired-link', ?, ?, 'spawned', 'retired-task', ?)",
+                parent,
+                child,
+                now);
+        String eventBefore =
+                jdbc.queryForObject("SELECT metadata_json FROM agent_events WHERE id=?", String.class, eventId);
+        var migration = new dev.nathan.sbaagentic.platform.internal.adapter.out.sqlite.RetiredWorkflowSchemaMigration(
+                jdbc,
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        app.getBean(javax.sql.DataSource.class)),
+                "postgres");
+        // PostgreSQL refuses to drop a column consumed by a view; nulling must roll back too.
+        jdbc.execute("CREATE VIEW unexpected_retired_task_view AS SELECT task_id FROM session_links");
+        try {
+            assertThatThrownBy(migration::migrate).isInstanceOf(RuntimeException.class);
+            assertThat(jdbc.queryForObject("SELECT task_id FROM session_links WHERE id='retired-link'", String.class))
+                    .isEqualTo("retired-task");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM tasks", Long.class))
+                    .isEqualTo(1);
+        } finally {
+            jdbc.execute("DROP VIEW unexpected_retired_task_view");
+        }
+        migration.migrate();
+        migration.migrate();
+        assertThat(jdbc.queryForObject("SELECT metadata_json FROM agent_events WHERE id=?", String.class, eventId))
+                .isEqualTo(eventBefore);
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('specs','tasks','task_events')"))
+                .isEmpty();
+        assertThat(
+                        jdbc.queryForList(
+                                "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='session_links' AND column_name='task_id'"))
+                .isEmpty();
+        assertThat(jdbc.queryForObject("SELECT created_at FROM session_links WHERE id='retired-link'", String.class))
+                .isEqualTo(now);
+        app.close();
+        startApp();
+        assertThat(get("/api/recall?scope=" + eventId)
+                        .path("items")
+                        .get(0)
+                        .path("headline")
+                        .asText())
+                .isEqualTo("Verified historical task completion");
+        assertThat(get("/api/sessions/" + child + "/links")
+                        .path("parents")
+                        .get(0)
+                        .path("parentSessionId")
+                        .asText())
+                .isEqualTo(parent);
+        assertThat(get("/api/session-links/child-counts?ids=" + parent)
+                        .path(parent)
+                        .asInt())
+                .isEqualTo(1);
+        assertThat(get("/api/dag?sessionId=" + parent).path("nodes").size()).isEqualTo(2);
     }
 
     private JsonNode get(String path) {

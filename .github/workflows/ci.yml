@@ -33,7 +33,7 @@ jobs:
           python3 -B -m unittest discover -s scripts/evaluation -p 'test_*.py'
       - name: Java formatter fixtures (application sources remain unchanged)
         run: python3 -B scripts/format/test_java_format.py
-      - name: Ensure jq is available (runner scripts require it)
+      - name: Ensure jq is available (hook fixtures require it)
         run: command -v jq >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
       - name: Hook durability and deployment recovery
         run: |

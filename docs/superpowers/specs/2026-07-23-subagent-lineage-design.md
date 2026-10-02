@@ -1,5 +1,7 @@
 # Subagent lineage: hook-driven child sessions, nested browse
 
+> NAT-243 update (2026-10-02): session lineage now belongs to `dev.nathan.sbaagentic.lineage`; the board, task/spec APIs, and runner are retired. Earlier workflow/runner package names and task tables in this dated design are historical, not current implementation instructions. See [retirement notes](../../board-retirement.md).
+
 **Date:** 2026-07-23
 **Status:** Approved design
 **Builds on:** `2026-07-15-full-auto-board-runner.md` (session_links substrate; its line-252 stretch non-goal "Claude-hook subagent lineage capture" is exactly this spec)

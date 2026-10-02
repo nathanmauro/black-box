@@ -1,5 +1,7 @@
 # Personal cloud Black Box — design
 
+> NAT-243 update (2026-10-02): session lineage now belongs to `dev.nathan.sbaagentic.lineage`; the board, task/spec APIs, and runner are retired. Earlier workflow/runner package names and task tables in this dated design are historical, not current implementation instructions. See [retirement notes](../../board-retirement.md).
+
 Date: 2026-09-29 · Status: draft for owner review · Supersedes for personal use: the tenancy/lifecycle
 scope of `docs/superpowers/plans/2026-09-15-cloud-lifecycle-and-tenancy.md` (that plan stays the
 reference if Black Box ever becomes multi-tenant).

@@ -9,8 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.CompactSearchMcpTools;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
 import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.RestJsonToolCallResultConverter;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -38,9 +36,6 @@ import org.springframework.core.io.ClassPathResource;
         })
 class McpContractSnapshotTest {
 
-    private static final Set<String> REST_JSON_TOOLS = Set.of(
-            "createSpec", "enqueueTask", "claimNextTask", "updateTaskStatus", "completeTask", "listTasks", "getSpec");
-
     @Autowired
     ApplicationContext applicationContext;
 
@@ -53,31 +48,31 @@ class McpContractSnapshotTest {
 
     @Test
     void toolNamesAndInputSchemasMatchTheFrozenSnapshot() throws IOException {
+        if (Boolean.getBoolean("contracts.update")) {
+            java.nio.file.Files.writeString(
+                    java.nio.file.Path.of("src/test/resources/contracts/mcp-tools.json"), compactDefinitions());
+        }
         JsonNode expected = objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
         assertThat(normalizedDefinitions()).isEqualTo(expected);
-        assertThat(callbackProvider.getToolCallbacks()).hasSize(17);
+        assertThat(callbackProvider.getToolCallbacks()).hasSize(10);
     }
 
     @Test
-    void callbackQualifierAndRestJsonConvertersStayStable() {
+    void callbackQualifierAndRemainingToolsStayStable() {
         assertThat(applicationContext.getBean("agenticToolCallbacks", ToolCallbackProvider.class))
                 .isSameAs(callbackProvider);
 
         List<String> annotatedNames = new ArrayList<>();
-        for (Class<?> toolGroup : List.of(
-                CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class, WorkflowMcpTools.class)) {
+        for (Class<?> toolGroup : List.of(CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class)) {
             for (Method method : toolGroup.getDeclaredMethods()) {
                 Tool tool = method.getAnnotation(Tool.class);
                 if (tool == null) {
                     continue;
                 }
                 annotatedNames.add(method.getName());
-                if (REST_JSON_TOOLS.contains(method.getName())) {
-                    assertThat(tool.resultConverter()).isEqualTo(RestJsonToolCallResultConverter.class);
-                }
             }
         }
-        assertThat(annotatedNames).hasSize(17).containsAll(REST_JSON_TOOLS);
+        assertThat(annotatedNames).hasSize(10);
     }
 
     @Test
@@ -87,6 +82,15 @@ class McpContractSnapshotTest {
                 .path("records");
         assertRecallResultShape(records.path("RecallResult"));
         assertRecalledItemShape(records.path("RecalledItem"));
+    }
+
+    private String compactDefinitions() throws IOException {
+        List<String> rows = new ArrayList<>();
+        for (JsonNode definition : normalizedDefinitions()) {
+            rows.add("  " + objectMapper.writeValueAsString(definition));
+        }
+
+        return "[\n" + String.join(",\n", rows) + "\n]\n";
     }
 
     private ArrayNode normalizedDefinitions() throws IOException {

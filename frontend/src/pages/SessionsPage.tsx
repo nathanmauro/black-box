@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -12,10 +12,8 @@ import {
 import ConversationNavigator, {
   type ConversationNavigatorTurn,
 } from "../components/ConversationNavigator";
-import DagView from "../components/DagView";
 import SessionLineage from "../components/SessionLineage";
 import SourceDot from "../components/SourceDot";
-import SteerBox from "../components/SteerBox";
 import { EventRenderer, ReaderText } from "../components/events/EventRow";
 import {
   getEvent,
@@ -27,7 +25,6 @@ import {
   getSessionLinks,
   getSessionTranscript,
   getSessions,
-  getTaskDag,
   type AgentEvent,
   type AgentSession,
   type ProjectSummary,
@@ -104,7 +101,6 @@ const EMPTY_TRANSCRIPT: SessionTranscriptState = {
 
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
-  const [searchParams] = useSearchParams<{ task?: string }>();
   const navigate = useNavigate();
   const live = useContext(LiveStoreContext);
   const [sessionFilter, setSessionFilter] = createSignal("");
@@ -121,11 +117,6 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const [olderEventsLoading, setOlderEventsLoading] = createSignal(false);
   const [olderEventsError, setOlderEventsError] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
-  const [dagExpanded, setDagExpanded] = createSignal(false);
-  const [taskContext, { refetch: refetchTaskContext }] = createResource(
-    () => searchParams.task,
-    (taskId) => getTaskDag(taskId),
-  );
   const [allSessions] = createResource(
     () => (props.project ? null : sourceFilter.key()),
     async () => sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT)),
@@ -183,20 +174,12 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const selectedSession = createMemo(() =>
     filteredSessions().find((session) => session.id === selectedId()),
   );
-  const taskNode = createMemo(() =>
-    taskContext()?.nodes.find((node) => node.type === "task" && node.id === searchParams.task),
-  );
-  const specNode = createMemo(() => taskContext()?.nodes.find((node) => node.type === "spec"));
-  const [sessionDag] = createResource(
-    () => (dagExpanded() && selectedId() ? selectedId() : undefined),
-    (sessionId) => getSessionDag(sessionId),
-  );
   const [lineageDag, { refetch: refetchLineageDag }] = createResource(
-    () => (!searchParams.task && selectedId() ? selectedId() : undefined),
+    () => (selectedId() ? selectedId() : undefined),
     (sessionId) => getSessionDag(sessionId),
   );
   const lineageDagData = createMemo(() => {
-    if (searchParams.task || lineageDag.error) return null;
+    if (lineageDag.error) return null;
     const dag = lineageDag();
     return dag && dag.nodes.filter((node) => node.type === "session").length > 1 ? dag : null;
   });
@@ -404,8 +387,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       refetchTimer = window.setTimeout(() => {
         void refetchEvents();
         void refetchChildCounts();
-        if (searchParams.task) void refetchTaskContext();
-        if (!searchParams.task) void refetchLineageDag();
+        void refetchLineageDag();
       }, 180);
     });
     onCleanup(() => {
@@ -504,66 +486,6 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   return (
     <>
-      <Show when={searchParams.task}>
-        {(taskId) => (
-          <header class="tendril-header">
-            <div class="tendril-context">
-              <p class="eyebrow">worker tendril</p>
-              <div class="tendril-title-row">
-                <div>
-                  <span>Story</span>
-                  <strong>{specNode()?.label ?? "Loading task context…"}</strong>
-                  <Show when={taskNode()?.label}>{(label) => <small>{label()}</small>}</Show>
-                </div>
-                <Show when={taskNode()?.status}>
-                  {(status) => (
-                    <span class={`tendril-status tendril-status--${status()}`}>
-                      {statusLabel(status())}
-                    </span>
-                  )}
-                </Show>
-              </div>
-            </div>
-
-            <SteerBox
-              taskId={taskId()}
-              actor="session"
-              enabled={taskNode()?.status === "in_progress"}
-            />
-
-            <div class="tendril-dag-panel">
-              <button
-                type="button"
-                class="tendril-dag-toggle"
-                aria-expanded={dagExpanded()}
-                aria-controls={`session-dag-${selectedId() || "pending"}`}
-                onClick={() => setDagExpanded((expanded) => !expanded)}
-              >
-                <span aria-hidden="true">{dagExpanded() ? "−" : "+"}</span>
-                {dagExpanded() ? "Hide session DAG" : "View session DAG"}
-              </button>
-              <Show when={dagExpanded()}>
-                <div id={`session-dag-${selectedId() || "pending"}`} class="tendril-dag-body">
-                  <Show when={sessionDag.loading}>
-                    <p>Loading session DAG…</p>
-                  </Show>
-                  <Show when={sessionDag.error}>
-                    <p class="tendril-dag-error">Session DAG could not be loaded.</p>
-                  </Show>
-                  <Show when={!sessionDag.loading && !sessionDag.error}>
-                    <DagView
-                      dag={sessionDag() ?? { nodes: [], edges: [] }}
-                      currentSessionId={selectedId()}
-                      currentTaskId={taskId()}
-                    />
-                  </Show>
-                </div>
-              </Show>
-            </div>
-          </header>
-        )}
-      </Show>
-
       <section class="sessions-page">
         <aside class="session-list-pane">
           <div class="pane-head">
@@ -1043,11 +965,6 @@ function filterSessions<
 
 function normalizeSessionText(value: unknown): string {
   return String(value ?? "").toLowerCase();
-}
-
-function statusLabel(status: string): string {
-  if (status === "in_progress" || status === "claimed") return "In progress";
-  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function ConversationMessage(props: { event: AgentEvent; role: "user" | "assistant" }) {
