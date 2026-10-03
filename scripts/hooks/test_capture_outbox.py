@@ -307,6 +307,84 @@ class OutboxTest(unittest.TestCase):
         self.assertEqual(delivered["event"], stored)
         self.assertIn(before["event_bytes"], raw)
 
+    def test_cli_preserves_all_canonical_utc_fractional_precisions(self):
+        for precision in range(10):
+            with self.subTest(precision=precision):
+                fraction = "." + "123456789"[:precision] if precision else ""
+                observed = "2026-10-03T12:00:00" + fraction + "Z"
+                payload = event("precision-" + str(precision))
+                payload["observedAt"] = observed
+                result = self.cli("enqueue", payload)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, b"")
+                row = self.rows()[-1]
+                self.assertEqual(json.loads(row["event_bytes"])["observedAt"], observed)
+                self.assertTrue(outbox.canonical_uuid(row["capture_id"]))
+                self.assertEqual(row["sanitizer_version"], 1)
+        rows = self.rows()
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(len({row["capture_id"] for row in rows}), 10)
+
+    def test_invalid_or_unsupported_utc_instants_are_refused_before_queue_creation(self):
+        invalid = ("2026-02-30T12:00:00.123456789Z", "2025-02-29T12:00:00.1Z",
+                   "0000-10-03T12:00:00.1Z", "2026-13-03T12:00:00.1Z",
+                   "2026-10-03T24:00:00.1Z", "2026-10-03T12:60:00.1Z",
+                   "2026-10-03T12:00:60.1Z", "2026-10-03T12:00:00.1234567890Z",
+                   "2026-10-03T12:00:00.Z", "2026-10-03T12:00:00.123456789junkZ",
+                   "2026-10-03T12:00:00.1junkZ", "2026-10-03T12:00:00.123+00:00Z",
+                   "2026-10-03T12:00:00.123456789\nZ", "2026-10-03T12:00:00.123456789\rZ",
+                   "2026-10-03T12:00:00.123456789\r\nZ", "2026-10-03T12:00:00.123456789.12Z",
+                   "2026-10-03T12:00:00.１２３Z",
+                   "2026-10-03T12:00:00.123456789", "2026-10-03T12:00:00.123456")
+        for index, observed in enumerate(invalid):
+            with self.subTest(observed=observed):
+                directory = self.root / ("invalid-instant-" + str(index))
+                payload = event()
+                payload["observedAt"] = observed
+                result = self.cli("enqueue", payload, directory=directory)
+                self.assertEqual(result.returncode, 0)
+                self.assertIn(b"invalid_capture", result.stderr)
+                self.assertFalse(directory.exists())
+
+    def test_existing_legacy_zoned_timestamp_formats_remain_byte_identical(self):
+        for observed in ("2026-10-03T12:00:00+02:30", "2026-10-03T12:00:00.123-04:00",
+                         "2026-10-03 12:00:00.123456+00:00", "2026-10-03T12:00:00+00:00:30"):
+            with self.subTest(observed=observed):
+                payload = event()
+                payload["observedAt"] = observed
+                result = self.cli("enqueue", payload)
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, b"")
+                self.assertEqual(json.loads(self.rows()[-1]["event_bytes"])["observedAt"], observed)
+
+    def test_nanosecond_outage_and_lost_ack_retry_keep_identity_bytes_and_time(self):
+        observed = "2026-10-03T12:00:00.123456789Z"
+        payload = event("nanosecond-replay")
+        payload["observedAt"] = observed
+        with socket.socket() as unavailable:
+            unavailable.bind(("127.0.0.1", 0))
+            port = unavailable.getsockname()[1]
+            origin = "http://127.0.0.1:" + str(port)
+            result = self.cli("enqueue", payload, origin)
+            self.assertEqual(result.returncode, 0)
+        before = self.rows()[0]
+        server = self.server(port)
+        server.mode = "drop"
+        self.cli("drain", origin=origin)
+        retained = self.rows()[0]
+        for field in ("capture_id", "event_bytes", "created_at", "sanitizer_version"):
+            self.assertEqual(retained[field], before[field])
+        self.assertEqual(json.loads(retained["event_bytes"])["observedAt"], observed)
+        server.mode = "ok"
+        self.cli("drain", origin=origin)
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(len(server.committed), 1)
+        self.assertEqual(len(server.received), 2)
+        self.assertEqual(server.received[0][1], server.received[1][1])
+        delivered = json.loads(server.received[1][1])
+        self.assertEqual(delivered["captureId"], before["capture_id"])
+        self.assertEqual(delivered["event"]["observedAt"], observed)
+
     def test_commit_then_response_close_retries_without_duplicate_event(self):
         server = self.server()
         server.mode = "drop"
