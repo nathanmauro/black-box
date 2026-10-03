@@ -24,6 +24,8 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -141,13 +143,14 @@ class MemoryMcpToolsTest {
                         new RecallResult("sba-agentic", 168, List.of("decision"), items.size(), items, "hybrid")));
     }
 
-    @Test
-    void observationBodyUsesTheBudgetAndReportsExactlyWhatWasRemoved() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"observation", "projection"})
+    void capturedBodyUsesTheBudgetAndReportsExactlyWhatWasRemoved(String kind) throws Exception {
         String body = "Observation evidence\n" + "🧪".repeat(3000);
         RecalledItem observation = new RecalledItem(
                 "observation-1",
                 "session-1",
-                "observation",
+                kind,
                 "codex",
                 "client-1",
                 "/repo",
@@ -164,8 +167,7 @@ class MemoryMcpToolsTest {
                 null,
                 body);
         when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
-                .thenReturn(new RecallResult(
-                        "sba-agentic", 168, List.of("observation"), 1, List.of(observation), "lexical"));
+                .thenReturn(new RecallResult("sba-agentic", 168, List.of(kind), 1, List.of(observation), "lexical"));
         RecallResult result =
                 recallResult(callback("recallContext").call("{\"repoOrTopic\":\"sba-agentic\",\"maxChars\":700}"));
         assertThat(result.truncated()).isTrue();

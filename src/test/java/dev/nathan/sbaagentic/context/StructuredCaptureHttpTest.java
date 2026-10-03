@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
@@ -9,10 +10,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -25,7 +30,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
             "sba.local-ai.enabled=false",
             "sba.elasticsearch.enabled=false",
             "sba.memory.embedding.enabled=false",
-            "sba.summary.backend=local"
+            "sba.summary.backend=local",
+            "sba.judge.enabled=false"
         })
 class StructuredCaptureHttpTest {
 
@@ -38,6 +44,11 @@ class StructuredCaptureHttpTest {
     private final HttpClient client = HttpClient.newHttpClient();
     private String session;
     private int requestId;
+
+    @AfterEach
+    void closeHttpClient() {
+        client.close();
+    }
 
     @Test
     void missingNullAndBlankRequiredCaptureFieldsReturnActionableErrorsWithoutWriting() throws Exception {
@@ -137,6 +148,154 @@ class StructuredCaptureHttpTest {
                         .asText())
                 .isEqualTo(body);
         assertThat(get("/api/events/" + eventId).path("text").asText()).isEqualTo(body);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http", "mcp"})
+    void projectionRecallPreservesEveryFutureAndItsConditions(String transport) throws Exception {
+        initialize();
+        Map<String, Object> args = projectionArguments("Only after recovery checks pass");
+        String eventId =
+                textJson(call("captureProjection", args)).path("eventId").asText();
+        JsonNode canonical = get("/api/events/" + eventId);
+        String expected = "Projected futures:\n"
+                + "1. Ship migration — Only after recovery checks pass (confidence: 0.6)\n"
+                + "2. Defer migration — Keep current storage if recovery checks fail (confidence: 0.4)\n\n"
+                + "Basis: Recovery must be proven before migration";
+        assertThat(canonical.path("text").asText()).isEqualTo(expected);
+        assertThat(canonical.path("metadata").path("paths")).hasSize(2);
+        JsonNode recalled = transport.equals("http")
+                ? get("/api/recall?scope=" + eventId + "&kinds=projection")
+                : textJson(call("recallContext", Map.of("repoOrTopic", eventId, "kinds", List.of("projection"))));
+        assertThat(recalled.path("count").asInt()).isEqualTo(1);
+        assertThat(recalled.path("mode").asText()).isEqualTo("lexical");
+        assertThat(recalled.path("truncated").asBoolean()).isFalse();
+        JsonNode item = recalled.path("items").get(0);
+        assertThat(item.path("body").asText())
+                .as(transport + " projection evidence")
+                .isEqualTo(expected);
+        assertProjectionIdentity(item, canonical);
+        // These compatibility summaries describe the first listed path, not a selected future.
+        assertThat(item.path("headline").asText()).isEqualTo("Ship migration");
+        assertThat(item.path("confidence").asDouble()).isEqualTo(0.6);
+        assertThat(get("/api/recall?scope=" + eventId).path("count").asInt()).isZero();
+        assertThat(textJson(call("recallContext", Map.of("repoOrTopic", eventId)))
+                        .path("count")
+                        .asInt())
+                .isZero();
+    }
+
+    @Test
+    void projectionMcpBudgetClipsRenderedBodyAndPreservesCanonicalEvidence() throws Exception {
+        initialize();
+        String eventId = textJson(call("captureProjection", projectionArguments("Recovery evidence 🧪. ".repeat(400))))
+                .path("eventId")
+                .asText();
+        JsonNode canonical = get("/api/events/" + eventId);
+        String stored = canonical.path("text").asText();
+        assertThat(stored).contains("2. Defer migration", "Basis: Recovery must be proven before migration");
+        JsonNode mcp = textJson(
+                call("recallContext", Map.of("repoOrTopic", eventId, "kinds", List.of("projection"), "maxChars", 700)));
+        assertThat(mcp.path("count").asInt()).isEqualTo(1);
+        assertThat(mcp.path("truncated").asBoolean()).isTrue();
+        JsonNode item = mcp.path("items").get(0);
+        assertProjectionIdentity(item, canonical);
+        String body = item.path("body").asText();
+        int suffix = body.lastIndexOf("… (+");
+        assertThat(suffix).isPositive();
+        String prefix = body.substring(0, suffix);
+        assertThat(stored).startsWith(prefix);
+        assertThat(Character.isHighSurrogate(prefix.charAt(prefix.length() - 1)))
+                .isFalse();
+        assertThat(body.substring(suffix)).isEqualTo("… (+" + (stored.length() - prefix.length()) + " chars)");
+        assertThat(body.length()
+                        + item.path("headline").asText().length()
+                        + item.path("rationale").asText().length()
+                        + 200)
+                .isLessThanOrEqualTo(700);
+        assertThat(get("/api/recall?scope=" + eventId + "&kinds=projection")
+                        .path("items")
+                        .get(0)
+                        .path("body")
+                        .asText())
+                .isEqualTo(stored);
+        assertThat(get("/api/events/" + eventId)).isEqualTo(canonical);
+    }
+
+    @Test
+    void projectionBodyKeepsIngestCappingDistinctFromFullPathMetadataAndMcpClipping() throws Exception {
+        initialize();
+        String description = "Recovery evidence. ".repeat(1300);
+        Map<String, Object> args = projectionArguments(description);
+        String eventId =
+                textJson(call("captureProjection", args)).path("eventId").asText();
+        JsonNode canonical = get("/api/events/" + eventId);
+        String stored = canonical.path("text").asText();
+        assertThat(stored).endsWith("\n[truncated]").doesNotContain("2. Defer migration");
+        assertThat(canonical
+                        .path("metadata")
+                        .path("paths")
+                        .get(0)
+                        .path("description")
+                        .asText())
+                .isEqualTo(description.strip());
+        assertThat(canonical
+                        .path("metadata")
+                        .path("paths")
+                        .get(1)
+                        .path("description")
+                        .asText())
+                .isEqualTo("Keep current storage if recovery checks fail");
+        for (JsonNode recalled : List.of(
+                get("/api/recall?scope=" + eventId + "&kinds=projection"),
+                textJson(call(
+                        "recallContext",
+                        Map.of("repoOrTopic", eventId, "kinds", List.of("projection"), "maxChars", 50000))))) {
+            assertThat(recalled.path("truncated").asBoolean()).isFalse();
+            JsonNode item = recalled.path("items").get(0);
+            assertProjectionIdentity(item, canonical);
+            assertThat(item.path("body").asText()).isEqualTo(stored);
+        }
+        assertThat(get("/api/events/" + eventId)).isEqualTo(canonical);
+    }
+
+    private Map<String, Object> projectionArguments(String firstDescription) {
+        Map<String, Object> args = validArguments("captureProjection");
+        args.put("basis", "Recovery must be proven before migration");
+        args.put(
+                "paths",
+                List.of(
+                        Map.of("title", "Ship migration", "description", firstDescription, "confidence", 0.6),
+                        Map.of(
+                                "title",
+                                "Defer migration",
+                                "description",
+                                "Keep current storage if recovery checks fail",
+                                "confidence",
+                                0.4)));
+
+        return args;
+    }
+
+    @Test
+    void mcpResponseParserRetainsNanosecondTimestampPrecision() throws Exception {
+        Instant expected = Instant.parse("2026-10-03T04:12:34.123456789Z");
+        JsonNode result = mapper.valueToTree(Map.of(
+                "content", List.of(Map.of("text", "{\"observedAt\":" + expected.getEpochSecond() + ".123456789}"))));
+        assertThat(mapper.convertValue(textJson(result).path("observedAt"), Instant.class))
+                .isEqualTo(expected);
+    }
+
+    private void assertProjectionIdentity(JsonNode item, JsonNode canonical) {
+        for (String field : List.of("sessionId", "source", "clientSessionId")) {
+            assertThat(item.path(field)).as(field).isEqualTo(canonical.path(field));
+        }
+        // MCP's established serializer uses epoch seconds; REST uses ISO text.
+        assertThat(mapper.convertValue(item.path("observedAt"), Instant.class))
+                .isEqualTo(mapper.convertValue(canonical.path("observedAt"), Instant.class));
+        assertThat(item.path("eventId").asText()).isEqualTo(canonical.path("id").asText());
+        assertThat(item.path("kind").asText()).isEqualTo("projection");
+        assertThat(item.path("repo")).isEqualTo(canonical.path("metadata").path("repo"));
     }
 
     @Test
@@ -268,7 +427,9 @@ class StructuredCaptureHttpTest {
     private JsonNode textJson(JsonNode result) throws Exception {
         assertThat(result.path("isError").asBoolean()).as(result.toString()).isFalse();
 
-        return mapper.readTree(result.path("content").get(0).path("text").asText());
+        return mapper.reader()
+                .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .readTree(result.path("content").get(0).path("text").asText());
     }
 
     private long eventCount() throws Exception {
