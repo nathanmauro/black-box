@@ -323,6 +323,21 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void canonicalCompactPagesTraverseTiesOnceWithLiteralFidelity() throws Exception {
+        var contract = new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base);
+        contract.legacyBoundedSearchCannotTraverseButCanonicalPagesDo();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base).cutoffIsInclusiveToTheNanosecond();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base).literalTermsMatchExactlyWithoutGrammar();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base).projectAndSessionBoundariesAreExact();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base)
+                .cursorsAndAmbiguousRequestsFailExplicitly();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base)
+                .pagesHonorBytesWithoutSkippingAndEndCleanly();
+        new dev.nathan.sbaagentic.search.CompactPageHttpContract(http, base)
+                .extremeInstantsPaginateAndInvalidUtf8CursorsFail();
+    }
+
+    @Test
     void delayedEventsKeepLatestSessionActivity() {
         dev.nathan.sbaagentic.recording.SessionChronologyContract.delayedEvents(http, base, jdbc);
     }

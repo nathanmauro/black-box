@@ -35,6 +35,12 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             END
             """;
 
+    private static final String COMPACT_PROJECTION =
+            "SELECT substr(e.id,1,257) AS id, substr(e.session_id,1,257) AS session_id, "
+                    + "substr(e.source,1,257) AS source, substr(e.client_session_id,1,257) AS client_session_id, "
+                    + "substr(e.event_type,1,257) AS event_type, substr(e.role,1,257) AS role, "
+                    + "substr(e.observed_at,1,64) AS observed_at, substr(e.text,1,601) AS text";
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -101,6 +107,72 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                         rs.getString("text")));
     }
 
+    @Override
+    public List<PageRow> pageCompact(PageQuery query, int limit) {
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder()
+                .append(COMPACT_PROJECTION)
+                .append(", ")
+                .append(observedTime.expression())
+                .append(" AS order_key, e.id AS cursor_id\n  FROM agent_events e\n");
+        if (query.projectExact() != null) {
+            sql.append("  JOIN agent_sessions s ON s.id = e.session_id\n");
+        }
+        sql.append(" WHERE ").append(observedTime.expression()).append(" <= ?\n");
+        args.add(query.untilKey());
+        if (query.sessionId() != null) {
+            sql.append("   AND e.session_id = ?\n");
+            args.add(query.sessionId());
+        }
+        if (query.projectExact() != null) {
+            sql.append("   AND ").append(SESSION_CANONICAL_CWD_SQL).append(" = ?\n");
+            args.add(query.projectExact());
+        }
+        // Position functions compare bound text exactly: no wildcard, escape, or case folding.
+        String position = postgres ? "strpos" : "instr";
+        for (String term : query.terms()) {
+            sql.append("   AND (")
+                    .append(position)
+                    .append("(coalesce(e.text, ''), ?) > 0 OR ")
+                    .append(position)
+                    .append("(coalesce(e.tool_name, ''), ?) > 0 OR ")
+                    .append(position)
+                    .append("(coalesce(e.metadata_json, ''), ?) > 0)\n");
+            args.add(term);
+            args.add(term);
+            args.add(term);
+        }
+        if (query.beforeKey() != null && query.beforeId() != null) {
+            // The scalar bound lets SQLite seek into its expression index; the tuple preserves ID ties.
+            sql.append("   AND ")
+                    .append(observedTime.expression())
+                    .append(" <= ? AND ")
+                    .append(observedTime.cursorTuple("e.id"))
+                    .append(" < (?, ?)\n");
+            args.add(query.beforeKey());
+            args.add(query.beforeKey());
+            args.add(query.beforeId());
+        }
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append("\n LIMIT ?");
+        args.add(limit);
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                (rs, row) -> new PageRow(
+                        new Candidate(
+                                rs.getString("id"),
+                                rs.getString("session_id"),
+                                rs.getString("client_session_id"),
+                                rs.getString("source"),
+                                rs.getString("event_type"),
+                                rs.getString("role"),
+                                rs.getString("observed_at"),
+                                rs.getString("text")),
+                        rs.getString("order_key"),
+                        rs.getString("cursor_id")),
+                args.toArray());
+    }
+
     private <T> List<T> searchProjection(
             EventQuery facets,
             List<String> projectScopes,
@@ -111,10 +183,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             boolean humanOnly,
             RowMapper<T> mapper) {
         String projection = compact
-                ? "SELECT substr(e.id,1,257) AS id, substr(e.session_id,1,257) AS session_id, "
-                        + "substr(e.source,1,257) AS source, substr(e.client_session_id,1,257) AS client_session_id, "
-                        + "substr(e.event_type,1,257) AS event_type, substr(e.role,1,257) AS role, "
-                        + "substr(e.observed_at,1,64) AS observed_at, substr(e.text,1,601) AS text\n"
+                ? COMPACT_PROJECTION + "\n"
                 : "SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, "
                         + "e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, "
                         + "e.observed_at, e.human_text\n";
