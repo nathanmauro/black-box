@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,7 +32,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
             "sba.elasticsearch.enabled=false",
             "sba.memory.embedding.enabled=false",
             "sba.summary.backend=local",
-            "sba.judge.enabled=false"
+            "sba.judge.enabled=false",
+            "sba.ingestion.redact-enabled=true",
+            "sba.ingestion.max-text-length=20000"
         })
 class StructuredCaptureHttpTest {
 
@@ -257,6 +260,139 @@ class StructuredCaptureHttpTest {
             assertThat(item.path("body").asText()).isEqualTo(stored);
         }
         assertThat(get("/api/events/" + eventId)).isEqualTo(canonical);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http", "mcp"})
+    void ideaQuoteKeepsWhitespaceAcrossCaptureRevisionAndRecall(String transport) throws Exception {
+        initialize();
+        String key = UUID.randomUUID().toString();
+        String quote = "    if ready:\n\treturn result 🐈  \n";
+        Map<String, Object> args = ideaArguments(key);
+        args.put("quote", quote);
+        String firstId = captureIdea(transport, args).path("eventId").asText();
+        JsonNode original = assertIdeaQuote(key, firstId, quote, 1);
+        int revisions = 1;
+        for (String omitted : List.of("omitted", "null", "empty", "blank")) {
+            var revision = ideaArguments(key);
+            revision.put("status", "tracked");
+            switch (omitted) {
+                case "null" -> revision.put("quote", null);
+                case "empty" -> revision.put("quote", "");
+                case "blank" -> revision.put("quote", " \t\n ");
+                default -> {
+                    /* field omitted */
+                }
+            }
+            String eventId = captureIdea(transport, revision).path("eventId").asText();
+            JsonNode stored = get("/api/events/" + eventId);
+            assertThat(stored.path("metadata").has("quote")).isFalse();
+            assertThat(stored.path("text").asText()).doesNotContain("Quote:");
+            assertIdeaQuoteViews(key, eventId, quote, ++revisions);
+        }
+        String replacementQuote = "  a new quoted line 🐈\n";
+        var replacement = ideaArguments(key);
+        replacement.put("quote", replacementQuote);
+        String replacementId =
+                captureIdea(transport, replacement).path("eventId").asText();
+        assertIdeaQuote(key, replacementId, replacementQuote, ++revisions);
+        assertThat(get("/api/events/" + firstId)).isEqualTo(original);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http", "mcp"})
+    void ideaQuotePreservationRetainsRedactionAndSeparateCaptureLimits(String transport) throws Exception {
+        initialize();
+        String key = UUID.randomUUID().toString();
+        var args = ideaArguments(key);
+        args.put("quote", "    password=\"synthetic-quote-secret\"\n    safe tail  \n");
+        String id = captureIdea(transport, args).path("eventId").asText();
+        JsonNode redacted = get("/api/events/" + id);
+        String safeQuote = redacted.path("metadata").path("quote").asText();
+        assertThat(safeQuote)
+                .startsWith("    ")
+                .endsWith("\n    safe tail  \n")
+                .contains("[REDACTED]")
+                .doesNotContain("synthetic-quote-secret");
+        assertThat(redacted.path("text").asText())
+                .contains("Quote: \"" + safeQuote + "\"")
+                .doesNotContain("synthetic-quote-secret");
+        assertIdeaQuoteViews(key, id, safeQuote, 1);
+
+        for (int length : new int[] {21_000, 51_000}) {
+            String largeKey = UUID.randomUUID().toString();
+            String quote = "    " + "x".repeat(length) + "\n";
+            var large = ideaArguments(largeKey);
+            large.put("quote", quote);
+            String largeId = captureIdea(transport, large).path("eventId").asText();
+            JsonNode stored = get("/api/events/" + largeId);
+            String expectedQuote = length < 50_000 ? quote : quote.substring(0, 50_000) + " …[truncated]";
+            assertThat(stored.path("metadata").path("quote").asText()).isEqualTo(expectedQuote);
+            assertThat(stored.path("text").asText())
+                    .contains("Quote: \"    ")
+                    .hasSize(20_000 + "\n[truncated]".length())
+                    .endsWith("\n[truncated]");
+            assertIdeaQuoteViews(largeKey, largeId, expectedQuote, 1);
+            assertThat(get("/api/events/" + largeId)).isEqualTo(stored);
+        }
+        assertThat(get("/api/events/" + id)).isEqualTo(redacted);
+    }
+
+    private Map<String, Object> ideaArguments(String key) {
+
+        return new LinkedHashMap<>(Map.of(
+                "source",
+                "manual",
+                "clientSessionId",
+                "idea-quote-" + UUID.randomUUID(),
+                "repo",
+                "/fixture/idea-quote-" + key,
+                "title",
+                "Quoted code idea",
+                "oneLiner",
+                "Keep this quoted code",
+                "origin",
+                "human-aside",
+                "ideaKey",
+                key));
+    }
+
+    private JsonNode captureIdea(String transport, Map<String, Object> args) throws Exception {
+        if (transport.equals("mcp"))
+
+            return textJson(call("captureIdea", args));
+
+        var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/ideas"))
+                .timeout(Duration.ofSeconds(15))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(args)))
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+
+        return mapper.readTree(response.body());
+    }
+
+    private JsonNode assertIdeaQuote(String key, String id, String quote, int revisions) throws Exception {
+        JsonNode event = get("/api/events/" + id);
+        assertThat(event.path("metadata").path("quote").asText()).isEqualTo(quote);
+        assertThat(event.path("text").asText()).contains("Quote: \"" + quote + "\"");
+        assertIdeaQuoteViews(key, id, quote, revisions);
+
+        return event;
+    }
+
+    private void assertIdeaQuoteViews(String key, String id, String quote, int revisions) throws Exception {
+        JsonNode listing = get("/api/ideas?q=" + key).path("items");
+        assertThat(listing).hasSize(1);
+        for (JsonNode idea : List.of(
+                listing.get(0),
+                get("/api/ideas/detail?ideaKey=" + key).path("idea"),
+                textJson(call("recallIdea", Map.of("ideaKey", key))).path("idea"))) {
+            assertThat(idea.path("quote").asText()).isEqualTo(quote);
+            assertThat(idea.path("eventId").asText()).isEqualTo(id);
+            assertThat(idea.path("revisions").asInt()).isEqualTo(revisions);
+        }
     }
 
     private Map<String, Object> projectionArguments(String firstDescription) {
