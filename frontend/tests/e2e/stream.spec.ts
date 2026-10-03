@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { E2E_PROJECT_CWD } from "../../src/e2e/seedData";
+import { assertSafeSeedBaseUrl, E2E_PROJECT_CWD } from "../../src/e2e/seedData";
 import { E2E_INJECTION_FILE } from "./project-fixture";
 
 const SHOT_DIR = "test-results/shots";
@@ -28,22 +29,58 @@ test("stream is the default landing view and shows meaningful events newest-firs
   await page.screenshot({ path: `${SHOT_DIR}/stream.png`, fullPage: true });
 });
 
-test("meaningful toggle widens the stream and a source facet narrows it", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.locator(".stream-row").first()).toBeVisible();
+test("meaningful toggle widens the stream and a source facet narrows it", async ({
+  page,
+  request,
+}) => {
+  assertSafeSeedBaseUrl(test.info().project.use.baseURL || "http://127.0.0.1:8799");
+  const id = randomUUID();
+  const repo = `/tmp/stream-visibility-${id}`;
+  const scope = `project_exact:${repo}`;
+  const decision = `Choose local storage for scoped filter fixture ${id}`;
+  const prompt = `Show the human prompt for scoped filter fixture ${id}`;
+  // Other journeys append hundreds of events. Own this slice instead of assuming a global seed
+  // is still within the first page when meaningful-only is turned off.
+  const capturedDecision = await request.post("/api/decisions", {
+    data: {
+      source: "codex",
+      clientSessionId: `stream-decision-${id}`,
+      repo,
+      decision,
+      rationale: "Keep the fixture's source and meaningful filters independently visible.",
+    },
+  });
+  expect(capturedDecision.ok()).toBeTruthy();
+  const capturedPrompt = await request.post("/api/events", {
+    data: {
+      source: "claude",
+      clientSessionId: `stream-prompt-${id}`,
+      eventType: "UserPromptSubmit",
+      role: "user",
+      text: prompt,
+      cwd: repo,
+    },
+  });
+  expect(capturedPrompt.ok()).toBeTruthy();
+  await page.goto(`/?q=${encodeURIComponent(scope)}`);
+  await expect(page.locator(".stream-row")).toHaveCount(1);
+  await expect(page.getByText(decision).first()).toBeVisible();
+  await expect(page.getByText(prompt)).toHaveCount(0);
 
-  // Full firehose: the claude user prompt appears once meaningful-only is off.
   await page.getByRole("button", { name: "Options", exact: true }).click();
   await page.getByLabel(/meaningful events only/i).uncheck();
-  await expect(page.getByText("Rewrite the UI to match agent-observatory").first()).toBeVisible();
+  await expect(page.locator(".stream-row")).toHaveCount(2);
+  await expect(page.getByText(prompt).first()).toBeVisible();
 
-  // Elasticsearch-style facet narrows to one agent.
+  // Preserve the owned scope while narrowing to the other source.
   const query = page.getByLabel("Stream query");
-  await query.fill("source:claude is:all");
+  const narrowed = `${scope} source:claude is:all`;
+  await query.fill(narrowed);
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await expect(page).toHaveURL(/q=source%3Aclaude/);
-  await expect(page.getByText("Rewrite the UI to match agent-observatory").first()).toBeVisible();
-  await expect(page.getByText("Use SolidJS + Vite for the UI rewrite")).toHaveCount(0);
+  await expect(page).toHaveURL((url) => url.searchParams.get("q") === narrowed);
+  await expect(page.locator(".stream-row")).toHaveCount(1);
+  await expect(page.getByText(prompt).first()).toBeVisible();
+  await expect(page.getByText(decision)).toHaveCount(0);
 
   await page.screenshot({ path: `${SHOT_DIR}/stream-filtered.png`, fullPage: true });
 });

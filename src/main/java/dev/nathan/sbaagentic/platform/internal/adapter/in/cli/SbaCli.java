@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,9 @@ import org.springframework.stereotype.Component;
 public class SbaCli implements ApplicationRunner {
 
     static final int MAX_STDIN_BYTES = 1024 * 1024;
+
+    private static final Set<String> INGEST_VALUE_OPTIONS =
+            Set.of("source", "session", "type", "text", "turn", "role", "cwd", "tool", "title");
 
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
@@ -100,6 +104,7 @@ public class SbaCli implements ApplicationRunner {
     }
 
     private void ingest(ApplicationArguments args) throws IOException {
+        validateIngestArguments(args);
         String text = ingestText(args, System.in, System.console() != null);
         EventIngestRequest request = new EventIngestRequest(
                 option(args, "source", "manual"),
@@ -115,6 +120,25 @@ public class SbaCli implements ApplicationRunner {
                 Map.of("title", option(args, "title", "Manual capture")),
                 Instant.now());
         writeJson(ingestService.ingest(request));
+    }
+
+    private static void validateIngestArguments(ApplicationArguments args) {
+        if (args.getNonOptionArgs().size() > 1) {
+            throw new IllegalArgumentException(
+                    "ingest does not accept positional arguments; use --text=<note> and --name=value options");
+        }
+        // Inspect raw flags so a bare repeated option cannot hide behind an earlier supplied value.
+        for (String argument : args.getSourceArgs()) {
+            if (argument.startsWith("--") && INGEST_VALUE_OPTIONS.contains(argument.substring(2))) {
+                throw new IllegalArgumentException(argument + " requires a value; use " + argument + "=<value>");
+            }
+        }
+        for (String name : List.of("source", "session", "type")) {
+            String value = option(args, name, null);
+            if (value != null && value.isBlank()) {
+                throw new IllegalArgumentException("--" + name + " must not be blank");
+            }
+        }
     }
 
     static String ingestText(ApplicationArguments args, InputStream input, boolean consoleAttached) throws IOException {
