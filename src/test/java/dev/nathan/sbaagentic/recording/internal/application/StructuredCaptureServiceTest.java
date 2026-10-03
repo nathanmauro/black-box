@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
@@ -14,10 +15,13 @@ import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -27,6 +31,31 @@ class StructuredCaptureServiceTest {
 
     @Mock
     EventRecorder recorder;
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-0.1, 1.1, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY})
+    void invalidConfidenceNeverReachesNormalOrReplacementRecorder(double confidence) {
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        for (String supersedes : Arrays.asList(null, "previous-event")) {
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> service.captureDecision(new CaptureDecisionRequest(
+                            "codex", "client", "/repo", "Decision", "Reason", null, confidence, null, supersedes)))
+                    .withMessage("confidence must be a finite number between 0.0 and 1.0.");
+        }
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> service.captureProjection(new CaptureProjectionRequest(
+                        "codex",
+                        "client",
+                        "/repo",
+                        null,
+                        Arrays.asList(
+                                null,
+                                new ProjectionPath(" ", "Discarded", Double.NaN),
+                                new ProjectionPath("Future", null, confidence)))))
+                .withMessage("paths[2].confidence must be a finite number between 0.0 and 1.0.");
+        verifyNoInteractions(recorder);
+    }
 
     @Test
     void captureProjectionCapsPathsAndStoresProjectionMetadata() {

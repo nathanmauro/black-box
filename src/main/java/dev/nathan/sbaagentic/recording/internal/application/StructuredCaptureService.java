@@ -47,6 +47,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     @Override
     public IngestResponse captureDecision(CaptureDecisionRequest request) {
         requireNotBlank("decision", request.decision());
+        requireConfidence("confidence", request.confidence());
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", KIND_DECISION);
         metadata.put("decision", request.decision());
@@ -375,13 +376,15 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             return List.of();
         }
         List<ProjectionPath> out = new ArrayList<>();
-        for (ProjectionPath path : paths) {
+        for (int index = 0; index < paths.size(); index++) {
+            ProjectionPath path = paths.get(index);
             if (path == null) {
                 continue;
             }
             String title = stripOrNull(path.title());
             String description = stripOrNull(path.description());
             if (title != null) {
+                requireConfidence("paths[" + index + "].confidence", path.confidence());
                 out.add(new ProjectionPath(title, description, path.confidence()));
             }
             if (out.size() == MAX_PROJECTION_PATHS) {
@@ -419,6 +422,12 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
     private static boolean notBlank(String value) {
 
         return value != null && !value.isBlank();
+    }
+
+    private static void requireConfidence(String field, Double confidence) {
+        if (confidence != null && (!Double.isFinite(confidence) || confidence < 0.0 || confidence > 1.0)) {
+            throw new IllegalArgumentException(field + " must be a finite number between 0.0 and 1.0.");
+        }
     }
 
     private static void requireNotBlank(String field, String value) {

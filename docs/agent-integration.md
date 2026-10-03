@@ -45,6 +45,14 @@ required fields return an MCP tool error naming the field and do not write an ev
 named field before retrying. Optional handoff fields such as recipient, open loops, and next action
 retain their existing behavior.
 
+Decision confidence and confidence on retained Projection paths are optional. A supplied value must
+be finite and between `0.0` and `1.0`, inclusive; omission and `null` remain valid. Both REST and MCP
+reject invalid confidence before creating an event or session, naming `confidence` or the original
+input path such as `paths[2].confidence`. Decision replacements follow the same rule. Projection
+filtering/capping is unchanged: null/untitled entries are discarded, MCP retains the first five
+titled paths, and REST still rejects a list longer than five. Discarded paths add no confidence
+validation requirement.
+
 A successful capture acknowledgement identifies the event committed to the canonical database.
 Failures while publishing optional downstream notifications are logged without turning that commit
 into an HTTP or MCP tool error. Terminal captures attempt their session-stop notification even if
