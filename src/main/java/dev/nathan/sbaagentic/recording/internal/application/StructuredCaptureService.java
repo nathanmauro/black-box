@@ -28,10 +28,20 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
 
     private final EventRecorder recorder;
     private final RedactionService redaction;
+    private final dev.nathan.sbaagentic.recording.ProjectScopeResolver projects;
 
     public StructuredCaptureService(EventRecorder recorder, RedactionService redaction) {
+        this(recorder, redaction, scope -> List.of(scope));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StructuredCaptureService(
+            EventRecorder recorder,
+            RedactionService redaction,
+            dev.nathan.sbaagentic.recording.ProjectScopeResolver projects) {
         this.recorder = recorder;
         this.redaction = redaction;
+        this.projects = projects;
     }
 
     @Override
@@ -45,6 +55,35 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         putIfPresent(metadata, "openLoops", trimList(request.openLoops()));
         putIfPresent(metadata, "confidence", request.confidence());
         putIfPresent(metadata, "repo", request.repo());
+
+        if (request.supersedes() != null) {
+            requireNotBlank("supersedes", request.supersedes());
+            requireNotBlank("rationale", request.rationale());
+            requireNotBlank("repo", request.repo());
+            List<String> projectScopes = projects.scopesFor(request.repo());
+            if (projectScopes.isEmpty() || projectScopes.contains("__no_project__")) {
+                throw new IllegalArgumentException("Decision replacement requires an identifiable project.");
+            }
+            requireNotBlank("source", request.source());
+            requireNotBlank("clientSessionId", request.clientSessionId());
+
+            return recorder.ingestDecisionReplacement(
+                    new EventIngestRequest(
+                            request.source(),
+                            request.clientSessionId(),
+                            null,
+                            "Decision",
+                            "assistant",
+                            renderDecision(request),
+                            request.repo(),
+                            null,
+                            null,
+                            null,
+                            metadata,
+                            Instant.now()),
+                    request.supersedes().strip(),
+                    projectScopes);
+        }
 
         return write(
                 request.source(),

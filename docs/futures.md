@@ -5,23 +5,26 @@ decision. That is a hypothesis about a feedback loop, not a proven learning syst
 preserve useful reasoning; it can also preserve a stale assumption or make a speculative path
 seem inevitable. The next experiments should distinguish those outcomes.
 
-Every proposal below is **Not shipped**. Existing primitives are named separately from the work
-that would be built. Success and stop criteria are proposed evaluation gates, not observed results
+Proposals below distinguish implemented foundations from work that remains **Not shipped**.
+Success and stop criteria are proposed evaluation gates, not observed results
 or commitments to implement. Recall remains on demand by design; none requires a SessionStart
 hook or turns the server into an agent runner.
 
-## Not shipped — supersession and use provenance
+## Explicit supersession; not shipped — use provenance
 
 **What exists today.** Decisions carry rationale, rejected alternatives, confidence, and open
-loops; Handoffs carry continuation context. Captured events have stable IDs, and UI recall links
+loops; Handoffs carry continuation context. Decisions can explicitly replace a prior decision in
+the same logical project, preserving the original event and an append-only replacement relation.
+Normal recall excludes superseded decisions; explicit history exposes the links. This records a
+client's declared replacement, not independent verification that the new choice is correct. See
+[project continuity](project-continuity.md). Captured events have stable IDs, and UI recall links
 can open their source event. The current capture contracts are in
 [`CaptureDecisionRequest`](../src/main/java/dev/nathan/sbaagentic/recording/CaptureDecisionRequest.java)
 and [`CaptureHandoffRequest`](../src/main/java/dev/nathan/sbaagentic/recording/CaptureHandoffRequest.java).
 [Recall observability](recall-observability.md) measures retrieval but deliberately excludes
 recalled event IDs and contents. It is not an evidence-use ledger.
 
-**What would be built.** An explicit relation would record that one decision supersedes another,
-with the reason and effective time, preserving both records. A separate use record would let an
+**What would be built.** A separate use record would let an
 agent or reviewer identify which evidence informed a later decision or action. Retrieval would
 distinguish current intent from historical intent without silently deleting old reasoning.
 The provenance design would need its own disclosure and access rules; existing telemetry should
@@ -101,14 +104,16 @@ ownership rules. The [Linear adapter](../scripts/linear/blackbox_linear.py) pers
 publication identity before sending a write and reconciles ambiguous responses; that is a bounded
 external-write precedent, not a general capture outbox.
 
-Local capture now has [payload-bound identities and acknowledgements](idempotent-capture.md),
-plus an [opt-in sanitized hook outbox](durable-capture.md). Actual local outage, lost-response and
-server-restart verification preserved one canonical event. This does not provide remote delivery,
-authenticated client wiring, workspace isolation, history synchronization or guaranteed downstream
-processing. Global hook activation is separate; the default legacy path remains unchanged.
+Local capture has [payload-bound identities and acknowledgements](idempotent-capture.md),
+plus an [opt-in sanitized hook outbox](durable-capture.md). The outbox additionally supports explicit
+HTTPS origin selection and an origin-bound macOS Keychain bearer. Actual local outage, lost-response
+and server-restart verification preserved one canonical event; local TLS tests verify the new
+transport with fixture credentials. This does not establish a deployed remote service, workspace
+isolation, history synchronization or guaranteed downstream processing. Global hook activation is
+separate; the default legacy path remains unchanged.
 
-**What would be built.** Establish a demonstrated remote-sharing need before extending the local
-retry contract to authenticated remote clients and their privacy/retention requirements. Add workspace access
+**What would be built.** Verify the authenticated outbox against a selected remote deployment and
+its privacy/retention requirements. Add workspace access
 boundaries only for a demonstrated sharing need. Multi-host workers would require explicit
 leases or fencing and recovery semantics, not merely a shared task table. Local/cloud history
 synchronization would be a separate design with conflict and deletion rules.
@@ -121,8 +126,8 @@ workflow benefits enough to justify the operational cost and new failure modes.
 **Stop criteria.** Stop before adding distributed machinery if one authoritative server meets the
 need. Stop expansion if reconciliation cannot be explained or tested, if isolation requires
 trusting caller-supplied scope, or if worker fencing is incomplete. PostgreSQL alone supplies none
-of those guarantees. Bundled hooks and the runner currently lack bearer-header wiring; even the
-existing authenticated surface needs a compatible client.
+of those guarantees. The outbox is the opt-in authenticated hook path; legacy direct hooks and the
+runner still need compatible wiring before using an authenticated server.
 
 ## Not shipped — the cloud prototype as a reproducible rejected alternative
 

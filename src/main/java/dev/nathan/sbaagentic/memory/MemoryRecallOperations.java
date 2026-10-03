@@ -20,4 +20,19 @@ public interface MemoryRecallOperations {
      * the caller's own context, which is the opposite of what recalling context is for.
      */
     RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit);
+
+    default RecallResult recall(
+            String scope,
+            String project,
+            String query,
+            int withinHours,
+            List<String> kinds,
+            Integer limit,
+            boolean includeSuperseded) {
+        if (project != null || query != null || includeSuperseded) {
+            throw new UnsupportedOperationException("Project recall is not supported by this implementation.");
+        }
+
+        return recall(scope, withinHours, kinds, limit);
+    }
 }

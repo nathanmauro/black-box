@@ -1,13 +1,51 @@
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import type { JSX } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getRecall } from "../../lib/api";
+import {
+  captureDecision,
+  getProjects,
+  getRecall,
+  type RecallResult,
+  type RecalledItem,
+} from "../../lib/api";
+import { sourceFilter } from "../../lib/stores";
 import RecallPage from "../RecallPage";
 
-let params: { scope?: string };
-let updateParams: SetStoreFunction<{ scope?: string }>;
+type Params = {
+  scope?: string;
+  project?: string;
+  query?: string;
+  run?: string;
+  withinHours?: string;
+  kinds?: string;
+  history?: string;
+};
+let params: Params;
+let updateParams: SetStoreFunction<Params>;
 const setParams = vi.fn();
+const writeText = vi.fn();
+const item: RecalledItem = {
+  eventId: "evt-1",
+  sessionId: "session-1",
+  kind: "decision",
+  source: "codex",
+  clientSessionId: "client-1",
+  repo: "/repos/alpha",
+  observedAt: "2026-10-01T20:00:00Z",
+  headline: "Use SQLite storage",
+  rationale: "Keep the local default simple.",
+  alternatives: ["Shared server"],
+  confidence: 0.82,
+  openLoops: ["Verify recovery"],
+};
+const result = (items = [item]): RecallResult => ({
+  withinHours: 168,
+  kinds: ["decision", "handoff"],
+  count: items.length,
+  items,
+  mode: "lexical",
+});
 
 vi.mock("@solidjs/router", () => ({
   A: (props: { href: string; children: JSX.Element; class?: string; "aria-label"?: string }) => (
@@ -17,159 +55,300 @@ vi.mock("@solidjs/router", () => ({
   ),
   useSearchParams: () => [params, setParams],
 }));
-
-vi.mock("../../lib/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/api")>();
-  return {
-    ...actual,
-    getRecall: vi.fn(async () => ({
-      scope: "sba-agentic",
-      withinHours: 168,
-      kinds: ["decision", "handoff"],
-      count: 1,
-      items: [
-        {
-          eventId: "evt-1",
-          sessionId: "session-1",
-          kind: "decision",
-          source: "codex",
-          clientSessionId: "client-1",
-          repo: null,
-          observedAt: "2026-06-16T20:00:00Z",
-          headline: "Use the Hybrid Storyline timeline",
-          rationale:
-            "It keeps meaningful project blocks first while preserving raw trace archaeology.",
-          alternatives: ["Raw chronological feed", "Summary-only timeline"],
-          confidence: 0.82,
-          openLoops: ["Alias merge seam"],
-          nextAction: "Build the Phase 2 Projects view",
-          toAgent: "codex",
-        },
-      ],
-    })),
-  };
-});
-
+vi.mock("../../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/api")>()),
+  getRecall: vi.fn(),
+  getProjects: vi.fn(),
+  getEvent: vi.fn(async (eventId: string) => ({ id: eventId, sessionId: `owning-${eventId}` })),
+  captureDecision: vi.fn(),
+}));
 beforeEach(() => {
-  [params, updateParams] = createStore<{ scope?: string }>({});
+  [params, updateParams] = createStore<Params>({});
   setParams.mockReset();
-  setParams.mockImplementation((next: { scope?: string }) => updateParams(next));
-  vi.mocked(getRecall).mockClear();
+  setParams.mockImplementation((next: Params) =>
+    updateParams(
+      Object.fromEntries(
+        Object.entries(next).map(([key, value]) => [key, value === "" ? undefined : value]),
+      ),
+    ),
+  );
+  vi.mocked(getRecall).mockReset().mockResolvedValue(result());
+  vi.mocked(getProjects)
+    .mockReset()
+    .mockResolvedValue([
+      {
+        projectKey: "alpha-key",
+        canonicalKey: "/repos/alpha",
+        label: "alpha",
+        sessionCount: 1,
+        eventCount: 1,
+        savedMeldCount: 0,
+        lastSeenAt: "2026-10-01T20:00:00Z",
+      },
+      {
+        projectKey: "beta-key",
+        canonicalKey: "/repos/beta",
+        label: "beta",
+        sessionCount: 1,
+        eventCount: 1,
+        savedMeldCount: 0,
+        lastSeenAt: "2026-10-01T19:00:00Z",
+      },
+    ]);
+  vi.mocked(captureDecision)
+    .mockReset()
+    .mockResolvedValue({} as never);
+  writeText.mockReset().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  sourceFilter.clear();
 });
+async function chooseProject(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Project / }));
+  fireEvent.click(await screen.findByRole("option", { name: new RegExp(`^${name} `) }));
+}
 
 describe("RecallPage", () => {
+  it("separates project from question and exports only the displayed evidence with provenance", async () => {
+    render(() => <RecallPage />);
+    await chooseProject("alpha");
+    fireEvent.input(screen.getByLabelText("Question"), { target: { value: "storage" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    expect(getRecall).toHaveBeenCalledWith(
+      { project: "/repos/alpha", query: "storage", includeSuperseded: false },
+      168,
+      ["decision", "handoff"],
+    );
+    const card = await screen.findByRole("article", { name: item.headline! });
+    expect(card).toHaveTextContent("Keep the local default simple.");
+    expect(
+      within(card).getByRole("link", { name: `Open ${item.headline} in Browse` }),
+    ).toHaveAttribute("href", "/?view=browse&session=session-1&event=evt-1&project=");
+    expect(screen.getByText(/Text matching/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Copy context" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain("Project: /repos/alpha");
+    expect(writeText.mock.calls[0][0]).toContain("event=evt-1");
+    expect(writeText.mock.calls[0][0]).toContain("Recorded open questions: Verify recovery");
+  });
+
   it.each([
     ["Three months · 90d", 2160],
     ["Six months · 180d", 4320],
-  ])(
-    "submits the %s rolling window without changing the selected scope or kinds",
-    async (label, hours) => {
-      render(() => <RecallPage />);
-      fireEvent.input(screen.getByLabelText("Scope"), {
-        target: { value: "/workspace/example-app" },
-      });
-      fireEvent.click(screen.getByRole("radio", { name: label }));
-      fireEvent.click(screen.getByRole("checkbox", { name: "Observation" }));
-      fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
-
-      expect(getRecall).toHaveBeenCalledWith("/workspace/example-app", hours, [
-        "decision",
-        "handoff",
-        "observation",
-      ]);
-      expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
-    },
-  );
-
-  it("offers named help disclosures that close with Escape without submitting recall", () => {
+  ])("retains scope-only compatibility for %s", async (label, hours) => {
+    updateParams({ scope: "/workspace/example-app" });
     render(() => <RecallPage />);
+    fireEvent.click(screen.getByRole("radio", { name: label }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Observation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    expect(getRecall).toHaveBeenCalledWith("/workspace/example-app", hours, [
+      "decision",
+      "handoff",
+      "observation",
+    ]);
+    expect(await screen.findByRole("article", { name: item.headline! })).toBeInTheDocument();
+  });
+
+  it("consumes legacy run=1 once, normalizes text, and does not rerun when filters change", async () => {
+    updateParams({ scope: "  C++ & café #1  ", run: "1" });
+    render(() => <RecallPage />);
+    await screen.findByRole("article", { name: item.headline! });
+    expect(getRecall).toHaveBeenCalledExactlyOnceWith("C++ & café #1", 168, [
+      "decision",
+      "handoff",
+    ]);
+    expect(setParams).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "C++ & café #1", run: undefined }),
+      { replace: true },
+    );
+    fireEvent.click(screen.getByRole("radio", { name: "30d" }));
+    expect(getRecall).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  });
+
+  it("runs the project resume URL with a one-year window and blank question", async () => {
+    updateParams({ project: "/repos/alpha", withinHours: "8760", run: "1" });
+    render(() => <RecallPage />);
+    await screen.findByRole("article", { name: item.headline! });
+    expect(getRecall).toHaveBeenCalledExactlyOnceWith(
+      { project: "/repos/alpha", query: "", includeSuperseded: false },
+      8760,
+      ["decision", "handoff"],
+    );
+    expect(screen.getByLabelText("Question")).toHaveValue("");
+    expect(screen.getByRole("radio", { name: "1y" })).toBeChecked();
+  });
+
+  it("offers real bounded suggestions and keyboard inspection without changing the selected project", async () => {
+    vi.mocked(getRecall).mockResolvedValue(
+      result(
+        Array.from({ length: 7 }, (_, index) => ({
+          ...item,
+          eventId: `evt-${index}`,
+          headline: `Recorded storage ${index}`,
+        })),
+      ),
+    );
+    updateParams({ project: "/repos/alpha" });
+    render(() => <RecallPage />);
+    const input = screen.getByLabelText("Question");
+    fireEvent.input(input, { target: { value: "storage" } });
+    await screen.findByRole("option", { name: /Recorded storage 0/ });
+    expect(screen.getAllByRole("option")).toHaveLength(5);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const evidence = screen.getByRole("region", { name: "Selected evidence" });
+    expect(
+      within(evidence).getByRole("article", { name: "Recorded storage 0" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Question")).toHaveValue("storage");
+    expect(getRecall).toHaveBeenCalledExactlyOnceWith(
+      { project: "/repos/alpha", query: "storage", includeSuperseded: false },
+      168,
+      ["decision", "handoff"],
+    );
+    expect(captureDecision).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale full recall and suggestion responses after scope or filter changes", async () => {
+    let resolveOld!: (value: RecallResult) => void;
+    vi.mocked(getRecall).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    updateParams({ scope: "old", run: "1" });
+    render(() => <RecallPage />);
+    updateParams({ project: "/repos/beta", scope: undefined, query: "", run: "1" });
+    await screen.findByRole("article", { name: item.headline! });
+    resolveOld(result([{ ...item, headline: "Stale full query" }]));
+    await Promise.resolve();
+    expect(screen.queryByText("Stale full query")).not.toBeInTheDocument();
+    let resolveSuggestion!: (value: RecallResult) => void;
+    vi.mocked(getRecall).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSuggestion = resolve;
+        }),
+    );
+    fireEvent.input(screen.getByLabelText("Question"), { target: { value: "old suggestion" } });
+    await waitFor(() => expect(resolveSuggestion).toBeDefined());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Decision" }));
+    resolveSuggestion(result([{ ...item, headline: "Stale suggestion" }]));
+    await Promise.resolve();
+    expect(screen.queryByText("Stale suggestion")).not.toBeInTheDocument();
+  });
+
+  it("records a replacement only on explicit form submit, requires rationale, and preserves history links", async () => {
+    updateParams({ project: "/repos/alpha", run: "1" });
+    render(() => <RecallPage />);
+    const card = await screen.findByRole("article", { name: item.headline! });
+    fireEvent.click(within(card).getByRole("button", { name: "Replace decision" }));
+    fireEvent.input(screen.getByLabelText("New decision"), {
+      target: { value: "Use shared PostgreSQL" },
+    });
+    expect(screen.getByRole("button", { name: "Record replacement" })).toBeDisabled();
+    expect(captureDecision).not.toHaveBeenCalled();
+    fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+      target: { value: "Shared deployment now needs remote access." },
+    });
+    vi.mocked(getRecall).mockResolvedValue(
+      result([
+        {
+          ...item,
+          eventId: "evt-new",
+          headline: "Use shared PostgreSQL",
+          supersedesEventId: "evt-1",
+        },
+      ]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+    await screen.findByRole("article", { name: "Use shared PostgreSQL" });
+    expect(captureDecision).toHaveBeenCalledExactlyOnceWith({
+      source: "manual",
+      clientSessionId: expect.stringMatching(/^blackbox-recall-/),
+      repo: "/repos/alpha",
+      decision: "Use shared PostgreSQL",
+      rationale: "Shared deployment now needs remote access.",
+      supersedes: "evt-1",
+    });
+    expect(await screen.findByRole("link", { name: "earlier decision" })).toHaveAttribute(
+      "href",
+      "/?view=browse&session=owning-evt-1&event=evt-1&project=",
+    );
+    vi.mocked(getRecall).mockResolvedValue(result([{ ...item, supersededByEventId: "evt-new" }]));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include replaced decisions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    const old = await screen.findByRole("article", { name: item.headline! });
+    expect(getRecall).toHaveBeenLastCalledWith(
+      { project: "/repos/alpha", query: "", includeSuperseded: true },
+      168,
+      ["decision", "handoff"],
+    );
+    expect(within(old).queryByRole("button", { name: "Replace decision" })).not.toBeInTheDocument();
+    expect(await within(old).findByRole("link", { name: "replacement decision" })).toHaveAttribute(
+      "href",
+      "/?view=browse&session=owning-evt-new&event=evt-new&project=",
+    );
+  });
+
+  it("keeps the replacement draft on a rejected write and reports clipboard failure", async () => {
+    updateParams({ run: "1" });
+    render(() => <RecallPage />);
+    await screen.findByRole("article", { name: item.headline! });
+    vi.mocked(captureDecision).mockRejectedValue(new Error("Decision already replaced"));
+    fireEvent.click(screen.getByRole("button", { name: "Replace decision" }));
+    fireEvent.input(screen.getByLabelText("New decision"), { target: { value: "New decision" } });
+    fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+      target: { value: "New evidence" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Decision already replaced");
+    expect(screen.getByLabelText("New decision")).toHaveValue("New decision");
+    writeText.mockRejectedValue(new Error("Blocked"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy context" }));
+    expect(await screen.findByText(/Clipboard unavailable/)).toBeInTheDocument();
+  });
+
+  it("does not retain replaced evidence if the write succeeds but refresh fails", async () => {
+    updateParams({ project: "/repos/alpha", run: "1" });
+    render(() => <RecallPage />);
+    await screen.findByRole("article", { name: item.headline! });
+    fireEvent.click(screen.getByRole("button", { name: "Replace decision" }));
+    fireEvent.input(screen.getByLabelText("New decision"), { target: { value: "New decision" } });
+    fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+      target: { value: "New evidence" },
+    });
+    vi.mocked(getRecall).mockRejectedValueOnce(new Error("Refresh offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Replacement saved, but refresh failed",
+    );
+    expect(screen.queryByRole("article", { name: item.headline! })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy context" })).not.toBeInTheDocument();
+  });
+
+  it("runs an empty legacy scope after the router removes the blank URL value", async () => {
+    updateParams({ scope: "", run: "1" });
+    render(() => <RecallPage />);
+    expect(await screen.findByRole("article", { name: item.headline! })).toBeInTheDocument();
+    expect(screen.getByLabelText("Question")).toHaveValue("");
+  });
+
+  it("clears results on query-only navigation and closes accessible help with Escape", async () => {
+    updateParams({ scope: "first", run: "1" });
+    render(() => <RecallPage />);
+    await screen.findByRole("article", { name: item.headline! });
+    updateParams({ scope: "second" });
+    expect(screen.getByLabelText("Scope")).toHaveValue("second");
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
     for (const label of ["Help with scope", "Help with time windows", "Help with filters"]) {
       const trigger = screen.getByLabelText(label);
-      const disclosure = trigger.closest("details")!;
       fireEvent.click(trigger);
-      expect(disclosure).toHaveAttribute("open");
+      expect(trigger.closest("details")).toHaveAttribute("open");
       fireEvent.keyDown(trigger, { key: "Escape" });
-      expect(disclosure).not.toHaveAttribute("open");
+      expect(trigger.closest("details")).not.toHaveAttribute("open");
       expect(trigger).toHaveFocus();
     }
-    expect(getRecall).not.toHaveBeenCalled();
-  });
-
-  it("submits the default structured recall query and renders projected cards", async () => {
-    render(() => <RecallPage />);
-
-    fireEvent.input(screen.getByLabelText("Scope"), { target: { value: "sba-agentic" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
-
-    expect(getRecall).toHaveBeenCalledWith("sba-agentic", 168, ["decision", "handoff"]);
-    expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "It keeps meaningful project blocks first while preserving raw trace archaeology.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Raw chronological feed")).toBeInTheDocument();
-    expect(screen.getByText("82%")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Open Use the Hybrid Storyline timeline in Browse" }),
-    ).toHaveAttribute("href", "/?view=browse&session=session-1&event=evt-1&project=");
-    expect(screen.queryByText(/eventId/)).not.toBeInTheDocument();
-    expect(setParams).toHaveBeenCalledWith({ scope: "sba-agentic" });
-  });
-
-  it("initializes scope from a project action URL", () => {
-    updateParams({ scope: "/Users/nathan/Developer/proj/sba-agentic" });
-    render(() => <RecallPage />);
-
-    expect(screen.getByLabelText("Scope")).toHaveValue("/Users/nathan/Developer/proj/sba-agentic");
-  });
-
-  it("synchronizes query-only navigation and clears stale results", async () => {
-    updateParams({ scope: "/tmp/first-project" });
-    render(() => <RecallPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
-    expect(await screen.findByText("Use the Hybrid Storyline timeline")).toBeInTheDocument();
-
-    updateParams({ scope: "/tmp/second-project" });
-
-    await waitFor(() => expect(screen.getByLabelText("Scope")).toHaveValue("/tmp/second-project"));
-    expect(screen.queryByText("Use the Hybrid Storyline timeline")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
-  });
-
-  it("recalls ideas with their title and one-liner and links to the Ideas view", async () => {
-    vi.mocked(getRecall).mockResolvedValueOnce({
-      scope: null,
-      withinHours: 168,
-      kinds: ["idea"],
-      count: 1,
-      items: [
-        {
-          eventId: "evt-idea",
-          sessionId: "session-idea",
-          kind: "idea",
-          source: "claude",
-          observedAt: "2026-09-28T12:00:00Z",
-          headline: "Tangent router",
-          rationale: "Detect human asides and file them as ideas.",
-        },
-      ],
-    });
-    render(() => <RecallPage />);
-
-    fireEvent.click(screen.getByRole("checkbox", { name: "Decision" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Handoff" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Idea" }));
-    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
-
-    expect(getRecall).toHaveBeenCalledWith("", 168, ["idea"]);
-    const card = (await screen.findByText("Tangent router")).closest("article") as HTMLElement;
-    expect(card).toHaveClass("recall-card--idea");
-    expect(card.querySelector(".kind-badge--idea")).toHaveTextContent("Idea");
-    expect(card).toHaveTextContent("Detect human asides and file them as ideas.");
-    expect(screen.getByRole("link", { name: "Open in Ideas" })).toHaveAttribute(
-      "href",
-      "/ideas?q=Tangent%20router",
-    );
   });
 });

@@ -114,7 +114,7 @@ test("agent coordination loop stays live from Open through Blocked, reset, Done,
 
   await test.step("Recall: the completion Handoff headline is independently retrievable", async () => {
     await page.goto("/recall");
-    await page.getByPlaceholder(/a topic/).fill(HANDOFF_HEADLINE);
+    await page.getByPlaceholder("Why did we choose this approach?").fill(HANDOFF_HEADLINE);
     await page.getByRole("button", { name: "Run recall" }).click();
     await expect(page.getByRole("article").filter({ hasText: HANDOFF_HEADLINE })).toBeVisible();
     await page.screenshot({ path: `${SHOT_DIR}/queue-recall.png`, fullPage: true });

@@ -118,6 +118,8 @@ export type RecalledItem = {
   nextAction?: string | null;
   toAgent?: string | null;
   score?: number | null;
+  supersedesEventId?: string | null;
+  supersededByEventId?: string | null;
   // Idea recall items carry the idea title as headline and its oneLiner as rationale; the backend
   // RecalledItem has no origin, status, or legs, so the card links to the Ideas view for those.
 };
@@ -720,17 +722,44 @@ export function getEventFacets(
   return getJson(`/api/events/facets${suffix ? `?${suffix}` : ""}`, signal);
 }
 
+export type RecallQuery = {
+  project?: string;
+  query: string;
+  includeSuperseded?: boolean;
+};
+
 export function getRecall(
-  scope: string,
+  scope: string | RecallQuery,
   withinHours: number,
   kinds: string[],
+  includeSuperseded = false,
 ): Promise<RecallResult> {
   const params = new URLSearchParams({
     withinHours: String(withinHours),
   });
-  if (scope.trim()) params.set("scope", scope.trim());
+  if (typeof scope === "string") {
+    if (scope.trim()) params.set("scope", scope.trim());
+    if (includeSuperseded) params.set("includeSuperseded", "true");
+  } else {
+    if (scope.project?.trim()) params.set("project", scope.project.trim());
+    params.set("query", scope.query.trim());
+    params.set("includeSuperseded", String(scope.includeSuperseded ?? false));
+  }
   if (kinds.length) params.set("kinds", kinds.join(","));
   return getJson(`/api/recall?${params.toString()}`);
+}
+
+export type CaptureDecisionRequest = {
+  source: string;
+  clientSessionId: string;
+  repo: string;
+  decision: string;
+  rationale: string;
+  supersedes?: string;
+};
+
+export function captureDecision(request: CaptureDecisionRequest): Promise<IngestResponse> {
+  return postJson("/api/decisions", request);
 }
 
 export function getIdeas(params: IdeaListParams = {}): Promise<IdeaListResponse> {

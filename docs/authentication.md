@@ -50,6 +50,11 @@ Send `Authorization: Bearer <agent-secret>` on **every** HTTP API or streamable 
 Configure the client to read its secret from a protected environment or credential store. The token
 has full-workspace privileges, like the browser user.
 
+The optional [durable capture outbox](durable-capture.md#explicit-https-delivery) can attach this
+bearer to an explicitly selected HTTPS origin, reading an origin-bound macOS Keychain account.
+Legacy direct capture hooks and the recall hook do not attach it. Installing the outbox does not
+configure credentials, activate hooks or select a remote destination.
+
 Any request with an `Authorization` header enters a separate stateless Spring Security resource
 server chain. Only a valid Bearer credential authenticates it. Malformed, wrong-scheme, or invalid
 headers cannot fall back to a logged-in browser session. This chain exempts CSRF because authorization

@@ -72,6 +72,35 @@ public class EventIngestService implements EventRecorder {
     }
 
     @Override
+    public IngestResponse ingestDecisionReplacement(
+            EventIngestRequest request, String supersedes, java.util.List<String> projectScopes) {
+        EventIngestRequest normalized = normalize(request);
+        if (!"Decision".equals(normalized.eventType())
+                || supersedes == null
+                || supersedes.isBlank()
+                || projectScopes == null
+                || projectScopes.isEmpty()
+                || !(normalized.metadata().get("rationale") instanceof String rationale)
+                || rationale.isBlank()) {
+            throw new IllegalArgumentException("Decision replacement requires a target, project and rationale.");
+        }
+        Instant observedAt = normalized.observedAt() == null ? Instant.now() : normalized.observedAt();
+        TitleCandidate title = titleFor(normalized);
+        RecordingStore.Persisted persisted = repository.persistDecisionReplacement(
+                normalized, observedAt, title.value(), title.rank(), supersedes, projectScopes);
+        EventRecorded recorded = new EventRecorded(persisted.session(), persisted.event());
+        publishOptional(recorded, recorded.event().id());
+
+        return new IngestResponse(
+                recorded.event().id(),
+                recorded.event().sessionId(),
+                recorded.event().source(),
+                recorded.event().clientSessionId(),
+                recorded.event().eventType(),
+                recorded.indexed());
+    }
+
+    @Override
     public IdempotentIngestResponse ingestIdempotent(IdempotentEventIngestRequest request) {
         CaptureIdentity identity = CaptureIdentity.from(request);
         EventIngestRequest normalized = normalize(request.event());

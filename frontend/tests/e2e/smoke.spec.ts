@@ -229,12 +229,10 @@ test("projects opens the catalog-backed project workspace", async ({ page }) => 
 });
 
 test("recall query links the owning session and exact event", async ({ page, request }) => {
-  await page.goto("/recall");
-  await expect(
-    page.getByRole("heading", { name: "Ask what agents already decided" }),
-  ).toBeVisible();
+  await page.goto("/recall?scope=");
+  await expect(page.getByRole("heading", { name: "Pick up where you left off" })).toBeVisible();
 
-  await page.getByPlaceholder(/a topic/).fill("UI rewrite");
+  await page.getByPlaceholder("Why did we choose this approach?").fill("UI rewrite");
   await page.getByRole("button", { name: "Run recall" }).click();
   const decisionCard = page
     .getByRole("article")

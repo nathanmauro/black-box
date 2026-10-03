@@ -219,10 +219,11 @@ calibration.
 
 What an agent records changes the evidence the next agent sees, which can change the next decision.
 Black Box is built to make that loop visible; whether the loop improves outcomes is still a
-hypothesis. The candidates for testing it, none of them shipped:
+hypothesis. [Project continuity](docs/project-continuity.md) now separates the selected project from
+the recall question and records explicit decision replacements. Further candidates for testing the loop:
 
-- **Supersession and use provenance.** Which Decision replaced which, and which evidence a later
-  agent actually used, so stale decisions stop reading as standing orders.
+- **Use provenance.** Beyond explicit decision replacement, record which evidence a later agent
+  declares it used, and evaluate whether stale advice actually decreases.
 - **Projection-to-outcome links.** Promote a ghost to selected work, then link its real outcome back
   to the proposal, and keep interventions separate from predictions.
 - **Measured continuation quality.** Resumed tasks with and without recall, scored on stale advice,

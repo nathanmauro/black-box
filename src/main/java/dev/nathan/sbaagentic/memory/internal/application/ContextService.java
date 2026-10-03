@@ -68,6 +68,7 @@ public class ContextService implements MemoryRecallOperations {
     private final MemoryVectorStore vectorStore;
     private final MemoryRecallProperties recallProperties;
     private final RecallTelemetry telemetry;
+    private final dev.nathan.sbaagentic.recording.ProjectScopeResolver projects;
 
     public ContextService(
             MemoryEventReader repository,
@@ -77,13 +78,24 @@ public class ContextService implements MemoryRecallOperations {
         this(repository, embedder, vectorStore, recallProperties, RecallTelemetry.noop());
     }
 
-    @Autowired
     public ContextService(
             MemoryEventReader repository,
             TextEmbedder embedder,
             MemoryVectorStore vectorStore,
             MemoryRecallProperties recallProperties,
             RecallTelemetry telemetry) {
+        this(repository, embedder, vectorStore, recallProperties, telemetry, scope -> List.of(scope));
+    }
+
+    @Autowired
+    public ContextService(
+            MemoryEventReader repository,
+            TextEmbedder embedder,
+            MemoryVectorStore vectorStore,
+            MemoryRecallProperties recallProperties,
+            RecallTelemetry telemetry,
+            dev.nathan.sbaagentic.recording.ProjectScopeResolver projects) {
+        this.projects = projects;
         this.repository = repository;
         this.embedder = embedder;
         this.vectorStore = vectorStore;
@@ -98,22 +110,51 @@ public class ContextService implements MemoryRecallOperations {
      */
     @Override
     public RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit) {
+
+        return recall(scope, null, null, withinHours, kinds, limit, false);
+    }
+
+    @Override
+    public RecallResult recall(
+            String scope,
+            String project,
+            String query,
+            int withinHours,
+            List<String> kinds,
+            Integer limit,
+            boolean includeSuperseded) {
+        boolean explicit = project != null || query != null;
+        if (explicit && scope != null && !scope.isBlank()) {
+            throw new IllegalArgumentException("Use project/query or legacy scope, not both.");
+        }
+        List<String> projectScopes = project == null || project.isBlank() ? null : projects.scopesFor(project.strip());
+        String effectiveQuery = explicit ? query : scope;
         if (RecallRequestContext.current() == null) {
             try (var ignored = RecallRequestContext.open("internal", null, null, null)) {
 
-                return measuredRecall(scope, withinHours, kinds, limit);
+                return measuredRecall(
+                        effectiveQuery, withinHours, kinds, limit, projectScopes, explicit, includeSuperseded);
             }
         }
 
-        return measuredRecall(scope, withinHours, kinds, limit);
+        return measuredRecall(effectiveQuery, withinHours, kinds, limit, projectScopes, explicit, includeSuperseded);
     }
 
-    private RecallResult measuredRecall(String scope, int withinHours, List<String> kinds, Integer limit) {
-        String category = scope == null || scope.isBlank() ? "blank" : pathOrIdScope(scope) ? "path_or_id" : "topic";
+    private RecallResult measuredRecall(
+            String scope,
+            int withinHours,
+            List<String> kinds,
+            Integer limit,
+            List<String> projectScopes,
+            boolean explicit,
+            boolean includeSuperseded) {
+        String category =
+                scope == null || scope.isBlank() ? "blank" : !explicit && pathOrIdScope(scope) ? "path_or_id" : "topic";
         Sample sample = new Sample(RecallRequestContext.current(), category);
         sample.relevanceFloor = recallProperties.getRelevanceFloor();
         try {
-            RecallResult result = recall(scope, withinHours, kinds, limit, sample);
+            RecallResult result =
+                    recall(scope, withinHours, kinds, limit, sample, projectScopes, explicit, includeSuperseded);
             sample.outcome = "success";
             sample.resultCount = result.count();
 
@@ -130,7 +171,15 @@ public class ContextService implements MemoryRecallOperations {
         }
     }
 
-    private RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit, Sample sample) {
+    private RecallResult recall(
+            String scope,
+            int withinHours,
+            List<String> kinds,
+            Integer limit,
+            Sample sample,
+            List<String> projectScopes,
+            boolean explicit,
+            boolean includeSuperseded) {
         int resolvedLimit = limit == null || limit <= 0 ? DEFAULT_RECALL_ITEMS : Math.min(limit, RECALL_LIMIT);
         List<String> resolvedKinds = resolveKinds(kinds);
         List<String> eventTypes =
@@ -140,12 +189,19 @@ public class ContextService implements MemoryRecallOperations {
         String trimmedScope = scope == null ? null : scope.strip();
         String scopeLike = (trimmedScope == null || trimmedScope.isEmpty())
                 ? null
-                : "%" + trimmedScope.toLowerCase(Locale.ROOT) + "%";
+                : "%"
+                        + (explicit
+                                ? escapeLike(trimmedScope.toLowerCase(Locale.ROOT))
+                                : trimmedScope.toLowerCase(Locale.ROOT))
+                        + "%";
 
         long lexicalStarted = System.nanoTime();
         List<AgentEvent> lexicalEvents;
         try {
-            lexicalEvents = repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT);
+            lexicalEvents = explicit || includeSuperseded
+                    ? repository.recallFiltered(
+                            eventTypes, scopeLike, since, RECALL_LIMIT, projectScopes, explicit, includeSuperseded)
+                    : repository.recall(eventTypes, scopeLike, since, RECALL_LIMIT);
             sample.lexicalCandidates = lexicalEvents.size();
         } finally {
             sample.lexicalNanos = System.nanoTime() - lexicalStarted;
@@ -156,7 +212,8 @@ public class ContextService implements MemoryRecallOperations {
                 .map(event -> toMemoryHit(event, 0.0))
                 .toList();
 
-        SemanticRecall semantic = semanticRecall(trimmedScope, eventTypes, since, eventsById, sample);
+        SemanticRecall semantic = semanticRecall(
+                trimmedScope, eventTypes, since, eventsById, sample, projectScopes, explicit, includeSuperseded);
         List<MemoryHit> rankedHits = semantic.available()
                 ? ReciprocalRankFusion.fuse(lexicalHits, semantic.hits(), RECALL_LIMIT)
                 : ReciprocalRankFusion.fuse(lexicalHits, List.of(), RECALL_LIMIT);
@@ -175,8 +232,11 @@ public class ContextService implements MemoryRecallOperations {
                 .count();
         Map<String, Double> cosineByEventId =
                 semantic.available() ? cosineScores(returnedHits, semantic, sample) : Map.of();
+        Map<String, MemoryEventReader.DecisionRelation> relations = repository.decisionRelations(
+                returnedHits.stream().map(MemoryHit::id).toList());
         List<RecalledItem> items = returnedHits.stream()
-                .map(hit -> toRecalledItem(eventsById.get(hit.id()), cosineByEventId.get(hit.id())))
+                .map(hit -> toRecalledItem(
+                        eventsById.get(hit.id()), cosineByEventId.get(hit.id()), relations.get(hit.id())))
                 .filter(Objects::nonNull)
                 .toList();
 
@@ -188,14 +248,17 @@ public class ContextService implements MemoryRecallOperations {
             List<String> eventTypes,
             Instant since,
             Map<String, AgentEvent> eventsById,
-            Sample sample) {
+            Sample sample,
+            List<String> projectScopes,
+            boolean explicit,
+            boolean includeSuperseded) {
         if (trimmedScope == null || trimmedScope.isBlank()) {
             sample.fallbackReason = "blank_scope";
 
             return SemanticRecall.unavailable();
         }
         // Location/id requests preserve lexical recency ordering rather than embedding a location.
-        if (pathOrIdScope(trimmedScope)) {
+        if (!explicit && pathOrIdScope(trimmedScope)) {
             sample.fallbackReason = "path_or_id_scope";
 
             return SemanticRecall.unavailable();
@@ -222,9 +285,11 @@ public class ContextService implements MemoryRecallOperations {
         Map<String, RecallCandidate> candidatesByKey;
         Predicate<String> keyFilter;
         try {
-            candidatesByKey = semanticCandidates(eventTypes, since);
+            candidatesByKey = semanticCandidates(eventTypes, since, projectScopes, explicit, includeSuperseded);
             sample.semanticCandidates = candidatesByKey.size();
-            keyFilter = semanticKeyFilter(candidatesByKey, trimmedScope);
+            // Explicit project constraints were applied in SQL before ranking. A literal topic
+            // match must not discard synonymous semantic hits inside the selected project.
+            keyFilter = explicit ? candidatesByKey::containsKey : semanticKeyFilter(candidatesByKey, trimmedScope);
         } catch (RuntimeException ex) {
             sample.fallbackReason = "candidates_error";
 
@@ -323,9 +388,17 @@ public class ContextService implements MemoryRecallOperations {
         return scores;
     }
 
-    private Map<String, RecallCandidate> semanticCandidates(List<String> eventTypes, Instant since) {
+    private Map<String, RecallCandidate> semanticCandidates(
+            List<String> eventTypes,
+            Instant since,
+            List<String> projectScopes,
+            boolean explicit,
+            boolean includeSuperseded) {
         Map<String, RecallCandidate> candidates = new LinkedHashMap<>();
-        for (RecallCandidate candidate : repository.recallCandidates(eventTypes, since)) {
+        List<RecallCandidate> source = explicit || includeSuperseded
+                ? repository.recallCandidatesFiltered(eventTypes, since, projectScopes, includeSuperseded)
+                : repository.recallCandidates(eventTypes, since);
+        for (RecallCandidate candidate : source) {
             if (candidate.event() != null && candidate.event().id() != null) {
                 candidates.put(eventVectorKey(candidate.event().id()), candidate);
             }
@@ -424,7 +497,8 @@ public class ContextService implements MemoryRecallOperations {
         return resolved.isEmpty() ? DEFAULT_RECALL_KINDS : resolved;
     }
 
-    private static RecalledItem toRecalledItem(AgentEvent event, Double score) {
+    private static RecalledItem toRecalledItem(
+            AgentEvent event, Double score, MemoryEventReader.DecisionRelation relation) {
         if (event == null) {
 
             return null;
@@ -473,7 +547,9 @@ public class ContextService implements MemoryRecallOperations {
                 asStringList(meta.get("openLoops")),
                 nextAction,
                 str(meta.get("toAgent")),
-                score);
+                score,
+                relation == null ? null : relation.supersedesEventId(),
+                relation == null ? null : relation.supersededByEventId());
     }
 
     private static MemoryHit toMemoryHit(AgentEvent event, double score) {
@@ -551,6 +627,11 @@ public class ContextService implements MemoryRecallOperations {
     private static boolean notBlank(String value) {
 
         return value != null && !value.isBlank();
+    }
+
+    private static String escapeLike(String value) {
+
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private static String str(Object value) {
