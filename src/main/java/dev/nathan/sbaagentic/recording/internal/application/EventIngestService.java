@@ -57,9 +57,11 @@ public class EventIngestService implements EventRecorder {
         RecordingStore.Persisted persisted =
                 repository.persistEvent(normalized, observedAt, title.value(), title.rank());
         EventRecorded recorded = new EventRecorded(persisted.session(), persisted.event());
-        eventPublisher.publishEvent(recorded);
+        publishOptional(recorded, recorded.event().id());
         if (isFinalEvent(recorded.event().eventType())) {
-            eventPublisher.publishEvent(new SessionStopped(recorded.session(), recorded.event()));
+            publishOptional(
+                    new SessionStopped(recorded.session(), recorded.event()),
+                    recorded.event().id());
         }
 
         return new IngestResponse(
