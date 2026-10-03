@@ -498,5 +498,124 @@ class CliJourneyTests(CorpusFixture):
         self.assertEqual(accounting["search_attempts"], 2)
 
 
+
+# Pinned from the pre-seam literal adapter (commit ab6084fc): every delivery byte and the host
+# accounting of seven scripted sessions. A backend seam change must not move this digest.
+GOLDEN_LITERAL_SHA256 = "5478ad77282bc68c205bcadbd11e10b45b0b9d1fc475ed92c0bf154bff6fe2ac"
+GOLDEN_LITERAL_BYTES = 101838
+GOLDEN_SCRIPTS = {
+    "rich": [("q", "export SummaryWriter.java"), ("q", "STRASSE file"), ("q", "naïve İstanbul"),
+             ("q", "50%_off snake_case_name"), ("q", "{brace} 🙂"), ("q", "no-such-term-anywhere"),
+             ("q", "export"), ("q", "after limit")],
+    "budget": [("q", "filler")] * 7,
+    "deep": [("q", "deepanchor"), ("q", "STRASSE deepanchor")],
+    "small": [("q", "export SummaryWriter.java"), ("q", "STRASSE file"), ("q", "naïve İstanbul"),
+              ("q", "50%_off snake_case_name"), ("q", "{brace} 🙂"), ("q", "export SummaryWriter.java"),
+              ("q", "after limit"), ("q", "closed")],
+    "lines": [("l", b"\xff"), ("l", b"{"), ("l", b'{"query":"a","x":1}'), ("l", b"x" * 5000),
+              ("l", b'{"query":"\\u0001"}'), ("l", '{"query":"retry budget"}'.encode()), ("l", b'{"query":"z"}')],
+}
+
+
+def golden_items():
+    words = ["export", "SummaryWriter.java", "NAT-315", "Straße", "ﬁle", "İstanbul", "naïve", "naïve",
+             "50%_off", "snake_case_name", "cache-miss", "{brace}", "emoji 🙂 token", "retry budget"]
+    items = []
+    for n in range(48):
+        text = " ".join(words[(n * k) % len(words)] for k in range(1, 4 + n % 5))
+        text += (" filler" * (n * 37 % 400)) + " " + "é" * (n % 7)
+        items.append({"id": "g-%02d" % n, "kind": h.KINDS[n % len(h.KINDS)], "project": "/repos/golden",
+                      "session": "s%d" % (n % 3),
+                      "observed_at": "2026-09-%02dT%02d:00:00.%dZ" % (1 + n % 28, n % 24, n % 10),
+                      "source_ref": "transcript:s%d#%d" % (n % 3, n), "text": text})
+    items.append({"id": "g-tie-a", "kind": "handoff", "project": "/repos/golden", "session": "s0",
+                  "observed_at": "2026-09-29T00:00:00Z", "source_ref": "ref", "text": "tie handoff export"})
+    items.append({"id": "g-tie-b", "kind": "handoff", "project": "/repos/golden", "session": "s1",
+                  "observed_at": "2026-09-28T20:00:00-04:00", "recorded_at": "2026-09-29T00:00:00Z",
+                  "source_ref": "ref", "text": "tie handoff two"})
+    items.append({"id": "g-deep", "kind": "event", "project": "/repos/golden", "session": "s2",
+                  "observed_at": "2026-09-15T00:00:00Z", "source_ref": "ref",
+                  "text": "pad " * 300 + "deepanchor Straße " + "tail " * 300})
+    return items
+
+
+def golden_corpus(root, items, name):
+    root = Path(root) / name
+    root.mkdir()
+    data = json.dumps({"schema": h.ITEMS_SCHEMA, "items": items}, ensure_ascii=False).encode()
+    (root / "items.json").write_bytes(data)
+    manifest = {"schema": h.MANIFEST_SCHEMA, "corpus_id": name, "provenance": "synthetic-development",
+                "scope": {"project": "/repos/golden", "sessions": ["s0", "s1", "s2"]},
+                "cutoff": "2026-09-30T00:00:00Z", "items_file": "items.json",
+                "items_sha256": hashlib.sha256(data).hexdigest(), "item_count": len(items), "exclusions": []}
+    raw = json.dumps(manifest).encode()
+    (root / "manifest.json").write_bytes(raw)
+    return h.load_corpus(root / "manifest.json", hashlib.sha256(raw).hexdigest())
+
+
+def golden_trace(make_session=h.Session):
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        items = golden_items()
+        sets = {"rich": items, "budget": items, "lines": items, "deep": items,
+                "small": [dict(i, text=i["text"][:90]) for i in items],
+                "nohandoff": [i for i in items if i["kind"] != "handoff"], "empty": []}
+        for name, its in sets.items():
+            session = make_session(golden_corpus(tmp, its, name))
+            out.append(session.start())
+            for mode, value in GOLDEN_SCRIPTS.get(name, [("q", "export")]):
+                payload = session.search(value) if mode == "q" else session.handle_line(value)
+                out.append(b"<none>\n" if payload is None else payload)
+            out.append(json.dumps(session.accounting(), sort_keys=True).encode() + b"\n")
+    return b"".join(out)
+
+
+class BackendSeamTests(CorpusFixture):
+    def test_literal_delivery_bytes_match_pre_seam_golden(self):
+        for make in (h.Session, lambda corpus: h.Session(corpus, h.LiteralBackend())):
+            data = golden_trace(make)
+            self.assertEqual((hashlib.sha256(data).hexdigest(), len(data)),
+                             (GOLDEN_LITERAL_SHA256, GOLDEN_LITERAL_BYTES))
+
+    def test_backend_name_selects_and_orders_through_the_seam(self):
+        class Reverse(h.LiteralBackend):
+            name = "test-reverse"
+
+            def search(self, corpus, query):
+                terms, total, ranked = super().search(corpus, query)
+                return terms, total, ranked[::-1]
+
+        items = [item("a", "alpha", observed="2026-09-01T00:00:00Z"), item("b", "alpha", observed="2026-09-02T00:00:00Z")]
+        session = h.Session(self.corpus(items), Reverse())
+        self.assertEqual(decode(session.start())["backend"], "test-reverse")
+        body = decode(session.search("alpha"))
+        self.assertEqual((body["backend"], [r["id"] for r in body["results"]]), ("test-reverse", ["a", "b"]))
+        self.assertEqual((body["total_matches"], body["omitted_results"]), (2, 0))
+
+    def test_infrastructure_failure_closes_without_any_model_delivery(self):
+        class Failing(h.LiteralBackend):
+            name = "test-failing"
+
+            def search(self, corpus, query):
+                raise h.BackendFailure("transport_timeout", "fixture did not answer")
+
+        session = h.Session(self.corpus([item("a", "alpha")]), Failing())
+        session.start()
+        before = session.delivered
+        self.assertIsNone(session.search("alpha"))
+        self.assertIsNone(session.search("alpha"))
+        self.assertIsNone(session.handle_line(b'{"query":"alpha"}'))
+        record = session.accounting()
+        self.assertEqual((record["closed"], record["close_reason"], record["terminal_emitted"]),
+                         (True, "infrastructure_error", False))
+        self.assertEqual(record["infrastructure_error"]["code"], "transport_timeout")
+        self.assertEqual((record["delivered_bytes"], record["search_attempts"], len(record["deliveries"])),
+                         (before, 1, 1))
+
+    def test_literal_accounting_has_no_infrastructure_field(self):
+        session, _ = self.session([item("a", "alpha")])
+        session.search("alpha")
+        self.assertNotIn("infrastructure_error", session.accounting())
+
 if __name__ == "__main__":
     unittest.main()

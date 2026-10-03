@@ -337,6 +337,56 @@ def _anchor(item, phrase, terms, exact):
     return [index[span[0]], index[span[1] - 1] + 1]
 
 
+def excerpt_window(item, anchor):
+    """Shared excerpt rule: 100 code points before the anchor, 640 total, widened to the anchor."""
+    if anchor is None:
+        return (0, min(len(item.text), EXCERPT_CHARS))
+    start = max(0, anchor[0] - EXCERPT_BEFORE)
+    return (start, min(len(item.text), max(start + EXCERPT_CHARS, anchor[1])))
+
+
+class BackendFailure(Exception):
+    """Host infrastructure failure. The session closes without emitting any further delivery."""
+
+    def __init__(self, code, message):
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
+class LiteralBackend:
+    """Deterministic case-folded substring ranking over the frozen corpus."""
+
+    name = BACKEND
+
+    def search(self, corpus, query):
+        """Return (terms, total, ranked) or None for an invalid query.
+
+        ranked holds at most MAX_RESULTS (item, match) pairs in delivery order and total counts
+        every match exactly. A backend that cannot establish an exact total or a deterministic
+        order must raise BackendFailure instead of returning a partial outcome.
+        """
+        parsed = parse_query(query)
+        if parsed is None:
+            return None
+        tokens, terms = parsed
+        phrase = " ".join(tokens)
+        hits = []
+        for item in corpus.items:
+            fields = [name for name, folded in (("text", item.folded_text), ("source_ref", item.folded_ref))
+                      if any(term in folded for term in terms)]
+            if not fields:
+                continue
+            matched = [t for t in terms if t in item.folded_text or t in item.folded_ref]
+            exact = phrase in item.folded_text or phrase in item.folded_ref
+            hits.append(((not exact, -len(matched), -item.observed_ns, item.id), item, exact, matched, fields))
+        hits.sort(key=lambda hit: hit[0])
+        ranked = [(item, {"exact": exact, "terms": matched, "fields": fields,
+                          "anchor": _anchor(item, phrase, matched, exact)})
+                  for _, item, exact, matched, fields in hits[:MAX_RESULTS]]
+        return terms, len(hits), ranked
+
+
 def _result(item, window, match=None):
     start, end = window
     return {**item.provenance(), "match": match,
@@ -347,8 +397,10 @@ def _result(item, window, match=None):
 class Session:
     """One controller-owned delivery session: handoff once, then at most six bounded searches."""
 
-    def __init__(self, corpus):
+    def __init__(self, corpus, backend=None):
         self.corpus = corpus
+        self.backend = backend or LiteralBackend()
+        self.infrastructure_error = None
         self.attempts = 0
         self.delivered = 0
         self.started = False
@@ -363,7 +415,7 @@ class Session:
 
     def _envelope(self, kind, status, cap, results, omitted, truncated, terms=None, total=None,
                   error=None, attempt=None):
-        return {"schema": DELIVERY_SCHEMA, "backend": BACKEND, "corpus_id": self.corpus.corpus_id,
+        return {"schema": DELIVERY_SCHEMA, "backend": self.backend.name, "corpus_id": self.corpus.corpus_id,
                 "seq": len(self.log), "type": kind, "status": status, "attempt": attempt,
                 "attempts_remaining": MAX_SEARCHES - self.attempts,
                 "budget": {"remaining_before": self.remaining, "delivery_cap": cap},
@@ -484,41 +536,29 @@ class Session:
                              error={"code": code, "message": ERRORS[code]})
 
     def _search(self, query):
-        parsed = parse_query(query)
-        if parsed is None:
+        try:
+            outcome = self.backend.search(self.corpus, query)
+        except BackendFailure as failure:
+            # Never let the model see an unmetered or partial diagnostic: record it host-side only.
+            self.infrastructure_error = {"code": failure.code, "message": failure.message}
+            return self._close("infrastructure_error")
+        if outcome is None:
             return self._error("invalid_query")
-        tokens, terms = parsed
-        phrase = " ".join(tokens)
-        hits = []
-        for item in self.corpus.items:
-            fields = [name for name, folded in (("text", item.folded_text), ("source_ref", item.folded_ref))
-                      if any(term in folded for term in terms)]
-            if not fields:
-                continue
-            matched = [t for t in terms if t in item.folded_text or t in item.folded_ref]
-            exact = phrase in item.folded_text or phrase in item.folded_ref
-            hits.append(((not exact, -len(matched), -item.observed_ns, item.id), item, exact, matched, fields))
-        hits.sort(key=lambda hit: hit[0])
-        candidates = []
-        for _, item, exact, matched, fields in hits[:MAX_RESULTS]:
-            anchor = _anchor(item, phrase, matched, exact)
-            if anchor is None:
-                window = (0, min(len(item.text), EXCERPT_CHARS))
-            else:
-                start = max(0, anchor[0] - EXCERPT_BEFORE)
-                window = (start, min(len(item.text), max(start + EXCERPT_CHARS, anchor[1])))
-            candidates.append(_result(item, window, {"exact": exact, "terms": matched, "fields": fields,
-                                                     "anchor": anchor}))
-        return self._deliver("search", "ok" if hits else "empty", candidates, capped=len(hits) - len(candidates),
-                             terms=terms, total=len(hits), attempt=self.attempts)
+        terms, total, ranked = outcome
+        candidates = [_result(item, excerpt_window(item, match["anchor"]), match) for item, match in ranked]
+        return self._deliver("search", "ok" if total else "empty", candidates, capped=total - len(candidates),
+                             terms=terms, total=total, attempt=self.attempts)
 
     def accounting(self):
         """Host-only accounting; never part of a metered delivery."""
-        return {**self.corpus.summary(), "deliveries": list(self.log), "delivered_bytes": self.delivered,
-                "remaining_bytes": self.remaining, "search_attempts": self.attempts, "closed": self.closed,
-                "close_reason": self.close_reason, "terminal_emitted": self.terminal_emitted,
-                "limits": {"searches": MAX_SEARCHES, "delivery_bytes": MAX_DELIVERY_BYTES,
-                           "total_bytes": MAX_TOTAL_BYTES}}
+        record = {**self.corpus.summary(), "deliveries": list(self.log), "delivered_bytes": self.delivered,
+                  "remaining_bytes": self.remaining, "search_attempts": self.attempts, "closed": self.closed,
+                  "close_reason": self.close_reason, "terminal_emitted": self.terminal_emitted,
+                  "limits": {"searches": MAX_SEARCHES, "delivery_bytes": MAX_DELIVERY_BYTES,
+                             "total_bytes": MAX_TOTAL_BYTES}}
+        if self.infrastructure_error is not None:
+            record["infrastructure_error"] = self.infrastructure_error
+        return record
 
 
 def _host(stream, record):

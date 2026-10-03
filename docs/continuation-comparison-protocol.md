@@ -221,6 +221,41 @@ A future model runner must keep this one session for the whole trial, prevent re
 That runner integration, the Black Box backend, an authentic corpus builder, registration and
 adjudication, and the difficulty and accepted-action studies remain outstanding.
 
+### Backend seam and the compact-search blocker
+
+`Session` now takes an optional backend. `LiteralBackend` is the default and holds the ranking
+above. A backend returns the folded terms, an **exact** total and at most 20 ranked
+`(item, match)` pairs. The session still owns the handoff, excerpt rendering, envelope, attempts and
+bytes, and `backend` in the envelope is the backend's name. A backend that cannot prove an exact
+total or a deterministic order must raise `BackendFailure`. The session then closes as
+`infrastructure_error` and emits nothing, so the model never sees an unmetered or partial
+diagnostic. Host accounting records the error. A golden trace pinned from the pre-seam code checks
+that literal delivery bytes and accounting stayed identical: seven scripted sessions covering ranking,
+case-fold expansion, deep excerpt anchors, clipping, both budget closes, invalid requests,
+`no_handoff` and `no_history`.
+
+A `compact-search-v1` backend over the real `GET /api/search/compact` was evaluated (NAT-319) and
+**not built**. It would have been a compact-search arm only, not the full, hybrid or semantic Black Box arm.
+The current read-only API cannot satisfy this envelope for useful corpora without a
+product change:
+
+- **Bounded totals and incomplete hits.** SQLite candidates stop at 200. Below that ceiling,
+  ungrouped candidate counts remain exact, including omitted hits; at the ceiling they cannot
+  establish the total. At most 50 hits are returned, with further byte fitting and no cursor to
+  enumerate the remaining match IDs.
+- **Nondeterministic ties.** Ingested event IDs are random UUIDs, and order is observed instant then
+  event ID descending. A run of equal-instant matches that crosses the returned window can select
+  different source items on fresh databases. Sorting the returned hits cannot recover missing ones.
+- **Unrepresentable terms.** A whole-token quoted term keeps facet-looking text literal. A term
+  containing `"` has no escape, though, and `%`/`_` are live `LIKE` wildcards with no `ESCAPE`
+  clause. Matching is also ASCII-only case-insensitive, and `{}` matches every event through the stored
+  metadata JSON.
+
+Restricting corpus size, timestamp ties or query characters would selectively abort otherwise valid
+trials and bias paired outcomes. Such restrictions do not satisfy the shared corpus/query contract. The prerequisite is a separate read-only product
+API slice with typed literal terms and exact keyset pagination. No compact arm, model run or
+accepted action exists. The usefulness gate stays not_cleared.
+
 ## Registration and unchanged gates
 
 Before model runs, commit candidate/cluster IDs, source/grader hashes, corpus scope/cutoff/hashes,
@@ -257,8 +292,9 @@ Record approval separately from implementation and verify what happened. Hidden-
 a model verdict, patch review or this document cannot manufacture an accepted operational action.
 Make denominators and missing outcomes explicit. Make no efficacy claim from this familiar pool.
 
-Next: qualify a small number of different clusters offline and qualify the Black Box backend
-against the same corpus contract and delivery envelope as the offline literal adapter. Summary
-export and precise chronology are qualified; runtime-dependent cases remain conditional. Collect
-prospective held-out cases separately. No model spend, deployment, transcript export or threshold change is part of
+Next: qualify a small number of different clusters offline. Qualify a Black Box backend against
+the same corpus contract and delivery envelope once the read-only search prerequisite above exists.
+Summary export and precise chronology are qualified; runtime-dependent cases remain conditional.
+Collect prospective held-out cases separately. No model spend, deployment, transcript export or
+threshold change is part of
 this protocol and qualification slice.
