@@ -1,5 +1,10 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
 import dev.nathan.sbaagentic.recording.AgentEvent;
@@ -36,11 +41,17 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
     private final RecordingCatalog repository;
     private final TranscriptMessageSource messageSource;
     private final Clock clock;
+    private final ObjectReader outputReader;
 
-    public SessionTranscriptService(RecordingCatalog repository, TranscriptMessageSource messageSource, Clock clock) {
+    public SessionTranscriptService(
+            RecordingCatalog repository,
+            TranscriptMessageSource messageSource,
+            Clock clock,
+            ObjectMapper objectMapper) {
         this.repository = repository;
         this.messageSource = messageSource;
         this.clock = clock;
+        this.outputReader = objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     }
 
     @Override
@@ -231,9 +242,9 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         return null;
     }
 
-    private static AgentEvent toEvent(EventFeedItem item) {
+    private AgentEvent toEvent(EventFeedItem item) {
         Map<String, Object> metadata = withoutRawHook(item.metadata());
-        String text = duplicatesRawToolResponse(item) ? null : item.text();
+        String text = duplicatesCanonicalToolOutput(item) ? null : item.text();
 
         return new AgentEvent(
                 item.id(),
@@ -263,30 +274,22 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         return Map.copyOf(projected);
     }
 
-    private static boolean duplicatesRawToolResponse(EventFeedItem item) {
-        if (item.text() == null || item.text().isBlank() || item.toolOutputJson() == null)
+    private boolean duplicatesCanonicalToolOutput(EventFeedItem item) {
+        if (item.text() == null || item.text().isBlank() || item.toolOutputJson() == null) {
 
             return false;
-
-        Object rawHook = item.metadata() == null ? null : item.metadata().get("rawHook");
-        if (!(rawHook instanceof Map<?, ?> raw))
-
-            return false;
-
-        Object response = firstPresent(raw, "tool_response", "toolResponse", "tool_output", "toolOutput");
-
-        return response instanceof String value
-                && value.trim().equals(item.text().trim());
-    }
-
-    private static Object firstPresent(Map<?, ?> values, String... keys) {
-        for (String key : keys) {
-            if (values.containsKey(key))
-
-                return values.get(key);
         }
+        try {
+            JsonNode output = outputReader.readTree(item.toolOutputJson());
 
-        return null;
+            return output != null
+                    && output.isTextual()
+                    && output.textValue().trim().equals(item.text().trim());
+        } catch (JsonProcessingException ex) {
+
+            // Preserve text when the canonical payload cannot establish an exact string duplicate.
+            return false;
+        }
     }
 
     private static boolean isBefore(AgentEvent event, Cursor cursor) {

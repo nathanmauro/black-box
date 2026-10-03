@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.EventFeedItem;
@@ -19,9 +20,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
@@ -41,7 +46,10 @@ class SessionTranscriptServiceTest {
     @BeforeEach
     void setUp() {
         service = new SessionTranscriptService(
-                repository, messageSource, Clock.fixed(Instant.parse("2026-08-30T14:00:00Z"), ZoneOffset.UTC));
+                repository,
+                messageSource,
+                Clock.fixed(Instant.parse("2026-08-30T14:00:00Z"), ZoneOffset.UTC),
+                new ObjectMapper());
         session = new AgentSession(
                 "session-1",
                 "codex",
@@ -238,6 +246,81 @@ class SessionTranscriptServiceTest {
                 .doesNotContainKey("rawHook");
         assertThat(response.events().get(1).text()).isEqualTo("human-readable status");
         assertThat(response.events().get(1).metadata()).doesNotContainKey("rawHook");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("canonicalOutputCases")
+    void derivesDuplicatesOnlyFromCanonicalJsonStrings(
+            String label, String text, String output, Map<String, Object> metadata, boolean duplicate) {
+        EventFeedItem item = new EventFeedItem(
+                "canonical-output",
+                "session-1",
+                "codex",
+                "client-1",
+                "turn-1",
+                "PostToolUse",
+                "tool",
+                text,
+                "Bash",
+                "{}",
+                output,
+                metadata,
+                Instant.parse("2026-08-30T12:03:00.123456789Z"),
+                "/tmp/project",
+                "Session");
+        when(repository.findSessionById("session-1")).thenReturn(Optional.of(session));
+        when(repository.transcriptPathsForSession("session-1")).thenReturn(List.of());
+        when(messageSource.read(session, List.of())).thenReturn(TranscriptRead.unavailable("not-recorded"));
+        when(repository.feedForSession("session-1", null, null, 100, false))
+                .thenReturn(new EventFeedResponse(100, 1, List.of(item), null));
+
+        AgentEvent projected =
+                service.transcript("session-1", null, null, 100).events().getFirst();
+
+        assertThat(projected.text()).isEqualTo(duplicate ? null : text);
+        assertThat(projected.toolOutputJson()).isEqualTo(output);
+        assertThat(projected.observedAt()).isEqualTo(item.observedAt());
+        assertThat(projected.metadata()).doesNotContainKey("rawHook");
+        assertThat(item.text()).isEqualTo(text);
+        assertThat(item.metadata()).isEqualTo(metadata);
+    }
+
+    private static Stream<Arguments> canonicalOutputCases() throws Exception {
+        var mapper = new ObjectMapper();
+
+        return Stream.of(
+                Arguments.of("durable string", "result", mapper.writeValueAsString("result"), Map.of(), true),
+                Arguments.of(
+                        "whitespace and escapes",
+                        "  line 1\n\"line 2\"\t",
+                        mapper.writeValueAsString("line 1\n\"line 2\""),
+                        Map.of(),
+                        true),
+                Arguments.of("one decode only", "\"quoted\"", mapper.writeValueAsString("\"quoted\""), Map.of(), true),
+                Arguments.of(
+                        "distinct status despite raw hook",
+                        "status",
+                        mapper.writeValueAsString("result"),
+                        Map.of("rawHook", Map.of("tool_response", "status")),
+                        false),
+                Arguments.of(
+                        "canonical despite raw hook",
+                        "result",
+                        mapper.writeValueAsString("result"),
+                        Map.of("rawHook", Map.of("tool_response", "different")),
+                        true),
+                Arguments.of("malformed", "result", "result", Map.of(), false),
+                Arguments.of("trailing token", "result", "\"result\" true", Map.of(), false),
+                Arguments.of("trailing string", "result", "\"result\" \"other\"", Map.of(), false),
+                Arguments.of("number", "123", "123", Map.of(), false),
+                Arguments.of("boolean", "true", "true", Map.of(), false),
+                Arguments.of("object", "result", "{\"stdout\":\"result\"}", Map.of(), false),
+                Arguments.of("array", "result", "[\"result\"]", Map.of(), false),
+                Arguments.of("json null", "null", "null", Map.of(), false),
+                Arguments.of("missing", "result", null, Map.of(), false),
+                Arguments.of("empty", "result", "", Map.of(), false),
+                Arguments.of(
+                        "truncated prefix", "res\n[truncated]", mapper.writeValueAsString("result"), Map.of(), false));
     }
 
     private EventFeedItem item(
