@@ -57,14 +57,23 @@ Verification completed:
 - Scoped Palantir formatting and `git diff --check` passed. No conflict markers remain in working
   files; Git index stages intentionally remain for the coordinator.
 
-An independent frozen-package browser review follows these worker checks. No live model, private
+Independent frozen-package browser review passed two additional journeys at desktop and narrow
+widths, including sticky My turns, source filters, keyboard navigation, copying provenance, and
+unchanged canonical events. Both source reviewers reported no remaining actionable findings. No live model, private
 transcript/configuration, live database, or running user service was changed. Semantic inclusion
 uses existing fake-provider embedding tests, not an efficacy claim or real provider run. Lane
 fields remain schema only; no dedicated Evidence/board view or migration was added.
 
-Coordinator finishing requirement: retain the existing four PostgreSQL no-skip CI guards and add
-one equivalent assertion for
-`TEST-dev.nathan.sbaagentic.memory.internal.adapter.in.web.EvidencePostgresHttpMcpTest.xml`
-(`tests > 0`, `skipped == 0`). Automatic approval review rejected the worker's workflow write, so
-`.github/workflows/ci.yml` is intentionally unchanged for serialized coordinator finishing.
+Coordinator integration preserved the latest CLI lifecycle/stdin fixes, short-landscape Browse,
+and minimum-Python CI. Generated frontend assets were rebuilt from the combined source. The
+existing four PostgreSQL no-skip guards remain, with an equivalent mandatory report assertion for
+`EvidencePostgresHttpMcpTest`. Public capture, gateway, and recall documentation now includes
+Evidence while retaining unchanged default kinds, text-only gateway captures, and lexical-only
+Projections.
 
+Integrated `./scripts/verify.sh --e2e` passed on the combined branch: 945 Java tests with zero
+failures/errors and four optional evaluation/platform skips; all five PostgreSQL report guards
+passed with no database skips. Frontend checks passed with the same 70 existing warnings, 707 unit
+tests passed, 220 Python contracts plus hook smoke passed, and all 64 packaged Chromium journeys
+passed with zero retries. Test report timestamps were checked to exclude stale counts. The exact
+owned PostgreSQL fixture is stopped after verification. No feature was deployed to a live service.
