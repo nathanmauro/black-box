@@ -62,3 +62,26 @@ returned zero in 3.204 seconds (hook) and 3.147 seconds (CLI) with the approxima
 budget intact. Every owned Java process and fault-proxy thread was stopped. No production data,
 provider, installed hook, configuration, Linear, shared target or Git state was changed. Source
 and tests are frozen in the four owned paths for coordinator review, Git finish and publication.
+
+## Ubuntu CI parser follow-up
+
+The first Ubuntu CI run exposed a version-dependent malformed-input gap: Python 3.12 accepts
+`2026-10-03T12:00:00.123456789junkZ`, while Python 3.9 rejects it. The original digit-only
+recognizer missed that input and delegated it to the newer permissive parser. An actual local
+Python 3.12.14 enqueue regression reproduced five improper acceptances: trailing letters, LF, CR,
+CRLF, and a second decimal point after nine digits. Each created a queue instead of reporting
+`invalid_capture`.
+
+The canonical date/time-dot-terminal-Z recognizer now includes malformed fractional bodies,
+including line breaks, then requires exactly 1–9 ASCII digits before making the validation copy.
+The original string, accepted valid bytes, UUID and sanitizer version stay unchanged. Legacy
+offset parsing and the supported calendar range are unchanged. The CLI table also covers a
+short fraction with junk, an offset before Z, and non-ASCII digits.
+
+After the correction, all 57 outbox tests pass on Python 3.12.14 (30.938 seconds). The actual
+hook smoke plus all 57 tests pass on Python 3.9.6 (queue suite: 32.168 seconds). All four timestamp
+CLI/legacy/replay regressions pass on Python 3.14.7 (5.051 seconds), including malformed-input
+rejection before queue-directory creation and exact accepted timestamp bytes. A sandbox-only
+focused run initially could not bind its fake loopback socket; the authorized disposable full
+and focused runs above cover that path successfully. Diff checks pass. Only the same four owned
+files changed; no production state, provider, configuration or Git mutation occurred.

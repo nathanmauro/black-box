@@ -201,10 +201,11 @@ def sanitize_event(event):
         raise OutboxError("invalid_capture")
     try:
         validation = observed
-        utc_fraction = re.fullmatch(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\.([0-9]*)Z", observed)
+        # Recognize malformed fractions too: newer parsers may ignore trailing junk.
+        utc_fraction = re.fullmatch(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\.(.*)Z", observed, re.DOTALL)
         if utc_fraction is not None:
             clock, fraction = utc_fraction.groups()
-            if not 1 <= len(fraction) <= 9:
+            if re.fullmatch(r"[0-9]{1,9}", fraction) is None:
                 raise ValueError()
             # Python 3.9 accepts only three or six digits. This copy validates calendar/time;
             # the original timestamp, including nanoseconds, stays in the stored event bytes.
