@@ -39,3 +39,7 @@ and these docs. The optional publication and structured-key redaction changes be
 lanes. No live database, running product service, provider, Git ref or remote was changed. Root owns
 review, commit and integration; next action is to combine the independent hunks and run the normal
 integration gate. This correction does not rewrite previously stored text.
+
+Coordinator acceptance: reviewed the exact boundary predicates, stored/HTTP assertions and limit
+contract. After integrating Stream recovery, the 21 direct HTTP/redaction boundary cases passed
+without skips. Integrated main through PR63 before publication; CI supplies the combined suite.
