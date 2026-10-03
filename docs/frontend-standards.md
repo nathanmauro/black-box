@@ -132,6 +132,35 @@ To prove the checks still bite, drop a file with an unused variable and an unfor
 into `frontend/src/`, watch `npm run lint` and `npm run format:check` fail, then delete it. Do not
 commit such probes.
 
+## Packaged browser CI
+
+The frontend CI job runs the entire Chromium journey suite after lint, format, type and unit checks.
+It installs Temurin 21, Chromium's Linux dependencies, and the Python/SQLite/lsof tools used by the
+fixture safety checks. A separate Maven frontend package step completes dependency downloads and
+compilation before Playwright's existing 180-second server-start deadline. The runner still rebuilds
+and launches the current packaged application itself.
+
+The browser command is:
+
+```bash
+npm run e2e -- --workers=1 --retries=0 --forbid-only --trace=retain-on-failure --reporter=list,html
+```
+
+Run it from `frontend/`, or use `./scripts/verify.sh --e2e` for the full local verification gate.
+Install the matching browser with `npx playwright install chromium` locally; Linux CI uses
+`npx playwright install --with-deps chromium`. Keep port 8799 available. The suite only seeds
+`127.0.0.1:8799`, uses owned temporary SQLite storage, clears ambient application configuration,
+disables model providers/judge, and checks the protected port 8766 before and after. Do not bypass
+those guards or point it at an existing service. The editor journey invokes a fixture executable.
+
+Use one worker and zero retries: the suite shares an owned project fixture and checks exact editor
+calls. Traces are retained for first-attempt failures, alongside screenshots and an HTML report.
+CI uploads only the synthetic fixture's `frontend/test-results/` and `frontend/playwright-report/`
+directories, excludes hidden files, and expires artifacts after seven days. It does not upload
+temporary databases, environment files or the checkout. Workflow token permissions are read-only.
+An Ubuntu Actions run of the full suite is required before accepting a change to this gate;
+local macOS success alone does not establish Linux compatibility.
+
 ## Responsive utility header
 
 At widths up to 700px, the utility header places navigation and display controls on separate rows.
