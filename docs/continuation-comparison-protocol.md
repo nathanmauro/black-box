@@ -57,7 +57,7 @@ variants of the same failure.
    disqualify that registration. Corrected fixtures need a new version and fresh qualification;
    never silently repair a case after seeing arm outcomes.
 
-Three inventory candidates now pass scoped offline contracts. The summary-export fixture reproduces
+Four inventory candidates now pass scoped offline contracts. The summary-export fixture reproduces
 three named baseline failures, preserves four other behaviors, and passes all seven checks on the
 reference. Its [qualification report](evaluation-results/2026-10-03-summary-export-qualification.json)
 records the immutable snapshots and worker-input hash. The checks cover linked destinations, hard-link
@@ -76,8 +76,18 @@ append-only retry, publication order, rollback without publication) pass, and al
 reference. Its [qualification report](evaluation-results/2026-10-03-capture-ack-qualification.json)
 records fixed inputs and outcomes. It qualifies the service commit boundary only, not the REST/MCP
 acknowledgement claim.
+The journal-race fixture is a familiar development concurrency qualification run through a fixed
+isolated Python recipe. A real second SQLite connection is deterministically committed between the
+outbox's journal open and its check. The grader proves that the opened inode went from one link to
+zero; without that proof it reports an infrastructure error. Enqueue during the race, queue
+construction during the race and safe replacement-journal recheck fail on the baseline. Ordinary
+enqueue, unsafe replacement rejection, unlinked database/lock rejection and bounded repeated
+disappearance with closed descriptors pass on both snapshots, and all seven pass on the reference.
+Its [qualification report](evaluation-results/2026-10-03-journal-race-qualification.json) records
+fixed inputs, outcomes and runtime versions. It does not cover delivery, the hook entry point,
+other filesystems or crash durability.
 The existing structured-redaction fixture, outside this inventory, was also rerun successfully with
-its original inputs. All four are familiar development fixtures; qualification establishes neither
+its original inputs. All five are familiar development fixtures; qualification establishes neither
 task difficulty nor recall benefit. The inventory remains below the twenty-candidate gate.
 
 ## Freeze the evidence corpus
@@ -455,8 +465,8 @@ Make denominators and missing outcomes explicit. Make no efficacy claim from thi
 
 Next: qualify a small number of different clusters offline, then register a same-model comparison
 using the qualified ordinary literal and compact canonical adapters with identical budgets.
-Summary export, precise chronology and the capture-acknowledgement easy control are qualified;
-runtime-dependent cases remain conditional.
+Summary export, precise chronology, the capture-acknowledgement easy control and the journal race
+are qualified; other runtime-dependent cases remain conditional.
 Collect prospective held-out cases separately. No model spend, deployment, transcript export or
 threshold change is part of
 this protocol and qualification slice.
