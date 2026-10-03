@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Private, loopback-only paired checkpoint resumption evaluation (stdlib only)."""
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 import ipaddress
 import json
@@ -171,6 +172,30 @@ def score(task, answer):
             'passed': correct == len(facts) and extra == 0}
 
 
+def instant_epoch(value):
+    """Parse a zoned ISO instant, retaining nanoseconds for the historical cutoff."""
+    match = re.fullmatch(
+        r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})'
+        r'(?:\.([0-9]{1,9}))?(Z|[+-][0-9]{2}:[0-9]{2})', value)
+    if match is None:
+        raise EvalError('invalid_recall_timestamp')
+    clock, fraction, zone = match.groups()
+    fraction = fraction or ''
+    # Python 3.9 accepts only three or six fractional digits. Feed it exactly six,
+    # but keep the remainder so rounding cannot admit evidence after the cutoff.
+    normalized = clock + '.' + (fraction + '000000')[:6]
+    if zone != 'Z' and (int(zone[1:3]) > 23 or int(zone[4:6]) > 59):
+        raise EvalError('invalid_recall_timestamp')
+    try:
+        parsed = datetime.fromisoformat(normalized + ('+00:00' if zone == 'Z' else zone))
+        elapsed = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    except (ValueError, OverflowError):
+        raise EvalError('invalid_recall_timestamp') from None
+    nanos = ((elapsed.days * 86400 + elapsed.seconds) * 1_000_000_000
+             + elapsed.microseconds * 1000 + int(fraction.ljust(9, '0')) % 1000)
+    return Decimal(nanos) / 1_000_000_000
+
+
 def recall(origin, task, hours, timeout):
     query = urllib.parse.urlencode({'scope': task['event_id'], 'withinHours': hours,
                                    'kinds': 'handoff', 'limit': 50})
@@ -191,12 +216,13 @@ def recall(origin, task, hours, timeout):
         raise EvalError('invalid_handoff_fields')
     observed = item.get('observedAt')
     if isinstance(observed, str):
-        try:
-            observed = datetime.fromisoformat(observed.replace('Z', '+00:00')).timestamp()
-        except ValueError:
-            raise EvalError('invalid_recall_timestamp') from None
-    if (not isinstance(observed, (int, float)) or isinstance(observed, bool)
-            or not math.isfinite(observed) or observed > task['cutoff_epoch']):
+        observed = instant_epoch(observed)
+    elif (not isinstance(observed, (int, float)) or isinstance(observed, bool)
+          or not math.isfinite(observed)):
+        raise EvalError('handoff_after_cutoff_or_invalid_timestamp')
+    else:
+        observed = Decimal(str(observed))
+    if observed > Decimal(str(task['cutoff_epoch'])):
         raise EvalError('handoff_after_cutoff_or_invalid_timestamp')
     # No unrelated search hits, full transcript, session metadata, or answer key is forwarded.
     return {k: item.get(k) for k in ('eventId', 'observedAt', 'headline', 'openLoops', 'nextAction')}

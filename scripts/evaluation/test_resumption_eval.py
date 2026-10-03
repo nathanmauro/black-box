@@ -1,6 +1,8 @@
 import copy
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -160,6 +162,120 @@ class EvaluationTests(unittest.TestCase):
         with patch.object(e, 'request', return_value={'mode': 'lexical', 'items': [exact, {'eventId': 'other'}]}):
             result = e.recall('http://127.0.0.1:1', task, 8760, 10)
         self.assertNotIn('private_session_metadata', result)
+
+    def recalled_timestamp(self, observed, cutoff=2_000_000_000):
+        task = {**self.data['tasks'][0], 'cutoff_epoch': cutoff}
+        item = {'eventId': task['event_id'], 'kind': 'handoff', 'observedAt': observed,
+                'headline': 'Synthetic timestamp fixture'}
+        with patch.object(e, 'request', return_value={'mode': 'lexical', 'items': [item]}):
+            return e.recall('http://127.0.0.1:1', task, 8760, 10)
+
+    def test_java_instant_fractions_and_explicit_offsets_preserve_source_timestamp(self):
+        for fraction in ('', '.1', '.123', '.123456', '.1234567', '.123456789'):
+            for clock, zone in (('2026-01-01T00:00:00', 'Z'),
+                                ('2026-01-01T00:00:00', '+00:00'),
+                                ('2026-01-01T05:30:00', '+05:30'),
+                                ('2025-12-31T20:00:00', '-04:00')):
+                observed = clock + fraction + zone
+                with self.subTest(observed=observed):
+                    result = self.recalled_timestamp(observed, 1767225601)
+                    self.assertEqual(result['observedAt'], observed)
+
+    def test_timestamp_cutoff_does_not_round_away_future_nanoseconds(self):
+        cases = [
+            ('2026-01-01T00:00:00.123455999Z', 1767225600.123456, True),
+            ('2026-01-01T00:00:00.123456000Z', 1767225600.123456, True),
+            ('2026-01-01T00:00:00.123456001Z', 1767225600.123456, False),
+            ('2026-01-01T05:30:00.123456001+05:30', 1767225600.123456, False),
+            ('2025-12-31T20:00:00.123456000-04:00', 1767225600.123456, True),
+            ('2026-01-01T00:00:00.000000001Z', 1767225600, False),
+            ('2026-01-01T00:00:00Z', 1767225600, True),
+            ('2026-01-01T00:00:00.999999999Z', 1767225601, True),
+            ('1969-12-31T23:59:59.999999999Z', 0, True),
+            (100, 100, True), (100.001, 100.001, True), (100.001, 100, False)]
+        for observed, cutoff, accepted in cases:
+            with self.subTest(observed=observed, cutoff=cutoff):
+                if accepted:
+                    self.assertEqual(self.recalled_timestamp(observed, cutoff)['observedAt'], observed)
+                else:
+                    with self.assertRaisesRegex(e.EvalError, 'handoff_after_cutoff_or_invalid_timestamp'):
+                        self.recalled_timestamp(observed, cutoff)
+
+    def test_timestamp_requires_valid_calendar_clock_fraction_and_timezone(self):
+        invalid = ('', '2026-01-01', '2026-01-01T00:00:00', '2026-01-01T00:00:00.123456789',
+                   '2026-02-29T00:00:00Z', '2026-13-01T00:00:00Z', '2026-01-01T24:00:00Z',
+                   '2026-01-01T00:00:60Z', '2026-01-01T00:00:00.Z',
+                   '2026-01-01T00:00:00.1234567890Z', '2026-01-01T00:00:00,123Z',
+                   '2026-01-01T00:00:00+01:60', '2026-01-01T00:00:00+24:00',
+                   '2026-01-01T00:00:00+01', '2026-01-01T00:00:00+0100',
+                   '2026-01-01T00:00:00Z trailing', '2026-01-01T00:00:00Z\n',
+                   True, None, float('inf'), float('-inf'), float('nan'))
+        for observed in invalid:
+            with self.subTest(observed=observed), self.assertRaises(e.EvalError):
+                self.recalled_timestamp(observed)
+
+    def test_documented_cli_accepts_nanoseconds_and_refuses_invalid_future_or_stale_evidence(self):
+        class TimestampServer(Server):
+            calls = []
+            observed = '2026-01-01T00:00:00.123456789Z'
+            empty = False
+
+            def do_GET(self):
+                from urllib.parse import parse_qs, urlsplit
+                query = parse_qs(urlsplit(self.path).query)
+                if query.get('withinHours') != ['8760']:
+                    self.respond({'mode': 'invalid-fixture-query', 'items': []})
+                    return
+                items = [] if self.empty else [{
+                    'eventId': query['scope'][0], 'kind': 'handoff',
+                    'observedAt': self.observed, 'headline': 'PRIVATE synthetic handoff'}]
+                self.respond({'mode': 'lexical', 'truncated': False, 'items': items})
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), TimestampServer)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        origin = f'http://127.0.0.1:{server.server_port}'
+        cases = [('valid', '2026-01-01T00:00:00.123456789Z', 1767225601, False, None),
+                 ('future', '2026-01-01T00:00:00.123456001Z', 1767225600.123456, False,
+                  'handoff_after_cutoff_or_invalid_timestamp'),
+                 ('invalid', '2026-13-01T00:00:00.123456789Z', 1767225601, False,
+                  'invalid_recall_timestamp'),
+                 ('stale', '2026-01-01T00:00:00Z', 1767225601, True, 'exact_handoff_missing')]
+        try:
+            for name, observed, cutoff, empty, error in cases:
+                with self.subTest(case=name):
+                    TimestampServer.calls, TimestampServer.observed, TimestampServer.empty = [], observed, empty
+                    data = copy.deepcopy(self.data)
+                    for task in data['tasks']:
+                        task['cutoff_epoch'] = cutoff
+                    manifest = self.root / (name + '.json')
+                    e.save(manifest, data)
+                    output = self.root / name
+                    completed = subprocess.run([
+                        sys.executable, str(Path(e.__file__).resolve()), str(manifest),
+                        '--output', str(output), '--model-origin', origin, '--recall-origin', origin,
+                        '--model', 'local-model', '--within-hours', '8760'],
+                        capture_output=True, text=True, timeout=15,
+                        env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'})
+                    report = json.loads((output / 'report.json').read_text())
+                    self.assertEqual(report['usefulness_gate']['status'], 'not_cleared')
+                    self.assertNotIn('PRIVATE', completed.stdout)
+                    if error:
+                        self.assertEqual(completed.returncode, 2)
+                        self.assertEqual(len(TimestampServer.calls), 0)
+                        self.assertEqual(sum(a['not_attempted'] for a in report['arms'].values()), 10)
+                        self.assertEqual(json.loads((output / 'preflight-error.json').read_text()),
+                                         {'error_category': error})
+                    else:
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertEqual(len(TimestampServer.calls), 10)
+                        self.assertTrue(report['all_ten_graded'])
+                        recalled = json.loads((output / 'recalled.json').read_text())
+                        self.assertTrue(all(row['handoff']['observedAt'] == observed for row in recalled.values()))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
 
     def test_unknown_usage_stays_unknown(self):
         self.assertIsNone(e.usage_of({}))
