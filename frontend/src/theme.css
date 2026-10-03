@@ -209,6 +209,13 @@ a {
   min-width: 0;
 }
 
+.utility-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -248,6 +255,7 @@ a {
 
 .utility-nav {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 3px;
   min-width: 0;
@@ -563,13 +571,23 @@ a {
 }
 
 @media (max-width: 700px) {
+  :root {
+    --utility-bar-height: 80px;
+  }
+
   .app-utility-bar {
-    overflow-x: auto;
-    padding: 0 8px;
+    padding: 6px 8px;
   }
 
   .utility-cluster {
-    gap: 3px;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 4px 8px;
+    width: 100%;
+  }
+
+  .utility-controls {
+    grid-column: 1 / -1;
   }
 
   .brand-word {
@@ -577,8 +595,8 @@ a {
   }
 
   .sources-menu-panel {
-    left: auto;
-    right: -74px;
+    left: 0;
+    right: auto;
     width: min(320px, calc(100vw - 16px));
   }
 }

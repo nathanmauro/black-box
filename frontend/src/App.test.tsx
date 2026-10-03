@@ -78,7 +78,12 @@ describe("App shell", () => {
     expect(within(utilityNav).queryByRole("link", { name: "Stats" })).not.toBeInTheDocument();
     expect(within(utilityNav).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(utilityBar).getByRole("button", { name: "Filter sources" }));
+    const displayControls = within(utilityBar).getByRole("group", { name: "Display controls" });
+    expect(within(displayControls).getByRole("button", { name: "My turns" })).toBeInTheDocument();
+    expect(
+      within(displayControls).getByRole("button", { name: "Open command palette" }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(displayControls).getByRole("button", { name: "Filter sources" }));
     expect(within(utilityBar).getByRole("group", { name: "Filter by source" })).toBeInTheDocument();
     expect(within(utilityBar).getByText("down")).toBeInTheDocument();
     expect(
