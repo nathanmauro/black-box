@@ -5,6 +5,7 @@ import dev.nathan.sbaagentic.recording.IngestionProperties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,13 +50,19 @@ public class RedactionService implements ExportRedactor {
         return result;
     }
 
+    // Match the durable hook's conservative, separator-insensitive secret-key policy.
+    private static final List<String> SECRET_KEY_WORDS =
+            List.of("apikey", "secret", "token", "passwd", "password", "authorization", "credential", "privatekey");
+
     private final boolean enabled;
+    private final boolean defaultRules;
     private final List<RedactionRule> rules;
 
     public RedactionService(IngestionProperties properties) {
         this.enabled = properties.isRedactEnabled();
         List<String> customPatterns = properties.getRedactPatterns();
-        this.rules = customPatterns.isEmpty() ? builtInRules() : customRules(customPatterns);
+        this.defaultRules = customPatterns.isEmpty();
+        this.rules = defaultRules ? builtInRules() : customRules(customPatterns);
     }
 
     public String redact(String text) {
@@ -101,8 +108,24 @@ public class RedactionService implements ExportRedactor {
         }
         if (value instanceof Map<?, ?> map) {
             Map<Object, Object> redacted = new LinkedHashMap<>();
+            int keyCollision = 0;
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                redacted.put(entry.getKey(), redactDeep(entry.getValue()));
+                Object key = entry.getKey();
+                boolean secretValue = false;
+                if (key instanceof String name) {
+                    secretValue = defaultRules && isSecretKey(name);
+                    String safeName = redact(name);
+                    if (!safeName.equals(name)) {
+                        String baseName = safeName;
+                        // Reserve original names, including ones not visited yet, so a
+                        // scrubbed name never overwrites ordinary evidence or another key.
+                        while (map.containsKey(safeName) || redacted.containsKey(safeName)) {
+                            safeName = baseName + " (redacted key " + ++keyCollision + ")";
+                        }
+                    }
+                    key = safeName;
+                }
+                redacted.put(key, secretValue ? REDACTED : redactDeep(entry.getValue()));
             }
 
             return redacted;
@@ -117,6 +140,12 @@ public class RedactionService implements ExportRedactor {
         }
 
         return value;
+    }
+
+    private static boolean isSecretKey(String key) {
+        String normalized = key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+
+        return SECRET_KEY_WORDS.stream().anyMatch(normalized::contains);
     }
 
     private static List<RedactionRule> builtInRules() {
