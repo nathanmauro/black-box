@@ -100,6 +100,7 @@ class WireContractFixtureTest {
 
     @Test
     void everyRestRecordFixtureContainsExactlyItsSerializedProperties() throws IOException {
+        if (Boolean.getBoolean("contracts.update")) updateContinuityFixtures();
         JsonNode records = fixture().path("records");
         assertThat(toSet(records.fieldNames())).isEqualTo(recordClasses().keySet());
 
@@ -152,7 +153,36 @@ class WireContractFixtureTest {
 
     private JsonNode fixture() throws IOException {
 
-        return objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream());
+        return Boolean.getBoolean("contracts.update")
+                ? objectMapper.readTree(java.nio.file.Path.of("src/test/resources/contracts/wire-fixtures.json")
+                        .toFile())
+                : objectMapper.readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream());
+    }
+
+    /** Explicit opt-in generator uses the real record serializer while retaining unrelated fixture bytes. */
+    private void updateContinuityFixtures() throws IOException {
+        java.nio.file.Path path = java.nio.file.Path.of("src/test/resources/contracts/wire-fixtures.json");
+        JsonNode records = objectMapper.readTree(path.toFile()).path("records");
+        String source = java.nio.file.Files.readString(path);
+        for (String type : java.util.List.of("CaptureDecisionRequest", "RecalledItem")) {
+            var fixture = (com.fasterxml.jackson.databind.node.ObjectNode)
+                    records.path(type).deepCopy();
+            if (type.equals("CaptureDecisionRequest")) fixture.put("supersedes", "event-prior");
+            else {
+                fixture.put("supersedesEventId", "event-prior");
+                fixture.put("supersededByEventId", "event-next");
+            }
+            Object record = objectMapper.treeToValue(fixture, recordClasses().get(type));
+            String serialized = objectMapper
+                    .copy()
+                    .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                    .writeValueAsString(record);
+            String prefix = "    \"" + type + "\": ";
+            source = source.lines()
+                    .map(line -> line.startsWith(prefix) ? prefix + serialized + (line.endsWith(",") ? "," : "") : line)
+                    .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+        }
+        java.nio.file.Files.writeString(path, source);
     }
 
     private Set<String> serializedProperties(Class<?> type) {

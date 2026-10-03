@@ -147,10 +147,12 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     + "already settled. Returns structured fields and the full captured text, not raw search hits.")
     public RecallResult recallContext(
             @ToolParam(
-                            description = "Repo path, repo name, event id, or topic. Matching ids, "
-                                    + "working directories, repo metadata, or captured text anchor both lexical "
-                                    + "and semantic candidates; otherwise this is a semantic topic query. Leave "
-                                    + "blank for the most recent intent across all repos.")
+                            required = false,
+                            description =
+                                    "Legacy repo path, repo name, event id, or topic. Do not combine with project/query. Matching ids, "
+                                            + "working directories, repo metadata, or captured text anchor both lexical "
+                                            + "and semantic candidates; otherwise this is a semantic topic query. Leave "
+                                            + "blank for the most recent intent across all repos.")
                     String repoOrTopic,
             @ToolParam(
                             required = false,
@@ -189,13 +191,63 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                             description = "Optional operator-configured safe project alias. "
                                     + "Never supply a private path; unconfigured aliases are discarded.")
                     String telemetryProject,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "Exact canonical project path (registered aliases included). Use with query; omit repoOrTopic.")
+                    String project,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "Question or topic to recall. Only this text is embedded; blank returns recent intent within project.")
+                    String query,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "Include explicitly replaced Decisions for historical inspection. Defaults to false.")
+                    Boolean includeSuperseded,
             ToolContext toolContext) {
         try (var ignored = RecallRequestContext.open(
                 "mcp", recallClient(toolContext, telemetryClient), telemetryPurpose, telemetryProject)) {
-            RecallResult result = memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit);
+            RecallResult result = project == null && query == null && !Boolean.TRUE.equals(includeSuperseded)
+                    ? memoryRecall.recall(repoOrTopic, withinHours == null ? 0 : withinHours, kinds, limit)
+                    : memoryRecall.recall(
+                            repoOrTopic,
+                            project,
+                            query,
+                            withinHours == null ? 0 : withinHours,
+                            kinds,
+                            limit,
+                            Boolean.TRUE.equals(includeSuperseded));
 
             return RecallResultClamp.clamp(result, clampMaxChars(maxChars));
         }
+    }
+
+    public RecallResult recallContext(
+            String repoOrTopic,
+            Integer withinHours,
+            List<String> kinds,
+            Integer limit,
+            Integer maxChars,
+            String telemetryClient,
+            String telemetryPurpose,
+            String telemetryProject,
+            ToolContext toolContext) {
+
+        return recallContext(
+                repoOrTopic,
+                withinHours,
+                kinds,
+                limit,
+                maxChars,
+                telemetryClient,
+                telemetryPurpose,
+                telemetryProject,
+                null,
+                null,
+                null,
+                toolContext);
     }
 
     public RecallResult recallContext(
@@ -244,10 +296,29 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
             @ToolParam(required = false, description = "How confident you are, 0.0 to 1.0. Omit if unsure.")
                     Double confidence,
             @ToolParam(description = "Open loops: things this decision leaves unfinished or unverified.")
-                    List<String> openLoops) {
+                    List<String> openLoops,
+            @ToolParam(
+                            required = false,
+                            description =
+                                    "Event ID of one current Decision this replaces in the same logical project. Requires a nonblank rationale; preserves original evidence.")
+                    String supersedes) {
 
         return captureOperations.captureDecision(new CaptureDecisionRequest(
-                source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops));
+                source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops, supersedes));
+    }
+
+    public IngestResponse captureDecision(
+            String source,
+            String clientSessionId,
+            String repo,
+            String decision,
+            String rationale,
+            List<String> alternatives,
+            Double confidence,
+            List<String> openLoops) {
+
+        return captureDecision(
+                source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops, null);
     }
 
     @Tool(

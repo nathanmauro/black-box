@@ -46,8 +46,19 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final boolean postgres;
 
     public MemorySqlQueryAdapter(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, Clock clock) {
+        this(jdbcTemplate, objectMapper, clock, "sqlite");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public MemorySqlQueryAdapter(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value("${sba.storage.backend:sqlite}") String backend) {
+        this.postgres = "postgres".equals(backend);
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -280,31 +291,41 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
 
     @Override
     public List<AgentEvent> recall(List<String> eventTypes, String scopeLike, Instant since, int limit) {
+
+        return recallFiltered(eventTypes, scopeLike, since, limit, null, false, false);
+    }
+
+    @Override
+    public List<AgentEvent> recallFiltered(
+            List<String> eventTypes,
+            String scopeLike,
+            Instant since,
+            int limit,
+            List<String> projectScopes,
+            boolean topicOnly,
+            boolean includeSuperseded) {
         if (eventTypes == null || eventTypes.isEmpty()) {
 
             return List.of();
         }
-        String placeholders = String.join(", ", Collections.nCopies(eventTypes.size(), "?"));
         List<Object> args = new ArrayList<>(eventTypes);
         args.add(since.toString());
-        StringBuilder sql = new StringBuilder()
-                .append("SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type, ")
-                .append("e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json, ")
-                .append("e.observed_at\n")
-                .append("  FROM agent_events e\n")
-                .append("  JOIN agent_sessions s ON e.session_id = s.id\n")
-                .append(" WHERE e.event_type IN (")
-                .append(placeholders)
-                .append(")\n")
-                .append("   AND e.observed_at >= ?");
+        StringBuilder sql = recallSql(eventTypes);
+        appendRecallFilters(sql, args, projectScopes, includeSuperseded);
         if (scopeLike != null) {
-            sql.append("\n   AND (lower(e.id) LIKE ? OR lower(coalesce(s.cwd, '')) LIKE ?"
-                    + " OR lower(coalesce(e.text, '')) LIKE ?)");
-            args.add(scopeLike);
-            args.add(scopeLike);
-            args.add(scopeLike);
+            if (topicOnly) {
+                sql.append(" AND (lower(e.id) LIKE ? ESCAPE '\\' OR lower(coalesce(e.text, '')) LIKE ? ESCAPE '\\')");
+                args.add(scopeLike);
+                args.add(scopeLike);
+            } else {
+                sql.append(
+                        " AND (lower(e.id) LIKE ? OR lower(coalesce(s.cwd, '')) LIKE ? OR lower(coalesce(e.text, '')) LIKE ?)");
+                args.add(scopeLike);
+                args.add(scopeLike);
+                args.add(scopeLike);
+            }
         }
-        sql.append("\n ORDER BY e.observed_at DESC\n LIMIT ?");
+        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC LIMIT ?");
         args.add(limit);
 
         return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
@@ -312,28 +333,95 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
 
     @Override
     public List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since) {
+
+        return recallCandidatesFiltered(eventTypes, since, null, false);
+    }
+
+    @Override
+    public List<RecallCandidate> recallCandidatesFiltered(
+            List<String> eventTypes, Instant since, List<String> projectScopes, boolean includeSuperseded) {
         if (eventTypes == null || eventTypes.isEmpty()) {
 
             return List.of();
         }
-        String placeholders = String.join(", ", Collections.nCopies(eventTypes.size(), "?"));
         List<Object> args = new ArrayList<>(eventTypes);
         args.add(since.toString());
-        String sql = """
+        StringBuilder sql = recallSql(eventTypes);
+        appendRecallFilters(sql, args, projectScopes, includeSuperseded);
+        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC");
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                (rs, rowNum) -> new RecallCandidate(mapEvent(rs, rowNum), rs.getString("recall_cwd")),
+                args.toArray());
+    }
+
+    private static StringBuilder recallSql(List<String> eventTypes) {
+
+        return new StringBuilder("""
                 SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
                        e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json,
                        e.observed_at, s.cwd AS recall_cwd
-                  FROM agent_events e
-                  JOIN agent_sessions s ON e.session_id = s.id
-                 WHERE e.event_type IN (%s)
-                   AND e.observed_at >= ?
-                 ORDER BY e.observed_at DESC
-                """.formatted(placeholders);
+                  FROM agent_events e JOIN agent_sessions s ON e.session_id = s.id
+                 WHERE e.event_type IN (%s) AND e.observed_at >= ?
+                """.formatted(String.join(", ", Collections.nCopies(eventTypes.size(), "?"))));
+    }
 
-        return jdbcTemplate.query(
-                sql,
-                (rs, rowNum) -> new RecallCandidate(mapEvent(rs, rowNum), rs.getString("recall_cwd")),
+    private void appendRecallFilters(
+            StringBuilder sql, List<Object> args, List<String> projectScopes, boolean includeSuperseded) {
+        if (!includeSuperseded) {
+            // A replacement remains authoritative even when its event is outside this query/window.
+            sql.append(" AND NOT EXISTS (SELECT 1 FROM decision_replacements r WHERE r.superseded_event_id = e.id)");
+        }
+        if (projectScopes != null) {
+            if (projectScopes.isEmpty()) {
+                sql.append(" AND 1=0");
+
+                return;
+            }
+            // Captured repo is event-specific. Sessions may later move to another working directory.
+            String repoValue =
+                    postgres ? "e.metadata_json::jsonb ->> 'repo'" : "json_extract(e.metadata_json, '$.repo')";
+            String project = "coalesce(nullif(trim(" + repoValue + "), ''), s.cwd)";
+            String canonical = "CASE WHEN " + project + " IS NULL OR trim(" + project + ") = '' THEN '__no_project__' "
+                    + "WHEN rtrim(trim(" + project + "), '/') = '' THEN '/' ELSE rtrim(trim(" + project + "), '/') END";
+            sql.append(" AND ")
+                    .append(canonical)
+                    .append(" IN (")
+                    .append(String.join(", ", Collections.nCopies(projectScopes.size(), "?")))
+                    .append(")");
+            args.addAll(projectScopes);
+        }
+    }
+
+    @Override
+    public Map<String, DecisionRelation> decisionRelations(List<String> eventIds) {
+        if (eventIds.isEmpty()) {
+
+            return Map.of();
+        }
+        String placeholders = String.join(", ", Collections.nCopies(eventIds.size(), "?"));
+        List<Object> args = new ArrayList<>(eventIds);
+        args.addAll(eventIds);
+        Map<String, DecisionRelation> relations = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query(
+                "SELECT superseded_event_id, superseding_event_id FROM decision_replacements "
+                        + "WHERE superseded_event_id IN (" + placeholders + ") OR superseding_event_id IN ("
+                        + placeholders + ")",
+                rs -> {
+                    String oldId = rs.getString(1);
+                    String newId = rs.getString(2);
+                    DecisionRelation old = relations.get(oldId);
+                    relations.put(oldId, new DecisionRelation(old == null ? null : old.supersedesEventId(), newId));
+                    DecisionRelation replacement = relations.get(newId);
+                    relations.put(
+                            newId,
+                            new DecisionRelation(
+                                    oldId, replacement == null ? null : replacement.supersededByEventId()));
+                },
                 args.toArray());
+
+        return relations;
     }
 
     @Override

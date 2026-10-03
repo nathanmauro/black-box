@@ -87,6 +87,46 @@ class StructuredCaptureHttpTest {
         assertHandoff(httpRecall.path("items").get(0), eventId);
     }
 
+    @Test
+    void projectRecallAndExplicitReplacementWorkThroughRealMcpTransport() throws Exception {
+        initialize();
+        Map<String, Object> args = validArguments("captureDecision");
+        args.put("clientSessionId", "mcp-continuity-original");
+        args.put("repo", "/fixture/mcp-continuity");
+        args.put("decision", "Original continuity decision");
+        String original =
+                textJson(call("captureDecision", args)).path("eventId").asText();
+        args.put("clientSessionId", "mcp-continuity-other");
+        args.put("repo", "/fixture/mcp-other");
+        textJson(call("captureDecision", args));
+        var selected =
+                textJson(call("recallContext", Map.of("project", "/fixture/mcp-continuity", "query", "continuity")));
+        assertThat(selected.path("items")).hasSize(1);
+        assertThat(selected.path("items").get(0).path("eventId").asText()).isEqualTo(original);
+        args.put("repo", "/fixture/mcp-continuity");
+        args.put("clientSessionId", "mcp-continuity-replacement");
+        args.put("decision", "Replacement continuity decision");
+        args.put("rationale", "New evidence overturned the original choice");
+        args.put("supersedes", original);
+        String replacement =
+                textJson(call("captureDecision", args)).path("eventId").asText();
+        var current =
+                textJson(call("recallContext", Map.of("project", "/fixture/mcp-continuity", "query", "continuity")));
+        assertThat(current.path("items")).hasSize(1);
+        assertThat(current.path("items").get(0).path("supersedesEventId").asText())
+                .isEqualTo(original);
+        var history = textJson(call("recallContext", Map.of("repoOrTopic", original, "includeSuperseded", true)));
+        assertThat(history.path("items").get(0).path("supersededByEventId").asText())
+                .isEqualTo(replacement);
+        long before = eventCount();
+        assertThat(call("captureDecision", args).path("isError").asBoolean()).isTrue();
+        assertThat(eventCount()).isEqualTo(before);
+        assertThat(call("recallContext", Map.of("repoOrTopic", "legacy", "project", "/fixture/mcp-continuity"))
+                        .path("isError")
+                        .asBoolean())
+                .isTrue();
+    }
+
     private void assertHandoff(JsonNode item, String eventId) {
         assertThat(item.path("eventId").asText()).isEqualTo(eventId);
         assertThat(item.path("source").asText()).isEqualTo("manual");

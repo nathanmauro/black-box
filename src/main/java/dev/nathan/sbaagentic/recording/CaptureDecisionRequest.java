@@ -18,4 +18,19 @@ public record CaptureDecisionRequest(
         String rationale,
         List<String> alternatives,
         Double confidence,
-        List<String> openLoops) {}
+        List<String> openLoops,
+
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        String supersedes) {
+    public CaptureDecisionRequest(
+            String source,
+            String clientSessionId,
+            String repo,
+            String decision,
+            String rationale,
+            List<String> alternatives,
+            Double confidence,
+            List<String> openLoops) {
+        this(source, clientSessionId, repo, decision, rationale, alternatives, confidence, openLoops, null);
+    }
+}

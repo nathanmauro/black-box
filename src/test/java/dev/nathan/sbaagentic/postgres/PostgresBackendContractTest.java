@@ -109,6 +109,144 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void projectRecallAndDecisionReplacementPreserveEvidenceOnPostgres() {
+        String scope = "/postgres-continuity/" + UUID.randomUUID();
+        String alias = scope + "-worktree";
+        String original = post("/api/decisions", continuityDecision(scope, "Original beacon", null))
+                .path("eventId")
+                .asText();
+        Map<String, Object> originalRow = jdbc.queryForMap("SELECT * FROM agent_events WHERE id = ?", original);
+        post("/api/decisions", continuityDecision(scope + "-neighbor", "Original beacon", null));
+        app.getBean(dev.nathan.sbaagentic.project.internal.application.ProjectAliasService.class)
+                .put(new dev.nathan.sbaagentic.project.ProjectAliasRequest(alias, scope));
+        assertThat(get("/api/recall?project=" + alias + "&query=beacon").path("items"))
+                .hasSize(1);
+        String replacement = post("/api/decisions", continuityDecision(alias, "New choice", original))
+                .path("eventId")
+                .asText();
+        assertThat(jdbc.queryForMap("SELECT * FROM agent_events WHERE id = ?", original))
+                .isEqualTo(originalRow);
+        assertThat(get("/api/recall?project=" + scope + "&query=beacon").path("items"))
+                .isEmpty();
+        var current = get("/api/recall?project=" + scope);
+        assertThat(current.path("items")).hasSize(1);
+        assertThat(current.path("items").get(0).path("supersedesEventId").asText())
+                .isEqualTo(original);
+        jdbc.update(
+                "UPDATE agent_events SET observed_at = ? WHERE id = ?",
+                Instant.now().minusSeconds(10 * 86400).toString(),
+                replacement);
+        assertThat(get("/api/recall?scope=" + original).path("items")).isEmpty();
+        assertThat(get("/api/recall?scope=" + original + "&includeSuperseded=true")
+                        .path("items")
+                        .get(0)
+                        .path("supersededByEventId")
+                        .asText())
+                .isEqualTo(replacement);
+        assertThat(http.postForEntity(
+                                base + "/api/decisions", continuityDecision(scope, "Again", original), JsonNode.class)
+                        .getStatusCode()
+                        .value())
+                .isEqualTo(400);
+    }
+
+    @Test
+    void concurrentPostgresDecisionReplacementsHaveOneWinner() throws Exception {
+        String scope = "/postgres-race/" + UUID.randomUUID();
+        String target = post("/api/decisions", continuityDecision(scope, "Original", null))
+                .path("eventId")
+                .asText();
+        var left = continuityDecision(scope, "Left", target);
+        var right = continuityDecision(scope, "Right", target);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            CyclicBarrier barrier = new CyclicBarrier(2);
+            var a = workers.submit(() -> {
+                barrier.await();
+
+                return http.postForEntity(base + "/api/decisions", left, JsonNode.class);
+            });
+            var b = workers.submit(() -> {
+                barrier.await();
+
+                return http.postForEntity(base + "/api/decisions", right, JsonNode.class);
+            });
+            assertThat(List.of(
+                            a.get(15, TimeUnit.SECONDS).getStatusCode().value(),
+                            b.get(15, TimeUnit.SECONDS).getStatusCode().value()))
+                    .containsExactlyInAnyOrder(200, 400);
+        }
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM decision_replacements WHERE superseded_event_id = ?",
+                        Integer.class,
+                        target))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM agent_events WHERE client_session_id IN (?, ?)",
+                        Integer.class,
+                        left.get("clientSessionId"),
+                        right.get("clientSessionId")))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM agent_sessions WHERE client_session_id IN (?, ?)",
+                        Integer.class,
+                        left.get("clientSessionId"),
+                        right.get("clientSessionId")))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void postgresReplacementReservationRollsBackWhenEventInsertFails() {
+        String scope = "/postgres-rollback/" + UUID.randomUUID();
+        String target = post("/api/decisions", continuityDecision(scope, "Original", null))
+                .path("eventId")
+                .asText();
+        var replacement = continuityDecision(scope, "Will fail", target);
+        String client = replacement.get("clientSessionId").toString();
+        jdbc.execute(
+                "CREATE FUNCTION reject_replacement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.client_session_id = '"
+                        + client
+                        + "' THEN RAISE EXCEPTION 'controlled replacement failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute(
+                "CREATE TRIGGER reject_replacement BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION reject_replacement()");
+        try {
+            assertThat(http.postForEntity(base + "/api/decisions", replacement, JsonNode.class)
+                            .getStatusCode()
+                            .value())
+                    .isEqualTo(500);
+            assertThat(jdbc.queryForObject(
+                            "SELECT count(*) FROM decision_replacements WHERE superseded_event_id = ?",
+                            Integer.class,
+                            target))
+                    .isZero();
+            assertThat(jdbc.queryForObject(
+                            "SELECT count(*) FROM agent_sessions WHERE client_session_id = ?", Integer.class, client))
+                    .isZero();
+            assertThat(get("/api/recall?scope=" + target).path("items")).hasSize(1);
+        } finally {
+            jdbc.execute("DROP TRIGGER reject_replacement ON agent_events");
+            jdbc.execute("DROP FUNCTION reject_replacement()");
+        }
+        post("/api/decisions", replacement);
+    }
+
+    private static Map<String, Object> continuityDecision(String scope, String decision, String supersedes) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>(Map.of(
+                "source",
+                "manual",
+                "clientSessionId",
+                UUID.randomUUID().toString(),
+                "repo",
+                scope,
+                "decision",
+                decision,
+                "rationale",
+                "New evidence"));
+        if (supersedes != null) body.put("supersedes", supersedes);
+
+        return body;
+    }
+
+    @Test
     void compactSearchKeepsFractionalBoundariesAndSourceLinks() {
         String marker = "compact-pg-" + UUID.randomUUID();
         JsonNode equal = post(

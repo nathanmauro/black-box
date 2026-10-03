@@ -52,17 +52,20 @@ public class ContextController {
     @GetMapping("/recall")
     public RecallResult recall(
             @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String project,
+            @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "false") boolean includeSuperseded,
             @RequestParam(defaultValue = "168") int withinHours,
             @RequestParam(required = false) List<String> kinds,
             @RequestParam(required = false) Integer limit,
             @RequestHeader(value = "X-Blackbox-Client", required = false) String client,
             @RequestHeader(value = "X-Blackbox-Purpose", required = false) String purpose,
-            @RequestHeader(value = "X-Blackbox-Project", required = false) String project,
+            @RequestHeader(value = "X-Blackbox-Project", required = false) String telemetryProject,
             HttpServletResponse response) {
-        try (var context = RecallRequestContext.open("http", client, purpose, project)) {
+        try (var context = RecallRequestContext.open("http", client, purpose, telemetryProject)) {
             response.setHeader("X-Blackbox-Recall-Id", context.requestId());
 
-            return contextService.recall(scope, withinHours, kinds, limit);
+            return contextService.recall(scope, project, query, withinHours, kinds, limit, includeSuperseded);
         }
     }
 }

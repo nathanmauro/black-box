@@ -71,7 +71,12 @@ comma-separated list of at most 100 approved public-safe aliases, such as `examp
 must match `[a-z][a-z0-9_-]{0,31}` and exactly match the server allowlist. Every other value becomes
 `unknown`. Clients may then declare that alias. The default allowlist is empty. No paths, query
 hashes, user IDs, session IDs, event IDs, content, URLs, exception messages, tokens, or credentials
-are exported. Do not use a private name as an approved alias. Project is a log attribute only.
+are exported. Do not use a private name as an approved alias. The telemetry project alias is a log attribute only.
+The new `project` query parameter / MCP argument is an independent exact retrieval filter. It is
+never copied into telemetry. For explicit project/question recall, `scope_category` describes the
+question (`blank` or `topic`), and only the question is embedded. Project-scoped semantic candidate
+counts are measured after the SQL project and replacement filters. Legacy scope categories and
+literal anchoring keep their existing meaning.
 
 ## Schema version 1
 

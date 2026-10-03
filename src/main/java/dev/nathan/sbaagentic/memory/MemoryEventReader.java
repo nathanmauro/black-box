@@ -26,5 +26,29 @@ public interface MemoryEventReader {
 
     List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since);
 
+    /** Project scopes are exact canonical paths; null means global, empty means match nothing. */
+    default List<AgentEvent> recallFiltered(
+            List<String> eventTypes,
+            String scopeLike,
+            Instant since,
+            int limit,
+            List<String> projectScopes,
+            boolean topicOnly,
+            boolean includeSuperseded) {
+        throw new UnsupportedOperationException("Filtered recall is not supported by this reader.");
+    }
+
+    default List<RecallCandidate> recallCandidatesFiltered(
+            List<String> eventTypes, Instant since, List<String> projectScopes, boolean includeSuperseded) {
+        throw new UnsupportedOperationException("Filtered recall is not supported by this reader.");
+    }
+
+    default java.util.Map<String, DecisionRelation> decisionRelations(List<String> eventIds) {
+
+        return java.util.Map.of();
+    }
+
+    record DecisionRelation(String supersedesEventId, String supersededByEventId) {}
+
     record RecallCandidate(AgentEvent event, String cwd) {}
 }

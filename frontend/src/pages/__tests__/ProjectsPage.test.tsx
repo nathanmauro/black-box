@@ -375,9 +375,9 @@ describe("ProjectsPage", () => {
       "href",
       "/board?project=%2FUsers%2Fnathan%2FDeveloper%2Fproj%2Fsba-agentic",
     );
-    expect(screen.getByRole("link", { name: "Recall" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Resume this project" })).toHaveAttribute(
       "href",
-      "/recall?scope=%2FUsers%2Fnathan%2FDeveloper%2Fproj%2Fsba-agentic",
+      "/recall?project=%2FUsers%2Fnathan%2FDeveloper%2Fproj%2Fsba-agentic&withinHours=8760&run=1",
     );
     expect(await screen.findByText("Project integration synthesis")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Finish project integration" })[0]).toHaveAttribute(

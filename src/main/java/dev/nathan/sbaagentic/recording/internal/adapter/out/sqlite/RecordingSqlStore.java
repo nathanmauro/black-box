@@ -219,6 +219,53 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         return new RecordingStore.IdempotentPersisted(persisted, false);
     }
 
+    @Transactional
+    @Override
+    public RecordingStore.Persisted persistDecisionReplacement(
+            EventIngestRequest request,
+            Instant observedAt,
+            String title,
+            int titleRank,
+            String supersedes,
+            List<String> projectScopes) {
+        if (projectScopes == null || projectScopes.isEmpty()) {
+            throw new IllegalArgumentException("A decision replacement requires a project.");
+        }
+        // This INSERT is the first database operation: SQLite obtains its writer lock before
+        // reading; PostgreSQL's unique constraint serializes contenders for the same target.
+        // No event/session or relation survives an invalid target or failed event persistence.
+        String repoValue = postgres ? "e.metadata_json::jsonb ->> 'repo'" : "json_extract(e.metadata_json, '$.repo')";
+        String project = "coalesce(nullif(trim(" + repoValue + "), ''), s.cwd)";
+        String canonicalProject =
+                "CASE WHEN rtrim(trim(" + project + "), '/') = '' THEN '/' ELSE rtrim(trim(" + project + "), '/') END";
+        List<Object> args = new ArrayList<>();
+        args.add(observedAt.toString());
+        args.add(supersedes);
+        args.addAll(projectScopes);
+        int reserved = jdbcTemplate.update(
+                """
+                INSERT INTO decision_replacements (superseded_event_id, created_at)
+                SELECT e.id, ? FROM agent_events e JOIN agent_sessions s ON s.id = e.session_id
+                 WHERE e.id = ? AND e.event_type = 'Decision' AND %s IN (%s)
+                ON CONFLICT (superseded_event_id) DO NOTHING
+                """.formatted(canonicalProject, String.join(",", Collections.nCopies(projectScopes.size(), "?"))),
+                args.toArray());
+        if (reserved != 1) {
+            throw new IllegalArgumentException(
+                    "Replacement target must be an existing, current Decision in the same logical project.");
+        }
+        RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
+        int bound = jdbcTemplate.update(
+                "UPDATE decision_replacements SET superseding_event_id = ? WHERE superseded_event_id = ? AND superseding_event_id IS NULL",
+                persisted.event().id(),
+                supersedes);
+        if (bound != 1) {
+            throw new IllegalStateException("Unable to bind decision replacement.");
+        }
+
+        return persisted;
+    }
+
     public AgentSession findOrCreateSession(
             EventIngestRequest request, Instant observedAt, String title, int titleRank) {
         // One atomic upsert: insert a fresh session, or — when (source, client_session_id) already

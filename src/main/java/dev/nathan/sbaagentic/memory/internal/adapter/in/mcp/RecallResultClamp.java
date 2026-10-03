@@ -204,7 +204,9 @@ final class RecallResultClamp {
                 item.openLoops(),
                 item.nextAction(),
                 item.toAgent(),
-                item.score());
+                item.score(),
+                item.supersedesEventId(),
+                item.supersededByEventId());
     }
 
     private record TrimmedField(String value, int savedChars) {}

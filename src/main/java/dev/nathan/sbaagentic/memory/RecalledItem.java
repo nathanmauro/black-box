@@ -33,4 +33,46 @@ public record RecalledItem(
          * blank/path/id scopes, embedder unavailable, or semantic recall failure) or this item has no
          * stored embedding. This field never carries lexical, rank-fusion, or placeholder scores.
          */
-        Double score) {}
+        Double score,
+
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        String supersedesEventId,
+
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        String supersededByEventId) {
+    public RecalledItem(
+            String eventId,
+            String sessionId,
+            String kind,
+            String source,
+            String clientSessionId,
+            String repo,
+            Instant observedAt,
+            String headline,
+            String rationale,
+            List<String> alternatives,
+            Double confidence,
+            List<String> openLoops,
+            String nextAction,
+            String toAgent,
+            Double score) {
+        this(
+                eventId,
+                sessionId,
+                kind,
+                source,
+                clientSessionId,
+                repo,
+                observedAt,
+                headline,
+                rationale,
+                alternatives,
+                confidence,
+                openLoops,
+                nextAction,
+                toAgent,
+                score,
+                null,
+                null);
+    }
+}

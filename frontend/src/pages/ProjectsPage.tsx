@@ -490,7 +490,7 @@ function ProjectHeader(props: { project: ProjectSummary }) {
       <div class="project-header-actions" aria-label="Project actions">
         <A href={activityHref(props.project, "browse")}>Activity Browse</A>
         <A href={boardHref(props.project)}>Board</A>
-        <A href={recallHref(props.project)}>Recall</A>
+        <A href={recallHref(props.project)}>Resume this project</A>
       </div>
       <div class="project-stat-strip">
         <Metric label="session" value={props.project.sessionCount} />
@@ -1017,7 +1017,11 @@ function boardHref(project: ProjectSummary): string {
 }
 
 function recallHref(project: ProjectSummary): string {
-  const query = new URLSearchParams({ scope: primaryProjectScope(project).canonicalKey });
+  const query = new URLSearchParams({
+    project: primaryProjectScope(project).canonicalKey,
+    withinHours: "8760",
+    run: "1",
+  });
   return `/recall?${query.toString()}`;
 }
 

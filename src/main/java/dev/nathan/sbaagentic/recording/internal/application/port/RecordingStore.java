@@ -10,6 +10,16 @@ public interface RecordingStore {
 
     Persisted persistEvent(EventIngestRequest request, Instant observedAt, String title, int titleRank);
 
+    default Persisted persistDecisionReplacement(
+            EventIngestRequest request,
+            Instant observedAt,
+            String title,
+            int titleRank,
+            String supersedes,
+            java.util.List<String> projectScopes) {
+        throw new UnsupportedOperationException("Decision replacement is not supported by this store.");
+    }
+
     default IdempotentPersisted persistIdempotentEvent(
             String captureId,
             String requestHash,

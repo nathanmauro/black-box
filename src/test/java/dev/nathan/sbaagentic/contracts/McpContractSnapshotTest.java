@@ -53,8 +53,17 @@ class McpContractSnapshotTest {
 
     @Test
     void toolNamesAndInputSchemasMatchTheFrozenSnapshot() throws IOException {
-        JsonNode expected = objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
-        assertThat(normalizedDefinitions()).isEqualTo(expected);
+        JsonNode actual = normalizedDefinitions();
+        java.nio.file.Path snapshot = java.nio.file.Path.of("src/test/resources/contracts/mcp-tools.json");
+        if (Boolean.getBoolean("contracts.update")) {
+            List<String> lines = new ArrayList<>();
+            for (JsonNode definition : actual) lines.add("  " + objectMapper.writeValueAsString(definition));
+            java.nio.file.Files.writeString(snapshot, "[\n" + String.join(",\n", lines) + "\n]\n");
+        }
+        JsonNode expected = Boolean.getBoolean("contracts.update")
+                ? objectMapper.readTree(snapshot.toFile())
+                : objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
+        assertThat(actual).isEqualTo(expected);
         assertThat(callbackProvider.getToolCallbacks()).hasSize(17);
     }
 
@@ -83,7 +92,11 @@ class McpContractSnapshotTest {
     @Test
     void recallContextOutputContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
         JsonNode records = objectMapper
-                .readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream())
+                .readTree(
+                        Boolean.getBoolean("contracts.update")
+                                ? java.nio.file.Files.newInputStream(
+                                        java.nio.file.Path.of("src/test/resources/contracts/wire-fixtures.json"))
+                                : new ClassPathResource("contracts/wire-fixtures.json").getInputStream())
                 .path("records");
         assertRecallResultShape(records.path("RecallResult"));
         assertRecalledItemShape(records.path("RecalledItem"));

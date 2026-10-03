@@ -779,6 +779,9 @@ class TaskApiContractTest {
                 String.class,
                 String.class,
                 String.class,
+                String.class,
+                String.class,
+                Boolean.class,
                 org.springframework.ai.chat.model.ToolContext.class);
         Method decision = MemoryMcpTools.class.getMethod(
                 "captureDecision",
@@ -789,7 +792,8 @@ class TaskApiContractTest {
                 String.class,
                 List.class,
                 Double.class,
-                List.class);
+                List.class,
+                String.class);
         Method handoff = MemoryMcpTools.class.getMethod(
                 "captureHandoff",
                 String.class,

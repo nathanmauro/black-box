@@ -275,6 +275,9 @@ Capture and recall hooks are opt-in; see [Connect an agent](agent-integration.md
 | --- | --- | --- |
 | `SBA_AGENTIC_URL` | `http://localhost:8766` | Capture/recall service URL |
 | `SBA_AGENT_SOURCE` | Positional source argument, otherwise `unknown` | Capture source override |
+| `SBA_CAPTURE_DURABLE` | `0` | Set `1` to enable the sanitized local outbox; its default URL is numeric-loopback `http://127.0.0.1:8766` |
+| `SBA_CAPTURE_OUTBOX_DIR` | `~/.blackbox/outbox` | Private local capture queue directory |
+| `SBA_CAPTURE_HTTPS_ORIGIN` | Unset | Exact normalized HTTPS destination opt-in; must match the selected URL and uses an origin-bound macOS Keychain bearer |
 | `SBA_RECALL_WITHIN_HOURS` | `720` | Recall lookback, 30 days |
 | `SBA_RECALL_LIMIT` | `3` | Maximum hook items |
 | `SBA_RECALL_MAX_CHARS` | `4000` | Hook context-block budget, separate from MCP's default 24,000-character item-text clamp |
@@ -284,9 +287,10 @@ Capture and recall hooks are opt-in; see [Connect an agent](agent-integration.md
 | `SBA_RECALL_PROJECT_ALIAS` | `unknown` | Safe declared alias; must satisfy the format and server allowlist |
 
 Hook success does not prove persistence or delivery: the bridges deliberately do not fail the
-host turn. Their current HTTP requests do not attach bearer authentication. The bundled runner
-has the same limitation; setting server-side `SBA_AUTH_API_TOKEN` does not wire these clients.
-Use a credential-aware integration for authenticated deployments. Fire logs contain paths and
+host turn. Legacy direct capture and recall hooks do not attach bearer authentication. The bundled
+runner has the same limitation; setting server-side `SBA_AUTH_API_TOKEN` does not wire these clients.
+The optional [durable capture outbox](durable-capture.md#explicit-https-delivery) supports explicit
+HTTPS delivery with a destination-bound credential. Fire logs contain paths and
 session identifiers; keep them private. Server [recall telemetry](recall-observability.md) excludes
 raw query/result text and does not prove that returned context was read or useful.
 

@@ -85,6 +85,15 @@ CREATE TABLE IF NOT EXISTS event_capture_receipts (
     FOREIGN KEY (event_id) REFERENCES agent_events(id) ON DELETE RESTRICT
 );
 
+-- Explicit replacement evidence is append-only after commit. The nullable new ID is bound
+-- in the same transaction as the event (as with event_capture_receipts).
+CREATE TABLE IF NOT EXISTS decision_replacements (
+    superseded_event_id TEXT PRIMARY KEY REFERENCES agent_events(id),
+    superseding_event_id TEXT UNIQUE REFERENCES agent_events(id),
+    created_at TEXT NOT NULL,
+    CHECK (superseded_event_id <> superseding_event_id)
+);
+
 CREATE TABLE IF NOT EXISTS event_judgments (
     event_id TEXT PRIMARY KEY REFERENCES agent_events(id),
     session_id TEXT NOT NULL,

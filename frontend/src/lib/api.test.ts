@@ -28,6 +28,7 @@ import {
   getProjectSessions,
   getProjectTimeline,
   getRecall,
+  captureDecision,
   previewProjectMeld,
   saveProjectMeld,
   type ProjectMeldSaveRequest,
@@ -211,6 +212,46 @@ describe("Phase 2 API helpers", () => {
     expect(url.searchParams.get("scope")).toBe(scope);
     expect(url.searchParams.get("withinHours")).toBe("168");
     expect(url.searchParams.get("kinds")).toBe("decision,handoff");
+  });
+
+  it("keeps project and query separate and opts into explicit history", async () => {
+    const fetchMock = stubJson({ items: [], count: 0 });
+    await getRecall(
+      { project: "/repos/C++ & café", query: "why storage?", includeSuperseded: true },
+      8760,
+      ["decision"],
+    );
+    const url = new URL(String(fetchMock.mock.calls[0][0]), "http://blackbox.test");
+    expect(url.searchParams.get("project")).toBe("/repos/C++ & café");
+    expect(url.searchParams.get("query")).toBe("why storage?");
+    expect(url.searchParams.get("includeSuperseded")).toBe("true");
+    expect(url.searchParams.has("scope")).toBe(false);
+    await getRecall({ project: "/repos/alpha", query: "" }, 8760, ["decision"]);
+    const blank = new URL(String(fetchMock.mock.calls[1][0]), "http://blackbox.test");
+    expect(blank.searchParams.has("query")).toBe(true);
+    expect(blank.searchParams.get("includeSuperseded")).toBe("false");
+  });
+
+  it("posts the explicit decision replacement and browser CSRF credential", async () => {
+    const fetchMock = stubJson({});
+    document.cookie = "XSRF-TOKEN=replace-token; path=/";
+    const request = {
+      source: "manual",
+      clientSessionId: "recall-1",
+      repo: "/repos/alpha",
+      decision: "New decision",
+      rationale: "New evidence",
+      supersedes: "old-event",
+    };
+    await captureDecision(request);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/decisions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(request),
+        headers: expect.objectContaining({ "X-XSRF-TOKEN": "replace-token" }),
+      }),
+    );
   });
 
   it("passes limit and offset to the project timeline endpoint", async () => {

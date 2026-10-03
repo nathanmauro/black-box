@@ -248,22 +248,39 @@ depends on its shape:
   directories, captured text, or repo metadata, candidates are constrained to that anchor;
   otherwise it is treated as an open topic query within the selected time window and kinds.
 
-One `scope` cannot yet express both a location and a subject — "decisions in this repo about
-retries" needs a separate query parameter, which is not implemented.
+For exact project recall, pass separate `project` and `query` fields in REST or MCP:
+
+```json
+{"project":"/repos/example","query":"why did we choose retries","withinHours":168,"kinds":["decision","handoff"]}
+```
+
+`project` is the canonical project path; registered aliases are expanded automatically. Both
+lexical and semantic candidate retrieval apply this exact logical project filter before ranking.
+A similar directory name or a mention in another project's text cannot match it. Captured repo
+metadata takes precedence over the session's current working directory. An unknown project
+returns no results. Only `query` is embedded, including topics with slashes; an empty query returns
+recent intent in the selected project. Omitting `project` permits a global topic query.
+Do not combine nonblank legacy `scope`/`repoOrTopic` with `project` or `query`; that ambiguity returns
+an error. Blank legacy scope is compatible.
+
+Normal recall excludes Decisions explicitly replaced by a later capture, even when the replacement
+is outside the requested topic or time window. Pass `includeSuperseded=true` for history. Replacement
+items carry `supersedesEventId`; replaced items carry `supersededByEventId`; either field is omitted
+when absent. The exact original event remains available from its source link. See
+[Project continuity](project-continuity.md) for the atomic replacement capture contract.
 
 REST calls the field `scope`; MCP calls it `repoOrTopic`. A blank value requests recent intent
 across repositories. A bare repo name follows topic rules unless its shape is recognized as a
 path or ID. A path match is a lexical anchor, not an authorization boundary or an exact project
 filter: matching can include IDs, working directories, repo metadata, and captured text.
 
-The Recall page offers 24 hours, one week, 30 days, **Three months (90 days)**, and
-**Six months (180 days)**. These are rolling windows measured from now against each event's
+The Recall page offers 24 hours, one week, 30 days, **Three months (90 days)**,
+**Six months (180 days)**, and **One year (365 days)**. These are rolling windows measured from now against each event's
 `observedAt`, not calendar-month boundaries. The backend accepts up to 365 days. The page still
 returns up to 10 items; widening the window does not export all matching history.
 
-The **?** controls beside Scope, Window, and Kinds open practical examples and explain matching,
-kind selection, and the top-bar source filter. Open or close them by click, Enter, or Space; Escape
-closes the focused help and returns focus to its control. Run recall after changing its inputs.
+Run recall after changing its inputs. The project filter and question are independent; existing
+scope links retain their legacy matching behavior.
 An event ID still obeys the time/kind filters and uses matching rather than bypassing them;
 use a result's Browse link to open its exact source event.
 
@@ -400,9 +417,10 @@ Keep its `Black Box recall:` plain-text header: output beginning with `[` or `{`
 as JSON by the client. The fire log contains local paths and session identifiers; it is an
 operator log, not content to publish or ingest into shared memory.
 
-The examples target the default loopback service. The bundled hooks do not send an Authorization
-header. An authenticated deployment needs a credential-aware client or bridge; changing
-`SBA_AGENTIC_URL` alone does not add authentication. See [Authentication](authentication.md) and
+The examples target the default loopback service. Legacy direct capture and recall hooks do not send
+an Authorization header. The optional [durable capture outbox](durable-capture.md#explicit-https-delivery)
+supports an explicitly selected HTTPS origin and a destination-bound macOS Keychain bearer;
+changing `SBA_AGENTIC_URL` alone does not add authentication. See [Authentication](authentication.md) and
 [hook environment variables](operations.md#hook-environment-variables).
 
 ### Reading a handoff in the web interface
