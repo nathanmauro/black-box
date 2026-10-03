@@ -12,7 +12,9 @@ Run `scripts/test-agent-hook.sh`. The transport tests exercise local TLS, creden
 
 The September 29 design remains a draft. Its later consumer-trace amendments are on the separately recorded `cloud-spec-consumer-trace` branch; they should be reconciled before planning a migration. Relevant changes include retaining bounded tool input and compatible event response shapes, preserving `agentId` and capture digests, using the existing outbox, capturing Claude assistant turns, and removing the retired coordination board while preserving session lineage.
 
-A working remote service still needs:
+The existing single-server PostgreSQL profile can already be hosted behind authenticated HTTPS;
+see [PostgreSQL backend](postgres-backend.md). That deployment does not require S3, connector OAuth
+or board removal. The broader proposed personal-cloud architecture and consumer contract still need:
 
 1. The selected reviewed source, including the separate lineage/board-removal work, plus a consumer contract against that source.
 2. Authenticated HTTPS hosting, owner-provisioned machine credentials and connector OAuth. No infrastructure is provisioned by this transport change.
