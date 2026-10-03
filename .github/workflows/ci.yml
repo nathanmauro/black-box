@@ -60,6 +60,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/cloud -p 'cloud_entrypoint_test.py'
       - name: Database snapshot safety (offline fixtures)
         run: python3 -B -m unittest discover -s scripts/storage -p 'test_*.py'
+      - name: Demo launcher isolation (no service or model calls)
+        run: python3 -B -m unittest discover -s scripts/demo -p 'test_*.py'
       - name: PostgreSQL clients for disposable restore rehearsal
         run: |
           sudo apt-get update -qq

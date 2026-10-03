@@ -1,5 +1,7 @@
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { parsePayload, parseToolResult } from "../../lib/payload";
+import { compactPayloadMedia } from "../../lib/payloadPreview";
+import LazyDetails from "./blocks/LazyDetails";
 
 export { parsePayload, payloadText } from "../../lib/payload";
 
@@ -49,36 +51,72 @@ const OUTPUT_PRIORITY = [
   "content",
 ];
 
-export default function ToolPayload(props: ToolPayloadProps) {
-  const input = () => parsePayload(props.inputJson);
-  const output = () => parseToolResult(props.outputJson);
+const LARGE_PAYLOAD_CHARS = 1200;
 
+export default function ToolPayload(props: ToolPayloadProps) {
   return (
-    <Show when={input() !== null || output() !== null}>
+    <Show when={props.inputJson?.trim() || props.outputJson?.trim()}>
       <div class="tool-payload" aria-label={`${props.toolName || "Tool"} payload`}>
-        <Show when={input() !== null}>
-          <PayloadSection label="Input" value={input()} priority={INPUT_PRIORITY} />
+        <Show when={props.inputJson?.trim()}>
+          <PayloadSection label="Input" raw={props.inputJson!} priority={INPUT_PRIORITY} />
         </Show>
-        <Show when={output() !== null}>
-          <PayloadSection label="Result" value={output()} priority={OUTPUT_PRIORITY} />
+        <Show when={props.outputJson?.trim()}>
+          <PayloadSection label="Result" raw={props.outputJson!} priority={OUTPUT_PRIORITY} />
         </Show>
       </div>
     </Show>
   );
 }
 
-function PayloadSection(props: { label: string; value: unknown; priority: string[] }) {
-  const entries = () => orderedEntries(props.value, props.priority);
+type PayloadSectionProps = { label: string; raw: string; priority: string[] };
+
+function PayloadSection(props: PayloadSectionProps) {
+  return (
+    <Show
+      when={props.raw.length > LARGE_PAYLOAD_CHARS}
+      fallback={<PayloadSectionBody {...props} />}
+    >
+      <LazyDetails summary={`${props.label} (${props.raw.length.toLocaleString("en-US")} chars)`}>
+        <PayloadSectionBody {...props} />
+      </LazyDetails>
+    </Show>
+  );
+}
+
+function PayloadSectionBody(props: PayloadSectionProps) {
+  const preview = createMemo(() =>
+    compactPayloadMedia(
+      props.label === "Result" ? parseToolResult(props.raw) : parsePayload(props.raw),
+    ),
+  );
+  const entries = () => orderedEntries(preview().value, props.priority);
 
   return (
     <section class="tool-payload-section" aria-label={props.label}>
       <h4>{props.label}</h4>
-      <Show when={entries()} fallback={<PayloadValue value={props.value} standalone />}>
+      <Show when={entries()} fallback={<PayloadValue value={preview().value} standalone />}>
         {(items) => (
           <div class="tool-payload-fields">
             <For each={items()}>{(entry) => <PayloadField entry={entry} />}</For>
           </div>
         )}
+      </Show>
+      <Show when={preview().compacted}>
+        <p class="tool-payload-note">Embedded media is shortened in this preview.</p>
+      </Show>
+      <Show when={preview().depthLimited}>
+        <p class="tool-payload-note">Deeply nested content is shortened in this preview.</p>
+      </Show>
+      <Show
+        when={
+          preview().compacted || preview().depthLimited || props.raw.length > LARGE_PAYLOAD_CHARS
+        }
+      >
+        <LazyDetails
+          summary={`Original ${props.label.toLowerCase()} (${props.raw.length.toLocaleString("en-US")} chars)`}
+        >
+          <pre class="tool-payload-block tool-payload-original">{props.raw}</pre>
+        </LazyDetails>
       </Show>
     </section>
   );

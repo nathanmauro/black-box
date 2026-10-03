@@ -47,6 +47,9 @@ python3 -B -m unittest discover -s scripts/cloud -p 'cloud_entrypoint_test.py'
 step "Database snapshot safety (offline fixtures)"
 python3 -B -m unittest discover -s scripts/storage -p 'test_*.py'
 
+step "Demo launcher isolation (no service or model calls)"
+python3 -B -m unittest discover -s scripts/demo -p 'test_*.py'
+
 step "Java suite: mvn -B -q test"
 mvn -B -q test
 

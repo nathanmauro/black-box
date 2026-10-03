@@ -140,3 +140,27 @@ available; navigation must not shrink underneath adjacent controls. Keep the hea
 in sync so sticky panels and viewport-sized pages clear both rows. The source panel stays inside
 the viewport. `tests/e2e/mobile-header.spec.ts` verifies non-overlapping controls, viewport bounds,
 keyboard navigation, source-menu access, My turns, and command access at 320, 390, 768, and 1440px.
+
+## Browse payload disclosure
+
+Generic tool Input/Result sections over 1,200 characters mount on first disclosure. Their display
+preview replaces explicit data URLs and typed media/blob fields with MIME type and encoded-character
+counts while retaining surrounding text and metadata. An **Original input/result** disclosure opens
+the exact captured payload string. Traversal stops after 64 object/array levels with an explicit
+placeholder and note, keeping deeply nested valid JSON safe to preview. Small ordinary sections
+stay directly readable. This changes only
+presentation: canonical evidence and API responses remain unchanged, and no media is loaded or sent
+to a provider. Existing specialized presenters keep their own disclosure behavior.
+
+Native `details` controls support keyboard access. As with existing tool disclosures, opened content
+stays mounted after closing but is excluded from accessibility while closed. ReaderText instead
+renders an actual excerpt (at most 900 characters or 10 nonempty lines, plus an ellipsis) while
+collapsed, removes the remaining text from the DOM, and exposes accurate `aria-expanded` and
+`aria-controls` on its toggle. Expansion restores the exact captured text. Do not replace this with
+CSS-only clipping, hidden full-text attributes, or inferred binary detection for arbitrary strings.
+
+First-turn headers use the same excerpt logic with a 280-character/four-nonempty-line bound and
+an explicit Show all/Show less control linked to the text. One-line session and command labels use
+at most 160 characters plus an ellipsis. Filtering and title deduplication still use the full
+original turn, and opening the header restores that original exactly. CSS may tighten a bounded
+header preview visually, but must not leave the entire original behind the collapsed control.
