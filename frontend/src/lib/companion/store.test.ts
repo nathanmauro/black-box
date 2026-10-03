@@ -47,9 +47,14 @@ function fakeLive() {
   const [status, setStatus] = createSignal<LiveStatus>("connecting");
   const eventListeners = new Set<(event: EventAppended) => void>();
   const sessionListeners = new Set<(event: SessionUpdated) => void>();
+  const resetListeners = new Set<() => void>();
   const live: LiveStore = {
     status,
     events: () => [],
+    onReset: (callback) => {
+      resetListeners.add(callback);
+      return () => resetListeners.delete(callback);
+    },
     onEventAppended: (callback) => {
       eventListeners.add(callback);
       return () => eventListeners.delete(callback);
@@ -62,6 +67,9 @@ function fakeLive() {
   return {
     live,
     setStatus,
+    reset: () => {
+      for (const listener of resetListeners) listener();
+    },
     emitEvent: (event: EventAppended) => {
       for (const listener of eventListeners) listener(event);
     },
@@ -128,6 +136,56 @@ async function settled<T>(read: () => T, predicate: (value: T) => boolean): Prom
 }
 
 describe("createCompanionStore", () => {
+  it("replaces restored-away evidence and rejects pre-reset asynchronous completions", async () => {
+    await createRoot(async (dispose) => {
+      const { live, setStatus, emitEvent, reset } = fakeLive();
+      let finishEvent!: (event: AgentEvent) => void;
+      let finishCatalog!: (projects: ProjectSummary[]) => void;
+      const d = deps({
+        getEvent: vi.fn(
+          () =>
+            new Promise<AgentEvent>((resolve) => {
+              finishEvent = resolve;
+            }),
+        ),
+      });
+      const store = createCompanionStore(live, d);
+      await settled(store.loading, (loading) => !loading);
+      setStatus("live");
+      vi.mocked(d.getProjects).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCatalog = resolve;
+          }),
+      );
+      const oldRefresh = store.refresh();
+      emitEvent({
+        id: "pending",
+        sessionId: "s1",
+        source: "claude",
+        eventType: "Handoff",
+        cwd: "/repo/a",
+        observedAt: iso(0),
+      });
+      vi.mocked(d.getProjects).mockResolvedValue([]);
+      vi.mocked(d.getSessions).mockResolvedValue([]);
+      vi.mocked(d.getEventFeed).mockResolvedValue({ items: [] });
+      reset();
+      await settled(store.loading, (loading) => !loading);
+      expect(store.model().river).toEqual([]);
+      expect(store.model().projects).toEqual([]);
+      expect(store.model().lastEventAt).toBeNull();
+      finishEvent({ ...decision, id: "pending" });
+      finishCatalog([projectA]);
+      await oldRefresh;
+      await Promise.resolve();
+      expect(store.model().river).toEqual([]);
+      expect(store.model().projects).toEqual([]);
+      expect(store.model().lastEventAt).toBeNull();
+      dispose();
+    });
+  });
+
   it("loads projects, sessions and meaningful events into one model", async () => {
     await createRoot(async (dispose) => {
       const { live, setStatus } = fakeLive();

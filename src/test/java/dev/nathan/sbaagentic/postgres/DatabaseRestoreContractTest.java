@@ -53,6 +53,8 @@ class DatabaseRestoreContractTest {
             "project_aliases",
             "human_turn_state",
             "event_capture_receipts",
+            "event_stream_state",
+            "event_stream_positions",
             "decision_replacements",
             "event_judgments",
             "memory_embeddings",

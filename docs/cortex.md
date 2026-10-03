@@ -100,21 +100,13 @@ redirects, has no retries, and rejects the whole response if any expected answer
 - `/api/stream` emits `judgment.appended` with `{eventIds, sessionId, beatId, phase, salience,
   novelty, human, kin, judge, model, version, judgedAt}`.
 
-Stream v2 is additive: `event.appended` now includes `role`, `textPreview`, and `parentSessionId`;
-`session.updated` includes `spawnedBy` and `linkTypes`. `GET /api/stream?since=<ISO-8601>` replays
-`event.appended` frames oldest-first. `Last-Event-ID` resumes from the cursor
-`<observedAt>|<id>` exclusively, with fractional-second timestamps ordered chronologically.
-
-Each connection replays at most 2,000 events. If another page exists, `replay.more` carries the
-last delivered cursor and the connection closes before live delivery. Native `EventSource`
-reconnects with that last event ID; other consumers must resume explicitly. Live frames arriving
-during replay are buffered and event IDs already replayed are deduplicated. A 2,000-frame live
-buffer overflow emits `replay.reset` and closes; consumers should refresh their snapshot.
-
-Replay is a best-effort observed-time view, not a durable ingestion journal. An event ingested
-later with an observed timestamp behind the last cursor can be missed after reconnect. Judgment,
-session, and task frames are live-only. Consumers needing a complete current view must reconcile
-against the corresponding HTTP snapshot endpoints.
+`event.appended` includes `role`, `textPreview`, and `parentSessionId`;
+`session.updated` includes `spawnedBy` and `linkTypes`. Reconnect uses opaque durable append-order
+cursors, including for captures whose `observedAt` is old or tied. `stream.checkpoint` establishes
+an initial cursor and advances over filtered or deleted payloads. `replay.more` closes after a
+bounded page; `replay.reset` requires a canonical snapshot refresh. Session and judgment frames
+remain live-only. See [durable stream recovery](durable-stream-recovery.md) for compatibility,
+filtering, backup and reset requirements.
 
 Persisted `answers_json` includes normalized phase, salience, novelty, human, and kin (mapped to
 session IDs), alongside the raw provider answers. This preserves rule-derived values and context

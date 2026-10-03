@@ -239,6 +239,7 @@ export function createCompanionStore(
   }
 
   let catalogFetchedAt = Number.NEGATIVE_INFINITY;
+  let canonicalGeneration = 0;
 
   // New repos and worktrees join the catalog server-side; refetch it, at most once a minute, when
   // live activity names a cwd the cached catalog cannot resolve. Returns the in-flight fetch so a
@@ -248,9 +249,11 @@ export function createCompanionStore(
     const current = deps.now();
     if (current - catalogFetchedAt < CATALOG_REFRESH_MS) return Promise.resolve();
     catalogFetchedAt = current;
+    const generation = canonicalGeneration;
     return deps
       .getProjects()
       .then((next) => {
+        if (generation !== canonicalGeneration) return;
         setProjects(next);
       })
       .catch(() => {
@@ -274,6 +277,7 @@ export function createCompanionStore(
   }
 
   async function refresh(): Promise<void> {
+    const generation = canonicalGeneration;
     setLoading(true);
     catalogFetchedAt = deps.now();
     try {
@@ -282,6 +286,7 @@ export function createCompanionStore(
         deps.getSessions(250, true),
         deps.getEventFeed({ q: MEANINGFUL_QUERY, limit: 200 }),
       ]);
+      if (generation !== canonicalGeneration) return;
       batch(() => {
         setProjects(projectList);
         for (const session of sessionList) {
@@ -300,13 +305,29 @@ export function createCompanionStore(
         setError(null);
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (generation === canonicalGeneration)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setLoading(false);
+      if (generation === canonicalGeneration) setLoading(false);
     }
   }
 
+  const stopReset = live.onReset?.(() => {
+    // A restore/database change can remove evidence and rewind liveness. Discard the old
+    // canonical snapshot, including outstanding reads, before loading the replacement.
+    canonicalGeneration++;
+    catalogFetchedAt = Number.NEGATIVE_INFINITY;
+    batch(() => {
+      setProjects([]);
+      setSessions(new Map());
+      setEvents(new Map());
+      setLastEventAt(null);
+      setError(null);
+    });
+    void refresh();
+  });
   const stopEvents = live.onEventAppended((event: EventAppended) => {
+    const generation = canonicalGeneration;
     bumpLastEvent(event.observedAt);
     upsertSession({ id: event.sessionId, cwd: event.cwd ?? null, lastSeenAt: event.observedAt });
     const catalogReady = refreshCatalogFor(event.cwd);
@@ -314,9 +335,10 @@ export function createCompanionStore(
     // Wait for both: the full event body (retried) and any in-flight catalog refresh for its cwd,
     // so a brand-new worktree's first item is attributed to its real project, not Unassigned.
     void Promise.all([fetchEventWithRetry(event.id), catalogReady])
-      .then(([full]) =>
-        addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null }),
-      )
+      .then(([full]) => {
+        if (generation !== canonicalGeneration) return;
+        addEvent({ ...full, cwd: event.cwd ?? null, sessionTitle: event.title ?? null });
+      })
       .catch(() => {
         // Retries exhausted; the next full refresh (reconnect or reload) backfills this item.
       });
@@ -361,6 +383,7 @@ export function createCompanionStore(
   onCleanup(() => {
     stopEvents();
     stopSessions();
+    stopReset?.();
     clearInterval(timer);
   });
 

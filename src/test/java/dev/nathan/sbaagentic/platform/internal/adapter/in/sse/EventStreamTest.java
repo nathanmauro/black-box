@@ -3,8 +3,10 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import dev.nathan.sbaagentic.platform.internal.adapter.out.sqlite.StreamReplayRepository;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.StreamPositionStore;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -80,7 +82,11 @@ class EventStreamTest {
             assertThat(input.readLine()).isEmpty();
             // No ingestion or manual scheduler invocation: this is an actual idle HTTP socket.
             var nextLine = reader.submit(input::readLine);
-            assertThat(nextLine.get(20, TimeUnit.SECONDS)).isEqualTo(":heartbeat");
+            String next = nextLine.get(20, TimeUnit.SECONDS);
+            while (!":heartbeat".equals(next)) {
+                next = reader.submit(input::readLine).get(20, TimeUnit.SECONDS);
+            }
+            assertThat(next).isEqualTo(":heartbeat");
             assertThat(input.readLine()).isEmpty();
         } finally {
             // Close the underlying response first: BufferedReader.close waits on a blocked read lock.
@@ -167,10 +173,11 @@ class EventStreamTest {
                         .build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
-            String replay = readLines(in, 10);
+            String replay = readUntil(in, "\"id\":\"replay-event-2\"");
             assertThat(replay)
-                    .contains("id:2026-09-21T12:00:00Z|replay-event-1")
-                    .contains("id:2026-09-21T12:00:01Z|replay-event-2")
+                    .contains("id:v2|")
+                    .contains("replay-event-1")
+                    .contains("replay-event-2")
                     .contains("\"textPreview\":\"first\"")
                     .contains("\"textPreview\":\"second\"");
             assertThat(replay.indexOf("replay-event-1")).isLessThan(replay.indexOf("replay-event-2"));
@@ -189,17 +196,73 @@ class EventStreamTest {
         var response = client.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
                         .header("Accept", "text/event-stream")
-                        .header("Last-Event-ID", "2026-09-21T12:10:00Z|cursor-event-1")
+                        .header("Last-Event-ID", cursorFor("cursor-event-1"))
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofInputStream());
         try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
-            String replay = readLines(in, 6);
+            String replay = readUntil(in, "\"id\":\"cursor-event-2\"");
             assertThat(replay).doesNotContain("cursor-event-1");
             assertThat(replay).contains("cursor-event-2");
         } finally {
             response.body().close();
             client.shutdownNow();
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(20)
+    void disconnectBeforeFirstEventResumesLateAndTiedCapturesFromCheckpoint() throws Exception {
+        try (var client = HttpClient.newHttpClient()) {
+            var first = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            String checkpoint;
+            try (var input = new BufferedReader(new InputStreamReader(first.body(), StandardCharsets.UTF_8))) {
+                String opening = readUntil(input, "event:stream.checkpoint");
+                checkpoint = opening.lines()
+                        .filter(line -> line.startsWith("id:"))
+                        .findFirst()
+                        .orElseThrow()
+                        .substring(3);
+            }
+            String session = "disconnect-" + java.util.UUID.randomUUID();
+            var request = new EventIngestRequest(
+                    "codex",
+                    session,
+                    null,
+                    "Observation",
+                    "assistant",
+                    "late replay fixture",
+                    "/fixture",
+                    null,
+                    null,
+                    null,
+                    Map.of(),
+                    Instant.parse("2000-01-01T00:00:00Z"));
+            var a = ingestService.ingest(request);
+            var b = ingestService.ingest(request);
+            var second = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                            .header("Last-Event-ID", checkpoint)
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            try (var input = new BufferedReader(new InputStreamReader(second.body(), StandardCharsets.UTF_8))) {
+                String replay = readUntil(input, "\"id\":\"" + b.eventId() + "\"");
+                assertThat(replay).contains(a.eventId(), b.eventId());
+                assertThat(replay.indexOf(a.eventId())).isLessThan(replay.indexOf(b.eventId()));
+            }
+            var invalid = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                            .header("Last-Event-ID", "2000-01-01T00:00:00Z|legacy")
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(invalid.statusCode()).isEqualTo(200);
+            assertThat(invalid.body()).contains("event:replay.reset", "id:v2|");
         }
     }
 
@@ -218,18 +281,28 @@ class EventStreamTest {
                 )
                 VALUES (?, ?, 'codex', ?, 'Decision', 'assistant', ?, ?)
                 """, eventId, sessionId, sessionId + "-client", text, observedAt);
+        StreamPositionStore.initialize(jdbcTemplate);
     }
 
-    private static String readLines(BufferedReader in, int maxLines) throws Exception {
-        StringBuilder out = new StringBuilder();
-        for (int i = 0; i < maxLines; i++) {
-            String line = in.readLine();
-            if (line == null) {
-                break;
-            }
-            out.append(line).append('\n');
-        }
+    private String cursorFor(String id) {
+        var repository = new StreamReplayRepository(jdbcTemplate);
 
-        return out.toString();
+        return repository.page(repository.start(null, Instant.EPOCH).cursor(), null, 2000).entries().stream()
+                .filter(entry -> entry.event() != null && entry.event().id().equals(id))
+                .findFirst()
+                .orElseThrow()
+                .cursor();
+    }
+
+    private static String readUntil(BufferedReader in, String marker) throws Exception {
+        StringBuilder out = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) {
+            out.append(line).append('\n');
+            if (line.contains(marker))
+
+                return out.toString();
+        }
+        throw new AssertionError("Missing SSE marker: " + marker);
     }
 }

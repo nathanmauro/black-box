@@ -221,6 +221,7 @@ for new events.
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |
 | `agent_events` | recording | Canonical captured events, including structured Decisions, Handoffs, Observations, Projections, and Ideas |
+| `event_stream_state`, `event_stream_positions` | recording | Transactionally serialized append cursor, database generation and retained event-ID anchors for [durable SSE recovery](durable-stream-recovery.md) |
 | `memory_embeddings` | memory | Canonical float32 vectors for structured intent and session summaries; sqlite-vec is only an optional accelerator rebuilt from this table |
 | `session_links` | lineage | Explicit session relationships used by Browse, session DAGs, and Orbit |
 | `project_aliases` | project | Reversible logical-project grouping over recorded working directories |

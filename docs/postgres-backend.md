@@ -66,7 +66,10 @@ loopback defaults; this cloud-only guard does not change local operation.
   substring matching differ; free-text facet counts report unavailable without the native index.
 - Optional semantic recall uses Java cosine ranking over the canonical embedding table. No pgvector
   extension is required. This is a correctness baseline, not a claim of large-corpus vector speed.
-- Use one API replica initially. In-process alias coordination and SSE delivery remain unchanged.
+- Use one API replica initially. In-process alias coordination and SSE ownership still require it.
+- Durable stream positions use a short singleton-row write lock in each capture transaction.
+  This serializes append commit order across sessions; a receipt replay adds no position. See
+  [stream recovery](durable-stream-recovery.md) for migration and cursor compatibility.
   Adding PostgreSQL alone does not provide multi-replica safety.
 - Transcript-file hydration, editor integration, and export paths remain server-local. The profile
   does not upload transcript files or migrate machine configuration.
