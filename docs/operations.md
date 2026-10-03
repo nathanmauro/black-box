@@ -28,6 +28,28 @@ an event, summary commands use the configured summary backend and persist result
 `embeddings-backfill --apply` generates and writes missing embeddings. The help-only guarantee
 does not make those operations read-only or disable their configured providers.
 
+A normal command closes its application context and exits after its synchronous operation finishes.
+A command failure still exits nonzero. Successful `ingest` confirms canonical capture; optional
+background terminal summaries and judgments can be interrupted during shutdown. Run `summarize`
+or `summarize-missing` explicitly when you need to wait for the summary operation and its stored
+result. No-command HTTP service mode stays running until shutdown.
+
+## CLI capture input
+
+`ingest --text='note'` uses that value without reading stdin. An explicit empty or whitespace-only
+value is also authoritative; use `--text=''` for a metadata-only capture. A bare `--text` without a
+value is an error.
+
+Without `--text`, piped, redirected or headless stdin is read through EOF, so a slow producer can
+finish sending the capture before it is acknowledged. Input must be valid UTF-8 and at most 1 MiB
+(1,048,576 bytes). Oversized input, malformed UTF-8 or a read error fails before any event is saved;
+empty EOF permits a no-text capture. Accepted input still follows the configured canonical
+redaction and text-length limits, so the input byte cap does not promise that all text is retained.
+
+An attached Java console is not read, preserving nonwaiting metadata-only capture. Java can report
+no console when stdout is redirected even if stdin is still a terminal; that case waits for EOF
+unless `--text` is supplied. A pipe that never closes likewise waits for its producer to finish.
+
 ## Run as a service
 
 ### macOS launchd
