@@ -45,6 +45,16 @@ required fields return an MCP tool error naming the field and do not write an ev
 named field before retrying. Optional handoff fields such as recipient, open loops, and next action
 retain their existing behavior.
 
+A successful capture acknowledgement identifies the event committed to the canonical database.
+Failures while publishing optional downstream notifications are logged without turning that commit
+into an HTTP or MCP tool error. Terminal captures attempt their session-stop notification even if
+publishing the event notification fails. Validation and database failures still return errors.
+
+Structured capture endpoints and MCP capture tools remain append-only: a genuinely lost network
+response does not make a retry safe, and repeating the request can create another event. Clients
+that need receipt-based retries can use `POST /api/events/idempotent` with a stable `captureId` and
+unchanged event body; see [Idempotent event capture](idempotent-capture.md).
+
 ### Ideas
 
 An `Idea` records something someone proposed that nobody is acting on now: the human's aside or an
