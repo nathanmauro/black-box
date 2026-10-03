@@ -36,6 +36,14 @@ result. No-command HTTP service mode stays running until shutdown.
 
 ## CLI capture input
 
+Use equals-form options, for example `ingest --session=review --text='Keep the existing schema'`.
+Ingest rejects extra positional arguments, including a value separated from its option by a space.
+A present capture option must have a value (`--name=value`); a bare `--session` or `--tool` is an
+error instead of selecting a default. Source, session and type must be nonblank when supplied.
+These argument errors fail before stdin is read or a capture is persisted. Omitted options retain
+their defaults, optional fields may still be explicitly empty, and Spring configuration options
+remain supported. Other commands keep their existing argument syntax.
+
 `ingest --text='note'` uses that value without reading stdin. An explicit empty or whitespace-only
 value is also authoritative; use `--text=''` for a metadata-only capture. A bare `--text` without a
 value is an error.
