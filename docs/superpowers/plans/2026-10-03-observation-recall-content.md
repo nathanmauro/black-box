@@ -53,3 +53,11 @@ MCP/copy character bounds count UTF-16 units and preserve surrogate pairs when c
 Codex handoff: dirty verified unit on `codex/observation-recall-content`; source, focused regressions,
 contract fixture, docs and generated assets only. No Git commit, publication, live capture or provider
 call was made. The coordinator's next action is final review and integration onto current main.
+
+## Combined acceptance
+
+The coordinator integrated main through PR60 and regenerated the combined assets. All 667
+frontend tests and check/build gates passed. Ten packaged Chromium journeys passed: Observation
+read/copy/source navigation and project continuity at desktop/narrow widths, plus all six native
+Stream recovery paths. Fixture storage and the port 8799 listener were cleaned; the protected
+local service PID stayed unchanged. No deployment was performed.
