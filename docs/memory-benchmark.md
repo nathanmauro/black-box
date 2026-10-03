@@ -466,8 +466,9 @@ single-process demonstration, not a deployed tool or anti-tamper sandbox; a futu
 hold the one session and prevent restart or alternate history access. It is not wired into
 `benchmark.py`, `continuation.py` or any model loop, changes no arm, budget or gate, and is
 infrastructure evidence only. The compact adapter below now supplies the same envelope from
-Black Box canonical search. An authentic corpus builder, registration/adjudication and the
-difficulty and accepted-action studies remain outstanding.
+Black Box canonical search. A development snapshot-to-corpus builder exists (below), but no
+authentic corpus is staged; registration/adjudication and the difficulty and accepted-action
+studies remain outstanding.
 
 The session now delivers through a small backend seam. A golden trace pins literal delivery bytes
 to the pre-seam code. The original compact endpoint could not satisfy that seam
@@ -497,3 +498,35 @@ passed 26 fresh server runs and 10 pre-launch rejection checks. Every repeated b
 delivery bytes; exact metadata/text/timestamp readback, exhaustive search, query and delivery limits,
 and owned cleanup passed. The integrated Python 3.9 suite passed all 185 tests. This is synthetic
 development infrastructure evidence; no model comparison or NAT-7 gate has been cleared.
+
+### Frozen snapshot corpus builder (development)
+
+`history_corpus_build.py` converts one hash-pinned standalone Black Box SQLite snapshot into the
+unchanged frozen-corpus manifest and items file that both adapters load. Dry run is the default and
+never reads the snapshot. `--execute` copies and hashes the snapshot into private staging, opens
+only that copy read-only, and exports canonical event text for an explicit project label, an
+internal-session allowlist and an inclusive cutoff, minus declared exclusions. Tool payloads,
+metadata and `recorded_at` are omitted. Event availability before the cutoff is reported as
+unverified: a snapshot hash does not prove chronology. The full mapping, scope, validation order
+and limits are in the [protocol](continuation-comparison-protocol.md#frozen-snapshot-corpus-builder).
+
+```bash
+# Synthetic snapshots through the real backup CLI; no live history, services or providers.
+python3 -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_history_corpus_build.py' -v
+
+# Example paths. Snapshot first, then plan (dry run), then build, then validate with the literal adapter.
+python3 scripts/storage/blackbox_backup.py sqlite --source /abs/synthetic.db --output /abs/snap.sqlite --execute
+python3 scripts/benchmarks/blackbox_memory/history_corpus_build.py --snapshot /abs/snap.sqlite \
+  --snapshot-sha256 SNAP_SHA --corpus-id example --project /repos/example --session SESSION_ID \
+  --cutoff 2026-09-30T00:00:00Z --exclusions /abs/exclusions.json --output /abs/corpus [--execute]
+python3 scripts/benchmarks/blackbox_memory/history_search.py validate \
+  --manifest /abs/corpus/manifest.json --manifest-sha256 MANIFEST_SHA
+```
+
+No development inventory history is staged; every inventory member remains `not_staged`. This is
+offline development tooling with synthetic evidence only, not a coverage or efficacy result.
+
+Independent acceptance passed the integrated Python 3.9 suite (239 tests) and generated 13-item
+and 12-item synthetic corpora consumed by both adapters. Four fresh packaged-server runs verified
+50 stored rows and repeatable delivery bytes, then removed their owned processes and storage.
+See the [qualification report](evaluation-results/2026-10-03-frozen-corpus-builder-qualification.json).

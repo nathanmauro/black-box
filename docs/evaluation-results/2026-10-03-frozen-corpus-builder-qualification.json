@@ -1,0 +1,60 @@
+{
+  "schema": "blackbox.frozen-corpus-builder-qualification/v1",
+  "date": "2026-10-03",
+  "issue": "NAT-325",
+  "scope": "Synthetic standalone SQLite snapshots through the builder and both existing adapters; no authentic history or model comparison.",
+  "python": "3.9.6",
+  "integrated_tests": 239,
+  "builder_tests": 37,
+  "builder_source_sha256": "131c92bde0102b58e7f10c9c4e002e7c25bc7ddd512f1afa5a5ed5d62b53f8d8",
+  "builder_tests_sha256": "efaba9b72296df0dba2a0fe429d29fa24ddaeffe2e4d5c93dd2a667cf28005a9",
+  "builder_tree_sha256": "8f71f2bdf4ffeab8da4e2e894a924b980cc9b33fe2fab94cd0d1464928068806",
+  "adapter_tree_sha256": "5eca5b9001ee90fd151793a29c1e10b3efadfd39c8d66be7cd012f62f03410ad",
+  "jar_sha256": "5a9423e855827a21100947e01401f34f20e5505e6322cf5cc700f3b65c3bfd1e",
+  "jar_source_revision": "9e350c474b7cd463f2f4033d186d7f2e745d92e6",
+  "fixture_pin_sha256": "bc9a3c2fc9cc3d3f263483ba2b368fe67fcaff6e1ad3b3ee80f01f1f94eb416b",
+  "builder_runner_sha256": "51970cc910f5fdacc13e6bd79f336ce7ac14973423bd1da848aab6ef97079c32",
+  "compact_runner_sha256": "a4a3bdcd03f72397eef374970e29c117f9c1ebe427f11a341b0ec03f0f230045",
+  "builder": {
+    "primary_items": 13,
+    "explicit_additional_exclusion_items": 12,
+    "repeat_bytes_identical": true,
+    "dry_run_reads_snapshot": false,
+    "rejected_cases": [
+      "existing output",
+      "NULL text without exclusion",
+      "malformed selected timestamp",
+      "missing events table",
+      "snapshot hash mismatch",
+      "unknown session",
+      "unmatched exclusion"
+    ],
+    "input_files_and_entries_unchanged": true,
+    "partial_outputs_or_staging_remaining": false,
+    "primary_manifest_sha256": "3cc4e23dadcf407f3df3a7be79d161da408ad32e0b2a8e66e6a56bb75ecada60",
+    "additional_exclusion_manifest_sha256": "5cf6f68b0f1f5f85d5e4c83e9902e61e610461e6daccd831adc27aa9df93a647"
+  },
+  "literal": {
+    "searches": 6,
+    "delivered_bytes": 6310
+  },
+  "compact": {
+    "fresh_servers": 4,
+    "exact_readback_rows": 50,
+    "canonical_pages": 24,
+    "deliveries": 28,
+    "delivered_bytes": 26576,
+    "repeat_stdout_identical": true,
+    "metadata_and_text_verified": true,
+    "synthetic_secret_preserved_with_redaction_disabled": true,
+    "owned_processes_reaped": true,
+    "private_runtime_removed": true,
+    "installed_listener_unchanged": true
+  },
+  "limits": [
+    "Synthetic infrastructure evidence only. Development inventory history remains not_staged.",
+    "Availability before the cutoff is unverified; recorded_at is absent.",
+    "No model efficacy, difficulty or accepted-action gate is cleared.",
+    "Ordinary cleanup failures are reported; abrupt process death can leave private staging or partial output."
+  ]
+}
