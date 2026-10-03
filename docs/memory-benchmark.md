@@ -435,10 +435,35 @@ historical availability; chronology remains a registration requirement. The CLI 
 single-process demonstration, not a deployed tool or anti-tamper sandbox; a future runner must
 hold the one session and prevent restart or alternate history access. It is not wired into
 `benchmark.py`, `continuation.py` or any model loop, changes no arm, budget or gate, and is
-infrastructure evidence only. The Black Box backend for the same envelope, an authentic corpus
-builder, registration/adjudication and the difficulty and accepted-action studies remain outstanding.
+infrastructure evidence only. The compact adapter below now supplies the same envelope from
+Black Box canonical search. An authentic corpus builder, registration/adjudication and the
+difficulty and accepted-action studies remain outstanding.
 
 The session now delivers through a small backend seam. A golden trace pins literal delivery bytes
-to the pre-seam code. A compact-search backend over `/api/search/compact` was assessed and not
-built. Complete match traversal, exact totals beyond the candidate ceiling, deterministic replay
-ties and arbitrary literal `"`, `%` and `_` terms are unavailable from that endpoint. See the [blocker](continuation-comparison-protocol.md#backend-seam-and-the-compact-search-blocker).
+to the pre-seam code. The original compact endpoint could not satisfy that seam
+([blocker](continuation-comparison-protocol.md#backend-seam-and-the-compact-search-blocker)).
+
+### Compact canonical adapter (development)
+
+`compact_history_search.py` serves the same session, stream loop and budgets from the canonical
+`GET /api/search/compact?mode=canonical` page API. `compact_server.py` launches an explicitly
+supplied, hash-pinned packaged JAR with an explicit Java 21 inside a private temporary root,
+captures the frozen corpus, and proves the stored rows match it before the handoff.
+`compact_backend.py` pages through every match and fails closed on any doubt. The full contract,
+its differences from `literal-v1`, and limitations are in the
+[protocol](continuation-comparison-protocol.md#compact-canonical-adapter).
+
+```bash
+# Fake-API and fake-process contracts: real loopback, SQLite, lsof/ps and process groups; no JVM.
+python3 -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_compact_*.py' -v
+
+# One private session over a trusted packaged JAR (root-run acceptance; never a shared server).
+python3 scripts/benchmarks/blackbox_memory/compact_history_search.py serve \
+  --manifest M --manifest-sha256 SHA --jar /abs/app.jar --jar-sha256 JAR_SHA --java /abs/bin/java
+```
+
+Independent [packaged-JAR qualification](evaluation-results/2026-10-03-compact-corpus-qualification.json)
+passed 26 fresh server runs and 10 pre-launch rejection checks. Every repeated batch had identical
+delivery bytes; exact metadata/text/timestamp readback, exhaustive search, query and delivery limits,
+and owned cleanup passed. The integrated Python 3.9 suite passed all 185 tests. This is synthetic
+development infrastructure evidence; no model comparison or NAT-7 gate has been cleared.

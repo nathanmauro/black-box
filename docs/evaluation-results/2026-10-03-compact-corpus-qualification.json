@@ -1,0 +1,439 @@
+{
+  "schema_version": 1,
+  "qualification": "passed",
+  "evidence": "infrastructure_only",
+  "usefulness_gate": "not_cleared",
+  "model_runs": 0,
+  "accepted_actions": 0,
+  "corpus": "synthetic development controls; no historical task corpus",
+  "runtime": {
+    "platform": "Darwin",
+    "architecture": "arm64",
+    "python": "3.9.6",
+    "java_major": 21
+  },
+  "jar_source_commit": "9e350c474b7cd463f2f4033d186d7f2e745d92e6",
+  "jar_sha256": "5a9423e855827a21100947e01401f34f20e5505e6322cf5cc700f3b65c3bfd1e",
+  "adapter_source_hashes": {
+    "compact_history_search.py": "1ec020f7a43e017346da57be22453c5d0f205094f77861d8adfa08addc09c32f",
+    "compact_server.py": "5b2d2403e19e9075003698c3229e42fb7bd48f165515bdc7ed5196fbd336eb0e",
+    "compact_backend.py": "8f2a1d25875bce99d5ab4fe9e25f76bc43726244f26d78053708a2860fe3445a",
+    "history_search.py": "560a77760223dce51d3450d89141879e9c507abf4dc19def5242901e3c7d25ae"
+  },
+  "adapter_source_tree_sha256": "5eca5b9001ee90fd151793a29c1e10b3efadfd39c8d66be7cd012f62f03410ad",
+  "input_hash_list_sha256": "f1ef99901d3fe4f00879be154f5691e0ca0485571a819a29c1474ad64ce2ebcf",
+  "primary_manifest_sha256": "15205d1410e5ba7c3e2d9914001443c2c6dec8a92cc3443587b191afce266183",
+  "low_cutoff_manifest_sha256": "079434978828bf9301ffe33a5677433540b06f45223a3a6e8544351ce36f0ed0",
+  "primary_items": 266,
+  "low_cutoff_items": 2,
+  "fresh_server_runs": 26,
+  "prelaunch_rejection_runs": 10,
+  "exact_readback_rows_across_runs": 6388,
+  "canonical_pages_across_runs": 160,
+  "model_facing_bytes_across_runs": 171846,
+  "fresh_run_byte_repeatability": "verified for all 18 batches",
+  "owned_process_and_storage_cleanup": "verified after every run",
+  "limits": {
+    "searches": 6,
+    "delivery_bytes": 6000,
+    "total_bytes": 24000
+  },
+  "unit_tests": {
+    "python": "3.9",
+    "passed": 185,
+    "failures": 0,
+    "errors": 0
+  },
+  "checks": [
+    {
+      "batch": "01-scale",
+      "runs": 2,
+      "stdout_sha256": "a0821e59046192de140974ec2cb132354980ea349b823d939bbb4091cc96fd87",
+      "delivered_bytes_per_run": 18078,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 266,
+          "pages": 6,
+          "terms": 1
+        },
+        {
+          "matches": 80,
+          "pages": 2,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "02-literal",
+      "runs": 2,
+      "stdout_sha256": "c6739e3acf33b6b79cc31af8df50c873a997c4f51fcfa8b0fc7876338a700518",
+      "delivered_bytes_per_run": 3056,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "03-json-source-ref",
+      "runs": 2,
+      "stdout_sha256": "e6cee6014c276b1dfe59a5fcba872d9e21748b61ac1d7e3aa2c2d277f331e837",
+      "delivered_bytes_per_run": 3099,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "04-unicode",
+      "runs": 2,
+      "stdout_sha256": "60c16a33869b316316475194b6a9d04efc981ac14862d35a4c44c865120babd9",
+      "delivered_bytes_per_run": 3387,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 2,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "05-body-boundaries",
+      "runs": 2,
+      "stdout_sha256": "eb354b7f321e9ab8068ef3d7f44f5bbaf17a59ce8bb2f3bfd6a658b65d92645f",
+      "delivered_bytes_per_run": 3559,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 2,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "06-time-and-numbers",
+      "runs": 2,
+      "stdout_sha256": "1ceedce299b89f6cbe8740cc2670b41081e88f47036ca8aff79be2f51462e39e",
+      "delivered_bytes_per_run": 4064,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 2,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 2,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "07-query-boundaries",
+      "runs": 2,
+      "stdout_sha256": "8ae1d617ec9a884e793934000b680ab2591c6040d7806c5791bdf08f18d42516",
+      "delivered_bytes_per_run": 6397,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 16
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "08-domain-and-redaction",
+      "runs": 2,
+      "stdout_sha256": "65765702feaf1d19f974f411290dd9f567130e27eb14e84cff8625665e215f7c",
+      "delivered_bytes_per_run": 4712,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 16
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "09-empty-query-controls",
+      "runs": 2,
+      "stdout_sha256": "ca2a1308e27c04696ea233cfec9965007f93b754980fb885e68c550ac35bfcd6",
+      "delivered_bytes_per_run": 2449,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "10-delivery-budget",
+      "runs": 2,
+      "stdout_sha256": "c5f0a4e6fa238eba9d608615bb936c6ccb59a2bc6ed418e28592f79e7efc9e57",
+      "delivered_bytes_per_run": 23860,
+      "search_attempts_per_run": 6,
+      "close_reason": "byte_budget",
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        },
+        {
+          "matches": 240,
+          "pages": 5,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "11-attempt-budget",
+      "runs": 2,
+      "stdout_sha256": "f2159c84fd95b086512b228191f2278120471ecf692dcec83b242c55eabd197b",
+      "delivered_bytes_per_run": 3385,
+      "search_attempts_per_run": 6,
+      "close_reason": "attempt_limit",
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 0,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "12-path-punctuation",
+      "runs": 2,
+      "stdout_sha256": "a3d09d855deb3e5e27ac679aebc84e1cc96a8743ae3c389910902ed4b08d45bb",
+      "delivered_bytes_per_run": 8319,
+      "search_attempts_per_run": 3,
+      "close_reason": null,
+      "metadata_sha256": "291c20a1553c67f19a2e89618dddc02a2f99b9666e684195f79359866f95a16f",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 1,
+          "pages": 1,
+          "terms": 1
+        },
+        {
+          "matches": 266,
+          "pages": 6,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "low-cutoff",
+      "runs": 2,
+      "stdout_sha256": "eecb5c8a4e9e5c714cdd009bcad75bb2dc375eb2900fa754c37817e6de026954",
+      "delivered_bytes_per_run": 1558,
+      "search_attempts_per_run": 1,
+      "close_reason": null,
+      "metadata_sha256": "86d504496e601b31020bee567a05f41b95229f7764870416120f20ec796e8175",
+      "canonical_traversals_per_run": [
+        {
+          "matches": 2,
+          "pages": 1,
+          "terms": 1
+        }
+      ]
+    },
+    {
+      "batch": "reject-project",
+      "runs": 2,
+      "loader_rejection": "out_of_scope",
+      "server_launched": false,
+      "stdout_bytes": 0
+    },
+    {
+      "batch": "reject-session",
+      "runs": 2,
+      "loader_rejection": "out_of_scope",
+      "server_launched": false,
+      "stdout_bytes": 0
+    },
+    {
+      "batch": "reject-exclusion",
+      "runs": 2,
+      "loader_rejection": "excluded_item_present",
+      "server_launched": false,
+      "stdout_bytes": 0
+    },
+    {
+      "batch": "reject-observed-cutoff",
+      "runs": 2,
+      "loader_rejection": "after_cutoff",
+      "server_launched": false,
+      "stdout_bytes": 0
+    },
+    {
+      "batch": "reject-recorded-cutoff",
+      "runs": 2,
+      "loader_rejection": "after_cutoff",
+      "server_launched": false,
+      "stdout_bytes": 0
+    }
+  ],
+  "limitations": [
+    "Synthetic development qualification only; no model continuation or usefulness result.",
+    "macOS execution only; no Linux real-JAR qualification.",
+    "Process identity requires lsof/ps and an open SQLite file; controller SIGKILL may orphan its child.",
+    "Native case-sensitive AND over text/stored metadata differs from literal-v1 casefold/OR.",
+    "NUL and boundary evidence applies to the pinned JAR and tested runtime; fidelity/completeness failures invalidate a pair."
+  ]
+}

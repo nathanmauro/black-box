@@ -572,8 +572,11 @@ def serve(args, stdin, stdout, stderr):
     except CorpusError as error:
         _host(stderr, {"controller_error": {"code": error.code, "message": error.message}})
         return 2
-    session = Session(corpus)
+    return stream(Session(corpus), stdin, stdout, stderr)
 
+
+def stream(session, stdin, stdout, stderr):
+    """Shared JSONL loop: emit the handoff, answer bounded request lines, then host accounting."""
     def emit(payload):
         if payload:
             stdout.write(payload)
