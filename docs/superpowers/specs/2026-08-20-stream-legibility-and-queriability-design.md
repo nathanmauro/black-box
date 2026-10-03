@@ -495,7 +495,8 @@ prefix-matching for `session:` (follow-up if exact-match friction shows up).
   ActivityPage.test.tsx and SessionsPage.test.tsx touch sourceFilter and are updated with it.
 - **Kind-mark demotion may overshoot** — judged in live use after the ink slice; the mark
   vocabulary keeps tools distinguishable by text.
-- **Any `mvn package` overwrites the live jar** — `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic` after builds.
+- **Build isolation:** package and run E2E in a checkout whose JAR is not used by a live service.
+  Test completion does not require deployment or a service restart; follow [Operations](../../operations.md#run-as-a-service) for separately authorized deployment.
 - **New route must be whitelisted** in SpaForwardingController.java:15 or hard-refresh 404s.
 
 ## 14. Testing by layer

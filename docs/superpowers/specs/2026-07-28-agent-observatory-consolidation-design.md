@@ -454,9 +454,9 @@ mode, **not** silent truncation of bodies.
 
 ## 10. Risks and gotchas (carried from `NEXT.md`)
 
-- **Jar swap kills the live service.** Any `mvn package` — *including the Playwright `webServer`* —
-  overwrites the jar the launchd `:8766` service runs from, causing 500s. Run
-  `scripts/deploy-local.sh`, then `launchctl kickstart -k` if 500s persist.
+- **Never replace a JAR underneath a running service.** Package and run Playwright in an
+  isolated checkout. Finish tests by stopping their disposable server; do not restart the
+  installed service. Separately authorized deployment follows [Operations](../../operations.md#run-as-a-service).
 - **Never `git add -A`** except the scoped `git add -A src/main/resources/static` after a bundle
   rebuild. Built assets are committed.
 - **Module import ratchet:** `memory → {project, recording}`; `memory` must never import `ask`.
@@ -546,4 +546,4 @@ same page files twice.
 7. Nav is five real routes; `/stats` and `/overview` are gone; `/graph` is parked with a comment;
    Ask and Recall are one `/memory` surface.
 8. The §9 performance budget is met, with before/after numbers recorded.
-9. Full gate green; live `:8766` service healthy after `scripts/deploy-local.sh`.
+9. Full gate green against the isolated fixture. If a separate live deployment is authorized, verify the exact installed process and readiness through [Operations](../../operations.md#run-as-a-service).
