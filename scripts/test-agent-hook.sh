@@ -237,6 +237,46 @@ if [[ "$(jq -r '.clientSessionId' "$CAPTURE")" != "parent-abc" ]]; then
   exit 1
 fi
 
+# Both normalization paths project explicit provenance; legacy rawHook remains unchanged.
+assert_transcript_locator() {
+  local label="$1" payload="$2" expected="$3" client="$4"
+  assert_event "$label" "$payload" "assistant" "$(printf '%s' "$payload" | jq -r '.hook_event_name')"
+  if ! jq -e --arg path "$expected" --arg client "$client" --argjson raw "$payload" '
+    .clientSessionId == $client and .metadata.rawHook == $raw and
+    (if $path == "" then (.metadata | has("transcript_path") | not)
+     else .metadata.transcript_path == $path end)' "$CAPTURE" >/dev/null; then
+    echo "$label: transcript projection or raw hook changed unexpectedly" >&2
+    exit 1
+  fi
+}
+assert_transcript_locator "main transcript snake wins" \
+  '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":"/fixture/snake.jsonl","transcriptPath":"/fixture/camel.jsonl"}' \
+  "/fixture/snake.jsonl" "parent"
+assert_transcript_locator "blank snake falls back without trimming path" \
+  '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":"  ","transcriptPath":" /fixture/space name.jsonl "}' \
+  " /fixture/space name.jsonl " "parent"
+assert_transcript_locator "nonstring snake falls back" \
+  '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":7,"transcriptPath":"/fixture/camel.jsonl"}' \
+  "/fixture/camel.jsonl" "parent"
+assert_transcript_locator "child uses explicit child path only" \
+  '{"session_id":"parent","hook_event_name":"SubagentStop","agent_id":"child","message":"answer","transcript_path":"/fixture/parent.jsonl","agent_transcript_path":"/fixture/child.jsonl"}' \
+  "/fixture/child.jsonl" "parent:child"
+assert_transcript_locator "child never inherits parent locator" \
+  '{"session_id":"parent","hook_event_name":"SubagentStop","agent_id":"child","message":"answer","transcript_path":"/fixture/parent.jsonl"}' \
+  "" "parent:child"
+assert_transcript_locator "child camel fallback" \
+  '{"session_id":"parent","hook_event_name":"subagent_stop","agentId":"child","message":"answer","agent_transcript_path":false,"agentTranscriptPath":"/fixture/camel-child.jsonl"}' \
+  "/fixture/camel-child.jsonl" "parent:child"
+assert_transcript_locator "no child identity keeps parent path" \
+  '{"session_id":"parent","hook_event_name":"SubagentStop","message":"answer","transcript_path":"/fixture/parent.jsonl","agent_transcript_path":"/fixture/child.jsonl"}' \
+  "/fixture/parent.jsonl" "parent"
+assert_transcript_locator "NUL locator omitted without camel retarget" \
+  '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":"/fixture/nu\u0000l.jsonl","transcriptPath":"/fixture/camel.jsonl"}' \
+  "" "parent"
+assert_transcript_locator "legacy leaves privacy filtering to ingestion" \
+  '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":"/fixture/password=fake-sentinel/session.jsonl"}' \
+  "/fixture/password=fake-sentinel/session.jsonl" "parent"
+
 # Never-fail contract: real curl on PATH, recorder unreachable -> still exit 0.
 set +e
 printf '%s' '{"hook_event_name":"SubagentStop","session_id":"p","agent_id":"a","agent_type":"Explore","last_assistant_message":"done"}' |
