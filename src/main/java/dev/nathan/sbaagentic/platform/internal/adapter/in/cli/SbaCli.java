@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.platform.CliCommands;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -48,6 +49,12 @@ public class SbaCli implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
+        String help = CliCommands.helpFor(args.getSourceArgs());
+        if (help != null) {
+            System.out.print(help);
+
+            return;
+        }
         List<String> positional = args.getNonOptionArgs();
         if (positional.isEmpty()) {
 
@@ -126,16 +133,7 @@ public class SbaCli implements ApplicationRunner {
     }
 
     private void usage() {
-        System.out.println("""
-                Usage:
-                  sba-agentic doctor
-                  sba-agentic sessions [--limit=25]
-                  sba-agentic search <query> [--limit=25]
-                  sba-agentic ingest --source=manual --session=my-session --type=ManualCapture --text='note'
-                  sba-agentic embeddings-backfill [--apply] [--batch-size=100] [--progress-every=250]
-                  sba-agentic summarize <session-id>
-                  sba-agentic summarize-missing [--limit=10]
-                """);
+        System.out.print(CliCommands.usage());
     }
 
     private void writeJson(Object value) throws IOException {
