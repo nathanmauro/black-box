@@ -108,6 +108,55 @@ describe("CompanionPage", () => {
     expect(chipAfterCollapse).toHaveFocus();
   });
 
+  it("opens Recall for the project's canonical key and keeps Escape inside the recall field", async () => {
+    window.localStorage.clear();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    try {
+      render(() => (
+        <LiveStoreContext.Provider value={fakeLive()}>
+          <CompanionPage />
+        </LiveStoreContext.Provider>
+      ));
+      fireEvent.click(await screen.findByRole("button", { name: /Black Box companion/ }));
+      fireEvent.click(await screen.findByRole("button", { name: /^a: 1 live/ }));
+      const field = await screen.findByRole("textbox", { name: "Recall in a" });
+      fireEvent.input(field, { target: { value: "why pick A?" } });
+      fireEvent.submit(field.closest("form")!);
+      // The card is keyed by projectKey; Recall gets the primary scope's canonical key.
+      expect(open).toHaveBeenLastCalledWith(
+        "/recall?project=%2Frepo%2Fa&query=why+pick+A%3F&run=1",
+        "_blank",
+        "noopener,noreferrer",
+      );
+
+      field.focus();
+      fireEvent.keyDown(field, { key: "Escape" });
+      expect(field).toHaveValue("");
+      fireEvent.keyDown(field, { key: "Escape" });
+      const back = screen.getByRole("button", { name: "Back to projects" });
+      expect(back).toHaveFocus();
+      expect(document.querySelector(".companion")).toHaveAttribute("data-mode", "expanded");
+
+      fireEvent.click(screen.getByRole("button", { name: "River" }));
+      const riverField = await screen.findByRole("textbox", { name: "Recall across projects" });
+      fireEvent.input(riverField, { target: { value: "pick" } });
+      fireEvent.submit(riverField.closest("form")!);
+      expect(open).toHaveBeenLastCalledWith(
+        "/recall?query=pick&run=1",
+        "_blank",
+        "noopener,noreferrer",
+      );
+
+      // Outside the field, Escape still steps down a level.
+      fireEvent.keyDown(window, { key: "Escape" });
+      await waitFor(() =>
+        expect(document.querySelector(".companion")).toHaveAttribute("data-mode", "compact"),
+      );
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it("renders chrome-less inside the app shell on /companion", async () => {
     window.localStorage.clear();
     render(() => (

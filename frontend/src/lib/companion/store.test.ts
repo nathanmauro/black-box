@@ -411,6 +411,21 @@ describe("createCompanionStore", () => {
     });
   });
 
+  it("maps the open view to RecallPage's project value", async () => {
+    await createRoot(async (dispose) => {
+      const { live } = fakeLive();
+      const store = createCompanionStore(live, deps());
+      await settled(store.loading, (loading) => !loading);
+      store.openProject("keyA");
+      expect(store.recallProject()).toBe("/repo/a");
+      store.openRiver();
+      expect(store.recallProject()).toBeNull();
+      store.openProject(UNASSIGNED_KEY);
+      expect(store.recallProject()).toBeNull();
+      dispose();
+    });
+  });
+
   it("marks items seen once loaded into a persisted expanded project view after relaunch", async () => {
     await createRoot(async (dispose) => {
       const storage = new MemoryStorage();

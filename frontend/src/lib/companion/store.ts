@@ -17,7 +17,7 @@ import {
   type EventFeedItem,
   type ProjectSummary,
 } from "../api";
-import { findProjectByIdentifier } from "../projects";
+import { findProjectByIdentifier, primaryProjectScope } from "../projects";
 import type { EventAppended, LiveStore, SessionUpdated } from "../sse";
 import { modeMessage, postToShell } from "./bridge";
 import {
@@ -32,6 +32,7 @@ import {
   type ExpandedViewState,
   type MeaningfulItem,
   type SessionLiveness,
+  UNASSIGNED_KEY,
 } from "./model";
 import { createSeenStore, safeStorage, type SeenStore } from "./seen";
 
@@ -54,6 +55,9 @@ export type CompanionStore = {
   model: Accessor<CompanionModel>;
   mode: Accessor<CompanionMode>;
   expanded: Accessor<ExpandedViewState>;
+  // The Recall page's project value for the open view: the primary scope's canonical key, which is
+  // what RecallPage's own picker stores. Null (all projects) for the river and Unassigned.
+  recallProject: Accessor<string | null>;
   loading: Accessor<boolean>;
   error: Accessor<string | null>;
   setMode(mode: CompanionMode): void;
@@ -155,6 +159,13 @@ export function createCompanionStore(
   const [lastProjectKey, setLastProjectKey] = createSignal<string | null>(
     persisted.expanded.kind === "project" ? persisted.expanded.projectKey : null,
   );
+
+  const recallProject = createMemo(() => {
+    const view = expanded();
+    if (view.kind !== "project" || view.projectKey === UNASSIGNED_KEY) return null;
+    const project = findProjectByIdentifier(projects(), view.projectKey);
+    return project ? primaryProjectScope(project).canonicalKey : view.projectKey;
+  });
 
   // Items only change with events, the catalog, seen-state, or the window; activity frames reuse them,
   // so rows keep their identity (and their DOM) while tool calls stream in.
@@ -490,6 +501,7 @@ export function createCompanionStore(
     model,
     mode,
     expanded,
+    recallProject,
     loading,
     error,
     setMode: setModeSignal,

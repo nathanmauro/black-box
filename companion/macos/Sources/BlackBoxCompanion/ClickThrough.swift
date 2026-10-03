@@ -82,6 +82,8 @@ final class ClickThrough {
             try await stepCompact()
             try await stepExpanded()
             try await stepDeepLink()
+            try await stepRecall()
+            try await stepRecallEscape()
             try await stepEscape()
             try await stepStatusTitle(label: "status-title-after")
             try stepNoManualSizeRecorded()
@@ -157,6 +159,67 @@ final class ClickThrough {
         guard stayed else { throw StepFailure(step: currentStep, reason: "panel navigated away to \(webView.url?.absoluteString ?? "nil")") }
         try await waitForMode("expanded")
         report("deep-link", "href=\(href) -> shell recorded \(url.absoluteString) (not opened); panel stayed on \(webView.url?.path ?? "?")")
+    }
+
+    /// Types a question into the expanded view's recall field with in-process key events and submits
+    /// it with Return, as a person would. The form opens a new browsing context, which the shell must
+    /// hand to its link handler as the exact Recall URL while the panel itself stays on /companion.
+    private func stepRecall() async throws {
+        currentStep = "recall"
+        try await waitForSelector(".companion-recall-input")
+        let typed = " C++ & #recall café ✓ "
+        // The store maps the open project (persisted under its projectKey) to the primary scope's
+        // canonical key; resolve that from the catalog independently of the page's own mapping.
+        let scope = await asyncJS("""
+            const view = (JSON.parse(localStorage.getItem('blackbox.companion.mode.v1') || '{}').expanded) || {};
+            if (view.kind !== 'project') return JSON.stringify({ kind: view.kind || '', canonical: '' });
+            const projects = await (await fetch('/api/projects')).json();
+            const project = projects.find((p) => p.projectKey === view.projectKey);
+            const primary = project ? ((project.scopes || []).find((s) => s.primary) || project) : null;
+            return JSON.stringify({ kind: 'project', projectKey: view.projectKey, canonical: primary ? primary.canonicalKey : '' });
+            """)
+        guard let data = scope.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj["kind"] as? String == "project",
+              let canonical = obj["canonical"] as? String, !canonical.isEmpty else {
+            throw StepFailure(step: currentStep, reason: "could not resolve the open project's canonical key: \(scope)")
+        }
+        let expected = ClickThroughChecks.expectedRecallURL(companion: options.url, project: canonical, query: typed)
+
+        _ = await js("(() => { const f = document.querySelector('.companion-recall-input'); f.focus(); return document.activeElement === f ? 'focused' : ''; })()")
+        try await typeText(typed)
+
+        let before = openedLinks.count
+        sendKey(characters: "\r", keyCode: 36)
+        let url = try await poll("the shell's link handler receives the Recall URL") { [self] () async -> URL? in
+            openedLinks.count > before ? openedLinks[before] : nil
+        }
+        if let problem = ClickThroughChecks.recallLinkProblem(url, expected: expected) {
+            throw StepFailure(step: currentStep, reason: problem)
+        }
+        let stayed = webView.url.map { !LinkPolicy.isExternalNavigation(to: $0, from: options.url) && $0.path == options.url.path } ?? false
+        guard stayed else { throw StepFailure(step: currentStep, reason: "panel navigated away to \(webView.url?.absoluteString ?? "nil")") }
+        try await waitForMode("expanded")
+        report("recall", "typed \"\(typed)\" + Return for project \(obj["projectKey"] ?? "?") -> shell recorded \(url.absoluteString) (not opened); panel stayed on \(webView.url?.path ?? "?")")
+    }
+
+    /// Escape inside the recall field belongs to the field: the first clears the text, the second
+    /// moves focus to Back. Neither may step the page down a level.
+    private func stepRecallEscape() async throws {
+        currentStep = "recall-escape"
+        sendEscape()
+        _ = try await poll("Escape clears the recall field") { [self] () async -> Bool? in
+            await js("document.querySelector('.companion-recall-input').value") == "" ? true : nil
+        }
+        try await waitForMode("expanded")
+        sendEscape()
+        _ = try await poll("a second Escape moves focus to Back") { [self] () async -> Bool? in
+            await js("(document.activeElement && document.activeElement.getAttribute('aria-label')) || ''") == "Back to projects" ? true : nil
+        }
+        // Give a wrongly-handled Escape time to reach the page before checking the level held.
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try await waitForMode("expanded")
+        report("recall-escape", "Escape cleared the field, Escape moved focus to Back; data-mode stayed expanded")
     }
 
     private func stepEscape() async throws {
@@ -265,18 +328,45 @@ final class ClickThrough {
         guard clicked == "clicked" else { throw StepFailure(step: currentStep, reason: "could not click \(selector)") }
     }
 
+    /// Evaluates `body` as an async function body and returns its result as a string.
+    private func asyncJS(_ body: String) async -> String {
+        await withCheckedContinuation { continuation in
+            webView.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
+                continuation.resume(returning: (try? result.get() as? String) ?? "")
+            }
+        }
+    }
+
+    /// Types `text` one character at a time as in-process key events, routed like `sendEscape`.
+    /// WebKit hands key events to the page asynchronously, so wait for each to land in the field
+    /// before sending the next, as a typist's cadence would.
+    private func typeText(_ text: String) async throws {
+        var expected = ""
+        for character in text {
+            expected.append(character)
+            sendKey(characters: String(character), keyCode: 0)
+            _ = try await poll("the field to receive \"\(character)\"", timeout: 2) { [self] () async -> Bool? in
+                await js("document.querySelector('.companion-recall-input').value") == expected ? true : nil
+            }
+        }
+    }
+
+    private func sendKey(characters: String, keyCode: UInt16) {
+        panel.makeFirstResponder(webView)
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: panel.windowNumber, context: nil, characters: characters,
+                                            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode) {
+                panel.sendEvent(event)
+            }
+        }
+    }
+
     /// An Escape keyDown/keyUp delivered to the panel through AppKit, exactly as a real keypress is
     /// routed once it reaches this window: panel -> first responder (the web view) -> page. It is
     /// an in-process NSEvent, never posted to the window server, so no other app sees it.
     private func sendEscape() {
-        panel.makeFirstResponder(webView)
-        for type in [NSEvent.EventType.keyDown, .keyUp] {
-            if let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                            windowNumber: panel.windowNumber, context: nil, characters: "\u{1b}",
-                                            charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) {
-                panel.sendEvent(event)
-            }
-        }
+        sendKey(characters: "\u{1b}", keyCode: 53)
     }
 
     private func jsString(_ text: String) -> String {
