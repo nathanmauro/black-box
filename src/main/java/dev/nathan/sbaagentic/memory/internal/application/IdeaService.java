@@ -236,7 +236,8 @@ public class IdeaService {
     /**
      * Rows are newest first: the first row is the latest state, the last is the first capture.
      * A status change is a re-capture that must resend only the required fields, so each optional
-     * field falls back to the newest revision that carried it instead of vanishing.
+     * field falls back to the newest revision that carried it instead of vanishing. For project
+     * attribution, each revision prefers its captured repo, then its legacy session cwd.
      */
     private static IdeaView toView(String key, List<TypedEvent> rows) {
         TypedEvent latestRow = rows.getFirst();
@@ -251,7 +252,7 @@ public class IdeaService {
                 latest.sessionId(),
                 latest.source(),
                 latest.clientSessionId(),
-                firstNonBlank(str(meta.get("repo")), latestRow.cwd()),
+                newest(rows, row -> firstNonBlank(str(metadata(row.event()).get("repo")), row.cwd())),
                 title,
                 str(meta.get("oneLiner")),
                 Ideas.normalizeOrigin(str(meta.get("origin"))),
