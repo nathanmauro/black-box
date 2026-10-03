@@ -85,5 +85,8 @@ The implementation follows [Spring Security form login](https://docs.spring.io/s
 and [opaque Bearer authentication](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/opaque-token.html).
 
 After packaging, `node frontend/tests/auth-browser-smoke.mjs` runs headless Chromium against its own
-temporary database/server and uses the actual login, New story form, and logout pages. It verifies
-that the generated frontend sends CSRF on spec/task creation. It never reuses the live local service.
+temporary database/server and uses the actual login, Recall replacement form, and logout pages. It
+rejects a browser write without CSRF, verifies the generated frontend sends CSRF on decision
+replacement, and confirms the original evidence and replacement relation remain readable. It never
+reuses the live local service. The child process starts in its fresh fixture directory with an OS
+environment allowlist, so inherited Spring/JVM datasource settings cannot redirect fixture writes.
