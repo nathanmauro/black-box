@@ -73,6 +73,12 @@ resolves to the canonical project while retaining its evidence selection, query 
 fragment. Canonicalization replaces the current history entry, so Back returns to the preceding
 page rather than revisiting the alias redirect.
 
+On **Ideas**, **Capturing session** opens the exact recorded Idea in Browse. Its source remains
+visible and highlighted with **My turns** on or **Show memory events** off, and survives reload.
+The link clears remembered Activity project scope; source filters still apply. Ordinary session
+selection and the sticky human-only setting are unchanged. See the
+[Idea source verification](superpowers/plans/2026-10-03-idea-exact-source.md).
+
 Observation and Projection recall items retain a short `headline` and include their full captured text in the
 optional `body` field. It reflects the stored evidence after the existing ingest redaction and
 length limits; recall does not change those capture rules. Other kinds and older responses omit
