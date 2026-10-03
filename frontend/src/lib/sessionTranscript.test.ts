@@ -209,7 +209,7 @@ describe("session transcript event merging", () => {
 });
 
 describe("session transcript reading and search", () => {
-  it.each(["Projection", "projection", " PROJECTION "])(
+  it.each(["Projection", "projection", " PROJECTION ", "Evidence", "evidence", " EVIDENCE "])(
     "classifies %s as memory rather than a conversation reply",
     (eventType) => {
       const projection = event({

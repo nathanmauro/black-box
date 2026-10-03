@@ -314,6 +314,32 @@ class ContextLoopTest {
     }
 
     @Test
+    void evidenceRecallsWhenRequested() {
+        var captured = captureOperations.captureEvidence(new dev.nathan.sbaagentic.recording.CaptureEvidenceRequest(
+                "codex",
+                "evidence-recall",
+                "/tmp/evidence-recall",
+                "Zero matching runs",
+                "rg returned no lines",
+                "rg --files",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null));
+        RecallResult result = contextService.recall("/tmp/evidence-recall", 168, List.of("evidence"));
+        assertThat(result.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo(captured.eventId());
+            assertThat(item.kind()).isEqualTo("evidence");
+            assertThat(item.headline()).isEqualTo("Zero matching runs");
+            assertThat(item.rationale()).isEqualTo("rg returned no lines");
+        });
+    }
+
+    @Test
     void ideaRecallsOnlyWhenTheIdeaKindIsRequested() throws Exception {
         String repo = "/tmp/idea-recall-roundtrip";
         IngestResponse captured = captureOperations.captureIdea(new CaptureIdeaRequest(

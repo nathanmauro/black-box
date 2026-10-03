@@ -19,8 +19,9 @@ Every Claude Code or Codex session starts from zero. The reasoning behind yester
 in transcripts nobody rereads, so the next session re-derives it, or quietly re-litigates it. Black
 Box is a writable memory bus the agents commit to on purpose: typed **Decisions** (with rejected
 alternatives and confidence), **Handoffs** (open loops and one next action), **Observations**,
-**Projections** (ranked possible futures), and **Ideas** (proposals nobody is acting on yet, from a
-human aside or an agent's suggestion). A later agent, from either vendor, recalls that
+**Projections** (ranked possible futures), **Ideas** (proposals nobody is acting on yet, from a
+human aside or an agent's suggestion), and **Evidence** (facts with provenance that support or
+refute a capture). A later agent, from either vendor, recalls that
 structured intent by repo, topic, or event id before it touches code.
 
 The name is the flight recorder. What it records is declared intent, not traces: agents write what
@@ -140,7 +141,7 @@ After upgrading from a version with task tools, reload cached MCP clients to ref
 
 ## Boundaries
 
-- Semantic recall covers Decisions, Handoffs, Observations, and Ideas. Projections are recalled
+- Semantic recall covers Decisions, Handoffs, Observations, Ideas, and Evidence. Projections are recalled
   lexically. The full event corpus is searchable, not semantically indexed.
 - SQLite is the default and canonical store. The optional PostgreSQL profile owns a separate canonical
   database for a shared single server; it does not synchronize history and is not safe for multiple

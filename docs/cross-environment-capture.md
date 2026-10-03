@@ -61,17 +61,22 @@ consumers must treat them as data, not proof.
 
 Shipped dedupe exists only on `POST /api/events/idempotent` (`docs/idempotent-capture.md`) and
 inside the gateway's receipt ledger. The structured endpoints (`/api/decisions`, `/api/handoffs`,
-`/api/projections`, `/api/ideas`) and the MCP `capture*` tools do not deduplicate (roadmap).
+`/api/projections`, `/api/ideas`, `/api/evidence`) and the MCP `capture*` tools do not deduplicate (roadmap).
 
 ## Event kinds
 
-Shipped: five structured kinds, `Decision`, `Handoff`, `Observation`, `Projection`, and `Idea`
+Shipped: six structured kinds, `Decision`, `Handoff`, `Observation`, `Projection`, `Idea`, and `Evidence`
 (`recording/.../StructuredCaptureService.java`). Local MCP clients get the structured fields
 (`rationale`, `alternatives`, `confidence`, `openLoops`, `toAgent`, `nextAction`, `paths`, `basis`,
 and for ideas `title`, `oneLiner`, `origin`, `quote`, `legs`, `status`, `connects`, `ideaKey`).
-The gateway's `append_capture` accepts `observation`, `decision`, `handoff`, or `idea` and writes a
-plain event with text plus metadata; it has no structured fields and no projection. A gateway idea
-lists in `GET /api/ideas` with its first line as the title, `untouched` status, and no origin.
+Evidence adds `claim`, `excerpt`, `sourceRef`, `outputDigest`, `observedAt`, `capturedBy`,
+`supports`, `refutes`, and `notes`; Idea and Evidence accept optional `project` and `alsoIn` lanes.
+The gateway's `append_capture` accepts `observation`, `decision`, `handoff`, `idea`, or `evidence`
+and writes a plain event with text plus metadata; it has no structured fields and no projection.
+A gateway idea lists in `GET /api/ideas` with its first line as the title, `untouched` status, and
+no origin. A gateway Evidence capture uses its first line as the claim; evidence-source details
+stay in its text, while transport provenance remains in metadata. Use `captureEvidence` or
+`/api/evidence` for structured `sourceRef` and support/refute links.
 
 Contract kinds for cloud and chat clients, and how each is written today:
 
@@ -83,6 +88,7 @@ Contract kinds for cloud and chat clients, and how each is written today:
 | `blocker` | `Observation` | `kind: observation`, `captureKind: blocker`; also listed as an open loop in the session's handoff |
 | `handoff` | `Handoff` | `kind: handoff`; text follows the handoff template below |
 | `idea` | `Idea` | `kind: idea`; first line is the idea's title |
+| `evidence` | `Evidence` | `kind: evidence`; first line is the claim; include provenance in the text |
 
 `result` and `blocker` are mapped onto `Observation` on purpose: it needs no schema migration, and
 `kind:` search plus the `captureKind` key keeps them findable. Promoting them to first-class event
@@ -123,7 +129,8 @@ skill without changing its rules:
 - At the start of substantial work where prior state may matter, read bounded project context:
   local MCP `recallContext(repo)`, or the gateway's `project_context(project)`.
 - Do not log routine activity: commands, file reads, intermediate attempts, or reasoning.
-- Capture only durable information, as one of: decision, observation, result, blocker, handoff.
+- Capture only durable information, as one of: decision, observation, result, blocker, handoff,
+  idea, or evidence. Use Idea for an unselected proposal and Evidence for a fact with provenance.
 - Write one concise handoff before ending substantial work (Goal, Done, Decisions, State, Open,
   Next, Provenance).
 - Include provenance: `origin`, the conversation/task/session id, and the verified repo path or

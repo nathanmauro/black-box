@@ -8,13 +8,16 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
+import dev.nathan.sbaagentic.recording.LaneListing;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -210,7 +213,9 @@ class StructuredCaptureServiceTest {
                         "sketch the lanes",
                         "obsidian://open?vault=obsidian&file=Ideas%2Flanes",
                         "Prior art: the idea sky.",
-                        null));
+                        null,
+                        " Board ",
+                        List.of(new LaneListing(" Other ", 0.8))));
 
         ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
         verify(recorder).ingest(captor.capture());
@@ -233,6 +238,8 @@ class StructuredCaptureServiceTest {
                 .containsEntry("notes", "Prior art: the idea sky.")
                 .containsEntry("ideaKey", "sba-agentic-lanes-board")
                 .containsEntry("repo", "/work/sba-agentic/")
+                .containsEntry("project", "Board")
+                .containsEntry("alsoIn", List.of(Map.of("project", "Other", "score", 0.8)))
                 .doesNotContainKey("migratedFrom");
         assertThat(captured.text())
                 .startsWith("[Idea] Lanes board — One swimlane per project.\n")
@@ -244,6 +251,8 @@ class StructuredCaptureServiceTest {
                 .contains("Connects: Orbit (NAT-196); project identity")
                 .contains("Resume: sketch the lanes")
                 .contains("Idea key: sba-agentic-lanes-board")
+                .contains("Project: Board")
+                .contains("Also in: Other (0.8)")
                 .endsWith("Notes: Prior art: the idea sky.");
     }
 
@@ -450,6 +459,118 @@ class StructuredCaptureServiceTest {
         service.captureIdea(idea("joint", "tracked", 10));
 
         verify(recorder, org.mockito.Mockito.times(2)).ingest(any(EventIngestRequest.class));
+    }
+
+    @Test
+    void captureEvidenceValidatesAndRendersMetadata() {
+        when(recorder.ingest(any(EventIngestRequest.class)))
+                .thenReturn(new IngestResponse("evidence-1", "session-1", "codex", "client-1", "Evidence", false));
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        CaptureEvidenceRequest valid = new CaptureEvidenceRequest(
+                "codex",
+                "client-1",
+                " /repo ",
+                "No matching command",
+                "zero results",
+                "rg run",
+                "sha256:abc",
+                "2026-09-28T12:00:00-04:00",
+                "codex",
+                List.of("IDEA: key ", "idea:key"),
+                List.of("event:abcd1234"),
+                "Proof",
+                " Board ",
+                List.of(new LaneListing(" Other ", 0.8)));
+        service.captureEvidence(valid);
+        ArgumentCaptor<EventIngestRequest> captured = ArgumentCaptor.forClass(EventIngestRequest.class);
+        verify(recorder).ingest(captured.capture());
+        assertThat(captured.getValue().eventType()).isEqualTo("Evidence");
+        assertThat(captured.getValue().cwd()).isEqualTo("/repo");
+        assertThat(captured.getValue().observedAt()).isAfter(Instant.parse("2026-09-28T16:00:00Z"));
+        assertThat(captured.getValue().metadata()).containsEntry("observedAt", "2026-09-28T16:00:00Z");
+        assertThat(captured.getValue().metadata().get("supports")).isEqualTo(List.of("idea:key"));
+        assertThat(captured.getValue().metadata().get("alsoIn"))
+                .isEqualTo(List.of(Map.of("project", "Other", "score", 0.8)));
+        assertThat(captured.getValue().text())
+                .contains(
+                        "[Evidence] No matching command",
+                        "Source: rg run",
+                        "Project: Board",
+                        "Also in: Other (0.8)",
+                        "Observed: 2026-09-28T16:00:00Z");
+    }
+
+    @Test
+    void emptyEvidenceListsAndBlankObservedAtAreAbsent() {
+        when(recorder.ingest(any(EventIngestRequest.class)))
+                .thenReturn(new IngestResponse("evidence-2", "session-1", "codex", "client-1", "Evidence", false));
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        service.captureEvidence(new CaptureEvidenceRequest(
+                "codex",
+                "client-1",
+                " /repo ",
+                "Fact",
+                null,
+                "run",
+                null,
+                " ",
+                null,
+                List.of(),
+                List.of(),
+                null,
+                null,
+                List.of()));
+        ArgumentCaptor<EventIngestRequest> captured = ArgumentCaptor.forClass(EventIngestRequest.class);
+        verify(recorder).ingest(captured.capture());
+        assertThat(captured.getValue().metadata()).doesNotContainKeys("observedAt", "supports", "refutes", "alsoIn");
+        assertThat(captured.getValue().cwd()).isEqualTo("/repo");
+    }
+
+    @Test
+    void invalidEvidenceDoesNotWrite() {
+        StructuredCaptureService service =
+                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> service.captureEvidence(new CaptureEvidenceRequest(
+                        "codex", "c", null, " ", null, "run", null, null, null, null, null, null, null, null)));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> service.captureEvidence(new CaptureEvidenceRequest(
+                        "codex", "c", null, "fact", null, " ", null, null, null, null, null, null, null, null)));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> service.captureEvidence(new CaptureEvidenceRequest(
+                        "codex",
+                        "c",
+                        null,
+                        "fact",
+                        null,
+                        "run",
+                        "x".repeat(201),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null)));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> service.captureEvidence(new CaptureEvidenceRequest(
+                        "codex",
+                        "c",
+                        null,
+                        "fact",
+                        null,
+                        "run",
+                        null,
+                        "yesterday",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null)));
+        verifyNoInteractions(recorder);
     }
 
     private static CaptureIdeaRequest idea(String origin, String status, Integer legs) {

@@ -1,6 +1,6 @@
 import { test, expect, type APIResponse } from "@playwright/test";
 
-test("the packaged server exposes ten memory tools and no task API", async ({ request }) => {
+test("the packaged server exposes twelve memory tools and no task API", async ({ request }) => {
   const headers: Record<string, string> = { Accept: "application/json, text/event-stream" };
   const initialized = await request.post("/mcp", {
     headers,
@@ -32,12 +32,14 @@ test("the packaged server exposes ten memory tools and no task API", async ({ re
   expect(payload.result.tools.map((tool: { name: string }) => tool.name).sort()).toEqual(
     [
       "captureDecision",
+      "captureEvidence",
       "captureHandoff",
       "captureIdea",
       "captureObservation",
       "captureProjection",
       "localModelStatus",
       "recallContext",
+      "recallIdea",
       "recentSessions",
       "searchContext",
       "searchSessions",

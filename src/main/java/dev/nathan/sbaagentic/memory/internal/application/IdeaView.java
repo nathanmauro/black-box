@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
+import dev.nathan.sbaagentic.recording.LaneListing;
 import java.time.Instant;
 import java.util.List;
 
@@ -29,4 +30,6 @@ public record IdeaView(
         Instant capturedAt,
         Instant firstCapturedAt,
         int revisions,
-        String migratedFrom) {}
+        String migratedFrom,
+        String project,
+        List<LaneListing> alsoIn) {}

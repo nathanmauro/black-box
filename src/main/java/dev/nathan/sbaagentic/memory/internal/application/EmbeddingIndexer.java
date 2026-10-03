@@ -120,7 +120,7 @@ public class EmbeddingIndexer {
         }
 
         return switch (EventTypes.normalize(event.eventType())) {
-            case "decision", "handoff", "observation", "idea" -> true;
+            case "decision", "handoff", "observation", "idea", "evidence" -> true;
             default -> false;
         };
     }

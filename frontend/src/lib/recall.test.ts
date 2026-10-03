@@ -12,6 +12,15 @@ const base: RecalledItem = {
 };
 const options = { project: "/repos/alpha", withinHours: 8760, origin: "https://blackbox.example" };
 describe("continuity evidence export", () => {
+  it("retains Evidence provenance and bounds oversized canonical bodies", () => {
+    const body = "[Evidence] Fact\nSource: fixture.txt:12\n" + "🧪".repeat(15000) + "[truncated]";
+    const text = buildRecallBriefing([{ ...base, kind: "evidence", body }], options);
+    expect(text).toContain("Source: fixture.txt:12");
+    expect(text).toContain("[Capture truncated; open the evidence link for full text.]");
+    expect(text).toContain("event=e1&project=");
+    expect(text.length).toBeLessThanOrEqual(BRIEFING_MAX_CHARS);
+  });
+
   it("retains separate Projection basis before a body that exhausts the copy budget", () => {
     const rationale = "Only consider a server after demonstrated demand.";
     const text = buildRecallBriefing(

@@ -73,7 +73,7 @@ resolves to the canonical project while retaining its evidence selection, query 
 fragment. Canonicalization replaces the current history entry, so Back returns to the preceding
 page rather than revisiting the alias redirect.
 
-Observation and Projection recall items retain a short `headline` and include their full captured text in the
+Observation, Projection, and Evidence recall items retain a short `headline` and include their full captured text in the
 optional `body` field. It reflects the stored evidence after the existing ingest redaction and
 length limits; recall does not change those capture rules. Other kinds and older responses omit
 that field. Recall's expandable reader

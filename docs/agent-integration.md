@@ -32,7 +32,9 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `captureObservation` | Record a concise fact or note |
 | `captureProjection` | Capture one to five plausible future paths for the project graph |
 | `captureIdea` | Capture an idea someone proposed that is not being acted on now (a human's aside or an agent's suggestion) |
-| `recallContext` | Recall Decisions, Handoffs, Observations, and Ideas lexically or semantically; Projections are lexical-only |
+| `captureEvidence` | Capture a verifiable fact with provenance and optional support or refute links |
+| `recallIdea` | Return an idea with supporting and refuting Evidence across revisions |
+| `recallContext` | Recall Decisions, Handoffs, Observations, Ideas, and Evidence lexically or semantically; Projections are lexical-only |
 | `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
 | `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
 | `recentSessions` | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn |
@@ -40,8 +42,8 @@ Restart the client if the tools do not appear. The server keeps the historical M
 
 Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
 Handoffs require `contextSummary`, Observations require `text`, Projections require at least one
-path with a title, and Ideas require `title`, `oneLiner`, and `origin`. Missing, null, or blank
-required fields return an MCP tool error naming the field and do not write an event. Correct the
+path with a title, Ideas require `title`, `oneLiner`, and `origin`, and Evidence requires
+`claim` and `sourceRef`. Missing, null, or blank required fields return an MCP tool error naming the field and do not write an event. Correct the
 named field before retrying. Optional handoff fields such as recipient, open loops, and next action
 retain their existing behavior.
 
@@ -83,6 +85,54 @@ Projections remain lexical-only and excluded from default Decisions/Handoffs rec
 `kinds=projection&run=1`. The reader and copied context label them as possibilities. The card does
 not show the legacy first-path confidence as an overall score; each path's declared confidence
 remains in the body. Older responses without a body link to the source capture for full evidence.
+
+### Evidence and project lanes
+
+`Evidence` records one verifiable fact with provenance. Capture it using `captureEvidence` or
+`POST /api/evidence`: provide a one-sentence `claim` and a `sourceRef` such as a session id,
+`path:line`, URL, or command. Optional `excerpt` holds verbatim proof, `outputDigest` holds at most
+200 characters, and `observedAt` accepts an ISO-8601 instant or offset date-time and is stored as
+an instant without changing the capture time. Nonblank excerpt indentation and trailing newlines
+are preserved before normal capture redaction and length limits. `capturedBy` defaults to the capture source in the
+read view. `notes` holds optional markdown.
+
+`supports` and `refutes` link to `idea:<ideaKey>` or `event:<eventId>`. A bare 8–36 character
+hex-and-dash event id or prefix becomes an `event:` reference. Prefixes are case-insensitive;
+event ids are stored in lowercase while idea keys retain their case. References are trimmed and
+deduplicated within each list. Each list accepts at most 50 entries,
+and the same reference cannot be in both lists. A target need not exist yet.
+
+Ideas and Evidence accept a `project` home lane and up to 20 `alsoIn` entries of
+`{project, score}`. Each secondary project must be distinct from the home lane and from other
+entries, ignoring case and surrounding spaces; scores must be finite and between 0 and 1. When
+`project` is omitted, `repo` is the home lane for this check. Empty `alsoIn`, `supports`, and
+`refutes` lists are treated as absent. Read views use `repo` as the home lane when `project` was
+omitted, and remove any older secondary lane that becomes the home lane. Idea lanes survive a
+status-only re-capture.
+
+`GET /api/evidence` returns `{items, count}` newest first. Filter with `target` (a typed reference),
+`project` or `repo` (resolved project scope), `q` (all terms, including event text), and `limit`
+(default 100, max 500). A blank `target` is ignored.
+`GET /api/ideas/detail?ideaKey=<key>` returns `{idea, supports, refutes}`. It joins Evidence linked
+to the stable idea key or to any revision's exact event id or an event id prefix of at least eight
+characters. `recallIdea(ideaKey)` returns the same detail over MCP. Unknown keys return a typed
+404 `request_failed` envelope from REST and a tool error over MCP.
+
+`recallContext` and `/api/recall` include Evidence when `kinds` includes `evidence`; the headline
+is its claim and the rationale is its excerpt. Its `body` contains the canonical rendered text,
+including provenance, typed references, observation time and notes when those fit within capture
+limits. Evidence is also indexed for semantic recall. MCP may further clip the body under `maxChars`
+while retaining the event/session/time anchor and reporting `truncated: true`. Capture-time limits
+are separate: stored text may already end in `[truncated]`; fetch the event for its stored metadata.
+
+Evidence is opt-in in Recall; default kinds remain Decisions/Handoffs. Browse classifies it as a
+memory event, revealed by the existing memory toggle or an exact source link. Stream's existing
+kind facet includes Evidence. There is no dedicated Evidence or project-lane view.
+
+The ChatGPT gateway accepts text-only `kind=evidence` through its existing generic event capture,
+with transport provenance. It does not infer structured `sourceRef`, excerpt, or supports/refutes
+from prose. Use dedicated REST/MCP Evidence capture for those fields; generic captures retain their
+full stored text in recall `body`.
 
 ### Ideas
 
@@ -235,7 +285,7 @@ projections, ideas, recent sessions, and model-status tools remain. See
 ## Recall scope and limits
 
 Core lexical recall needs no model or Elasticsearch. Semantic recall covers Decisions, Handoffs,
-Observations, and Ideas only. Projections can be recalled lexically; session-summary vectors are stored
+Observations, Ideas, and Evidence only. Projections can be recalled lexically; session-summary vectors are stored
 for future retrieval but summaries are not returned by recall. The full event corpus is not
 semantically indexed. An unavailable embedder or vector store leaves lexical results available.
 

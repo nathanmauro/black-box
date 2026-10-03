@@ -29,6 +29,9 @@ import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.EvidenceListResponse;
+import dev.nathan.sbaagentic.memory.internal.application.EvidenceView;
+import dev.nathan.sbaagentic.memory.internal.application.IdeaDetail;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaListResponse;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaMigrationResult;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaView;
@@ -55,6 +58,7 @@ import dev.nathan.sbaagentic.project.TrajectoryTask;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
@@ -65,6 +69,7 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentEventIngestRequest;
 import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.LaneListing;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.summary.AiHealth;
@@ -86,7 +91,7 @@ class WireContractFixtureTest {
 
     @Test
     void everyRestRecordFixtureContainsExactlyItsSerializedProperties() throws IOException {
-        if (Boolean.getBoolean("contracts.update")) updateContinuityFixtures();
+        if (Boolean.getBoolean("contracts.update")) updateFixtures();
         JsonNode records = fixture().path("records");
         assertThat(toSet(records.fieldNames())).isEqualTo(recordClasses().keySet());
 
@@ -124,28 +129,82 @@ class WireContractFixtureTest {
     }
 
     /** Explicit opt-in generator uses the real record serializer while retaining unrelated fixture bytes. */
-    private void updateContinuityFixtures() throws IOException {
+    private void updateFixtures() throws IOException {
         java.nio.file.Path path = java.nio.file.Path.of("src/test/resources/contracts/wire-fixtures.json");
         JsonNode records = objectMapper.readTree(path.toFile()).path("records");
         String source = java.nio.file.Files.readString(path);
-        for (String type : java.util.List.of("CaptureDecisionRequest", "RecalledItem")) {
+        Map<String, Object> updates = new LinkedHashMap<>();
+        var lanes = java.util.List.of(new LaneListing("Other", 0.8));
+        for (String type :
+                java.util.List.of("CaptureDecisionRequest", "RecalledItem", "CaptureIdeaRequest", "IdeaView")) {
             var fixture = (com.fasterxml.jackson.databind.node.ObjectNode)
                     records.path(type).deepCopy();
             if (type.equals("CaptureDecisionRequest")) fixture.put("supersedes", "event-prior");
-            else {
+            else if (type.equals("RecalledItem")) {
                 fixture.put("supersedesEventId", "event-prior");
                 fixture.put("supersededByEventId", "event-next");
                 fixture.put("body", "Captured observation\nIts full supporting evidence.");
+            } else {
+                fixture.put("project", "Home");
+                fixture.set("alsoIn", objectMapper.valueToTree(lanes));
             }
-            Object record = objectMapper.treeToValue(fixture, recordClasses().get(type));
+            updates.put(type, objectMapper.treeToValue(fixture, recordClasses().get(type)));
+        }
+        var evidence = new EvidenceView(
+                "event-2",
+                "session-1",
+                "codex",
+                "client-1",
+                "/repo",
+                "Fact",
+                "Output line",
+                "run:1",
+                "sha256:abc",
+                java.time.Instant.parse("2026-09-28T12:00:00Z"),
+                "codex",
+                java.util.List.of("idea:repo-lanes-board"),
+                java.util.List.of(),
+                "Verified",
+                "Home",
+                lanes,
+                java.time.Instant.parse("2026-09-28T12:01:00Z"));
+        updates.put(
+                "CaptureEvidenceRequest",
+                new CaptureEvidenceRequest(
+                        "codex",
+                        "client-1",
+                        "/repo",
+                        "Fact",
+                        "Output line",
+                        "run:1",
+                        "sha256:abc",
+                        "2026-09-28T12:00:00Z",
+                        "codex",
+                        java.util.List.of("idea:repo-lanes-board"),
+                        java.util.List.of(),
+                        "Verified",
+                        "Home",
+                        lanes));
+        updates.put("EvidenceView", evidence);
+        updates.put("EvidenceListResponse", new EvidenceListResponse(java.util.List.of(evidence), 1));
+        updates.put(
+                "IdeaDetail",
+                new IdeaDetail((IdeaView) updates.get("IdeaView"), java.util.List.of(evidence), java.util.List.of()));
+        updates.put("LaneListing", lanes.getFirst());
+        for (var update : updates.entrySet()) {
             String serialized = objectMapper
                     .copy()
                     .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                    .writeValueAsString(record);
-            String prefix = "    \"" + type + "\": ";
-            source = source.lines()
-                    .map(line -> line.startsWith(prefix) ? prefix + serialized + (line.endsWith(",") ? "," : "") : line)
-                    .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+                    .writeValueAsString(update.getValue());
+            String prefix = "    \"" + update.getKey() + "\": ";
+            if (source.lines().anyMatch(line -> line.startsWith(prefix))) {
+                source = source.lines()
+                        .map(line ->
+                                line.startsWith(prefix) ? prefix + serialized + (line.endsWith(",") ? "," : "") : line)
+                        .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
+            } else {
+                source = source.replace("  \"records\": {\n", "  \"records\": {\n" + prefix + serialized + ",\n");
+            }
         }
         java.nio.file.Files.writeString(path, source);
     }
@@ -190,6 +249,8 @@ class WireContractFixtureTest {
                 entry("CaptureHandoffRequest", CaptureHandoffRequest.class),
                 entry("CaptureProjectionRequest", CaptureProjectionRequest.class),
                 entry("CaptureIdeaRequest", CaptureIdeaRequest.class),
+                entry("CaptureEvidenceRequest", CaptureEvidenceRequest.class),
+                entry("LaneListing", LaneListing.class),
                 entry("CodeNavigationResult", CodeNavigationResult.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
                 entry("CodeReference", CodeReference.class),
@@ -210,6 +271,9 @@ class WireContractFixtureTest {
                 entry("IdeaMigrationCandidate", IdeaMigrationResult.Candidate.class),
                 entry("IdeaMigrationResult", IdeaMigrationResult.class),
                 entry("IdeaView", IdeaView.class),
+                entry("IdeaDetail", IdeaDetail.class),
+                entry("EvidenceView", EvidenceView.class),
+                entry("EvidenceListResponse", EvidenceListResponse.class),
                 entry("IdempotentEventIngestRequest", IdempotentEventIngestRequest.class),
                 entry("IdempotentIngestResponse", IdempotentIngestResponse.class),
                 entry("MemoryEmbeddingBackfillRequest", MemoryEmbeddingBackfillRequest.class),
