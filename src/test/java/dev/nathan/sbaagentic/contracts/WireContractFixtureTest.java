@@ -135,6 +135,7 @@ class WireContractFixtureTest {
             else {
                 fixture.put("supersedesEventId", "event-prior");
                 fixture.put("supersededByEventId", "event-next");
+                fixture.put("body", "Captured observation\nIts full supporting evidence.");
             }
             Object record = objectMapper.treeToValue(fixture, recordClasses().get(type));
             String serialized = objectMapper

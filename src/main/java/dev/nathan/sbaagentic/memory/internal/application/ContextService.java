@@ -549,7 +549,8 @@ public class ContextService implements MemoryRecallOperations {
                 str(meta.get("toAgent")),
                 score,
                 relation == null ? null : relation.supersedesEventId(),
-                relation == null ? null : relation.supersededByEventId());
+                relation == null ? null : relation.supersededByEventId(),
+                KIND_OBSERVATION.equals(kind) ? event.text() : null);
     }
 
     private static MemoryHit toMemoryHit(AgentEvent event, double score) {

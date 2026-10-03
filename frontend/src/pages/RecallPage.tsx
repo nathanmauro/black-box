@@ -1,3 +1,4 @@
+import { ReaderText } from "../components/events/EventRow";
 import HandoffContext from "../components/events/HandoffContext";
 import { A, useSearchParams } from "@solidjs/router";
 import {
@@ -680,6 +681,7 @@ function RecallCard(props: {
           <A href={recalledItemHref(props.item)}>Open full handoff in Browse</A>
         </HandoffContext>
       </Show>
+      <Show when={props.item.body}>{(body) => <ReaderText text={body()} />}</Show>
       <Show when={props.item.rationale}>
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
       </Show>
