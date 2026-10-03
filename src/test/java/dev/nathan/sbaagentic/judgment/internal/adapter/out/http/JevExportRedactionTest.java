@@ -33,6 +33,7 @@ class JevExportRedactionTest {
             "{\"api_key\":\"FAKE_SENTINEL_123 with \\\"quotes\\\"\"}",
             "{\"token\":\"FAKE_SENTINEL_123\"}",
             "tool({\\\"api_key\\\":\\\"FAKE_SENTINEL_123\\\"})",
+            "token=[REDACTED].[REDACTED].FAKE_SENTINEL_123 neighboring=evidence",
             "Bearer abcdefghijklmnopqrstuvwxyz"
         }) {
             assertThat(redactor.redact(secret)).isEqualTo(secret);

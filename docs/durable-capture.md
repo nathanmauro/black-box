@@ -122,8 +122,8 @@ blocks, secret assignments, and explicit secret JSON keys recursively, including
 member names. Recognized suspicious identity or path fields are rejected instead of silently
 changing session identity or routing.
 
-Credential assignments beginning with `[REDACTED]` are still scanned through any attached
-suffix; the marker cannot exempt the rest of a value. This applies before new queue writes.
+Credential assignments containing `[REDACTED]` markers are still scanned through any attached
+suffix, including repeated markers; markers cannot exempt the rest of a value. This applies before new queue writes.
 Previously queued captures retain their original bytes and capture IDs for idempotent delivery;
 updating the hook does not resanitize or scrub existing rows.
 

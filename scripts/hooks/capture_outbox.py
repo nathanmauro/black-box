@@ -114,12 +114,15 @@ def redact_text(value):
                 end += 1
             replacement = "Bearer " + REDACTED
         else:
-            # The marker's bracket is part of this token, not a value boundary. Consume
-            # an attached suffix too, including text left after provider redaction.
-            if text.startswith(REDACTED, start):
-                end += len(REDACTED)
-            while end < len(text) and not text[end].isspace() and text[end] not in ',}]':
-                end += 1
+            # Every marker is an atomic span, including ones introduced by provider
+            # redaction inside this value. Its bracket must not expose an attached suffix.
+            while end < len(text) and not text[end].isspace():
+                if text.startswith(REDACTED, end):
+                    end += len(REDACTED)
+                elif text[end] in ',}]':
+                    break
+                else:
+                    end += 1
             replacement = REDACTED
         if end > start:
             pieces.append(text[cursor:start])

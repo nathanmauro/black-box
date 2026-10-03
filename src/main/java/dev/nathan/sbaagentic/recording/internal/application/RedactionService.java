@@ -247,13 +247,17 @@ public class RedactionService implements ExportRedactor {
                 start = tokenStart;
             }
         }
-        // Treat our marker as one token despite its closing bracket. Continue through
-        // any attached suffix so a credential cannot escape by starting with the marker.
-        int end = text.startsWith(REDACTED, start) ? start + REDACTED.length() : start;
-        while (end < text.length()
-                && !Character.isWhitespace(text.charAt(end))
-                && ",}]".indexOf(text.charAt(end)) < 0) {
-            end++;
+        // Treat every marker as an atomic span, including markers inside this value.
+        // Its closing bracket must not expose any attached credential suffix.
+        int end = start;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
+            if (text.startsWith(REDACTED, end)) {
+                end += REDACTED.length();
+            } else if (",}]".indexOf(text.charAt(end)) >= 0) {
+                break;
+            } else {
+                end++;
+            }
         }
 
         return new AssignmentValue(end, prefix + REDACTED);

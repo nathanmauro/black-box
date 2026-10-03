@@ -328,7 +328,10 @@ class OutboxTest(unittest.TestCase):
 
     def test_redaction_marker_does_not_exempt_attached_credential_text(self):
         for value in ("[REDACTED]", "[REDACTED]SYNTHETIC_SUFFIX",
-                      "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.SYNTHETIC_SUFFIX"):
+                      "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.SYNTHETIC_SUFFIX",
+                      "[REDACTED].[REDACTED].SYNTHETIC_SUFFIX",
+                      "prefix[REDACTED]SYNTHETIC_SUFFIX",
+                      "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.sk-abcdefghijklmnopqrstuvwxyz0123456789.SYNTHETIC_SUFFIX"):
             for tail in (" neighboring=evidence", ",next=evidence", "}next", "]next"):
                 with self.subTest(value=value, tail=tail):
                     result = outbox.redact_text("token=" + value + tail)
@@ -342,7 +345,7 @@ class OutboxTest(unittest.TestCase):
         server.mode = "drop"
         secret = "SYNTHETIC_MARKER_REMAINDER"
         result = self.hook({"session_id": "marker-fixture", "hook_event_name": "Stop",
-                            "last_assistant_message": "token=[REDACTED]" + secret + " neighboring=evidence"},
+                            "last_assistant_message": "token=ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.sk-abcdefghijklmnopqrstuvwxyz0123456789." + secret + " neighboring=evidence"},
                            server.origin)
         self.assertEqual(result.returncode, 0)
         row = self.rows()[0]
