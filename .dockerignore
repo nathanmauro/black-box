@@ -1,3 +1,9 @@
 *
 !target/
+target/*
 !target/*.jar
+!scripts/
+scripts/*
+!scripts/cloud/
+scripts/cloud/*
+!scripts/cloud/cloud-entrypoint.sh

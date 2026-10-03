@@ -30,6 +30,31 @@ For a core deployment without model services, set `SBA_LOCAL_AI_ENABLED=false`,
 `SBA_SUMMARY_BACKEND=local`. The last setting prevents the default external summary wrapper from
 being invoked. These are deployment choices, not changes to the local defaults.
 
+## Cloud image startup contract
+
+`Dockerfile.cloud` has a stricter startup contract than the ordinary JAR. Its entrypoint refuses to
+launch Java until `SPRING_PROFILES_ACTIVE=postgres`, an explicit `jdbc:postgresql://host/database`
+URL, nonempty `SBA_DATASOURCE_USERNAME` and `SBA_DATASOURCE_PASSWORD`, and `SBA_AUTH_ENABLED=true`
+are present. Supply separate generated `SBA_AUTH_PASSWORD` and `SBA_AUTH_API_TOKEN` secrets as
+described in [authentication](authentication.md). `SBA_AUTH_SECURE_COOKIES` may be unset (the secure
+default) or `true`; the cloud image rejects `false` and empty values. The application still checks
+credential quality before serving requests.
+
+Inject secrets through the deployment's protected environment. Do not pass command arguments to
+this image: its entrypoint accepts none. It rejects Java option environment overrides, alternate
+Spring configuration/profile inputs and JSON configuration (including relaxed case/dot/underscore
+spellings), the entire competing `SPRING_DATASOURCE_*`
+namespace (including pool connection and JNDI settings, and relaxed spelling variants) and `SBA_STORAGE_BACKEND`. Use the documented `SBA_DATASOURCE_*` settings;
+the PostgreSQL profile selects the backend. Startup loads only the packaged `application.yml` and
+its PostgreSQL profile; mounted working-directory configuration files are excluded.
+The guard prints setting names, never secret values,
+and execs Java with the image's fixed memory limits. This prevents accidental configuration drift;
+an operator who replaces the entrypoint or image still controls the process.
+
+TLS termination, a private internal listener and database TLS are deployment responsibilities.
+The gate does not provision them. The ordinary JAR and local launcher retain their SQLite and
+loopback defaults; this cloud-only guard does not change local operation.
+
 ## Behavior and limits
 
 - Capture, structured lexical recall, project aliases, timelines, saved synthesis, and session
@@ -52,19 +77,39 @@ implementation.
 
 ## Verification
 
-The ordinary `mvn test` suite exercises SQLite and skips the opt-in PostgreSQL contract class.
+The ordinary `mvn test` suite exercises SQLite and skips both opt-in PostgreSQL contract classes
+when `SBA_POSTGRES_TEST_URL` is absent. CI supplies a disposable PostgreSQL 16 service and rejects
+a skipped PostgreSQL contract class.
 To exercise PostgreSQL, first start a disposable PostgreSQL instance, then set:
 
 ```bash
 export SBA_POSTGRES_TEST_URL='jdbc:postgresql://127.0.0.1:5432/blackbox_test'
 export SBA_POSTGRES_TEST_USERNAME='blackbox_test'
 # Set SBA_POSTGRES_TEST_PASSWORD through your test environment.
-mvn -Dtest=PostgresBackendContractTest test
+mvn -Dtest=PostgresBackendContractTest,AuthenticatedPostgresConsumerContractTest test
 ```
 
-The contract test creates a randomly named `bb_contract_...` schema, uses it for a real HTTP server,
-closes the server, and drops only that schema. Its database role needs CREATE SCHEMA permission.
+Each contract class creates its own randomly named `bb_contract_...` or `bb_auth_contract_...`
+schema, uses it for a real HTTP server, closes the server, and drops only that schema. Its database role needs CREATE SCHEMA permission.
 Use a disposable database. Checks cover restart persistence, capture/recall, redaction, project
 queries, nanosecond ordering, aliases, saved synthesis, session lineage, and canonical embeddings
 without native extensions. The opt-in retirement migration also applies to PostgreSQL: see
 [retirement and upgrade notes](board-retirement.md) before upgrading an existing database.
+
+`AuthenticatedPostgresConsumerContractTest` composes the current consumer paths on one authenticated
+server: anonymous and wrong-token read/write denial, bearer-only requests without session cookies,
+idempotent capture/replay, full tool input/output and provenance retrieval, bounded MCP discovery
+with source follow-through, MCP capture/recall, exact project isolation, Decision replacement/history,
+SSE event delivery and a scheduled heartbeat, and persistence plus idempotent replay after restart.
+Model services and Elasticsearch are disabled. This is a direct loopback service check; it does not
+prove managed-proxy buffering/timeouts, TLS, browser or phone use, OAuth, migration, or backup/restore.
+
+Run the cloud startup guard without a JVM or database:
+
+```bash
+python3 -B -m unittest discover -s scripts/cloud -p 'cloud_entrypoint_test.py'
+```
+
+`./scripts/verify.sh` includes that offline guard. Export the PostgreSQL fixture variables above
+before running it to include the same database contracts required by CI. The cloud image's Docker
+build context admits only built `target/*.jar` files and the one required entrypoint script.
