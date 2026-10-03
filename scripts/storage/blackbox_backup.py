@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 
 
 class BackupError(Exception):
@@ -50,12 +51,25 @@ def absolute(value):
     return Path(os.path.abspath(plain(value)))
 
 
+def sqlite_filename_key(name):
+    # Canonical equivalence only; do not merge compatibility-distinct filenames.
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", name).casefold())
+
+
+def sqlite_sidecar_name(source, output):
+    # Reserve case/normalization variants even on filesystems that distinguish them.
+    source_name = sqlite_filename_key(source.name)
+    return sqlite_filename_key(output.name) in (source_name + "-journal", source_name + "-wal", source_name + "-shm")
+
+
 def make_plan(args):
     output = absolute(args.output)
     if args.backend == "sqlite":
         source = absolute(args.source)
         if source == output:
             raise BackupError("source_is_output")
+        if source.parent == output.parent and sqlite_sidecar_name(source, output):
+            raise BackupError("sqlite_sidecar_destination")
         scope = {"source": str(source)}
         archive_format = "sqlite3"
     else:
@@ -103,6 +117,19 @@ def ensure_absent(parent_fd, name):
     except FileNotFoundError:
         return
     raise BackupError("output_exists")
+
+
+def check_sqlite_destination(source, output, parent_fd):
+    if not sqlite_sidecar_name(source, output):
+        return
+    try:
+        # Follow parent aliases only; never resolve/open a source leaf symlink.
+        source_parent = source.parent.stat()
+    except OSError:
+        raise BackupError("invalid_sqlite_source") from None
+    output_parent = os.fstat(parent_fd)
+    if (source_parent.st_dev, source_parent.st_ino) == (output_parent.st_dev, output_parent.st_ino):
+        raise BackupError("sqlite_sidecar_destination")
 
 
 def snapshot_sqlite(source, staged):
@@ -192,6 +219,8 @@ def execute(plan):
     published = False
     staged_info = None
     try:
+        if plan["backend"] == "sqlite":
+            check_sqlite_destination(Path(plan["scope"]["source"]), output, parent_fd)
         ensure_absent(parent_fd, output.name)
         # The caller supplies an existing, trusted output directory. Staging is
         # private even when the caller's umask would otherwise permit access.
