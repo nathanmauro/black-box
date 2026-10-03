@@ -28,6 +28,12 @@ an event, summary commands use the configured summary backend and persist result
 `embeddings-backfill --apply` generates and writes missing embeddings. The help-only guarantee
 does not make those operations read-only or disable their configured providers.
 
+A normal command closes its application context and exits after its synchronous operation finishes.
+A command failure still exits nonzero. Successful `ingest` confirms canonical capture; optional
+background terminal summaries and judgments can be interrupted during shutdown. Run `summarize`
+or `summarize-missing` explicitly when you need to wait for the summary operation and its stored
+result. No-command HTTP service mode stays running until shutdown.
+
 ## Run as a service
 
 ### macOS launchd
