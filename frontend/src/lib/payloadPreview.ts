@@ -57,13 +57,16 @@ export function compactPayloadMedia(value: unknown): {
 }
 
 /** Bound the actual DOM text, rather than visually hiding an arbitrarily large message. */
-export function readerTextPreview(text: string): { text: string; truncated: boolean } {
-  let end = Math.min(text.length, 900);
+export function readerTextPreview(
+  text: string,
+  limits: { chars: number; nonemptyLines: number } = { chars: 900, nonemptyLines: 10 },
+): { text: string; truncated: boolean } {
+  let end = Math.min(text.length, limits.chars);
   const prefix = text.slice(0, end);
   let nonemptyLines = 0;
   let offset = 0;
   for (const line of prefix.match(/[^\n]*\n|[^\n]+$/gu) ?? []) {
-    if (line.trim() && ++nonemptyLines > 10) {
+    if (line.trim() && ++nonemptyLines > limits.nonemptyLines) {
       end = offset;
       break;
     }

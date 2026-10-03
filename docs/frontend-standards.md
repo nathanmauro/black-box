@@ -158,3 +158,9 @@ renders an actual excerpt (at most 900 characters or 10 nonempty lines, plus an 
 collapsed, removes the remaining text from the DOM, and exposes accurate `aria-expanded` and
 `aria-controls` on its toggle. Expansion restores the exact captured text. Do not replace this with
 CSS-only clipping, hidden full-text attributes, or inferred binary detection for arbitrary strings.
+
+First-turn headers use the same excerpt logic with a 280-character/four-nonempty-line bound and
+an explicit Show all/Show less control linked to the text. One-line session and command labels use
+at most 160 characters plus an ellipsis. Filtering and title deduplication still use the full
+original turn, and opening the header restores that original exactly. CSS may tighten a bounded
+header preview visually, but must not leave the entire original behind the collapsed control.
