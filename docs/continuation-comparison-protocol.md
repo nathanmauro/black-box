@@ -4,7 +4,9 @@ Protocol preparation and offline qualification, 2026-10-03. No new model compari
 The [development inventory](evaluation-candidates/2026-10-03-development-pool.json) records
 17 real fixes in 12 proposed clusters. All are familiar development examples with published
 reference fixes. None is held out; this inventory does not satisfy the twenty-candidate gate.
-The ordinary latest-handoff/search comparator below is **not implemented**.
+An offline, synthetic-fixture adapter for the ordinary latest-handoff/literal-search arm now
+exists ([below](#offline-literal-adapter)); it is not wired into any model runner, and the
+comparison itself has not run.
 
 The [benchmark and offline qualifier](memory-benchmark.md) remain authoritative for completed
 runs. This proposal does not change the runner, its flags, the earlier negative difficulty result,
@@ -121,6 +123,99 @@ The existing synthetic handoff/Black Box arm checks round-trip parity, not this 
 A future adapter must first pass offline fake-corpus and budget/provenance checks; those checks
 would still establish infrastructure only.
 
+## Offline literal adapter
+
+`scripts/benchmarks/blackbox_memory/history_search.py` implements the ordinary arm's handoff and
+`history_search(query)` contract against an explicitly selected frozen corpus. It is standard
+library only, runs on Python 3.9, and has been exercised only with synthetic fixtures. It never
+reads live history, transcripts, databases, credentials or servers, and never calls a provider
+or the network. It is a development comparator, **not** a model-runner integration: no arm,
+budget, gate or existing runner changed, and it supplies no efficacy evidence.
+
+**Frozen corpus.** The controller passes one manifest path plus that manifest's exact SHA-256.
+The manifest (`blackbox.history-corpus/v1`) names a sibling items file and its SHA-256, the item
+count, one project and a session allowlist, an inclusive cutoff, declared exclusions with reasons
+and a provenance label. Each item (`blackbox.history-items/v1`) has an ID, kind
+(`handoff`, `message`, `event`, `decision`, `observation`), project, session, `observed_at`, an
+optional `recorded_at`, a source reference and text. Validation rejects the **whole** corpus
+before any delivery on a hash or count mismatch, non-UTF-8 bytes, unpaired surrogates,
+duplicate JSON keys, non-finite numbers, unknown or missing fields, duplicate item IDs, an item
+whose ID is declared excluded, an out-of-scope project/session, a date after the cutoff, a
+malformed timestamp or a size bound (manifest 64 KiB, items file 8 MiB, 10,000 items, 64 KiB
+text, 1 KiB source reference). Timestamps take 1–9 fractional digits and `Z`/`±HH:MM`; they
+are compared as exact integer UTC nanoseconds (dates before 1970 included), and original strings
+are delivered verbatim. `recorded_at` is checked against the cutoff only when present.
+A matching hash and in-range `observed_at` show only that the declared metadata is consistent;
+they do **not** prove an item was authentically available at the checkpoint. Chronology stays a
+registration requirement for any real corpus.
+
+**Handoff first.** `start()` delivers, exactly once and before any search, the `handoff` item with
+the greatest `observed_at` (ties: smallest item ID). It is not a search attempt, is capped at 6,000
+bytes and counts against the 24,000-byte total. The start status is `no_history` for an empty
+corpus, `no_handoff` when items exist but none is a handoff, and otherwise `ok`.
+
+**Literal search.** Text, source references and queries are case-folded per character with
+`str.casefold()`; whitespace runs collapse to one space. No Unicode normalization or stemming is
+applied, so NFC and NFD spellings differ. Query terms are whitespace-separated folded tokens,
+de-duplicated in first-seen order, with punctuation kept, so `src/export/SummaryWriter.java` and
+`NAT-315` stay single terms. A term matches as a substring of an item's folded text or folded
+source reference; the exact full query is the token sequence joined by single spaces. Ranking:
+exact full-query match, then distinct matched-term count, then newer `observed_at`, then smaller
+ID. At most 20 ranked results are rendered per search. Matches beyond that ceiling and results
+dropped for bytes are both counted in `omitted_results` and set `truncated`, so for every successful search
+delivery the returned results plus omitted results equal `total_matches`. Items are never merged: identical text from
+different items returns separate results with their own provenance, and stale or contradictory
+items stay in the ranking with their dates. Repeated queries are executed and charged again.
+
+**Excerpts.** Offsets are code-point offsets into the original text. A folded-to-original index
+map widens any match to whole original characters, so case-fold expansions (`ß`→`ss`, `ﬁ`→`fi`,
+`İ`→`i̇`) report correct original spans. The anchor is the first exact phrase in the text, else the
+earliest matched term in the text, else none (a source-reference-only match). The window starts
+100 code points before the anchor and spans 640 code points, extended to cover the anchor.
+
+**Shared envelope.** Every delivery is one compact UTF-8 JSON line with schema
+`blackbox.history-delivery/v1`: backend, corpus ID, sequence, type (`handoff`, `search`,
+`terminal`), status (`ok`, `no_history`, `no_handoff`, `empty`, `error`, `exhausted`), attempt
+counters, the pre-delivery budget (`remaining_before`, `delivery_cap`), echoed folded query
+terms, total matches, results, omitted-result count, a truncation flag and an error object.
+Each result carries ID, kind, project, session, both dates, source reference, match details
+(exact, matched terms, matched fields, anchor) and an excerpt (start, end, text length,
+budget-clip flag, text). A future Black Box backend should emit this same envelope. Payloads never
+contain their own byte count; exact sizes are kept in host-only accounting.
+
+**Budget.** At most six search attempts, invalid requests included. Each delivery is at most
+`min(6000, remaining)` bytes, counting the whole JSON line and newline: provenance, echoed terms,
+diagnostics and repeated content included. The session total is at most 24,000 bytes. Results
+are added in rank order; the first one that does not fit has its excerpt clipped at a code-point
+boundary to the largest prefix that still fits, later results are omitted and counted, and
+`truncated` is set. Empty results and error responses consume an attempt and bytes. A request
+after the sixth attempt receives one metered `terminal`/`attempt_limit` response, and delivery
+closes. If a request's smallest valid response cannot fit, a metered `terminal`/`byte_budget`
+response is sent when it fits; otherwise delivery closes **without emitting anything**. A closed
+session emits nothing further, so no diagnostic is ever unmetered. Request lines are bounded
+(4 KiB line, 512-byte query, 16 terms, no non-whitespace control characters).
+
+**Single controller-owned session.** State lives in one in-process `Session`; there is no
+persistent ledger or database. The CLI is a single-process demonstration, not a deployed tool or
+tamper-resistant sandbox:
+
+```bash
+# Host-only summary of a frozen corpus (prints hashes, counts, start status).
+python3 scripts/benchmarks/blackbox_memory/history_search.py validate \
+  --manifest path/to/manifest.json --manifest-sha256 <sha256>
+
+# Emits the handoff line, then answers one {"query": "..."} JSON line per stdin line.
+python3 scripts/benchmarks/blackbox_memory/history_search.py serve \
+  --manifest path/to/manifest.json --manifest-sha256 <sha256>
+```
+
+Corpus validation failures exit 2 with a controller error on stderr and nothing on stdout. On
+exit, `serve` writes host accounting (deliveries, exact bytes, attempts, close reason) to stderr.
+A future model runner must keep this one session for the whole trial, prevent restart or reset
+(restarting the process would restore the full budget), and deny any alternate history access.
+That runner integration, the Black Box backend, an authentic corpus builder, registration and
+adjudication, and the difficulty and accepted-action studies remain outstanding.
+
 ## Registration and unchanged gates
 
 Before model runs, commit candidate/cluster IDs, source/grader hashes, corpus scope/cutoff/hashes,
@@ -157,8 +252,8 @@ Record approval separately from implementation and verify what happened. Hidden-
 a model verdict, patch review or this document cannot manufacture an accepted operational action.
 Make denominators and missing outcomes explicit. Make no efficacy claim from this familiar pool.
 
-Next: qualify a small number of different clusters offline and freeze the ordinary-search adapter
-design against the common corpus contract. Precise chronology is a possible next qualification
+Next: qualify a small number of different clusters offline and qualify the Black Box backend
+against the same corpus contract and delivery envelope as the offline literal adapter. Precise chronology is a possible next qualification
 candidate; runtime-dependent cases remain conditional. Collect prospective held-out
 cases separately. No model spend, deployment, transcript export or threshold change is part of
 this protocol and qualification slice.

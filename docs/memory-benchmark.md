@@ -360,5 +360,31 @@ fixture infrastructure evidence only; no model continuation or accepted-action s
 The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
 17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
 paths. The summary-export candidate now has the seven-check offline qualification described above.
-Its ordinary handoff/search adapter is not implemented; no model trials or human accepted actions
-were established. The existing usefulness and difficulty gates stay unchanged.
+No model trials or human accepted actions were established. The existing usefulness and difficulty
+gates stay unchanged.
+
+### Offline handoff and literal-search adapter
+
+`history_search.py` is a deterministic, standard-library adapter for the comparison's ordinary
+arm: it validates one hash-pinned frozen corpus, delivers the latest eligible handoff once, then
+answers at most six literal searches inside a 6,000-byte-per-delivery, 24,000-byte total budget,
+using one shared delivery envelope. Its full matching, ranking, excerpt, budget and end-of-budget
+contract is in the [protocol](continuation-comparison-protocol.md#offline-literal-adapter).
+
+```bash
+# Unit tests plus subprocess CLI journeys over synthetic temporary corpora only.
+python3 -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_history_search.py' -v
+
+# Validate a frozen corpus, then serve one session over stdin/stdout JSON lines.
+python3 scripts/benchmarks/blackbox_memory/history_search.py validate --manifest M --manifest-sha256 SHA
+python3 scripts/benchmarks/blackbox_memory/history_search.py serve --manifest M --manifest-sha256 SHA
+```
+
+It reads only the selected manifest and its sibling items file: no live history, transcripts,
+databases, credentials, servers, providers or network. Valid hashes and in-range dates do not prove
+historical availability; chronology remains a registration requirement. The CLI is an offline
+single-process demonstration, not a deployed tool or anti-tamper sandbox; a future runner must
+hold the one session and prevent restart or alternate history access. It is not wired into
+`benchmark.py`, `continuation.py` or any model loop, changes no arm, budget or gate, and is
+infrastructure evidence only. The Black Box backend for the same envelope, an authentic corpus
+builder, registration/adjudication and the difficulty and accepted-action studies remain outstanding.
