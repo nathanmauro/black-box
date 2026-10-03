@@ -807,6 +807,201 @@ class OutboxTest(unittest.TestCase):
         self.assertEqual(self.directory.stat().st_mode, original_mode)
         self.assertFalse((self.directory / outbox.DB_NAME).exists())
 
+    def test_sqlite_commit_unlinks_open_journal_before_guard_without_losing_enqueue(self):
+        for replacement in (False, True):
+            with self.subTest(replacement=replacement):
+                directory = self.root / ("replaced-journal" if replacement else "removed-journal")
+                queue = outbox.Queue(directory, time.monotonic() + 2)
+                original = outbox.sanitize_event(event("existing"))
+                first = queue.enqueue("http://127.0.0.1:1", original)
+                holder = sqlite3.connect(str(directory / outbox.DB_NAME), isolation_level=None)
+                journal_name = outbox.DB_NAME + "-journal"
+                journal = directory / journal_name
+                real_open = os.open
+                removed = []
+                rechecked = []
+                try:
+                    holder.execute("BEGIN IMMEDIATE")
+                    holder.execute("UPDATE captures SET attempts=attempts+1")
+
+                    def commit_after_open(name, *args, **kwargs):
+                        if name == journal_name and removed:
+                            # Verify cleanup before opening a replacement can reuse the fd.
+                            with self.assertRaises(OSError):
+                                os.fstat(removed[0])
+                            rechecked.append(True)
+                        descriptor = real_open(name, *args, **kwargs)
+                        if name == journal_name and not removed:
+                            before = os.fstat(descriptor)
+                            self.assertEqual(before.st_nlink, 1)
+                            holder.execute("COMMIT")
+                            after = os.fstat(descriptor)
+                            self.assertEqual(after.st_nlink, 0)
+                            self.assertEqual((before.st_dev, before.st_ino), (after.st_dev, after.st_ino))
+                            self.assertFalse(journal.exists())
+                            removed.append(descriptor)
+                            if replacement:
+                                journal.touch(mode=0o600)
+                        return descriptor
+
+                    data = outbox.sanitize_event(event("new-capture"))
+                    with patch.object(outbox.os, "open", side_effect=commit_after_open):
+                        second = queue.enqueue("http://127.0.0.1:1", data)
+                    self.assertEqual(len(removed), 1)
+                    self.assertTrue(rechecked)
+                    self.assertNotEqual(first, second)
+                    self.assertEqual(queue.db.execute(
+                        "SELECT capture_id,event_bytes,attempts FROM captures ORDER BY id").fetchall(),
+                        [(first, original, 1), (second, data, 0)])
+                    self.assertFalse(queue.db.in_transaction)
+                finally:
+                    holder.close()
+                    queue.close()
+
+    def test_unlinked_journal_replacement_must_still_pass_private_file_guards(self):
+        for kind in ("symlink", "hardlink", "mode", "fifo", "directory", "owner"):
+            with self.subTest(kind=kind):
+                directory = self.root / ("replacement-" + kind)
+                queue = outbox.Queue(directory, time.monotonic() + 2)
+                data = outbox.sanitize_event(event("existing"))
+                capture_id = queue.enqueue("http://127.0.0.1:1", data)
+                journal_name = outbox.DB_NAME + "-journal"
+                journal = directory / journal_name
+                journal.touch(mode=0o600)
+                target = self.root / ("untouched-" + kind)
+                target.write_text("owned fixture, do not change")
+                target.chmod(0o600)
+                real_open, real_fstat = os.open, os.fstat
+                opened = []
+                replacements = []
+                try:
+                    def replace_after_open(name, *args, **kwargs):
+                        if name == journal_name and opened:
+                            with self.assertRaises(OSError):
+                                real_fstat(opened[0])
+                        descriptor = real_open(name, *args, **kwargs)
+                        if name == journal_name:
+                            if not opened:
+                                opened.append(descriptor)
+                                journal.unlink()
+                                if kind == "symlink":
+                                    journal.symlink_to(target)
+                                elif kind == "hardlink":
+                                    os.link(target, journal)
+                                elif kind == "fifo":
+                                    os.mkfifo(journal, 0o600)
+                                elif kind == "directory":
+                                    journal.mkdir(mode=0o700)
+                                else:
+                                    journal.touch(mode=0o600)
+                                    if kind == "mode":
+                                        journal.chmod(0o644)
+                            else:
+                                replacements.append(descriptor)
+                        return descriptor
+
+                    def inspect_replacement(descriptor):
+                        info = real_fstat(descriptor)
+                        if kind == "owner" and descriptor in replacements:
+                            values = list(info)
+                            values[4] = os.getuid() + 1
+                            return os.stat_result(values)
+                        return info
+
+                    with patch.object(outbox.os, "open", side_effect=replace_after_open), \
+                            patch.object(outbox.os, "fstat", side_effect=inspect_replacement):
+                        with self.assertRaises((outbox.OutboxError, OSError)):
+                            queue.enqueue("http://127.0.0.1:1", outbox.sanitize_event(event("refused")))
+                    for descriptor in opened + replacements:
+                        with self.assertRaises(OSError):
+                            real_fstat(descriptor)
+                    self.assertEqual(target.read_text(), "owned fixture, do not change")
+                    if journal.is_dir():
+                        journal.rmdir()
+                    else:
+                        journal.unlink()
+                    self.assertEqual(queue.db.execute("SELECT capture_id,event_bytes FROM captures").fetchall(),
+                                     [(capture_id, data)])
+                    self.assertFalse(queue.db.in_transaction)
+                finally:
+                    queue.close()
+
+    def test_unlinked_database_lock_and_unsafe_journal_remain_rejected(self):
+        for name, mode, writable in ((outbox.DB_NAME, 0o600, False), (outbox.LOCK_NAME, 0o600, False),
+                                     (outbox.DB_NAME + "-journal", 0o644, False),
+                                     (outbox.DB_NAME + "-journal", 0o600, True)):
+            with self.subTest(name=name, mode=mode, writable=writable):
+                directory, directory_fd = outbox.open_private_directory(self.directory)
+                path = directory / name
+                path.touch(mode=mode)
+                path.chmod(mode)  # Earlier in-process CLI cases intentionally install umask 077.
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+                real_open = os.open
+                opened = []
+                try:
+                    def unlink_after_open(*args, **kwargs):
+                        descriptor = real_open(*args, **kwargs)
+                        opened.append(descriptor)
+                        path.unlink()
+                        return descriptor
+                    with patch.object(outbox.os, "open", side_effect=unlink_after_open):
+                        with self.assertRaisesRegex(outbox.OutboxError, "unsafe_file"):
+                            outbox.private_file(directory_fd, name, writable=writable)
+                    self.assertEqual(len(opened), 1)
+                    with self.assertRaises(OSError):
+                        os.fstat(opened[0])
+                finally:
+                    os.close(directory_fd)
+
+    def test_repeated_journal_disappearance_uses_shared_deadline_and_closes_each_fd(self):
+        queue = outbox.Queue(self.directory)
+        journal_name = outbox.DB_NAME + "-journal"
+        journal = self.directory / journal_name
+        real_open = os.open
+        opened = []
+        try:
+            queue.deadline = 10.1
+            def vanish_after_open(name, *args, **kwargs):
+                if name == journal_name:
+                    if opened:
+                        with self.assertRaises(OSError):
+                            os.fstat(opened[-1])
+                    journal.touch(mode=0o600)
+                descriptor = real_open(name, *args, **kwargs)
+                if name == journal_name:
+                    journal.unlink()
+                    opened.append(descriptor)
+                return descriptor
+            with patch.object(outbox.os, "open", side_effect=vanish_after_open), \
+                    patch.object(outbox.time, "monotonic", side_effect=(10.0, 10.05, 10.1)):
+                with self.assertRaisesRegex(outbox.OutboxError, "deadline"):
+                    queue.check_files()
+            self.assertEqual(len(opened), 3)
+            with self.assertRaises(OSError):
+                os.fstat(opened[-1])
+            self.assertFalse(queue.db.in_transaction)
+        finally:
+            queue.close()
+
+    def test_private_file_closes_descriptor_when_fstat_fails(self):
+        directory, directory_fd = outbox.open_private_directory(self.directory)
+        (directory / outbox.DB_NAME).touch(mode=0o600)
+        real_open = os.open
+        opened = []
+        try:
+            def remember_open(*args, **kwargs):
+                descriptor = real_open(*args, **kwargs)
+                opened.append(descriptor)
+                return descriptor
+            with patch.object(outbox.os, "open", side_effect=remember_open), \
+                    patch.object(outbox.os, "fstat", side_effect=OSError("fixture fstat failure")):
+                with self.assertRaisesRegex(OSError, "fixture fstat failure"):
+                    outbox.private_file(directory_fd, outbox.DB_NAME)
+            with self.assertRaises(OSError):
+                os.fstat(opened[0])
+        finally:
+            os.close(directory_fd)
+
     def test_sqlite_full_transaction_preserves_previously_queued_row(self):
         queue = outbox.Queue(self.directory)
         try:
@@ -1092,15 +1287,29 @@ class OutboxTest(unittest.TestCase):
             self.assertTrue(server.entered.wait(2))
             with ThreadPoolExecutor(max_workers=6) as workers:
                 results = list(workers.map(lambda index: self.cli("enqueue", event("worker-" + str(index)), server.origin), range(6)))
-            self.assertTrue(all(result.returncode == 0 for result in results))
-            self.assertEqual(len(self.rows()), 7)
+            for result in results:
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+            rows = self.rows()
+            self.assertEqual(len(rows), 7)
+            self.assertEqual({json.loads(row["event_bytes"])["clientSessionId"] for row in rows},
+                             {"fixture"} | {"worker-" + str(index) for index in range(6)})
+            accepted = {row["capture_id"]: b'{"captureId":"' + row["capture_id"].encode("ascii")
+                        + b'","event":' + row["event_bytes"] + b'}' for row in rows}
+            self.assertEqual(len(accepted), 7)
+            self.assertTrue(all(outbox.canonical_uuid(capture_id) for capture_id in accepted))
             self.assertEqual(len(server.received), 1)
+            self.assertIsNone(sender.poll())
         finally:
             server.release.set()
-            sender.communicate(timeout=5)
-        self.cli("drain", origin=server.origin)
+            output, errors = sender.communicate(timeout=5)
+        self.assertEqual((sender.returncode, errors), (0, b""))
+        self.assertEqual(json.loads(output), {"sent": 7})
+        result = self.cli("drain", origin=server.origin)
+        self.assertEqual((result.returncode, result.stderr), (0, b""))
+        self.assertEqual(json.loads(result.stdout), {"sent": 0})
         self.assertEqual(self.rows(), [])
-        self.assertEqual(len(server.committed), 7)
+        self.assertEqual({capture_id: receipt[0] for capture_id, receipt in server.committed.items()}, accepted)
+        self.assertEqual(len(server.received), 7)
 
     def test_quota_is_atomic_never_evicts_and_checks_logical_bytes(self):
         queue = outbox.Queue(self.directory)
