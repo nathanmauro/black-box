@@ -237,8 +237,13 @@ Corpus validation failures exit 2 with a controller error on stderr and nothing 
 exit, `serve` writes host accounting (deliveries, exact bytes, attempts, close reason) to stderr.
 A future model runner must keep this one session for the whole trial, prevent restart or reset
 (restarting the process would restore the full budget), and deny any alternate history access.
-That runner integration, the Black Box backend, an authentic corpus builder, registration and
-adjudication, and the difficulty and accepted-action studies remain outstanding.
+Still outstanding:
+
+- runner integration;
+- an authentic staged corpus with registered availability evidence (the
+  [snapshot builder](#frozen-snapshot-corpus-builder) is development tooling only);
+- adjudication;
+- the difficulty and accepted-action studies.
 
 ### Backend seam and the compact-search blocker
 
@@ -426,6 +431,159 @@ match every item.
   check requires the launched PID exactly.
 - A SIGKILL of the controller orphans the server's own session; nothing reaps it.
 - The page bound is defense in depth; the order check fires first.
+
+## Frozen snapshot corpus builder
+
+`history_corpus_build.py` (NAT-325) converts one hash-pinned standalone Black Box SQLite snapshot
+into the unchanged `blackbox.history-corpus/v1` manifest and `blackbox.history-items/v1` items file
+that both adapters load. Standard library, Python 3.9. **Status:** synthetic-snapshot qualification through both adapters,
+including four fresh packaged-server runs; see the
+[qualification report](evaluation-results/2026-10-03-frozen-corpus-builder-qualification.json).
+No development inventory history is staged by this change; every inventory member stays
+`not_staged` until a separately registered build with chronology evidence exists.
+
+**Availability is unverified.** A snapshot hash identifies bytes; it never shows that an event was
+available before the cutoff. The schema has no `recorded_at` column, so items omit it, the manifest
+provenance says `availability unverified`, and the host result reports
+`"availability": "unverified"`. No registration or receive time is invented.
+
+**Inputs.** All explicit; nothing is inferred:
+
+- `--snapshot` and `--snapshot-sha256`: a standalone file, such as one produced by
+  `scripts/storage/blackbox_backup.py`;
+- `--corpus-id` and an exact `--project` label;
+- one or more `--session`, each an internal `agent_sessions.id`. `client_session_id` is unique only
+  together with `source` and is never accepted as a selector;
+- `--cutoff`: inclusive, RFC 3339 with 1–9 fractional digits and `Z` or an offset, compared as
+  exact integer nanoseconds;
+- `--exclusions`: a JSON list of `{"id", "reason"}`, possibly empty, with unique IDs and non-blank
+  reasons;
+- `--output`: a directory that must not exist yet.
+
+Dry run is the default. It validates syntax and reads only the exclusions file: no snapshot read,
+no SQLite connection, no output. `--execute` materializes. The exclusions file is opened
+non-blocking without following a symlink and must be a regular file, so a FIFO or device fails with
+`invalid_exclusions` instead of hanging.
+
+**Scope.** An event is included when its session is allowlisted, its attributed project equals the
+label, and its `observed_at` is at or before the cutoff, minus declared exclusions:
+
+- Attribution is the event's `metadata.repo` when that is a string that is not blank by Java
+  `String.isBlank` (the server's `firstNonBlank` rule). Otherwise it is the snapshot's
+  `agent_sessions.cwd`.
+- The comparison is exact: no trimming, case folding, trailing-slash, alias or worktree
+  normalization.
+- The cwd fallback is mutable current session state, not historical attribution proof.
+- Late, other-project and unattributed rows are filtered with explicit counts; included rows are
+  never truncated.
+- Every exclusion must match an in-scope event, so a typo fails rather than becoming a no-op.
+
+**Mapping.** Canonical text only:
+
+| Item field | Value |
+| --- | --- |
+| `id` | `agent_events.id` |
+| `kind` | exact `event_type` `Handoff`, `Decision`, `Observation` map to `handoff`, `decision`, `observation`; every other type (messages, tools, `Idea`, `Evidence`, `Projection`) maps to `event`; `message` is not produced |
+| `project` | the declared label |
+| `session` | internal session ID |
+| `observed_at` | stored text verbatim, nanoseconds kept |
+| `source_ref` | `blackbox-sqlite:<snapshot sha256>:agent_events:<event id>` |
+| `text` | `agent_events.text` exactly; empty, whitespace, Unicode and NUL preserved |
+
+Omitted and disclosed in the host result: `role`, `turn_id`, `tool_name`, tool input/output JSON,
+`metadata_json` (read only for `repo`), `human_text`, event `source`/`client_session_id`, other
+session columns, every other table, and `recorded_at`. A selected event whose text is NULL fails
+the build unless it is explicitly excluded. Empty text is never invented, and payloads never stand
+in for authored text. This is a text corpus, not full event history.
+
+**Validation order.** The first failure stops the build:
+
+1. Arguments.
+2. The output parent is opened without following symlinks, and the output name must be absent.
+   If it is the same directory as the snapshot's parent (compared by directory identity, so
+   differently spelled aliases count), the output may not use the snapshot's own name or its
+   `-wal`, `-shm` or `-journal` name. Names are compared under canonical Unicode normalization
+   plus casefold, the same contract as `blackbox_backup.py`; compatibility-distinct names are not
+   merged. This is checked before any output mutation, as `output_is_snapshot` or
+   `output_is_sidecar`.
+3. The source parent and leaf are opened without following symlinks. The source must be a
+   regular, non-empty file within 2 GiB, with no `-wal`, `-shm` or `-journal` sidecar.
+4. A raw streamed copy goes into a private 0700 staging directory while hashing. The staging
+   directory is created exclusively; a name collision fails as `staging_collision` and the
+   existing path is left untouched. Source identity,
+   size and timestamps must be unchanged and the sidecars still absent. The hash must equal the
+   expected value.
+5. The copy's header must be SQLite with rollback-journal format bytes; WAL mode is refused.
+6. Only the verified copy is opened, with `mode=ro&immutable=1`, `trusted_schema=OFF`,
+   `query_only=ON`. The source is never opened with SQLite. Checks:
+   UTF-8 encoding, `quick_check`, and that `agent_sessions` and `agent_events` are ordinary tables
+   whose required columns are not generated. Views, virtual tables and missing columns are
+   refused.
+7. Every allowlisted session exists exactly once with TEXT identity columns.
+8. Rows of allowlisted sessions, in ID order, at most 1,000,000:
+   - duplicate event ID check;
+   - event `source`/`client_session_id` must agree with the session;
+   - TEXT `observed_at` must parse;
+   - late rows are filtered;
+   - metadata must be a bounded JSON object with unique keys and finite numbers, and `repo` a
+     string, null or absent;
+   - unattributed and other-project rows are filtered;
+   - exclusions are removed;
+   - event ID syntax is checked;
+   - NULL text fails;
+   - text must be TEXT, strict UTF-8 and at most 64 KiB.
+9. Every exclusion must have matched.
+10. The private snapshot copy is unlinked, and its absence verified, before anything is
+    published. If that fails, the build stops with `cleanup_failed`.
+11. The existing item, items-file and manifest limits are checked, then `load_corpus` validates
+    the staged files.
+12. Publish: the output directory is created exclusively (0700). Items are linked first and the
+    manifest last, as the commit marker.
+
+One 300-second deadline covers the copy, every query and row, and the final steps. It is checked
+again after rendering, after self-validation, before the output directory is created and before
+the manifest link. Expiry fails with `build_timeout`, and the output is rolled back.
+
+Cleanup removes only entries whose identity the builder recorded when it created them: the fixed
+staged files, its staging directory, and its own output links and directory. Pre-existing or
+replaced paths and foreign files are preserved. Errors are stable codes only
+(`{"status":"failed","error":"..."}`), never row text, paths or exception detail. A failed cleanup
+step is never reported as success. The build exits non-zero with `"error":"cleanup_failed"` plus
+these booleans:
+
+- `published`: whether both the items and manifest links are in the output, so the corpus
+  loads;
+- `staging_removed`: whether the staging directory is gone.
+
+When an earlier failure caused the cleanup, its stable code is kept as `cause`.
+
+**Publication failures.** If publication fails after the output directory exists, for example a
+failed directory `fsync` after both links, the builder rolls back its own links and directory:
+
+- **Complete rollback:** the original error is reported (for example `build_failed` or
+  `build_timeout`) and no output remains. A directory kept only because foreign files were added
+  counts as complete; the foreign files are preserved.
+- **Incomplete rollback:** the result is `cleanup_failed`, with the original `cause`, `published`,
+  `staging_removed`, and two more fields. `output_removed` says whether the builder removed its
+  output directory. `output_entries` lists which of `items.json` and `manifest.json` remain.
+
+  A failed rollback is never reported as success. When both links remain, `published` is `true`
+  and the corpus still validates.
+
+**Success with a staging failure.** A build that published successfully but could not remove
+staging reports `cleanup_failed` with `published: true`. Staging then holds only items and
+manifest links, because the snapshot copy was already removed.
+
+These guarantees cover ordinary errors and interrupts handled by the process. They do not cover
+abrupt termination such as `SIGKILL`, power loss or a crash. Then a `.history-corpus-build-*`
+staging directory, which may hold the full snapshot copy, or a partial output directory may
+remain. An output without `manifest.json` is not a published corpus.
+
+The corpus schema and parser bounds are unchanged. Identical inputs give byte-identical manifest and
+items files: items are ordered by observed nanoseconds then ID, sessions and exclusions by ID. The
+builder adds no build-time timestamps and no snapshot, staging or output filesystem paths. Source
+timestamps (`observed_at`, the cutoff) and declared labels, including the project path, are kept
+verbatim.
 
 ## Registration and unchanged gates
 
