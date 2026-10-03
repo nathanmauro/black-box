@@ -28,7 +28,7 @@ import { findProjectByIdentifier, primaryProjectScope } from "../lib/projects";
 import { buildRecallBriefing, newestRecorded, recalledItemHref } from "../lib/recall";
 import { sourceFilter } from "../lib/stores";
 
-const RECALL_KINDS = ["decision", "handoff", "observation", "idea"] as const;
+const RECALL_KINDS = ["decision", "handoff", "observation", "idea", "projection"] as const;
 const TIME_WINDOWS = [
   { label: "24h", value: 24 },
   { label: "1w", value: 168 },
@@ -443,9 +443,11 @@ export default function RecallPage() {
             </For>
             <RecallHelp label="Help with filters">
               <p>
-                Choose decisions, handoffs, observations, or ideas. Keep at least one kind selected.
-                The source filter in the top bar can hide captures returned by recall.
+                Choose decisions, handoffs, observations, ideas, or projections. Keep at least one
+                kind selected. The source filter in the top bar can hide captures returned by
+                recall.
               </p>
+              <p>Projections are recorded possibilities and use text matching only.</p>
             </RecallHelp>
           </fieldset>
           <label class="check-chip recall-history">
@@ -681,6 +683,15 @@ function RecallCard(props: {
           <A href={recalledItemHref(props.item)}>Open full handoff in Browse</A>
         </HandoffContext>
       </Show>
+      <Show when={props.item.kind.toLowerCase() === "projection"}>
+        <p class="recall-hint">
+          Recorded possibilities; no selected outcome is implied. The heading names the first path.
+          <Show when={!props.item.body}>
+            {" "}
+            Open the source capture to inspect all recorded paths and their confidence.
+          </Show>
+        </p>
+      </Show>
       <Show when={props.item.body}>{(body) => <ReaderText text={body()} />}</Show>
       <Show when={props.item.rationale}>
         {(rationale) => <p class="recall-rationale">{rationale()}</p>}
@@ -697,7 +708,7 @@ function RecallCard(props: {
           </A>
         </div>
       </Show>
-      <Show when={props.item.confidence != null}>
+      <Show when={props.item.confidence != null && props.item.kind.toLowerCase() !== "projection"}>
         <div class="confidence-row recall-confidence">
           <span>confidence</span>
           <meter min="0" max="1" value={confidence()}>

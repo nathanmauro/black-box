@@ -108,6 +108,61 @@ async function chooseProject(name: string) {
 }
 
 describe("RecallPage", () => {
+  it("keeps separate Projection basis visible when ingest capped the rendered body", async () => {
+    const rationale = "Only consider a server after demonstrated demand.";
+    vi.mocked(getRecall).mockResolvedValue(
+      result([
+        {
+          ...item,
+          kind: "projection",
+          body: "Possible path. ".repeat(1500) + "[truncated]",
+          rationale,
+        },
+      ]),
+    );
+    render(() => <RecallPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    const card = await screen.findByRole("article", { name: item.headline! });
+    expect(card).toHaveTextContent(rationale);
+    fireEvent.click(screen.getByRole("button", { name: "Copy context" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain(`Recorded basis: ${rationale}`);
+  });
+
+  it("restores projection-only links and treats the first-path confidence as a path attribute", async () => {
+    updateParams({ project: "/repos/alpha", kinds: "projection", run: "1" });
+    const body = "Possible futures\nLocal default (0.8)\nShared server (0.2) only if needed.";
+    vi.mocked(getRecall).mockResolvedValue(result([{ ...item, kind: "projection", body }]));
+    render(() => <RecallPage />);
+    const card = await screen.findByRole("article", { name: item.headline! });
+    expect(getRecall).toHaveBeenCalledExactlyOnceWith(
+      { project: "/repos/alpha", query: "", includeSuperseded: false },
+      168,
+      ["projection"],
+    );
+    expect(screen.getByRole("checkbox", { name: "Projection" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Decision" })).not.toBeChecked();
+    expect(card).toHaveTextContent("Recorded possibilities; no selected outcome is implied.");
+    expect(card).toHaveTextContent("Shared server (0.2) only if needed.");
+    expect(within(card).queryByRole("meter")).not.toBeInTheDocument();
+    expect(
+      within(card).queryByRole("button", { name: "Replace decision" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers an unselected Projection filter and source guidance for older headline-only results", async () => {
+    vi.mocked(getRecall).mockResolvedValue(result([{ ...item, kind: "projection" }]));
+    render(() => <RecallPage />);
+    expect(screen.getByRole("checkbox", { name: "Projection" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Projection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    const card = await screen.findByRole("article", { name: item.headline! });
+    expect(card).toHaveTextContent(
+      "Open the source capture to inspect all recorded paths and their confidence.",
+    );
+    expect(within(card).queryByRole("meter")).not.toBeInTheDocument();
+  });
+
   it("keeps observation headings short while exposing the complete body through reader and clipboard", async () => {
     const headline = "Observation checkpoint";
     const body =
