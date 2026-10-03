@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 import dev.nathan.sbaagentic.project.internal.domain.MeldCursor;
 import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.IngestionRedactor;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -46,12 +47,17 @@ public class ProjectMeldService implements ProjectMeldOperations {
     private final ProjectCatalogStore repository;
     private final ProjectMeldSummarizer summaryBackend;
     private final ProjectAliasService aliasService;
+    private final IngestionRedactor redactor;
 
     public ProjectMeldService(
-            ProjectCatalogStore repository, ProjectMeldSummarizer summaryBackend, ProjectAliasService aliasService) {
+            ProjectCatalogStore repository,
+            ProjectMeldSummarizer summaryBackend,
+            ProjectAliasService aliasService,
+            IngestionRedactor redactor) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
         this.aliasService = aliasService;
+        this.redactor = redactor;
     }
 
     public ProjectMeldPreviewResponse preview(String projectKey, ProjectMeldPreviewRequest request) {
@@ -127,18 +133,21 @@ public class ProjectMeldService implements ProjectMeldOperations {
         }
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         String id = UUID.randomUUID().toString();
-        String title = firstNonBlank(
+        String title = redactor.redact(firstNonBlank(
                 request.title(),
-                unassigned ? "Unassigned braid" : "Project meld: " + ProjectKeyCodec.labelFor(canonicalKey));
-        String body = requiredText(request.body(), "Meld body is required");
-        String provider = firstNonBlank(request.provider(), "local");
-        String model = firstNonBlank(request.model(), "context-bundle");
-        String promptVersion = firstNonBlank(request.promptVersion(), PROMPT_VERSION);
+                unassigned ? "Unassigned braid" : "Project meld: " + ProjectKeyCodec.labelFor(canonicalKey)));
+        String body = redactor.redact(requiredText(request.body(), "Meld body is required"));
+        String provider = redactor.redact(firstNonBlank(request.provider(), "local"));
+        String model = redactor.redact(firstNonBlank(request.model(), "context-bundle"));
+        String promptVersion = redactor.redact(firstNonBlank(request.promptVersion(), PROMPT_VERSION));
         String executionMode = executionMode(request.executionMode());
         boolean savedFromPreview = request.savedFromPreview() == null || request.savedFromPreview();
+        // Classification above uses validated caller input, independently of sanitized metadata.
+        @SuppressWarnings("unchecked")
         Map<String, Object> metadata = request.metadata() == null
                 ? Map.of()
-                : Collections.unmodifiableMap(new LinkedHashMap<>(request.metadata()));
+                : Collections.unmodifiableMap(
+                        new LinkedHashMap<>((Map<String, Object>) redactor.redactDeep(request.metadata())));
         Instant createdAt = Instant.now();
 
         repository.insertSavedMeld(

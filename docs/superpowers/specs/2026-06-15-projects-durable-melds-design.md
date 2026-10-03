@@ -165,8 +165,12 @@ session_meld_inputs (
 The metadata JSON can store selected event IDs, evidence pointers, bundle character counts,
 degradation notes, and source prompt/bundle hashes. The schema should avoid storing full
 duplicate raw session transcripts in metadata. `POST /api/melds` accepts a metadata JSON object
-with null values at any depth and preserves its values through the project meld listing. Omitted
-metadata or a null metadata object returns `{}`; its existing empty SQL representation remains
+with null values at any depth. As amended by NAT-307, new saves apply configured ingestion redaction
+before persistence and return the accepted sanitized values through save/read/list responses.
+Ordinary metadata types, nulls and order are retained; default secret-named members replace their
+entire value, and enabled redaction applies Unicode-safe clipping at the 50,000 UTF-16 scalar scan
+ceiling. Existing rows are not rewritten. See [the current redaction policy](../../operations.md#configuration).
+Omitted metadata or a null metadata object returns `{}`; its existing empty SQL representation remains
 unchanged. Saving still requires a nonblank body and sessions belonging to the selected project.
 
 Initial endpoints:

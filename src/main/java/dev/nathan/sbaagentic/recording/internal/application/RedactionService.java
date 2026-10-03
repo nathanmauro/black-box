@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.recording.internal.application;
 
 import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
+import dev.nathan.sbaagentic.recording.IngestionRedactor;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,7 +13,7 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RedactionService implements ExportRedactor {
+public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     private static final String REDACTED = "[REDACTED]";
     // Anchored at token starts via lookbehind, with a bounded lazy prefix and a possessive
@@ -63,6 +64,7 @@ public class RedactionService implements ExportRedactor {
         this.rules = defaultRules ? builtInRules() : customRules(customPatterns);
     }
 
+    @Override
     public String redact(String text) {
         if (!enabled || text == null) {
 
@@ -112,6 +114,7 @@ public class RedactionService implements ExportRedactor {
         return enabled && text != null && text.length() > MAX_SCAN_CHARS;
     }
 
+    @Override
     public Object redactDeep(Object value) {
         if (!enabled || value == null) {
 

@@ -208,13 +208,22 @@ These tables cover the application variables; hook and wrapper variables are sep
 | `SBA_EXPORT_OBSIDIAN_DIR` | Empty | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI |
 | `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
 
-Ingestion redaction applies before storage to event text, tool input/output, and metadata. With
-its default patterns, nested JSON member names are matched case-insensitively after removing
+Ingestion redaction applies before storage to event text, tool input/output, and metadata. It also
+applies to newly saved melds and braids: title, body, caller-declared provider/model/prompt version,
+and metadata. The save response and subsequent reads contain the accepted sanitized values.
+Canonical project ownership, ordered input IDs, server-derived source provenance, execution mode,
+and artifact kind validation are unchanged. Artifact kind is determined from the validated request
+before metadata sanitization, so custom rules that alter `metadata.kind` cannot reclassify a braid.
+No existing saved artifacts or captures are scrubbed by this write policy.
+
+With the default patterns, nested JSON member names are matched case-insensitively after removing
 non-alphanumeric separators. Names containing `apikey`, `secret`, `token`, `passwd`, `password`,
 `authorization`, `credential`, or `privatekey` replace the **entire value** with `[REDACTED]`,
-including short strings, numbers, nulls, lists, and objects. This conservative policy matches the
-[durable hook](durable-capture.md#privacy-and-limits); it may also hide benign values such as
-`tokenCount`. Ordinary identity and metadata fields keep their structure.
+including short strings, numbers, nulls, lists, and objects. This changes the JSON type for numeric
+fields such as `tokenCount` or `inputTokens`: `1234` becomes the string `"[REDACTED]"`, including
+in saved meld metadata. This conservative policy matches the
+[durable hook](durable-capture.md#privacy-and-limits). Ordinary identity and metadata fields keep
+their structure.
 
 Default text rules also scan named assignments inside string leaves, including JSON text returned
 by tools. Existing secret-name spellings (such as `password`, `api_key`, `client_secret` and
@@ -237,8 +246,12 @@ other field is preserved. Custom `sba.ingestion.redact-patterns` replace the def
 **and disable the default secret-key classification**; those custom patterns still scan string
 values and member names. Disabling ingestion redaction leaves those inputs unchanged. This is
 best-effort sanitization, not a guarantee that arbitrary secrets are recognized, and does not
-retroactively scrub existing captures. Scalar truncation limits still apply. Summary/model export
-has a separate redaction boundary; configuring ingestion does not replace it.
+retroactively scrub existing captures or saved artifacts. When enabled, the 50,000 UTF-16 code-unit
+scan ceiling applies with either default or custom patterns to each meld/braid free-text field
+and each metadata string scalar, with Unicode-safe clipping and a truncation marker; trailing
+unscanned content is discarded. Disabling
+redaction also disables this scan clipping. Event ingestion has separate text-length limits.
+Summary/model export has a separate redaction boundary; configuring ingestion does not replace it.
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
