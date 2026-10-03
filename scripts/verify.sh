@@ -6,6 +6,7 @@
 #
 # Note: --e2e packages target/*.jar. Never run it over a JAR used by a live service.
 # Use an isolated checkout and output path for verification builds.
+# PostgreSQL contracts require SBA_POSTGRES_TEST_* locally; CI always supplies its disposable service.
 #
 # Install as a pre-push hook (runs the default set before every push):
 #   git config core.hooksPath scripts/git-hooks
@@ -38,6 +39,9 @@ git diff --cached --check
 step "Hook durability and deployment recovery"
 ./scripts/test-agent-hook.sh
 ./scripts/test-deploy-local.sh
+
+step "Cloud startup configuration guard (offline)"
+python3 -B -m unittest discover -s scripts/cloud -p 'cloud_entrypoint_test.py'
 
 step "Java suite: mvn -B -q test"
 mvn -B -q test
