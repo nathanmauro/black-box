@@ -47,23 +47,25 @@ class SqliteCompatibilityTest {
                 .isEqualTo(TitleRank.LEGACY);
 
         dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore.Persisted persisted =
-                events.persistEvent(
-                        new EventIngestRequest(
-                                "codex",
-                                "post-refactor-client",
-                                "turn-1",
-                                "Observation",
-                                "assistant",
-                                "New event after migration",
-                                "/repo",
-                                null,
-                                null,
-                                null,
-                                Map.of("kind", "observation"),
-                                Instant.parse("2026-07-20T13:00:00Z")),
-                        Instant.parse("2026-07-20T13:00:00Z"),
-                        "Post-refactor session",
-                        TitleRank.EXPLICIT);
+                new org.springframework.transaction.support.TransactionTemplate(
+                                new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource))
+                        .execute(status -> events.persistEvent(
+                                new EventIngestRequest(
+                                        "codex",
+                                        "post-refactor-client",
+                                        "turn-1",
+                                        "Observation",
+                                        "assistant",
+                                        "New event after migration",
+                                        "/repo",
+                                        null,
+                                        null,
+                                        null,
+                                        Map.of("kind", "observation"),
+                                        Instant.parse("2026-07-20T13:00:00Z")),
+                                Instant.parse("2026-07-20T13:00:00Z"),
+                                "Post-refactor session",
+                                TitleRank.EXPLICIT));
         assertThat(persisted.session().eventCount()).isEqualTo(1);
         assertThat(events.eventsForSession(persisted.session().id(), 10))
                 .singleElement()

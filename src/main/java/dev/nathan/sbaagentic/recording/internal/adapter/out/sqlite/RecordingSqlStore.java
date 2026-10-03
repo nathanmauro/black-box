@@ -31,12 +31,14 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
+@DependsOnDatabaseInitialization
 public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -101,6 +103,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      */
     @PostConstruct
     public void ensureSchema() {
+        StreamPositionStore.initialize(jdbcTemplate);
         if (postgres)
 
             return;
@@ -329,6 +332,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     }
 
     public AgentEvent saveEvent(EventIngestRequest request, AgentSession session, Instant observedAt) {
+        long position = StreamPositionStore.allocate(jdbcTemplate);
         AgentEvent event = new AgentEvent(
                 UUID.randomUUID().toString(),
                 session.id(),
@@ -368,6 +372,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 toJson(event.metadata()),
                 event.observedAt().toString(),
                 event.humanText());
+
+        jdbcTemplate.update(
+                "INSERT INTO event_stream_positions(position, event_id) VALUES (?, ?)", position, event.id());
 
         // The session upsert above holds the SQLite writer/PostgreSQL row lock until this
         // transaction commits. Compare parsed instants: variable-precision ISO timestamps do

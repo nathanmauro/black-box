@@ -71,7 +71,7 @@ jobs:
           python3 - <<'PYTEST'
           import xml.etree.ElementTree as ET
           from pathlib import Path
-          for name in ('PostgresBackendContractTest', 'AuthenticatedPostgresConsumerContractTest', 'DatabaseRestoreContractTest'):
+          for name in ('PostgresBackendContractTest', 'AuthenticatedPostgresConsumerContractTest', 'DatabaseRestoreContractTest', 'StreamPositionPostgresTest'):
               report = Path('target/surefire-reports') / f'TEST-dev.nathan.sbaagentic.postgres.{name}.xml'
               suite = ET.parse(report).getroot()
               assert int(suite.get('tests', '0')) > 0, f'{name} did not run'

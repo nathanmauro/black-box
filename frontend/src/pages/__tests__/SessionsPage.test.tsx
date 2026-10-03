@@ -22,6 +22,12 @@ import type {
 import { setHumanOnly } from "../../lib/humanOnly";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
+import {
+  LiveStoreContext,
+  type LiveStore,
+  type LiveStatus,
+  type EventAppended,
+} from "../../lib/sse";
 
 const navigate = vi.fn();
 
@@ -212,6 +218,99 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("refreshes the open transcript after replay, reconnect and cursor reset", async () => {
+    const [status, setStatus] = createSignal<LiveStatus>("live");
+    let appended: ((event: EventAppended) => void) | undefined;
+    let reset: (() => void) | undefined;
+    const live: LiveStore = {
+      status,
+      events: () => [],
+      onEventAppended: (callback) => {
+        appended = callback;
+        return () => {};
+      },
+      onSessionUpdated: () => () => {},
+      onReset: (callback) => {
+        reset = callback;
+        return () => {};
+      },
+    };
+    render(() => (
+      <LiveStoreContext.Provider value={live}>
+        <SessionsPage />
+      </LiveStoreContext.Provider>
+    ));
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
+    vi.mocked(getSessionTranscript).mockClear();
+    appended?.({
+      id: "missed",
+      sessionId: "session-1",
+      source: "codex",
+      eventType: "Observation",
+      observedAt: "2000-01-01T00:00:00Z",
+    });
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
+    vi.mocked(getSessionTranscript).mockClear();
+    setStatus("down");
+    setStatus("live");
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
+    vi.mocked(getSessionTranscript).mockClear();
+    reset?.();
+    await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
+  });
+
+  it("drops removed search baseline and ignores older pages started before reset", async () => {
+    let reset: (() => void) | undefined;
+    let finishOlder!: (response: SessionTranscriptResponse) => void;
+    let removed = false;
+    const live: LiveStore = {
+      status: () => "live",
+      events: () => [],
+      onEventAppended: () => () => {},
+      onSessionUpdated: () => () => {},
+      onReset: (callback) => {
+        reset = callback;
+        return () => {};
+      },
+    };
+    vi.mocked(getSessionTranscript).mockImplementation(async (id, params = {}) => {
+      if (params.before)
+        return new Promise<SessionTranscriptResponse>((resolve) => {
+          finishOlder = resolve;
+        });
+      return transcriptResponse(removed ? [] : events, {
+        sessionId: id,
+        nextBefore: removed ? null : "older-cursor",
+      });
+    });
+    render(() => (
+      <LiveStoreContext.Provider value={live}>
+        <SessionsPage />
+      </LiveStoreContext.Provider>
+    ));
+    await screen.findByText("I made the reading view calmer.");
+    const search = await screen.findByRole("searchbox", { name: "Find in session" });
+    fireEvent.input(search, { target: { value: "reading view" } });
+    await waitFor(() =>
+      expect(getSessionTranscript).toHaveBeenCalledWith(
+        "session-1",
+        expect.objectContaining({ q: "reading view" }),
+      ),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load older matches" }));
+    await waitFor(() => expect(finishOlder).toBeDefined());
+    removed = true;
+    reset?.();
+    await waitFor(() =>
+      expect(screen.queryByText("I made the reading view calmer.")).not.toBeInTheDocument(),
+    );
+    finishOlder(transcriptResponse(events, { sessionId: "session-1", nextBefore: null }));
+    await Promise.resolve();
+    await waitFor(() =>
+      expect(screen.queryByText("I made the reading view calmer.")).not.toBeInTheDocument(),
+    );
+  });
+
   it("leads the session header with the first human turn ahead of the summary", async () => {
     const original = sessions[0];
     sessions[0] = {
