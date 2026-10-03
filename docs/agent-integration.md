@@ -70,8 +70,11 @@ already end in `[truncated]` while its event metadata retains fuller `paths` and
 reports recall presentation limits, not whether ingest previously capped the text. The source
 `eventId`, `sessionId`, and `observedAt` remain available when MCP clips a body.
 
-Projections remain lexical-only and excluded from default Decisions/Handoffs recall. This API
-support does not add a Projection kind filter to the Recall page.
+Projections remain lexical-only and excluded from default Decisions/Handoffs recall. Select
+**Projection** in the Recall page to inspect recorded paths, or open a link with
+`kinds=projection&run=1`. The reader and copied context label them as possibilities. The card does
+not show the legacy first-path confidence as an overall score; each path's declared confidence
+remains in the body. Older responses without a body link to the source capture for full evidence.
 
 ### Ideas
 
