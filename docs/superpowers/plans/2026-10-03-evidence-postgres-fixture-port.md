@@ -54,3 +54,9 @@ change. All worker app contexts/connections were closed; the coordinator-owned d
 was intentionally left running for coordinator cleanup. No production, CI workflow, service
 configuration, provider, Git history or publication was changed by the worker. Source is ready
 for coordinator review and integration.
+
+Coordinator review accepted the target checks and documented direct-loopback requirement. The
+owned fixture's identity and empty Evidence-schema inventory were verified again, then its
+server was stopped and the listener's absence confirmed. Current main and the verified shared
+browser-fixture correction were integrated without conflicts. Hosted CI verifies the same
+Evidence consumer cases on its ordinary PostgreSQL port.
