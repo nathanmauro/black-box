@@ -20,9 +20,11 @@ public record RecalledItem(
         String clientSessionId,
         String repo,
         Instant observedAt,
+        /** For Projection items, the first listed path title, not a selected future. */
         String headline,
         String rationale,
         List<String> alternatives,
+        /** For Projection items, the first listed path confidence, not an aggregate across futures. */
         Double confidence,
         List<String> openLoops,
         String nextAction,
@@ -41,7 +43,11 @@ public record RecalledItem(
         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
         String supersededByEventId,
 
-        /** Full captured Observation text; absent for other kinds and legacy projections. */
+        /**
+         * Canonical stored Observation or rendered Projection text, after ingest limits/redaction.
+         * MCP may clip this presentation with an explicit truncation marker; the source event
+         * retains its canonical text and metadata. Absent for other kinds and legacy DTO callers.
+         */
         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
         String body) {
     public RecalledItem(

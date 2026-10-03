@@ -55,6 +55,24 @@ response does not make a retry safe, and repeating the request can create anothe
 that need receipt-based retries can use `POST /api/events/idempotent` with a stable `captureId` and
 unchanged event body; see [Idempotent event capture](idempotent-capture.md).
 
+### Projection evidence
+
+Explicit `kinds=projection` on REST recall or `kinds: ["projection"]` on MCP recall returns the
+canonical rendered Projection text in `body`: its plausible futures, path descriptions and
+confidences, and shared basis. `headline` and `confidence` retain their historical meaning as the
+first listed path's title and confidence. They do not identify a chosen decision or an aggregate
+confidence across futures; read `body` for the alternatives and conditions.
+
+`body` preserves stored text after capture redaction and length limits. An oversized capture can
+already end in `[truncated]` while its event metadata retains fuller `paths` and `basis`; use
+`GET /api/events/{eventId}` for that canonical evidence. MCP can additionally shorten `body` under
+`maxChars`, with a visible omission suffix and result-level `truncated: true`. That result flag
+reports recall presentation limits, not whether ingest previously capped the text. The source
+`eventId`, `sessionId`, and `observedAt` remain available when MCP clips a body.
+
+Projections remain lexical-only and excluded from default Decisions/Handoffs recall. This API
+support does not add a Projection kind filter to the Recall page.
+
 ### Ideas
 
 An `Idea` records something someone proposed that nobody is acting on now: the human's aside or an
@@ -252,7 +270,7 @@ use a result's Browse link to open its exact source event.
 | Optional SessionStart hook | 720 hours (30 days), 3 Decisions/Handoffs, 4,000-character context block |
 | MCP `recallContext` | 168 hours, Decisions/Handoffs, 10 items (maximum 50); `maxChars` defaults to 24,000, minimum 500 |
 
-These are different layers. The MCP clamp bounds item text fields, can trim rationale/headline
+These are different layers. The MCP clamp bounds item text fields, can trim body/rationale/headline
 with a visible suffix and drop later items, and reports `truncated`. It is not the hook's packet
 budget. Use MCP for topic queries, additional kinds, or a deliberately larger slice. Telemetry
 counts the service result before that clamp; see [Recall observability](recall-observability.md).

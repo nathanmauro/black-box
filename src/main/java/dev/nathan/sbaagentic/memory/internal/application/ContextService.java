@@ -550,7 +550,7 @@ public class ContextService implements MemoryRecallOperations {
                 score,
                 relation == null ? null : relation.supersedesEventId(),
                 relation == null ? null : relation.supersededByEventId(),
-                KIND_OBSERVATION.equals(kind) ? event.text() : null);
+                KIND_OBSERVATION.equals(kind) || KIND_PROJECTION.equals(kind) ? event.text() : null);
     }
 
     private static MemoryHit toMemoryHit(AgentEvent event, double score) {
