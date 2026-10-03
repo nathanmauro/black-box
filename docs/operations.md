@@ -411,6 +411,17 @@ discrete argv; file contents and event data are never evaluated by a shell. Curs
 default, and VS Code uses the same `-g file:line:column` adapter. Finder reveal uses the same
 resolver and a fixed `/usr/bin/open -R` command. Typed failures render beside the path.
 
+## Client disconnects
+
+A browser that closes a page, popup, or event stream mid-response is not a server failure. Tomcat's
+typed `ClientAbortException` (directly or as a cause of a converter failure) and Spring's
+`AsyncRequestNotUsableException` for streams are logged at DEBUG by `ApiExceptionHandler` and get no
+response body, since a JSON error envelope cannot be written under an already-set content type such
+as `font/woff2`. Enable `logging.level.dev.nathan.sbaagentic.platform.internal.adapter.in.web=DEBUG`
+to see them. Plain `IOException`, `EOFException`, and other failures, including ones whose message
+mentions a broken pipe or connection reset, still return the typed 500 `internal_error` body and an
+ERROR log.
+
 ## Schema evolution
 
 There is no migration framework such as Flyway or Liquibase. Spring's `sql.init.mode=always`
