@@ -59,6 +59,15 @@ occurrence windows and exact event IDs are unchanged. The existing hash comparis
 above 32,768 characters remains in place and is not a collision-free guarantee. See the
 [numeric identity verification](superpowers/plans/2026-10-03-transcript-number-identity.md).
 
+Browse scopes pending reader work to the selected session. A previous session's lineage is hidden
+while the new relationship request loads. Switching sessions, transcript searches or My turns
+mode releases older-page controls for the new reader; late pages and failures cannot overwrite its
+rows, errors or loading state, including a return to the same session. Requests may still finish
+in the background; this is response ownership, not transport cancellation. A live first-page
+refresh also invalidates an older page's success/error if its starting cursor has moved, keeping
+intervening events reachable. See the
+[reader request-state verification](superpowers/plans/2026-10-03-session-reader-request-state.md).
+
 
 ## Record a changed decision
 

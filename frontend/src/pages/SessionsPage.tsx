@@ -293,11 +293,13 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   const [lineageDag, { refetch: refetchLineageDag }] = createResource(
     () => (selectedId() ? selectedId() : undefined),
-    (sessionId) => getSessionDag(sessionId),
+    async (sessionId) => ({ sessionId, dag: await getSessionDag(sessionId) }),
   );
   const lineageDagData = createMemo(() => {
     if (lineageDag.error) return null;
-    const dag = lineageDag();
+    const result = lineageDag();
+    if (!result || result.sessionId !== selectedId()) return null;
+    const dag = result.dag;
     return dag && dag.nodes.filter((node) => node.type === "session").length > 1 ? dag : null;
   });
   const railSessionIds = createMemo(() => sessions().map((session) => session.id));
@@ -495,6 +497,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     searchSessionId = nextSessionId;
   });
 
+  createEffect(
+    on([selectedId, debouncedTranscriptQuery, readerHumanOnly], () => {
+      // A previous reader's response/finally must not own the new reader's page controls.
+      transcriptGeneration++;
+      setOlderEventsLoading(false);
+      setOlderEventsError("");
+    }),
+  );
+
   function refreshReader() {
     void refetchSessions();
     void refetchProjectSessions();
@@ -623,7 +634,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     const before = current.nextBefore;
     if (!before || olderEventsLoading() || transcriptLoading()) return;
 
-    const generation = transcriptGeneration;
+    const generation = ++transcriptGeneration;
     const sessionId = current.sessionId;
     const query = current.query;
     const human = current.humanOnly;
@@ -644,7 +655,12 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         return;
       const olderEvents = response.events.map((event) => withHumanText(event, human));
       mutateTranscript((latest) => {
-        if (latest.sessionId !== sessionId || latest.query !== query || latest.humanOnly !== human)
+        if (
+          latest.sessionId !== sessionId ||
+          latest.query !== query ||
+          latest.humanOnly !== human ||
+          latest.nextBefore !== before
+        )
           return latest;
         const merged = mergeSessionEvents(latest.events, olderEvents);
         return {
@@ -662,7 +678,8 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       if (
         generation === transcriptGeneration &&
         selectedId() === sessionId &&
-        debouncedTranscriptQuery() === query
+        debouncedTranscriptQuery() === query &&
+        transcriptData().nextBefore === before
       ) {
         setOlderEventsError("Older transcript events could not be loaded. Try again.");
       }
