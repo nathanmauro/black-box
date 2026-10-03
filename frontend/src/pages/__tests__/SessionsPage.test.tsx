@@ -473,6 +473,56 @@ describe("SessionsPage", () => {
     expect(screen.getByText(/hidden-tool-output/)).toBeInTheDocument();
   });
 
+  it.each([false, true])(
+    "keeps Projection in the memory layer while preserving exact sources (target=%s)",
+    async (exactTarget) => {
+      const projection: AgentEvent = {
+        ...events[2],
+        id: "evt-projection",
+        eventType: "Projection",
+        role: "assistant",
+        text: "Possibilities: continue locally, or evaluate a shared server.",
+        metadata: {
+          kind: "projection",
+          paths: [
+            { title: "Continue locally", confidence: 0.8 },
+            { title: "Evaluate a shared server", confidence: 0.2 },
+          ],
+        },
+      };
+      vi.mocked(getSessionTranscript).mockResolvedValue(
+        transcriptResponse([projection, ...events]),
+      );
+      render(() => (
+        <SessionsPage
+          selectedSessionId="session-1"
+          targetEventId={exactTarget ? projection.id : undefined}
+        />
+      ));
+      const toggle = await screen.findByRole("checkbox", { name: "Show memory events" });
+      expect(toggle).not.toBeChecked();
+      const row = () => document.getElementById(`event-${projection.id}`);
+      if (exactTarget) {
+        expect(row()).toHaveClass("event-flow-row--target");
+        expect(within(row()!).getByText("Projection", { exact: true })).toBeInTheDocument();
+        expect(within(row()!).queryByText("agent response")).not.toBeInTheDocument();
+      } else {
+        expect(row()).not.toBeInTheDocument();
+        expect(screen.queryByText(projection.text!)).not.toBeInTheDocument();
+      }
+      expect(screen.getByText("I made the reading view calmer.")).toBeInTheDocument();
+      fireEvent.click(toggle);
+      expect(toggle).toBeChecked();
+      expect(within(row()!).getByText("Projection", { exact: true })).toBeInTheDocument();
+      expect(within(row()!).getAllByText(projection.text!)).not.toHaveLength(0);
+      expect(within(row()!).queryByText("agent response")).not.toBeInTheDocument();
+      expect(within(row()!).getByText("assistant", { exact: true })).toBeInTheDocument();
+      fireEvent.click(toggle);
+      if (exactTarget) expect(row()).toHaveClass("event-flow-row--target");
+      else expect(row()).not.toBeInTheDocument();
+    },
+  );
+
   it("searches message and tool fields, retains complete matching turns, and navigates matches", async () => {
     const searchableEvents: AgentEvent[] = [
       {

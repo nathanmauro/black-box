@@ -3,6 +3,7 @@ import type { AgentEvent } from "./api";
 import {
   filterSessionTranscriptTurns,
   isSessionReaderEvent,
+  isSessionMemoryEvent,
   mergeSessionEvents,
   sessionConversationRole,
 } from "./sessionTranscript";
@@ -208,6 +209,22 @@ describe("session transcript event merging", () => {
 });
 
 describe("session transcript reading and search", () => {
+  it.each(["Projection", "projection", " PROJECTION "])(
+    "classifies %s as memory rather than a conversation reply",
+    (eventType) => {
+      const projection = event({
+        id: "projection",
+        observedAt: "2026-10-03T12:00:00Z",
+        eventType,
+        role: "assistant",
+        text: "Recorded possibilities",
+      });
+      expect(isSessionMemoryEvent(projection)).toBe(true);
+      expect(isSessionReaderEvent(projection)).toBe(false);
+      expect(sessionConversationRole(projection)).toBeNull();
+    },
+  );
+
   it("shows user, assistant, and tool records while hiding memory and internal records", () => {
     const prompt = event({
       id: "prompt",

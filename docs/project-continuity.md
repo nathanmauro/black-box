@@ -86,6 +86,12 @@ body includes the stored alternatives, conditions, and per-path confidence. Both
 context label these as possibilities, without implying a selected outcome or an overall forecast
 confidence. Projections use text matching only and remain outside default Decision/Handoff recall.
 
+In Browse, Projection belongs to the opt-in **Show memory events** layer. Its evidence is labeled
+Projection rather than an agent response, and it does not stand in for a missing conversational
+answer. Exact-source links still reveal and highlight the selected Projection with the memory
+layer off. This changes presentation only; the original capture and role metadata stay intact.
+See the [Projection Browse verification](superpowers/plans/2026-10-03-projection-browse-layer.md).
+
 Use **Replace decision** on a current decision and enter the new choice plus the reason. This writes
 only when **Record replacement** is pressed. **Include replaced decisions** requests historical
 results; the earlier/replacement links resolve their own sessions even across different clients.
