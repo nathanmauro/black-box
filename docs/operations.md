@@ -364,3 +364,25 @@ matching. See [Architecture](architecture.md#local-first-and-model-boundaries).
 [Local writes and Elasticsearch](local-writes-and-elasticsearch.md) covers the optional local index.
 The cloud work is a single-owner managed AWS prototype, documented in
 [docs/lightsail-prototype.md](lightsail-prototype.md); it is not a public service.
+
+## Canonical event chronology indexes
+
+Startup adds three derived expression indexes for global event chronology, session event chronology,
+and the human-turn subset. They normalize the stored UTC timestamp only inside index/query keys, with
+nine fractional digits and an ordered signed-year encoding; canonical event bytes and existing indexes
+remain unchanged. Repeated startup reuses the indexes. The first startup after this upgrade builds them
+against existing history, which adds a one-time startup/disk cost and ordinary index maintenance on
+subsequent writes. SQLite remains the default.
+
+Feed and session transcript cursors retain their existing wire format. They compare normalized time
+and event ID together, so whole-second, fractional and nanosecond events do not disappear when pages
+are merged with transcript-file events. A later-arriving older event can appear in a remaining page;
+this is keyset navigation, not a frozen database snapshot. Newer arrivals above an already-consumed
+cursor require a head refresh, as before.
+
+A disposable 50,000-event SQLite fixture (1% intent, 99% hook events) built all three indexes in
+98 ms, adding about 6.0 MiB; repeat initialization took 9 ms. The first page used the ordered index
+(80 microseconds); global, session and human deep-page queries used indexed range seeks with no
+temporary sort (73–89 microseconds). Retrieving 100 recent intent events through the real recall
+adapter took 2.9 ms. These are measured warmed fixture results, not production latency guarantees.
+Deployment time, index space and filtered-query cost depend on database size, storage and workload.
