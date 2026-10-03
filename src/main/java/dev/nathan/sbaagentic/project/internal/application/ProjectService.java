@@ -30,7 +30,13 @@ public class ProjectService implements ProjectOperations {
 
     public List<AgentSession> sessions(String projectKey, int limit) {
 
-        return repository.sessionsForProject(aliasService.resolve(ProjectKeyCodec.decode(projectKey)), limit);
+        return sessions(projectKey, limit, false);
+    }
+
+    public List<AgentSession> sessions(String projectKey, int limit, boolean humanOnly) {
+
+        return repository.sessionsForProject(
+                aliasService.resolve(ProjectKeyCodec.decode(projectKey)), limit, humanOnly);
     }
 
     public ProjectTimelineResponse timeline(String projectKey, int limit, int offset) {

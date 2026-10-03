@@ -9,6 +9,8 @@ public interface ProjectOperations {
 
     List<AgentSession> sessions(String projectKey, int limit);
 
+    List<AgentSession> sessions(String projectKey, int limit, boolean humanOnly);
+
     ProjectTimelineResponse timeline(String projectKey, int limit, int offset);
 
     List<ProjectSavedMeld> melds(String projectKey);
