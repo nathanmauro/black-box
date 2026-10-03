@@ -9,8 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.CompactSearchMcpTools;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
 import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.RestJsonToolCallResultConverter;
-import dev.nathan.sbaagentic.workflow.internal.adapter.in.mcp.WorkflowMcpTools;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -38,9 +36,6 @@ import org.springframework.core.io.ClassPathResource;
         })
 class McpContractSnapshotTest {
 
-    private static final Set<String> REST_JSON_TOOLS = Set.of(
-            "createSpec", "enqueueTask", "claimNextTask", "updateTaskStatus", "completeTask", "listTasks", "getSpec");
-
     @Autowired
     ApplicationContext applicationContext;
 
@@ -64,29 +59,25 @@ class McpContractSnapshotTest {
                 ? objectMapper.readTree(snapshot.toFile())
                 : objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
         assertThat(actual).isEqualTo(expected);
-        assertThat(callbackProvider.getToolCallbacks()).hasSize(17);
+        assertThat(callbackProvider.getToolCallbacks()).hasSize(10);
     }
 
     @Test
-    void callbackQualifierAndRestJsonConvertersStayStable() {
+    void callbackQualifierAndRemainingToolsStayStable() {
         assertThat(applicationContext.getBean("agenticToolCallbacks", ToolCallbackProvider.class))
                 .isSameAs(callbackProvider);
 
         List<String> annotatedNames = new ArrayList<>();
-        for (Class<?> toolGroup : List.of(
-                CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class, WorkflowMcpTools.class)) {
+        for (Class<?> toolGroup : List.of(CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class)) {
             for (Method method : toolGroup.getDeclaredMethods()) {
                 Tool tool = method.getAnnotation(Tool.class);
                 if (tool == null) {
                     continue;
                 }
                 annotatedNames.add(method.getName());
-                if (REST_JSON_TOOLS.contains(method.getName())) {
-                    assertThat(tool.resultConverter()).isEqualTo(RestJsonToolCallResultConverter.class);
-                }
             }
         }
-        assertThat(annotatedNames).hasSize(17).containsAll(REST_JSON_TOOLS);
+        assertThat(annotatedNames).hasSize(10);
     }
 
     @Test

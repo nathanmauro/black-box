@@ -1,7 +1,7 @@
 # Run it
 
 Black Box runs as one Spring Boot process, with SQLite as the default canonical store. Capture,
-coordination, and lexical recall need neither a model nor Elasticsearch. An optional PostgreSQL
+session lineage, and lexical recall need neither a model nor Elasticsearch. An optional PostgreSQL
 profile owns a separate database for shared clients; it does not synchronize local history.
 Commands below assume the repository root unless a path is explicit.
 
@@ -81,25 +81,13 @@ packaging performed for E2E tests, can overwrite `target/` while a service is us
 managed deploy sequence or build in an isolated checkout/output location. A live PID alone does
 not establish health: check `/api/status`, the UI, and a representative API route after restart.
 
-### Runner service
+### Retired runner state
 
-[`scripts/deploy-runner-local.sh`](../scripts/deploy-runner-local.sh) deploys the **already-built**
-JAR as a separate macOS runner service. It does not build the artifact. If the server and runner
-share the JAR, stop the runner before rebuilding: the server deploy script stops only the server
-and rejects deployment while another JAR consumer remains.
-Deploy/restart the runner after the build, or supply an isolated artifact. The runner deploy script renders/installs
-[`scripts/blackbox-runner.plist.template`](../scripts/blackbox-runner.plist.template), starts or
-restarts the runner, and checks process/log activity.
-
-Starting it starts autonomous orchestration under the machine-local runner configuration.
-FULL_AUTO claims `gate` and `auto`; SDLC uses `gate`, `sdlc:plan`, `auto`, and `sdlc:review` and
-reacts to approval annotations. Review [Runner modes](runner.md) and
-[`runner-config.example.json`](runner-config.example.json) before starting it. Only `codex` and
-`fake` engines exist; the example's disabled `grok` entry is not an implementation.
-
-`SBA_RUNNER_CONFIG` selects the JSON config. The script also accepts `SBA_RUNNER_LAUNCHD_LABEL`,
-`SBA_RUNNER_LAUNCHD_DOMAIN`, `SBA_RUNNER_LAUNCHD_PLIST`, `SBA_RUNNER_JAR`, `SBA_RUNNER_LOG_PATH`,
-and `SBA_BASE_URL`; see its `--help`. Process/log activity does not prove a task completed.
+The task board and runner are retired. The runner CLI, deployment script, launchd template, and
+example configuration are no longer supplied. Repository cleanup leaves existing machine-local
+runner files, services, logs, registries, and worktrees untouched. Recovering or removing them is a
+separate operator action; do not start an old runner against the updated API. See
+[retirement and upgrade notes](board-retirement.md).
 
 ### Linux systemd
 
@@ -115,8 +103,7 @@ systemctl --user enable --now black-box
 
 The template does not set `WorkingDirectory`. Configure one at the checkout, or set
 `SBA_SUMMARY_EXTERNAL_COMMAND` to an absolute wrapper path, before using external summaries.
-The same relative-command consideration applies to the launchd template. No runner systemd unit
-is supplied.
+The same relative-command consideration applies to the launchd template.
 
 ### Docker for local development
 
@@ -172,7 +159,7 @@ at least 32 characters, and satisfy startup validation; never put secret values 
 arguments or tracked files. See [Authentication](authentication.md) for the complete boundary.
 
 PostgreSQL support starts with one authoritative API replica. It adds neither local/cloud sync nor
-multi-host runner safety. The opt-in contract test reads `SBA_POSTGRES_TEST_URL`,
+multi-replica coordination. The opt-in contract test reads `SBA_POSTGRES_TEST_URL`,
 `SBA_POSTGRES_TEST_USERNAME`, and `SBA_POSTGRES_TEST_PASSWORD`; these select a disposable test
 database, not the service database. See [PostgreSQL](postgres-backend.md).
 
@@ -287,10 +274,10 @@ Capture and recall hooks are opt-in; see [Connect an agent](agent-integration.md
 | `SBA_RECALL_PROJECT_ALIAS` | `unknown` | Safe declared alias; must satisfy the format and server allowlist |
 
 Hook success does not prove persistence or delivery: the bridges deliberately do not fail the
-host turn. Legacy direct capture and recall hooks do not attach bearer authentication. The bundled
-runner has the same limitation; setting server-side `SBA_AUTH_API_TOKEN` does not wire these clients.
-The optional [durable capture outbox](durable-capture.md#explicit-https-delivery) supports explicit
-HTTPS delivery with a destination-bound credential. Fire logs contain paths and
+host turn. Legacy direct capture and recall hooks do not attach bearer authentication; setting
+server-side `SBA_AUTH_API_TOKEN` does not wire these clients. The optional
+[durable capture outbox](durable-capture.md#explicit-https-delivery) supports explicit HTTPS
+delivery with a destination-bound credential. Fire logs contain paths and
 session identifiers; keep them private. Server [recall telemetry](recall-observability.md) excludes
 raw query/result text and does not prove that returned context was read or useful.
 
@@ -313,7 +300,7 @@ resolver and a fixed `/usr/bin/open -R` command. Typed failures render beside th
 ## Schema evolution
 
 There is no migration framework such as Flyway or Liquibase. Spring's `sql.init.mode=always`
-reapplies additive, idempotent DDL in [`schema.sql`](../src/main/resources/schema.sql) on boot.
+reapplies idempotent creation DDL in [`schema.sql`](../src/main/resources/schema.sql) on boot.
 `CREATE TABLE IF NOT EXISTS` creates missing tables; it does not update existing table columns.
 
 For existing SQLite databases,
@@ -321,8 +308,16 @@ For existing SQLite databases,
 inspects `PRAGMA table_info(agent_sessions)` and performs guarded `ALTER TABLE` additions for
 `title_rank` and `spawned_by`. Legacy titles receive a protective rank. The PostgreSQL profile
 uses [`schema-postgres.sql`](../src/main/resources/schema-postgres.sql) and skips SQLite PRAGMAs,
-FTS5 initialization, and native-extension loading. This is an additive startup scheme, not a
-versioned migration history, rollback facility, or database synchronization mechanism.
+FTS5 initialization, and native-extension loading. This is not a versioned migration history,
+rollback facility, or database synchronization mechanism.
+
+NAT-243 adds an idempotent, opt-in retirement migration for both database profiles. Fresh schemas
+omit the board; existing databases preserve legacy data unless `SBA_RETIRE_WORKFLOW=true`
+(`sba.storage.retire-workflow=true`) is explicitly set. With that flag, startup removes `specs`,
+`tasks`, and `task_events` and nulls/drops `session_links.task_id`, while retaining session links
+and recorded events, including historical completion Handoffs. Verify a database backup before
+enabling retirement. Binary rollback cannot restore the removed task data or its schema;
+do not run an old binary against the migrated database. See [retirement notes](board-retirement.md).
 
 SQLite FTS5 is rebuildable; its triggers maintain the event index during canonical writes.
 Do not run `VACUUM` on the live SQLite database without rebuilding FTS afterward: implicit event

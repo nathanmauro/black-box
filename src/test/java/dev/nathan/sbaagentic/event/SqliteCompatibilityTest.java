@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.EventFtsIndex;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
-import dev.nathan.sbaagentic.workflow.internal.adapter.out.sqlite.TaskRepository;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
@@ -35,7 +34,6 @@ class SqliteCompatibilityTest {
                 java.time.Clock.systemDefaultZone(),
                 new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
         events.ensureSchema();
-        TaskRepository tasks = new TaskRepository(jdbc, objectMapper);
 
         assertThat(events.findSessionById("legacy-session"))
                 .get()
@@ -47,10 +45,6 @@ class SqliteCompatibilityTest {
         assertThat(jdbc.queryForObject(
                         "SELECT title_rank FROM agent_sessions WHERE id = 'legacy-session'", Integer.class))
                 .isEqualTo(TitleRank.LEGACY);
-        assertThat(tasks.findTask("legacy-task")).get().satisfies(snapshot -> {
-            assertThat(snapshot.task().title()).isEqualTo("Legacy task");
-            assertThat(snapshot.spec().body()).isEqualTo("Frozen legacy spec");
-        });
 
         dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore.Persisted persisted =
                 events.persistEvent(
@@ -76,9 +70,6 @@ class SqliteCompatibilityTest {
                 .extracting(AgentEvent::text)
                 .isEqualTo("New event after migration");
 
-        var spec = tasks.createSpec("/repo", "New spec", "New frozen body", Map.of(), "planner");
-        var task = tasks.enqueueTask(spec.id(), "New task", "codex", 1, "planner");
-        assertThat(tasks.findTask(task.snapshot().task().id())).isPresent();
         assertThat(jdbc.queryForObject("PRAGMA journal_mode", String.class)).isEqualToIgnoringCase("wal");
     }
 }

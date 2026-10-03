@@ -30,14 +30,9 @@ GET /api/sessions/{sessionId}/events
 GET /api/sessions/{sessionId}/judgments
 GET /api/sessions/{sessionId}/links
 GET /api/sessions/{sessionId}/transcript
-GET /api/specs/{specId}
 GET /api/stats
 GET /api/status
 GET /api/stream
-GET /api/tasks
-GET /api/tasks/{taskId}/dag
-GET /api/tasks/{taskId}/events
-GET /board
 GET /companion
 GET /graph
 GET /ideas
@@ -48,7 +43,6 @@ GET /search
 GET /sessions
 GET /sessions/**
 GET /stream
-PATCH /api/tasks/{taskId}
 POST /api/ask
 POST /api/decisions
 POST /api/events
@@ -67,9 +61,4 @@ POST /api/sessions/summarize
 POST /api/sessions/summarize-missing
 POST /api/sessions/{sessionId}/exports/{targetId}
 POST /api/sessions/{sessionId}/summarize
-POST /api/specs
-POST /api/tasks
-POST /api/tasks/claim
-POST /api/tasks/{taskId}/annotations
-POST /api/tasks/{taskId}/complete
 PUT /api/project-aliases

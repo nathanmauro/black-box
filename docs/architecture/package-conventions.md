@@ -41,8 +41,8 @@ or a dependency boundary justify another package.
 - Infrastructure implements a port owned by the consuming feature.
 - A module may import another module's root API, never its `internal` packages; no `spi/` package exists in the current tree.
 - Cross-module reads use a narrow API. Cross-module reactions prefer explicit application events.
-- Standalone capture commits before optional fan-out; completion-Handoff listeners run inside the
-  outer task transaction. See the [transaction note](../architecture.md#java-module-graph).
+- Capture commits before optional fan-out. Session lineage reacts through the public recording
+  event API, without introducing a reverse dependency from recording.
 - Spring transaction and lifecycle annotations stay on externally invoked Spring beans; package
   moves must not introduce proxy-bypassing self-invocation.
 - Tests mirror production packages so package-private seams do not become public for test
@@ -61,12 +61,12 @@ or a dependency boundary justify another package.
 | `judgment` | Optional cortex beat folding, typed Jev judgment, persisted event judgments, and judgment REST/SSE surfaces |
 | `summary` | Session finalization, summary backends, transcript export |
 | `ask` | Retrieval orchestration and answer synthesis |
-| `workflow` | Specs, tasks, annotations, lifecycle, lineage, and DAG projection |
-| `runner` | External REST-driven FULL_AUTO/SDLC runner |
+| `lineage` | Session links, hook-derived subagent relationships, child counts, and session DAG projection |
 | `platform` | Bootstrap, generic errors, health, SPA, SSE hub, MCP registration, configuration, CLI shell |
 
 `platform` is the composition edge and may depend on public module APIs. Feature modules never
-import platform internals. `runner` remains wire-independent from server implementation types.
+import platform internals. `lineage` depends on the public recording API; `judgment` and platform
+SSE enrichment consume the public lineage API.
 
 ## Public means intentional
 

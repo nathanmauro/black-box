@@ -115,17 +115,17 @@ class SessionLinkApiContractTest {
     }
 
     @Test
-    void taskIdRoundTripsThroughCreateAndRead() throws Exception {
+    void obsoleteTaskAssociationIsIgnoredOnCreateAndAbsentOnRead() throws Exception {
         String taskId = "task-" + UUID.randomUUID();
         mockMvc.perform(post("/api/session-links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(linkJson("parent", "child", "continued", taskId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.taskId").value(taskId));
+                .andExpect(jsonPath("$.taskId").doesNotExist());
 
         mockMvc.perform(get("/api/sessions/child/links"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.parents[0].taskId").value(taskId));
+                .andExpect(jsonPath("$.parents[0].taskId").doesNotExist());
     }
 
     @Test
@@ -159,6 +159,30 @@ class SessionLinkApiContractTest {
         mockMvc.perform(get("/api/session-links/child-counts").param("ids", ""))
                 .andExpect(status().isOk())
                 .andExpect(content().json("{}"));
+    }
+
+    @Test
+    void sessionDagPreservesBoundedParentAndChildProjection() throws Exception {
+        for (String[] link : new String[][] {
+            {"grandparent", "parent"}, {"parent", "center"}, {"center", "child"}, {"child", "grandchild"}
+        }) {
+            mockMvc.perform(post("/api/session-links")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(linkJson(link[0], link[1], "spawned", null)))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/dag").param("sessionId", "center"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodes.length()").value(3))
+                .andExpect(jsonPath("$.nodes[0].id").value("session:center"))
+                .andExpect(jsonPath("$.nodes[0].type").value("session"))
+                .andExpect(jsonPath("$.nodes[0].ref").value("center"))
+                .andExpect(jsonPath("$.edges.length()").value(2));
+        mockMvc.perform(get("/api/dag").param("sessionId", "orphan"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodes.length()").value(1))
+                .andExpect(jsonPath("$.nodes[0].label").value("orphan"))
+                .andExpect(jsonPath("$.edges").isEmpty());
     }
 
     private String linkJson(String parentSessionId, String childSessionId, String linkType, String taskId)

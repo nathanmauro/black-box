@@ -386,23 +386,9 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     }
 
     public List<TaskRow> openTasks(String canonicalKey, int limit) {
-        List<String> scopes = aliasService.scopesFor(canonicalKey);
-        List<Object> args = new ArrayList<>(scopes);
-        args.add(Math.max(1, Math.min(limit, MAX_TRAJECTORY_CAPTURES)));
 
-        // tasks.project_key is free-form; task futures match only path-shaped keys in scope.
-        return jdbcTemplate.query(
-                """
-                SELECT id, title, status, priority, updated_at
-                  FROM tasks
-                 WHERE project_key IN (%s)
-                   AND status IN ('open', 'claimed', 'in_progress', 'blocked')
-                 ORDER BY %s DESC,
-                          id ASC
-                 LIMIT ?
-                """.formatted(placeholders(scopes.size()), dialect.sortableInstant("updated_at")),
-                this::mapTrajectoryTask,
-                args.toArray());
+        // Preserve the trajectory response contract after retiring the dormant task board.
+        return List.of();
     }
 
     public long totalCaptures(String canonicalKey) {

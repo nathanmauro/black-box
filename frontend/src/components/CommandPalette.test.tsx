@@ -52,19 +52,6 @@ describe("CommandPalette", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("offers the coordination Board as a first-class navigation command", async () => {
-    const onClose = vi.fn();
-    render(() => <CommandPalette open onClose={onClose} />);
-
-    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
-      target: { value: "board" },
-    });
-    fireEvent.click(await screen.findByRole("option", { name: /Board/ }));
-
-    expect(navigate).toHaveBeenCalledWith("/board");
-    expect(onClose).toHaveBeenCalled();
-  });
-
   it("offers the Ideas view for an 'open ideas' query", async () => {
     const onClose = vi.fn();
     render(() => <CommandPalette open onClose={onClose} />);

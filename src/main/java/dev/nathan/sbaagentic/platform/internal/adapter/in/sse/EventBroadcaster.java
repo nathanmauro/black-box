@@ -140,14 +140,6 @@ public class EventBroadcaster {
         send("session.updated", payload);
     }
 
-    public void publishTaskChanged(StreamEvents.TaskChanged payload) {
-        send(payload.transitionType(), payload);
-    }
-
-    public void publishTaskNote(StreamEvents.TaskNoted payload) {
-        send("task.note", payload);
-    }
-
     public void publishJudgmentAppended(StreamEvents.JudgmentAppended payload) {
         send("judgment.appended", payload);
     }

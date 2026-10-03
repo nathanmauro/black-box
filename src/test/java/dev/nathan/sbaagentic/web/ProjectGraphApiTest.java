@@ -44,9 +44,6 @@ class ProjectGraphApiTest {
 
     @BeforeEach
     void resetDatabase() {
-        jdbcTemplate.update("DELETE FROM task_events");
-        jdbcTemplate.update("DELETE FROM tasks");
-        jdbcTemplate.update("DELETE FROM specs");
         jdbcTemplate.update("DELETE FROM session_meld_inputs");
         jdbcTemplate.update("DELETE FROM session_melds");
         jdbcTemplate.update("DELETE FROM agent_events");
@@ -55,7 +52,7 @@ class ProjectGraphApiTest {
     }
 
     @Test
-    void graphFeedReturnsCapturesAndTasks() throws Exception {
+    void graphFeedReturnsCapturesWithEmptyRetiredTasks() throws Exception {
         String key = UUID.randomUUID().toString().replace("-", "");
         String cwd = "/tmp/black-box-graph-alpha-" + key;
 
@@ -160,33 +157,6 @@ class ProjectGraphApiTest {
                                 """.formatted(key, cwd)))
                 .andExpect(status().isOk());
 
-        String specBody = mockMvc.perform(post("/api/specs")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "projectKey", cwd,
-                                "title", "Trajectory graph",
-                                "body", "Build the frontend graph once the backend feed exists.",
-                                "actor", "planner"))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        String specId = objectMapper.readTree(specBody).path("id").asText();
-
-        String openTaskId = enqueueTask(specId, "Build trajectory graph view", 7);
-        String blockedTaskId = enqueueTask(specId, "Blocked graph work", 8);
-        String claimedTaskId = enqueueTask(specId, "Claimed graph work", 6);
-        String inProgressTaskId = enqueueTask(specId, "In-progress graph work", 9);
-        String doneTaskId = enqueueTask(specId, "Done graph work", 5);
-        String cancelledTaskId = enqueueTask(specId, "Cancelled graph work", 4);
-
-        setTaskStatus(openTaskId, "open", "2026-08-05T10:04:00Z");
-        setTaskStatus(blockedTaskId, "blocked", "2026-08-05T10:05:00Z");
-        setTaskStatus(claimedTaskId, "claimed", "2026-08-05T10:06:00Z");
-        setTaskStatus(inProgressTaskId, "in_progress", "2026-08-05T10:07:00Z");
-        setTaskStatus(doneTaskId, "done", "2026-08-05T10:08:00Z");
-        setTaskStatus(cancelledTaskId, "cancelled", "2026-08-05T10:09:00Z");
-
         JsonNode project = projectByCanonicalKey(
                 objectMapper.readTree(mockMvc.perform(get("/api/projects"))
                         .andExpect(status().isOk())
@@ -252,29 +222,7 @@ class ProjectGraphApiTest {
                         .asText())
                 .isEqualTo("Ship the trajectory tab");
 
-        assertThat(graph.path("tasks").size()).isEqualTo(4);
-        assertThat(textValues(graph.path("tasks"), "id"))
-                .contains(openTaskId, blockedTaskId, claimedTaskId, inProgressTaskId)
-                .doesNotContain(doneTaskId, cancelledTaskId);
-        assertThat(textValues(graph.path("tasks"), "status"))
-                .contains("open", "blocked", "claimed", "in_progress")
-                .doesNotContain("done", "cancelled");
-        JsonNode task = taskById(graph, openTaskId);
-        assertThat(task.path("title").asText()).isEqualTo("Build trajectory graph view");
-        assertThat(task.path("status").asText()).isEqualTo("open");
-        assertThat(task.path("priority").asInt()).isEqualTo(7);
-
-        String unknownCanonical = cwd + "-unknown";
-        String unknownKey = ProjectKey.of(unknownCanonical).encoded();
-        mockMvc.perform(get("/api/projects/{projectKey}/timeline", unknownKey))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(0));
-        mockMvc.perform(get("/api/projects/{projectKey}/graph", unknownKey))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.canonicalKey").value(unknownCanonical))
-                .andExpect(jsonPath("$.totalCaptures").value(0))
-                .andExpect(jsonPath("$.captures.length()").value(0))
-                .andExpect(jsonPath("$.tasks.length()").value(0));
+        assertThat(graph.path("tasks").isEmpty()).isTrue();
     }
 
     @Test
@@ -342,32 +290,6 @@ class ProjectGraphApiTest {
         assertThat(textValues(graph.path("captures"), "id")).doesNotContain(zeroFractionId);
     }
 
-    private String enqueueTask(String specId, String title, int priority) throws Exception {
-        String body = mockMvc.perform(post("/api/tasks")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "specId", specId,
-                                "title", title,
-                                "lane", "frontend",
-                                "priority", priority,
-                                "actor", "planner"))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        return objectMapper
-                .readTree(body)
-                .path("snapshot")
-                .path("task")
-                .path("id")
-                .asText();
-    }
-
-    private void setTaskStatus(String taskId, String status, String updatedAt) {
-        jdbcTemplate.update("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", status, updatedAt, taskId);
-    }
-
     private JsonNode projectByCanonicalKey(JsonNode projects, String canonicalKey) {
         for (JsonNode project : projects) {
             if (canonicalKey.equals(project.path("canonicalKey").asText())) {
@@ -396,15 +318,5 @@ class ProjectGraphApiTest {
             }
         }
         throw new AssertionError("Missing capture kind: " + kind);
-    }
-
-    private JsonNode taskById(JsonNode graph, String taskId) {
-        for (JsonNode task : graph.path("tasks")) {
-            if (taskId.equals(task.path("id").asText())) {
-
-                return task;
-            }
-        }
-        throw new AssertionError("Missing task: " + taskId);
     }
 }

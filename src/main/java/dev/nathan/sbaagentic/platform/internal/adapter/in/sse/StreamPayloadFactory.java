@@ -1,11 +1,11 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import dev.nathan.sbaagentic.lineage.SessionLineageOperations;
+import dev.nathan.sbaagentic.lineage.SessionLink;
 import dev.nathan.sbaagentic.platform.internal.application.StreamEventSnapshot;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
-import dev.nathan.sbaagentic.workflow.SessionLineageOperations;
-import dev.nathan.sbaagentic.workflow.SessionLink;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;

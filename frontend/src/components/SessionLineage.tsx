@@ -181,7 +181,6 @@ export default function SessionLineage(props: SessionLineageProps) {
           <DagView
             dag={props.dag}
             currentSessionId={props.currentSessionId}
-            layout="lineage"
             onSelectSession={selectSession}
           />
         </div>

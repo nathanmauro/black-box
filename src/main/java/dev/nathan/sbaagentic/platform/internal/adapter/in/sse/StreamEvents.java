@@ -1,7 +1,5 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
-import dev.nathan.sbaagentic.workflow.Task;
-import dev.nathan.sbaagentic.workflow.TaskAnnotation;
 import java.util.List;
 import java.util.Map;
 
@@ -51,12 +49,6 @@ public final class StreamEvents {
             String model,
             String version,
             String judgedAt) {}
-
-    /** A committed task lifecycle change, named for the value of {@code transitionType}. */
-    public record TaskChanged(Task task, String transitionId, String transitionType, String observedAt) {}
-
-    /** A committed task annotation, named SSE event {@code task.note}. */
-    public record TaskNoted(Task task, TaskAnnotation annotation, String observedAt) {}
 
     private StreamEvents() {}
 }
