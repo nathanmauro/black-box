@@ -259,3 +259,68 @@ the frozen controller sources, predecessor histories, all ten real worker traces
 implementations, external grades, schedule and gate result. Infrastructure verification also
 passed: 27 Python tests and a Docker smoke covering five histories, five screens and 20 evaluation
 conditions using authored reference code. The ordinary local service was not deployed or restarted.
+
+## Offline Java repository-fixture qualification
+
+Before adding real Java repository continuations, qualify their staging and behavioral grader
+without running an agent. The separate development qualifier currently supports **one fixed public
+structured-redaction repair**: baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
+`d833fa96942a558cc7bc453b504656a2df41148f`. Both commit objects must already exist locally. It does
+not fetch history, accept arbitrary revisions/candidates, change existing benchmark runs, or provision
+Docker. This familiar published bug is a development fixture, not a held-out difficulty case.
+
+```bash
+# Read-only pin/hash/allowlist verification. No output files, builds, or model calls.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan
+
+# Unit/fake contracts; no Docker, model, or Maven builds.
+python3 -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_repository_fixture.py' -v
+
+# Run the fixed reviewed baseline/reference through six trusted pure-Java assertions.
+# Requires Java 21, Maven, and already-cached dependencies for these historical sources.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute
+```
+
+`--maven-repo` selects an existing local artifact cache; the default is `~/.m2/repository`.
+`--timeout` bounds each build (180 seconds by default). Missing objects, tooling, or cached
+dependencies fail explicitly; the qualifier never downloads dependencies or installs tools.
+An optional `--output` writes a new JSON report with owner-only permissions. Its parent must exist,
+and existing files or symbolic-link path components are refused. The default prints JSON only.
+
+The worker-facing export contains tracked baseline `pom.xml`, README, license, Java sources/resources
+and public Java tests, plus the fixture task text. It contains no Git metadata, post-fix history/docs,
+reference patch, or private regression grader. Baseline and reference grading use separate private
+copies. Only the reviewed production-source replacement crosses into the reference grading copy;
+identical controller-owned tests are added to both. Fixture/build/source hashes, exact reference-path
+allowlists, and grading-input hashes fail closed on drift. Only bytes already validated against the
+pinned grader/task digests are staged; the full expected source/build/grader inventory is checked
+before Maven starts and again after it exits. Existing candidate-execution isolation in
+the Docker benchmark is unchanged; this native path is **only for reviewed authored revisions**, not
+an adversarial sandbox or a way to execute model submissions on the host.
+
+The fixed Maven recipe is offline, uses isolated empty settings/home, bypasses Maven startup rc files,
+and strips inherited provider, proxy, Spring, Maven and JVM options. Every Maven invocation, including
+the Java-version preflight, runs from an owned directory with an empty `.mvn` and explicit
+`MAVEN_BASEDIR`, so caller/ancestor Maven configuration is not discovered. The grader directly instantiates
+the redactor and never starts Spring, a provider, a server, or a database. It reads no authentication
+files. Temporary source/build trees are removed on normal completion and handled failure; owned
+process groups are killed on timeout/interruption. A hard process/host crash can leave temporary data.
+Reports retain only fixed labels, reviewed revision/content hashes, test outcomes and timings; raw
+build logs and source trees are not retained.
+
+Qualification requires all six named tests to execute: the baseline must fail exactly three known
+behavioral assertions while passing three preservation checks; the reference must pass all six.
+Compiler/dependency/tooling failures, errors, skipped/zero/duplicate/unexpected tests, inconsistent
+exit codes and altered inputs cannot masquerade as reproduced behavior. Actual offline checks
+reproduced those three baseline failures and all six reference passes, in roughly five seconds per
+build, including a run from deliberately contaminated caller/ancestor Maven configuration and JVM
+options. An empty-cache run failed explicitly with `offline_dependency_unavailable`. Temporary trees
+were cleaned in both cases. This verifies fixture infrastructure, not task difficulty or a memory benefit.
+
+Every result remains `infrastructure_only` with `usefulness_gate.status = not_cleared`, zero model
+runs and zero observed accepted actions. Future studies still require twenty adjudicated historical
+candidates, five resumed tasks, a same-model/budget/source-window ordinary latest-handoff/search
+comparator, at least 70% useful supported suggestions, below 10% stale/duplicate suggestions, and
+three observed useful accepted actions that comparator missed. The existing five-task development
+screen (continue only at 1–4 bare passes) is unchanged. This qualifier supplies none of those missing
+outcomes and makes no efficacy claim.

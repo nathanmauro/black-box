@@ -43,6 +43,12 @@ retaining the previous index and canonical timestamp columns. Existing databases
 index build and storage cost; no event or session timestamp migration is required. See the
 [session chronology verification](superpowers/plans/2026-10-03-session-project-chronology.md).
 
+Browse also retains complete timestamp precision when merging an exact source event or an older
+transcript page. An older answer stays before a later prompt even within the same millisecond;
+loading its preceding prompt restores the complete turn. Equal instants retain recorded-source
+and input-order precedence, and duplicate detection is unchanged. Invalid or missing legacy
+timestamps remain last. See the [Browse ordering verification](superpowers/plans/2026-10-03-transcript-precise-ordering.md).
+
 ## Record a changed decision
 
 In the web interface, choose a project in **Recall**, then enter a separate question. Suggestions
