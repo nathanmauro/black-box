@@ -9,6 +9,7 @@ export type SessionTranscriptTurnLike = {
 
 const SEMANTIC_DUPLICATE_WINDOW_MS = 10_000;
 const INLINE_PAYLOAD_IDENTITY_CHARS = 32_768;
+const SEMANTIC_JSON_DEPTH = 128;
 
 export function isSessionMemoryEvent(event: AgentEvent): boolean {
   const type = normalizedEventType(event);
@@ -208,13 +209,77 @@ function clearlySameOccurrence(left: AgentEvent, right: AgentEvent): boolean {
 function payloadIdentity(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length <= INLINE_PAYLOAD_IDENTITY_CHARS) {
+    let parsed: unknown;
     try {
-      return stableJson(JSON.parse(trimmed));
+      parsed = JSON.parse(trimmed);
     } catch {
-      return trimmed.replace(/\s+/g, " ");
+      return `text:${trimmed.replace(/\s+/g, " ")}`;
+    }
+    const scanned = scanJsonIdentity(trimmed);
+    if (scanned.safeNumbers && scanned.depth <= SEMANTIC_JSON_DEPTH) {
+      return `json:${stableJson(parsed)}`;
+    }
+    // Keep uncertain duplicates rather than hiding distinct captured numbers. This also avoids
+    // recursive normalization of deep JSON. Strings, number spellings and key order stay intact.
+    return `raw-json:${scanned.compact}`;
+  }
+  // Existing bounded hash policy for large payloads; this is not a collision-free identity.
+  return `hashed:${trimmed.length}:${hashString(trimmed)}:${trimmed.slice(0, 48)}:${trimmed.slice(-48)}`;
+}
+
+/** Scan already-valid JSON without parsing numeric lexemes through Number first. */
+function scanJsonIdentity(value: string): { compact: string; safeNumbers: boolean; depth: number } {
+  const pieces: string[] = [];
+  const numberToken = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  let safeNumbers = true;
+  let depth = 0;
+  let maxDepth = 0;
+  let index = 0;
+  while (index < value.length) {
+    const char = value[index];
+    if (char === '"') {
+      const start = index++;
+      while (index < value.length) {
+        if (value[index] === "\\") index += 2;
+        else if (value[index++] === '"') break;
+      }
+      pieces.push(value.slice(start, index));
+    } else if (char === "-" || (char >= "0" && char <= "9")) {
+      numberToken.lastIndex = index;
+      const token = numberToken.exec(value)![0]; // JSON.parse already validated the grammar.
+      const numeric = Number(token);
+      const decimal = normalizedDecimal(token);
+      safeNumbers &&=
+        Number.isFinite(numeric) &&
+        decimal !== undefined &&
+        decimal === normalizedDecimal(String(numeric));
+      pieces.push(token);
+      index += token.length;
+    } else {
+      if (char === "{" || char === "[") maxDepth = Math.max(maxDepth, ++depth);
+      else if (char === "}" || char === "]") depth--;
+      if (char !== " " && char !== "\t" && char !== "\r" && char !== "\n") pieces.push(char);
+      index++;
     }
   }
-  return `${trimmed.length}:${hashString(trimmed)}:${trimmed.slice(0, 48)}:${trimmed.slice(-48)}`;
+  return { compact: pieces.join(""), safeNumbers, depth: maxDepth };
+}
+
+/** Sign + significant digits + decimal exponent, with no expansion of powers of ten. */
+function normalizedDecimal(token: string): string | undefined {
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(token);
+  if (!match) return undefined;
+  const fraction = match[3] ?? "";
+  const digits = match[2] + fraction;
+  let end = digits.length;
+  while (end > 0 && digits[end - 1] === "0") end--;
+  const significant = digits.slice(0, end).replace(/^0+/, "");
+  if (!significant) return "0"; // Preserve existing semantic equivalence of -0 and 0.
+  const exponent = match[4] ?? "0";
+  // Larger exponents cannot be offset by an inline payload's <=32k digits. Conservatively keep
+  // raw identity, and never allocate an expanded decimal or an unbounded BigInt exponent.
+  if (exponent.replace(/^[+-]?0*/, "").length > 6) return undefined;
+  return `${match[1]}${significant}e${Number(exponent) - fraction.length + digits.length - end}`;
 }
 
 function stableJson(value: unknown): string {
