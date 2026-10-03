@@ -14,6 +14,8 @@ public interface ProjectCatalogStore {
 
     List<AgentSession> sessionsForProject(String canonicalKey, int limit);
 
+    List<AgentSession> sessionsForProject(String canonicalKey, int limit, boolean humanOnly);
+
     List<AgentSession> sessionsForProjectByIds(String canonicalKey, List<String> sessionIds);
 
     long countTimelineBlocks(String canonicalKey);

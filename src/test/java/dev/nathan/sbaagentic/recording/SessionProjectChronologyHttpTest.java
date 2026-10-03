@@ -344,6 +344,57 @@ class SessionProjectChronologyHttpTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"sqlite", "postgres"})
+    void projectHumanSessionsFilterBeforeLimitAndRetainFirstTurnAndAliases(String backend) {
+        Fixture f = fixture(backend);
+        String repo = scope();
+        String alias = scope();
+        Seed first = capture(f, repo, UUID.randomUUID().toString(), "2026-10-03T11:00:00Z", false);
+        Seed second = capture(f, alias, UUID.randomUUID().toString(), "2026-10-03T11:00:01Z", false);
+        http.put(f.base() + "/api/project-aliases", Map.of("aliasKey", alias, "canonicalKey", repo));
+        String machineId = "";
+        for (int i = 0; i < 5; i++) {
+            machineId = post(
+                            f,
+                            "/api/events",
+                            Map.of(
+                                    "source",
+                                    "codex",
+                                    "clientSessionId",
+                                    UUID.randomUUID().toString(),
+                                    "cwd",
+                                    repo,
+                                    "eventType",
+                                    "PostToolUse",
+                                    "toolName",
+                                    "Read",
+                                    "text",
+                                    "Machine-only fixture",
+                                    "observedAt",
+                                    "2026-10-03T12:00:0" + i + "Z"))
+                    .path("sessionId")
+                    .asText();
+        }
+        capture(f, scope(), UUID.randomUUID().toString(), "2026-10-03T13:00:00Z", false);
+        String key = project(f, repo).path("projectKey").asText();
+        String path = "/api/projects/" + key + "/sessions?limit=2";
+        assertThat(ids(get(f, path))).hasSize(2).doesNotContain(first.id(), second.id());
+        assertThat(ids(get(f, path + "&humanOnly=false"))).isEqualTo(ids(get(f, path)));
+        JsonNode filtered = get(f, path + "&humanOnly=true");
+        assertThat(ids(filtered)).containsExactly(second.id(), first.id());
+        for (JsonNode session : filtered) {
+            assertThat(session.path("firstHumanTurn").asText()).isEqualTo("Synthetic chronology prompt");
+        }
+        assertThat(get(f, "/api/sessions/" + machineId).path("id").asText()).isEqualTo(machineId);
+        assertThat(f.app()
+                        .getBean(ProjectCatalogStore.class)
+                        .sessionsForProjectByIds(repo, List.of(first.id()))
+                        .get(0)
+                        .firstHumanTurn())
+                .isEqualTo("Synthetic chronology prompt");
+    }
+
     private static double elapsedMs(long start) {
 
         return (System.nanoTime() - start) / 1_000_000.0;

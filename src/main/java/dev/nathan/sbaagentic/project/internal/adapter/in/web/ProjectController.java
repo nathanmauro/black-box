@@ -91,9 +91,11 @@ public class ProjectController {
 
     @GetMapping("/projects/{projectKey}/sessions")
     public List<AgentSession> projectSessions(
-            @PathVariable String projectKey, @RequestParam(defaultValue = "100") int limit) {
+            @PathVariable String projectKey,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(defaultValue = "false") boolean humanOnly) {
 
-        return projectService.sessions(projectKey, safeLimit(limit));
+        return projectService.sessions(projectKey, safeLimit(limit), humanOnly);
     }
 
     @GetMapping("/projects/{projectKey}/timeline")
