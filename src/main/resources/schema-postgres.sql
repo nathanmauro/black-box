@@ -162,3 +162,15 @@ CREATE INDEX IF NOT EXISTS idx_session_links_parent
 
 CREATE INDEX IF NOT EXISTS idx_session_links_child
     ON session_links (child_session_id);
+
+-- Durable SSE ordering. Positions and generation survive restart/backup. Compact event-ID
+-- anchors deliberately have no FK: deleting a payload must not recycle a cursor or its identity.
+CREATE TABLE IF NOT EXISTS event_stream_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    generation TEXT NOT NULL,
+    last_position BIGINT NOT NULL CHECK (last_position >= 0)
+);
+CREATE TABLE IF NOT EXISTS event_stream_positions (
+    position BIGINT PRIMARY KEY CHECK (position > 0),
+    event_id TEXT NOT NULL UNIQUE
+);

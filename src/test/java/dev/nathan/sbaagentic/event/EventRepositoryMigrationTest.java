@@ -38,7 +38,10 @@ class EventRepositoryMigrationTest {
                 new ObjectMapper(),
                 java.time.Clock.systemUTC(),
                 new EventFtsIndex(jdbc, java.time.Clock.systemUTC()));
-        var saved = repository.persistEvent(
+        repository.ensureSchema();
+        var tx = new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource));
+        var saved = tx.execute(status -> repository.persistEvent(
                 new EventIngestRequest(
                         "codex",
                         "legacy-capture",
@@ -54,7 +57,7 @@ class EventRepositoryMigrationTest {
                         Instant.parse("2026-09-18T12:00:00Z")),
                 Instant.parse("2026-09-18T12:00:00Z"),
                 "Original title",
-                TitleRank.TEXT);
+                TitleRank.TEXT));
         var sessionBefore = jdbc.queryForMap(
                 "SELECT * FROM agent_sessions WHERE id = ?", saved.session().id());
         var eventBefore = jdbc.queryForMap(
@@ -106,6 +109,7 @@ class EventRepositoryMigrationTest {
                 new ObjectMapper(),
                 java.time.Clock.systemDefaultZone(),
                 new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
         repository.ensureSchema();
 
         // The legacy session keeps its title but is protected (LEGACY) so only an AI retitle replaces it.
@@ -151,6 +155,7 @@ class EventRepositoryMigrationTest {
                 new ObjectMapper(),
                 java.time.Clock.systemDefaultZone(),
                 new EventFtsIndex(jdbc, java.time.Clock.systemDefaultZone()));
+        new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
         repository.ensureSchema();
 
         // Existing sessions backfill as parents: spawned_by is NULL and maps through the record.

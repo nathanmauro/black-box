@@ -175,7 +175,7 @@ credential-safe errors, and truncated archive rejection. The fake PostgreSQL too
 boundaries; native PostgreSQL restore evidence is a separate integration check.
 
 The companion `DatabaseRestoreContractTest` rehearses real SQLite/WAL and optional PostgreSQL
-backup/restore journeys with exact typed comparisons across all 11 canonical tables, retained legacy
+backup/restore journeys with exact typed comparisons across all 13 canonical tables, including stream counter/generation and position anchors, retained legacy
 objects, unknown schema objects, FTS, HTTP/MCP behavior, and restart. Its PostgreSQL method requires
 an explicitly configured disposable `SBA_POSTGRES_TEST_URL`, username/password test environment, and
 compatible PostgreSQL tools on PATH. This contract preserves canonical embedding bytes; native

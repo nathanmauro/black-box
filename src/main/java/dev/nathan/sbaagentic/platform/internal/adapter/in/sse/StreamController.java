@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpSession;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.util.List;
 import java.util.function.BooleanSupplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -59,52 +58,39 @@ public class StreamController {
         // Logout can race between filter authentication and controller invocation. A missing
         // cookie session must not turn that authenticated request into unlimited local access.
         BooleanSupplier authorized = () -> (!requiresSession || session != null) && sessionStillActive(session);
-        if (!hasReplayCursor(since, lastEventId)) {
+        if (replayRepository == null)
 
             return broadcaster.register(authorized);
-        }
 
-        return broadcaster.register(authorized, () -> replay(since, lastEventId));
+        Instant filter = null;
+        if (since != null && !since.isBlank()) {
+            try {
+                filter = Instant.parse(since);
+            } catch (DateTimeParseException ex) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid since timestamp");
+            }
+        }
+        Instant sinceFilter = filter;
+        var start = replayRepository.start(lastEventId, sinceFilter);
+
+        return broadcaster.register(authorized, start.cursor(), start.reset(), cursor -> {
+            var page = replayRepository.page(cursor, sinceFilter, EventBroadcaster.REPLAY_LIMIT);
+
+            return new EventBroadcaster.Page(
+                    page.entries().stream()
+                            .map(entry -> new EventBroadcaster.Frame(
+                                    entry.cursor(),
+                                    entry.event() == null ? null : payloadFactory.eventAppended(entry.event())))
+                            .toList(),
+                    page.more(),
+                    page.resetCursor());
+        });
     }
 
     SseEmitter stream(HttpServletRequest request) {
 
         return stream(request, null, null);
-    }
-
-    private boolean hasReplayCursor(String since, String lastEventId) {
-
-        return (lastEventId != null && !lastEventId.isBlank()) || (since != null && !since.isBlank());
-    }
-
-    private List<StreamEvents.EventAppended> replay(String since, String lastEventId) {
-        if (lastEventId != null && !lastEventId.isBlank()) {
-            if (replayRepository == null || payloadFactory == null) {
-
-                return List.of();
-            }
-
-            return replayRepository.eventsAfterCursor(lastEventId).stream()
-                    .map(payloadFactory::eventAppended)
-                    .toList();
-        }
-        if (since == null || since.isBlank()) {
-
-            return List.of();
-        }
-        if (replayRepository == null || payloadFactory == null) {
-
-            return List.of();
-        }
-        try {
-
-            return replayRepository.eventsSince(Instant.parse(since)).stream()
-                    .map(payloadFactory::eventAppended)
-                    .toList();
-        } catch (DateTimeParseException ex) {
-
-            return List.of();
-        }
     }
 
     private boolean sessionStillActive(HttpSession session) {
