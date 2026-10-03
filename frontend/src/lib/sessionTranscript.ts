@@ -1,4 +1,5 @@
 import type { AgentEvent } from "./api";
+import { compareCanonicalInstants } from "./instant";
 
 export type SessionConversationRole = "user" | "assistant";
 
@@ -49,7 +50,7 @@ export function mergeSessionEvents(recorded: AgentEvent[], transcript: AgentEven
     event: AgentEvent;
     origin: "recorded" | "transcript";
     index: number;
-    time: number;
+    time: string | undefined;
     identities: string[];
   };
 
@@ -63,7 +64,7 @@ export function mergeSessionEvents(recorded: AgentEvent[], transcript: AgentEven
       event,
       origin,
       index,
-      time: parsedTime(event.observedAt),
+      time: sortableInstant(event.observedAt),
       identities: semanticIdentities(event),
     };
     const duplicate = candidate.identities.some((identity) =>
@@ -87,7 +88,10 @@ export function mergeSessionEvents(recorded: AgentEvent[], transcript: AgentEven
 
   return accepted
     .sort((left, right) => {
-      if (left.time !== right.time) return right.time - left.time;
+      const order =
+        compareCanonicalInstants(right.time, left.time) ??
+        Number(right.time !== undefined) - Number(left.time !== undefined);
+      if (order) return order;
       if (left.origin !== right.origin) return left.origin === "recorded" ? -1 : 1;
       return left.index - right.index;
     })
@@ -225,6 +229,20 @@ function hashString(value: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+// Keep the legacy Date fallback for noncanonical values and invalid values last. Normalizing
+// finite fallbacks before comparison also keeps mixed canonical/legacy ordering transitive.
+function sortableInstant(value: string | null | undefined): string | undefined {
+  if (value && compareCanonicalInstants(value, value) !== undefined) return value;
+  const time = parsedTime(value);
+  if (!Number.isFinite(time)) return undefined;
+  return new Date(time)
+    .toISOString()
+    .replace(
+      /^([+-])(\d+)-/,
+      (_, sign: string, digits: string) => `${sign}${String(Number(digits)).padStart(4, "0")}-`,
+    );
 }
 
 function parsedTime(value: string | null | undefined): number {
