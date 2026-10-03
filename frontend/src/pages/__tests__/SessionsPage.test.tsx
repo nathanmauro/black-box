@@ -240,6 +240,30 @@ describe("SessionsPage", () => {
     expect(document.querySelector(".detail-first-turn")).not.toBeInTheDocument();
   });
 
+  it("discloses the exact first turn without keeping its collapsed tail in labels", async () => {
+    const original = sessions[0];
+    const text = "First turn evidence. ".repeat(30) + "ORIGINAL_FIRST_TURN_TAIL";
+    sessions[0] = { ...original, firstHumanTurn: text };
+    onTestFinished(() => {
+      sessions[0] = original;
+    });
+    render(() => <SessionsPage />);
+    const expand = await screen.findByRole("button", { name: "Show all" });
+    const paragraph = document.querySelector(".detail-first-turn-text")!;
+    expect(paragraph.textContent).not.toContain("ORIGINAL_FIRST_TURN_TAIL");
+    expect(paragraph.textContent!.length).toBeLessThanOrEqual(281);
+    expect(expand).toHaveAttribute("aria-controls", paragraph.id);
+    const label = document.querySelector(".session-row--active .session-row-main strong")!;
+    expect(label.textContent).not.toContain("ORIGINAL_FIRST_TURN_TAIL");
+    expect(label.textContent!.length).toBeLessThanOrEqual(161);
+    fireEvent.click(expand);
+    expect(paragraph.textContent).toBe(text);
+    expect(expand).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(expand);
+    expect(paragraph.textContent).not.toContain("ORIGINAL_FIRST_TURN_TAIL");
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("passes humanOnly to the transcript fetch and refetches when toggled", async () => {
     render(() => <SessionsPage />);
     await screen.findByRole("heading", { name: "Focused session" });

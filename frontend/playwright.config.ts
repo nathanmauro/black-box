@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { assertSafeSeedBaseUrl } from "./src/e2e/seedData";
+import { E2E_SERVER_COMMAND } from "./src/e2e/e2eServer.mjs";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:8799";
 assertSafeSeedBaseUrl(baseURL);
@@ -13,9 +14,6 @@ const host = appUrl.hostname === "localhost" ? "127.0.0.1" : appUrl.hostname;
 const tempDir =
   process.env.SBA_E2E_TEMP_DIR || path.join(os.tmpdir(), `black-box-saga-e2e-${randomUUID()}`);
 const dbPath = process.env.SBA_E2E_DB_PATH || path.join(tempDir, "black-box-saga-e2e.db");
-const editorPath = path.join(tempDir, "fake-editor");
-const editorLogPath = path.join(tempDir, "editor-argv.bin");
-const injectionSentinelPath = path.join(tempDir, "injection-sentinel");
 const runToken = process.env.SBA_E2E_RUN_TOKEN || randomUUID();
 assertSafeE2ePaths(tempDir, dbPath);
 // Playwright reloads its config in child processes. Export the first path so every process shares
@@ -23,22 +21,6 @@ assertSafeE2ePaths(tempDir, dbPath);
 process.env.SBA_E2E_TEMP_DIR = tempDir;
 process.env.SBA_E2E_DB_PATH = dbPath;
 process.env.SBA_E2E_RUN_TOKEN = runToken;
-const serverCommand = [
-  "sh -c '",
-  "set -eu; child=; owned=0; ",
-  "cleanup() { ",
-  "  code=$?; trap - EXIT INT TERM; ",
-  '  if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then kill "$child" 2>/dev/null || true; wait "$child" 2>/dev/null || true; fi; ',
-  '  if [ "$owned" = 1 ]; then node frontend/src/e2e/e2ePreflight.mjs cleanup || code=$?; fi; ',
-  '  exit "$code"; ',
-  "}; ",
-  "trap cleanup EXIT INT TERM; ",
-  "node frontend/src/e2e/e2ePreflight.mjs prepare; owned=1; ",
-  'printf "BLACK_BOX_E2E_DB=%s\\n" "$SBA_E2E_DB_PATH"; ',
-  "mvn -q -Pfrontend -DskipTests package; ",
-  'java -jar target/sba-agentic-0.2.0.jar & child=$!; wait "$child"',
-  "'",
-].join("");
 
 function assertSafeE2ePaths(candidateTempDir: string, candidateDbPath: string): void {
   const relativeTemp = path.relative(path.resolve(os.tmpdir()), path.resolve(candidateTempDir));
@@ -75,7 +57,7 @@ export default defineConfig({
   globalSetup: "./tests/e2e/global-setup.ts",
   globalTeardown: "./tests/e2e/global-teardown.ts",
   webServer: {
-    command: serverCommand,
+    command: E2E_SERVER_COMMAND,
     cwd: "..",
     url: new URL("/api/status", baseURL).toString(),
     timeout: 180_000,
@@ -89,17 +71,6 @@ export default defineConfig({
       SBA_E2E_RUN_TOKEN: runToken,
       SBA_PORT: port,
       SBA_BIND_ADDRESS: host,
-      SBA_DATASOURCE_URL: `jdbc:sqlite:${dbPath}`,
-      SBA_ELASTICSEARCH_ENABLED: "false",
-      SBA_LOCAL_AI_ENABLED: "false",
-      SBA_ASK_EMBEDDING_ENABLED: "false",
-      SBA_SUMMARY_BACKEND: "local",
-      SBA_EDITOR_ENABLED: "true",
-      SBA_EDITOR_COMMAND: editorPath,
-      SBA_EDITOR_ALLOWLIST: editorPath,
-      SBA_EDITOR_TIMEOUT: "2s",
-      SBA_E2E_EDITOR_LOG: editorLogPath,
-      SBA_E2E_INJECTION_SENTINEL: injectionSentinelPath,
     },
   },
   use: {
