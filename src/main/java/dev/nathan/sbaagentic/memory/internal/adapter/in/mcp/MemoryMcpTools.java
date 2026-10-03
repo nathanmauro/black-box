@@ -173,7 +173,7 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                             required = false,
                             description = "Upper bound on the total characters of the returned items' text fields. "
                                     + "Omit for 24000 (minimum 500). When the result overflows, the first overflowing "
-                                    + "item's Observation body, then rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
+                                    + "item's Observation/Projection body, then rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
                                     + "every later item is dropped; `truncated` reports whether anything was cut.")
                     Integer maxChars,
             @ToolParam(

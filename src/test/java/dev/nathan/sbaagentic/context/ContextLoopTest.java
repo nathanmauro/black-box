@@ -181,6 +181,14 @@ class ContextLoopTest {
             assertThat(item.headline()).isEqualTo("Ship projection capture");
             assertThat(item.rationale()).isEqualTo("Current graph feed can already render projection ghost nodes");
             assertThat(item.confidence()).isEqualTo(0.78);
+            assertThat(item.body())
+                    .isEqualTo(repository
+                            .findEventById(captured.eventId())
+                            .orElseThrow()
+                            .text())
+                    .contains(
+                            "1. Ship projection capture — Add MCP and REST capture surfaces for future paths. (confidence: 0.78)",
+                            "2. Tune trajectory ranking — Let the frontend pick the latest set and rank ghost futures. (confidence: 0.51)");
             assertThat(item.repo()).isEqualTo(repo);
         });
 
@@ -214,6 +222,7 @@ class ContextLoopTest {
 
         assertThat(recalled.items()).singleElement().satisfies(item -> {
             assertThat(item.headline()).isEqualTo("Basis-free path");
+            assertThat(item.body()).isEqualTo("Projected futures:\n1. Basis-free path");
             assertThat(item.rationale()).isNull();
             assertThat(item.confidence()).isNull();
         });

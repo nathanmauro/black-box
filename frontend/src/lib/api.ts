@@ -103,7 +103,7 @@ export type SearchResponse = {
 };
 
 export type RecalledItem = {
-  // Full captured Observation text; older servers and other kinds omit this field.
+  // Canonical stored Observation/Projection text; MCP may clip it. Older servers and other kinds omit it.
   body?: string | null;
   eventId: string;
   sessionId: string;
