@@ -200,7 +200,17 @@ def sanitize_event(event):
     if not isinstance(observed, str) or len(observed) > 64:
         raise OutboxError("invalid_capture")
     try:
-        parsed = datetime.datetime.fromisoformat(observed.replace("Z", "+00:00"))
+        validation = observed
+        # Recognize malformed fractions too: newer parsers may ignore trailing junk.
+        utc_fraction = re.fullmatch(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})\.(.*)Z", observed, re.DOTALL)
+        if utc_fraction is not None:
+            clock, fraction = utc_fraction.groups()
+            if re.fullmatch(r"[0-9]{1,9}", fraction) is None:
+                raise ValueError()
+            # Python 3.9 accepts only three or six digits. This copy validates calendar/time;
+            # the original timestamp, including nanoseconds, stays in the stored event bytes.
+            validation = clock + "." + (fraction + "000000")[:6] + "Z"
+        parsed = datetime.datetime.fromisoformat(validation.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             raise ValueError()
     except ValueError:

@@ -83,6 +83,16 @@ synchronization. Each accepted row keeps one capture UUID, sanitized event byte 
 observation timestamp. Retry does not re-sanitize, re-normalize, mint a new identity, or advance the
 timestamp. The sanitizer version is stored separately from the event.
 
+Normalized `enqueue` events accept canonical UTC `observedAt` timestamps with one through nine
+fractional digits on Python 3.9 and later within the existing Python calendar range (years 1–9999),
+preserving the original timestamp string in queued and retried bytes. Calendar/time validation
+uses a separate compatibility copy; it does not round the stored value. Canonical UTC fractions
+are checked for exactly 1–9 ASCII digits before calendar parsing, so trailing junk or embedded
+line breaks cannot be silently accepted by newer Python versions. Empty fractions, more than nine
+UTC fractional digits, impossible dates/times, unsupported years and missing timezones are rejected.
+Previously supported legacy timezone formats remain accepted.
+The Bash hook still generates whole-second UTC timestamps; this does not add precision to them.
+
 SQLite busy/locked contention during queue setup, acceptance or bookkeeping is retried within
 that same invocation deadline, with short waits and private-file checks before each retry. A busy
 commit keeps the original transaction and capture ID. Other database errors and unsafe files
