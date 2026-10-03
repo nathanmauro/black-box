@@ -78,6 +78,13 @@ require no additional generation model. Selecting another suggestion refreshes t
 alternatives and open loops, including showing or hiding each section as the recorded lists change.
 Legacy `scope` links and the menu-bar launcher's `run=1` flag remain supported.
 
+After following a recall result into Browse, Back shows the last completed recall again without a
+new request when the project, question, window, kinds and history setting match exactly. The page
+labels it with the time of that run; **Run recall** refreshes it. Only one result is kept, in memory
+for the open tab: a reload, a new tab, an edited filter, a newer run (even a failed one) or a recorded
+replacement clears it. Suggestions are never kept, and `run=1` always runs fresh. See the
+[return-state verification](superpowers/plans/2026-10-03-recall-return-state.md).
+
 **Resume this project** on Projects opens a one-year project recall. The briefing labels the latest
 recorded handoff and recorded open questions without asserting that they remain current. **Copy
 context** exports visible retrieved captures with timestamps and exact source links, capped at

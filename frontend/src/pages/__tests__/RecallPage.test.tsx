@@ -9,6 +9,7 @@ import {
   type RecallResult,
   type RecalledItem,
 } from "../../lib/api";
+import { forgetRecall } from "../../lib/recallMemory";
 import { sourceFilter } from "../../lib/stores";
 import RecallPage from "../RecallPage";
 
@@ -101,6 +102,7 @@ beforeEach(() => {
   writeText.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   sourceFilter.clear();
+  forgetRecall();
 });
 async function chooseProject(name: string) {
   fireEvent.click(screen.getByRole("button", { name: /^Project / }));
@@ -603,5 +605,218 @@ describe("RecallPage", () => {
       expect(trigger.closest("details")).not.toHaveAttribute("open");
       expect(trigger).toHaveFocus();
     }
+  });
+
+  describe("returning to a completed recall", () => {
+    const fresh = result([{ ...item, headline: "Fresh capture" }]);
+    async function completeRun(start: Params) {
+      updateParams(start);
+      const view = render(() => <RecallPage />);
+      await screen.findByRole("article", { name: item.headline! });
+      view.unmount();
+      vi.mocked(getRecall).mockClear();
+    }
+    function remount(next?: Params) {
+      if (next) [params, updateParams] = createStore<Params>(next);
+      return render(() => <RecallPage />);
+    }
+
+    it("restores the exact snapshot without a request and refreshes only on explicit run", async () => {
+      await completeRun({ project: "/repos/alpha", query: " storage ", run: "1" });
+      remount();
+      expect(await screen.findByRole("article", { name: item.headline! })).toBeInTheDocument();
+      expect(screen.getByText(/Restored from your last run at/)).toHaveTextContent(
+        /Run recall to refresh\.$/,
+      );
+      expect(getRecall).not.toHaveBeenCalled();
+      vi.mocked(getRecall).mockResolvedValueOnce(fresh);
+      fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+      expect(await screen.findByRole("article", { name: "Fresh capture" })).toBeInTheDocument();
+      expect(getRecall).toHaveBeenCalledExactlyOnceWith(
+        { project: "/repos/alpha", query: "storage", includeSuperseded: false },
+        168,
+        ["decision", "handoff"],
+      );
+      expect(screen.queryByText(/Restored from your last run/)).not.toBeInTheDocument();
+    });
+
+    it("stays empty for every different filter, a different project, and the legacy form", async () => {
+      await completeRun({ project: "/repos/alpha", query: "storage", run: "1" });
+      const base = {
+        project: "/repos/alpha",
+        query: "storage",
+        withinHours: "168",
+        kinds: "decision,handoff",
+      };
+      for (const variant of [
+        { ...base, project: "/repos/beta" },
+        { ...base, project: undefined },
+        { ...base, query: "storage engine" },
+        { ...base, withinHours: "720" },
+        { ...base, kinds: "decision" },
+        { ...base, kinds: "handoff,decision" },
+        { ...base, history: "1" },
+        { scope: "storage", withinHours: "168", kinds: "decision,handoff" },
+      ]) {
+        const view = remount(variant);
+        await Promise.resolve();
+        expect(screen.queryByRole("article")).not.toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
+        view.unmount();
+      }
+      expect(getRecall).not.toHaveBeenCalled();
+      remount(base);
+      expect(await screen.findByRole("article", { name: item.headline! })).toBeInTheDocument();
+    });
+
+    it("restores a legacy scope link only through the same legacy snapshot", async () => {
+      await completeRun({ scope: "C++ & café", run: "1" });
+      const view = remount({ query: "C++ & café", withinHours: "168", kinds: "decision,handoff" });
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+      view.unmount();
+      remount({ scope: "C++ & café", withinHours: "168", kinds: "decision,handoff" });
+      expect(await screen.findByRole("article", { name: item.headline! })).toBeInTheDocument();
+      expect(screen.getByLabelText("Scope")).toHaveValue("C++ & café");
+      expect(getRecall).not.toHaveBeenCalled();
+    });
+
+    it("runs launcher intent fresh instead of restoring", async () => {
+      await completeRun({ project: "/repos/alpha", run: "1" });
+      vi.mocked(getRecall).mockResolvedValueOnce(fresh);
+      remount({ project: "/repos/alpha", withinHours: "168", kinds: "decision,handoff", run: "1" });
+      expect(await screen.findByRole("article", { name: "Fresh capture" })).toBeInTheDocument();
+      expect(getRecall).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(/Restored from your last run/)).not.toBeInTheDocument();
+    });
+
+    it("never remembers a response that arrives after leaving or after a filter edit", async () => {
+      let resolveLate!: (value: RecallResult) => void;
+      vi.mocked(getRecall).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve;
+          }),
+      );
+      updateParams({ project: "/repos/alpha", run: "1" });
+      const view = render(() => <RecallPage />);
+      await waitFor(() => expect(resolveLate).toBeDefined());
+      view.unmount();
+      resolveLate(result([{ ...item, headline: "Late capture" }]));
+      await Promise.resolve();
+      const back = remount();
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+
+      vi.mocked(getRecall).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLate = resolve;
+          }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+      fireEvent.click(screen.getByRole("radio", { name: "30d" }));
+      fireEvent.click(screen.getByRole("radio", { name: "1w" }));
+      resolveLate(result([{ ...item, headline: "Late capture" }]));
+      await Promise.resolve();
+      back.unmount();
+      remount();
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+
+    it("forgets a completed result once a filter is edited, even if the edit is reverted", async () => {
+      updateParams({ project: "/repos/alpha", run: "1" });
+      const view = render(() => <RecallPage />);
+      await screen.findByRole("article", { name: item.headline! });
+      fireEvent.click(screen.getByRole("radio", { name: "30d" }));
+      fireEvent.click(screen.getByRole("radio", { name: "1w" }));
+      view.unmount();
+      remount();
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+
+    it("keeps the restored label on a failed refresh and remembers nothing afterwards", async () => {
+      await completeRun({ project: "/repos/alpha", run: "1" });
+      const view = remount();
+      await screen.findByRole("article", { name: item.headline! });
+      vi.mocked(getRecall).mockRejectedValueOnce(new Error("Recall offline"));
+      fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Recall offline");
+      expect(screen.getByText(/Restored from your last run at/)).toBeInTheDocument();
+      view.unmount();
+      remount();
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    });
+
+    it("forgets a replaced decision even when the snapshot changes during the write", async () => {
+      await completeRun({ project: "/repos/alpha", run: "1" });
+      const view = remount();
+      await screen.findByRole("article", { name: item.headline! });
+      let resolveWrite!: (value: never) => void;
+      vi.mocked(captureDecision).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Replace decision" }));
+      fireEvent.input(screen.getByLabelText("New decision"), { target: { value: "New decision" } });
+      fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+        target: { value: "New evidence" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+      await waitFor(() => expect(resolveWrite).toBeDefined());
+      updateParams({ project: "/repos/beta" });
+      resolveWrite({} as never);
+      await waitFor(() => expect(captureDecision).toHaveBeenCalledTimes(1));
+      await Promise.resolve();
+      view.unmount();
+      remount({ project: "/repos/alpha", withinHours: "168", kinds: "decision,handoff" });
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+      expect(getRecall).not.toHaveBeenCalled();
+    });
+
+    it("forgets a replacement that completes after leaving without refreshing or navigating", async () => {
+      await completeRun({ project: "/repos/alpha", run: "1" });
+      const view = remount();
+      await screen.findByRole("article", { name: item.headline! });
+      let resolveWrite!: (value: never) => void;
+      vi.mocked(captureDecision).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWrite = resolve;
+          }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Replace decision" }));
+      fireEvent.input(screen.getByLabelText("New decision"), { target: { value: "New decision" } });
+      fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+        target: { value: "New evidence" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+      await waitFor(() => expect(resolveWrite).toBeDefined());
+      view.unmount();
+      setParams.mockClear();
+      resolveWrite({} as never);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(getRecall).not.toHaveBeenCalled();
+      expect(setParams).not.toHaveBeenCalled();
+      remount();
+      await Promise.resolve();
+      expect(screen.queryByRole("article")).not.toBeInTheDocument();
+      expect(getRecall).not.toHaveBeenCalled();
+    });
+
+    it("applies the current source filter to a restored result", async () => {
+      await completeRun({ project: "/repos/alpha", run: "1" });
+      sourceFilter.toggle("claude");
+      remount();
+      expect(await screen.findByText(/No recall items match/)).toBeInTheDocument();
+      expect(screen.getByText(/Restored from your last run at/)).toBeInTheDocument();
+      expect(getRecall).not.toHaveBeenCalled();
+    });
   });
 });
