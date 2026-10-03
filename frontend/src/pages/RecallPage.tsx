@@ -26,6 +26,7 @@ import {
 import { timeAgo, truncatePath } from "../lib/format";
 import { findProjectByIdentifier, primaryProjectScope } from "../lib/projects";
 import { buildRecallBriefing, newestRecorded, recalledItemHref } from "../lib/recall";
+import { forgetRecall, recallFor, rememberRecall } from "../lib/recallMemory";
 import { sourceFilter } from "../lib/stores";
 
 const RECALL_KINDS = [
@@ -64,6 +65,7 @@ export default function RecallPage() {
   const [kinds, setKinds] = createSignal<string[]>(routeKinds(params.kinds));
   const [includeSuperseded, setIncludeSuperseded] = createSignal(params.history === "1");
   const [result, setResult] = createSignal<RecallResult | null>(null);
+  const [restoredAt, setRestoredAt] = createSignal<Date | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [suggestions, setSuggestions] = createSignal<RecalledItem[]>([]);
@@ -77,6 +79,7 @@ export default function RecallPage() {
   const replacementSessions = new Map<string, string>();
   let requestToken = 0;
   let suggestionToken = 0;
+  let disposed = false;
   const filteredItems = createMemo(() => sourceFilter.matches(result()?.items || []));
   const groupedItems = createMemo(() => groupByKind(filteredItems()));
   const latestHandoff = createMemo(() => newestRecorded(filteredItems(), "handoff"));
@@ -91,6 +94,7 @@ export default function RecallPage() {
     requestToken += 1;
     suggestionToken += 1;
     setResult(null);
+    setRestoredAt(null);
     setError(null);
     setLoading(false);
     setCopyStatus("");
@@ -99,6 +103,8 @@ export default function RecallPage() {
     setActiveSuggestion(-1);
   }
   function changeFilter(action: () => void) {
+    // An edited filter abandons the displayed result; Back must not bring it back as current.
+    forgetRecall();
     invalidate();
     action();
   }
@@ -149,6 +155,14 @@ export default function RecallPage() {
       }
       // Consume launcher intent once. Editing controls never launches a full recall request.
       if (shouldRun) void runRecall(true);
+      else if (!result() && !loading()) {
+        // Returning to the exact snapshot of the last completed run shows it without a request.
+        const remembered = recallFor(JSON.stringify(recallSnapshot()));
+        if (remembered) {
+          setResult(remembered.result);
+          setRestoredAt(remembered.completedAt);
+        }
+      }
     });
   });
   createEffect(() => {
@@ -181,6 +195,7 @@ export default function RecallPage() {
     onCleanup(() => clearTimeout(timer));
   });
   onCleanup(() => {
+    disposed = true;
     requestToken += 1;
     suggestionToken += 1;
   });
@@ -194,6 +209,9 @@ export default function RecallPage() {
       setLegacy(false);
     }
     const token = ++requestToken;
+    // A new run supersedes the remembered result until it completes, even if it fails. Keep the
+    // restored note until then so a failed refresh never presents the older result as current.
+    forgetRecall();
     setQuery(snapshot.query);
     setLoading(true);
     setError(null);
@@ -214,7 +232,11 @@ export default function RecallPage() {
     );
     try {
       const response = await fetchRecall(snapshot);
-      if (token === requestToken) setResult(response);
+      if (token === requestToken) {
+        setResult(response);
+        setRestoredAt(null);
+        rememberRecall(JSON.stringify(snapshot), response);
+      }
     } catch (err) {
       if (token === requestToken) setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -278,6 +300,10 @@ export default function RecallPage() {
       rationale,
       supersedes: item.eventId,
     });
+    // The remembered result still lists the replaced decision as current.
+    forgetRecall();
+    // A page the reader already left must not refresh or rewrite the URL.
+    if (disposed) return;
     if (before === JSON.stringify(recallSnapshot())) {
       // A successful write invalidates the old decision immediately, even if the refresh fails.
       invalidate();
@@ -512,6 +538,15 @@ export default function RecallPage() {
         >
           {(resolved) => (
             <>
+              <Show when={restoredAt()}>
+                {(at) => (
+                  <p class="recall-hint" role="status">
+                    Restored from your last run at{" "}
+                    <time datetime={at().toISOString()}>{at().toLocaleTimeString()}</time>. Run
+                    recall to refresh.
+                  </p>
+                )}
+              </Show>
               <div class="recall-summary">
                 <span>{filteredItems().length.toLocaleString()} visible</span>
                 <span>{resolved().count.toLocaleString()} returned</span>
