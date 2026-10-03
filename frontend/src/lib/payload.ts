@@ -1,4 +1,32 @@
+import { decimalNumberRoundtrips, scanJsonIdentity } from "./jsonNumbers";
+
+export type NumericPrecision = "preserved" | "changed" | "unchecked";
+const PREVIEW_NUMBER_SCAN_LIMIT = 131_072;
+
+type ParsedPayload = { value: unknown | null; numericPrecision: NumericPrecision };
+
 export function parsePayload(raw: string | null | undefined): unknown | null {
+  return decodePayload(raw);
+}
+
+/** Diagnostics are opt-in: existing parsing callers keep their value and cost contract. */
+export function parsePayloadWithPrecision(raw: string | null | undefined): ParsedPayload {
+  let numericPrecision: NumericPrecision = "preserved";
+  const value = decodePayload(raw, (candidate) => {
+    if (candidate.length > PREVIEW_NUMBER_SCAN_LIMIT) {
+      numericPrecision = combinePrecision(numericPrecision, "unchecked");
+    } else {
+      const scanned = scanJsonIdentity(candidate);
+      if (!scanned.safeNumbers || scanned.negativeZero) numericPrecision = "changed";
+    }
+  });
+  return { value, numericPrecision };
+}
+
+function decodePayload(
+  raw: string | null | undefined,
+  onDecoded?: (candidate: string) => void,
+): unknown | null {
   if (raw == null || !raw.trim()) return null;
   let value: unknown = raw;
   for (let attempt = 0; attempt < 2 && typeof value === "string"; attempt += 1) {
@@ -9,6 +37,7 @@ export function parsePayload(raw: string | null | undefined): unknown | null {
     } catch {
       break;
     }
+    onDecoded?.(candidate);
   }
   return value;
 }
@@ -24,14 +53,44 @@ export function payloadText(raw: string | null | undefined): string | null {
 }
 
 export function parseToolResult(raw: string | null | undefined): unknown | null {
-  const value = parsePayload(raw);
+  return formatToolResult(parsePayload(raw));
+}
+
+export function parseToolResultWithPrecision(raw: string | null | undefined): ParsedPayload {
+  const parsed = parsePayloadWithPrecision(raw);
+  let numericPrecision = parsed.numericPrecision;
+  const value = formatToolResult(parsed.value, (text, numeric) => {
+    const roundtrips =
+      text.length > PREVIEW_NUMBER_SCAN_LIMIT ? undefined : decimalNumberRoundtrips(text);
+    numericPrecision = combinePrecision(
+      numericPrecision,
+      Object.is(numeric, -0) || roundtrips === false
+        ? "changed"
+        : roundtrips === undefined
+          ? "unchecked"
+          : "preserved",
+    );
+  });
+  return { value, numericPrecision };
+}
+
+function combinePrecision(current: NumericPrecision, next: NumericPrecision): NumericPrecision {
+  if (current === "changed" || next === "changed") return "changed";
+  if (current === "unchecked" || next === "unchecked") return "unchecked";
+  return "preserved";
+}
+
+function formatToolResult(
+  value: unknown | null,
+  onConverted?: (text: string, numeric: number) => void,
+): unknown | null {
   if (typeof value !== "string") return value;
   const match = /^Exit code:\s*([^\n]+)\nWall time:\s*([^\n]+)\nOutput:\s*\n?([\s\S]*)$/u.exec(
     value.trim(),
   );
   if (!match) return value;
   return {
-    exit_code: numericOrText(match[1].trim()),
+    exit_code: numericOrText(match[1].trim(), onConverted),
     wall_time: match[2].trim(),
     output: match[3],
   };
@@ -45,9 +104,14 @@ function looksSerialized(value: string): boolean {
   );
 }
 
-function numericOrText(value: string): number | string {
+function numericOrText(
+  value: string,
+  onConverted?: (text: string, numeric: number) => void,
+): number | string {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : value;
+  if (!Number.isFinite(parsed)) return value;
+  onConverted?.(value, parsed);
+  return parsed;
 }
 
 export function looksLikeJson(value: string | null | undefined): boolean {

@@ -115,6 +115,70 @@ describe("generic tool disclosure", () => {
   });
 });
 
+describe("numeric preview original access", () => {
+  it.each([false, true])(
+    "offers exact original input and result for inexact JSON (double encoded: %s)",
+    (doubleEncoded) => {
+      const plain = ' { "reference" : 9007199254740993 } ';
+      const raw = doubleEncoded ? JSON.stringify(plain) : plain;
+      const { container } = render(() => <ToolPayload inputJson={raw} outputJson={raw} />);
+      expect(
+        screen.getAllByText(
+          "Numeric values changed in this preview. Open Original for exact captured text.",
+        ),
+      ).toHaveLength(2);
+      expect(container.querySelectorAll(".tool-payload-original")).toHaveLength(0);
+      const originals = container.querySelectorAll("details");
+      expect(originals).toHaveLength(2);
+      for (const details of originals) {
+        toggle(details, true);
+        expect(details.querySelector(".tool-payload-original")?.textContent).toBe(raw);
+        toggle(details, false);
+        expect(details.open).toBe(false);
+      }
+    },
+  );
+  it("does not add numeric warnings or disclosures for safe, quoted, or malformed small payloads", () => {
+    for (const raw of [
+      '{"n":0.1,"label":"9007199254740993"}',
+      '{"n":9007199254740993,}',
+      JSON.stringify(JSON.stringify('{"n":9007199254740993}')),
+    ]) {
+      const view = render(() => <ToolPayload inputJson={raw} outputJson={raw} />);
+      expect(view.container.querySelector(".tool-payload-note")).toBeNull();
+      expect(view.container.querySelector("details")).toBeNull();
+      view.unmount();
+    }
+  });
+  it("warns about unverified large previews only after disclosure and retains the original", () => {
+    const raw = JSON.stringify({ text: "x".repeat(150_000) });
+    const { container } = render(() => <ToolPayload outputJson={raw} />);
+    expect(container.querySelector(".tool-payload-note")).toBeNull();
+    const outer = container.querySelector("details")!;
+    toggle(outer, true);
+    expect(
+      screen.getByText(
+        "Numeric precision could not be checked in this preview. Open Original for exact captured text.",
+      ),
+    ).toBeInTheDocument();
+    toggle(outer.querySelector("details")!, true);
+    expect(container.querySelector(".tool-payload-original")?.textContent).toBe(raw);
+  });
+  it("offers original access for legacy exit-code rounding and negative zero", () => {
+    for (const raw of [
+      JSON.stringify("Exit code: 9007199254740993\nWall time: 1 second\nOutput:\ndone"),
+      '{"n":-0}',
+    ]) {
+      const view = render(() => <ToolPayload outputJson={raw} />);
+      expect(view.container.textContent).toContain("Numeric values changed in this preview");
+      const original = view.container.querySelector("details")!;
+      toggle(original, true);
+      expect(view.container.querySelector(".tool-payload-original")?.textContent).toBe(raw);
+      view.unmount();
+    }
+  });
+});
+
 describe("ReaderText accessible excerpt", () => {
   it("removes hidden text from DOM until expansion and restores the exact original", () => {
     const text = "visible ".repeat(150) + "SECRET_TAIL";

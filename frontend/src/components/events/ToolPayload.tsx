@@ -1,5 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
-import { parsePayload, parseToolResult } from "../../lib/payload";
+import { parsePayloadWithPrecision, parseToolResultWithPrecision } from "../../lib/payload";
 import { compactPayloadMedia } from "../../lib/payloadPreview";
 import LazyDetails from "./blocks/LazyDetails";
 
@@ -84,11 +84,13 @@ function PayloadSection(props: PayloadSectionProps) {
 }
 
 function PayloadSectionBody(props: PayloadSectionProps) {
-  const preview = createMemo(() =>
-    compactPayloadMedia(
-      props.label === "Result" ? parseToolResult(props.raw) : parsePayload(props.raw),
-    ),
-  );
+  const preview = createMemo(() => {
+    const parsed =
+      props.label === "Result"
+        ? parseToolResultWithPrecision(props.raw)
+        : parsePayloadWithPrecision(props.raw);
+    return { ...compactPayloadMedia(parsed.value), numericPrecision: parsed.numericPrecision };
+  });
   const entries = () => orderedEntries(preview().value, props.priority);
 
   return (
@@ -107,9 +109,23 @@ function PayloadSectionBody(props: PayloadSectionProps) {
       <Show when={preview().depthLimited}>
         <p class="tool-payload-note">Deeply nested content is shortened in this preview.</p>
       </Show>
+      <Show when={preview().numericPrecision === "changed"}>
+        <p class="tool-payload-note">
+          Numeric values changed in this preview. Open Original for exact captured text.
+        </p>
+      </Show>
+      <Show when={preview().numericPrecision === "unchecked"}>
+        <p class="tool-payload-note">
+          Numeric precision could not be checked in this preview. Open Original for exact captured
+          text.
+        </p>
+      </Show>
       <Show
         when={
-          preview().compacted || preview().depthLimited || props.raw.length > LARGE_PAYLOAD_CHARS
+          preview().compacted ||
+          preview().depthLimited ||
+          props.raw.length > LARGE_PAYLOAD_CHARS ||
+          preview().numericPrecision !== "preserved"
         }
       >
         <LazyDetails
