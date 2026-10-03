@@ -645,6 +645,7 @@ a {
 }
 .hero-search-row button,
 .search-form button,
+.stream-input-line .search-input-wrap > button[type="submit"],
 .ask-form button {
   height: 46px;
   padding: 0 18px;
@@ -2580,6 +2581,10 @@ a {
 .palette-item--active {
   background: var(--bg-selected);
 }
+.palette-item-text small {
+  margin-left: 8px;
+  color: var(--text-dim);
+}
 .palette-item-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2928,6 +2933,20 @@ a {
   min-width: 0;
 }
 
+.stream-input-line .search-input {
+  min-width: 0;
+}
+
+/* Give query controls and run actions their own space on narrow screens. */
+@media (max-width: 700px) {
+  .stream-input-line {
+    flex-wrap: wrap;
+  }
+  .stream-input-line .search-input-wrap {
+    flex: 1 1 100%;
+  }
+}
+
 .stream-options {
   position: relative;
   flex: none;
@@ -2964,6 +2983,22 @@ a {
   border-radius: var(--radius);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .stream-input-line {
+    position: relative;
+  }
+  .stream-input-line .stream-options {
+    position: static;
+  }
+  .stream-input-line .stream-options-panel {
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    min-width: 0;
+    white-space: normal;
+  }
 }
 
 /* Views dropdown (spec §8, D13): presets + saved views + inline save, sharing the Options
@@ -3129,6 +3164,7 @@ a {
 
 .stream-run-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -3178,6 +3214,15 @@ a {
 
 .stream-run-head .row-session-actions {
   margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .stream-run-head {
+    row-gap: 4px;
+  }
+  .stream-run-title {
+    flex: 1 1 calc(100% - 28px);
+  }
 }
 
 /* Run body: the 1px thread line binding rows to their session (spec §4.1). */
@@ -5078,6 +5123,7 @@ a {
 
 .project-catalog-pane > .project-picker {
   width: auto;
+  min-width: 0;
   margin: 0 12px 12px;
 }
 

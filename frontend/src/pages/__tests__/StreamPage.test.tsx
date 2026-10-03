@@ -118,6 +118,64 @@ beforeEach(() => {
 });
 
 describe("StreamPage", () => {
+  it("keeps project-scoped empty results distinct from an empty recorder", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    render(() => <StreamPage project={selectedProject} />);
+    expect(
+      await screen.findByText("No stream events match the current filters."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No meaningful events recorded yet.")).not.toBeInTheDocument();
+  });
+
+  it("preserves the load error without claiming the recorder is empty", async () => {
+    getEventFeed.mockRejectedValue(new Error("Fixture feed unavailable"));
+    render(() => <StreamPage />);
+    expect(await screen.findByText("Fixture feed unavailable")).toBeInTheDocument();
+    expect(screen.queryByText(/No .*recorded yet/)).not.toBeInTheDocument();
+  });
+
+  it("distinguishes an empty recorder from an over-narrow filter in the empty state", async () => {
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValue(feed([]));
+    render(() => <StreamPage />);
+
+    expect(await screen.findByText("No meaningful events recorded yet.")).toBeInTheDocument();
+
+    setParams({ q: "is:all" });
+    expect(await screen.findByText("No events recorded yet.")).toBeInTheDocument();
+
+    setParams({ q: "kind:Decision" });
+    expect(
+      await screen.findByText("No stream events match the current filters."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Views and Options mutually exclusive and dismisses the open panel on Escape or an outside pointer-down", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const views = screen.getByRole("button", { name: "Views" });
+    const options = screen.getByRole("button", { name: "Options" });
+
+    fireEvent.click(views);
+    expect(views).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(options);
+    expect(options).toHaveAttribute("aria-expanded", "true");
+    expect(views).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("stream-views-panel")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(options).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById("stream-options-panel")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(options);
+
+    fireEvent.click(views);
+    // Interacting inside the panel keeps it open; a pointer-down anywhere else closes it.
+    fireEvent.pointerDown(screen.getByLabelText("Saved view name"));
+    expect(views).toHaveAttribute("aria-expanded", "true");
+    fireEvent.pointerDown(document.body);
+    expect(views).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("renders compact stream rows from the event feed", async () => {
     render(() => <StreamPage />);
 
@@ -181,9 +239,7 @@ describe("StreamPage", () => {
     setHumanOnly(true);
     getEventFeed.mockResolvedValue(feed([]));
     render(() => <StreamPage />);
-    expect(
-      await screen.findByText("No human turns match the current filters."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No human turns recorded yet.")).toBeInTheDocument();
   });
 
   it("passes selected project as a hidden stream facet", async () => {
@@ -1251,6 +1307,31 @@ describe("StreamPage", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
     expect(input).toHaveValue("kind:");
   });
+
+  it.each(["Views", "Options"])(
+    "dismisses query suggestions before the open %s panel without moving query focus",
+    async (name) => {
+      render(() => <StreamPage />);
+      await screen.findByRole("button", { name: /Make stream default/ });
+      const trigger = screen.getByRole("button", { name });
+      fireEvent.click(trigger);
+      const input = screen.getByLabelText("Stream query");
+      // Keyboard focus can return to the query without an outside pointer press.
+      input.focus();
+      fireEvent.input(input, { target: { value: "kind:" } });
+      await screen.findByRole("option", { name: "Decision" });
+
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(input).toHaveAttribute("aria-expanded", "false");
+      expect(input).toHaveFocus();
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(input).toHaveValue("kind:");
+
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(trigger).toHaveFocus();
+    },
+  );
 
   it("holds density and meaningful controls behind a collapsed Options disclosure", async () => {
     render(() => <StreamPage />);

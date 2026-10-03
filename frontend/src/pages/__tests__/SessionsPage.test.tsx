@@ -255,6 +255,32 @@ describe("SessionsPage", () => {
     },
   );
 
+  it("says the recorder is empty rather than blaming filters when no session exists", async () => {
+    vi.mocked(getSessions).mockResolvedValue([]);
+    vi.mocked(getSession).mockRejectedValue(new Error("missing"));
+
+    render(() => <SessionsPage />);
+
+    expect(await screen.findByText("No sessions recorded yet.")).toBeInTheDocument();
+    setHumanOnly(true);
+    expect(
+      await screen.findByText("No sessions with human turns recorded yet."),
+    ).toBeInTheDocument();
+    setHumanOnly(false);
+
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "source:codex" } });
+    expect(await screen.findByText("No sessions match the active filters.")).toBeInTheDocument();
+  });
+
+  it("describes an empty source-filtered list as filtered results", async () => {
+    vi.mocked(getSessions).mockResolvedValue([]);
+    vi.mocked(getSession).mockRejectedValue(new Error("missing"));
+    vi.mocked(sourceFilter.key).mockReturnValue("claude");
+    render(() => <SessionsPage />);
+    expect(await screen.findByText("No sessions match the active filters.")).toBeInTheDocument();
+    expect(screen.queryByText("No sessions recorded yet.")).not.toBeInTheDocument();
+  });
+
   it("does not replace an unknown direct session with an unrelated human session", async () => {
     setHumanOnly(true);
     vi.mocked(getSession).mockRejectedValue(new Error("Not found"));

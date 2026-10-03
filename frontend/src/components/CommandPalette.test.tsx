@@ -44,6 +44,43 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it.each([
+    ["Long event rationale.\n\n" + "Readable details. ".repeat(12), "Long event rationale."],
+    ["x".repeat(118) + "😀ending", "x".repeat(118)],
+  ])("keeps a bounded readable event label and exact navigation", async (text, prefix) => {
+    vi.mocked(search).mockResolvedValueOnce({
+      query: "fixture",
+      local: [
+        {
+          id: "event-long",
+          sessionId: "session-long",
+          source: "codex",
+          clientSessionId: "long",
+          eventType: "Observation",
+          text,
+          observedAt: "2026-07-01T12:00:00Z",
+        },
+      ],
+      elastic: [],
+      elasticHealth: { enabled: false, available: false },
+    });
+    render(() => <CommandPalette open onClose={vi.fn()} />);
+    fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
+      target: { value: "fixture" },
+    });
+    const option = await screen.findByRole("option", {
+      name: new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    });
+    const label = option.querySelector("strong")!.textContent!;
+    expect(label.startsWith(prefix)).toBe(true);
+    expect(label.length).toBeLessThanOrEqual(120);
+    expect(label).toMatch(/…$/);
+    expect(label).not.toContain("\n");
+    expect(label).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+    fireEvent.click(option);
+    expect(navigate).toHaveBeenCalledWith("/?view=browse&session=session-long&event=event-long");
+  });
+
   it("clears fallback event results when the query becomes too short", async () => {
     setHumanOnly(true);
     vi.mocked(search).mockResolvedValueOnce({
