@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import {
   batch,
   createEffect,
@@ -108,6 +108,16 @@ const EMPTY_TRANSCRIPT: SessionTranscriptState = {
 export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams<{ reveal?: string }>();
+  // Only an explicit direct source link can reveal one session without changing saved filters.
+  const revealLinkedSession = () =>
+    Boolean(
+      params.sessionId &&
+      !props.selectedSessionId &&
+      !props.project &&
+      searchParams.reveal === "session",
+    );
+  const readerHumanOnly = () => humanOnly() && !revealLinkedSession();
   const live = useContext(LiveStoreContext);
   let transcriptGeneration = 0;
   const [sessionFilter, setSessionFilter] = createSignal("");
@@ -206,6 +216,9 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       (session) => !humanOnly() || Boolean(session.firstHumanTurn?.trim()),
     );
     const requested = requestedSession();
+    if (revealLinkedSession() && requested?.id === requestedSessionId()) {
+      return [requested, ...listed.filter((session) => session.id !== requested.id)];
+    }
     if (humanOnly() && !props.targetEventId && !requested?.firstHumanTurn?.trim()) return listed;
     if (!requested || listed.some((session) => session.id === requested.id)) return listed;
     if (props.project && !projectMatchesSession(props.project, requested)) return listed;
@@ -217,6 +230,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     const requested = requestedSession();
     return (
       humanOnly() &&
+      !revealLinkedSession() &&
       !props.targetEventId &&
       requested?.id === requestedSessionId() &&
       !requested.firstHumanTurn?.trim() &&
@@ -228,6 +242,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     // Searching the mobile chooser must not switch the reader before a session is chosen.
     const scopedSessions = compactReader() ? sessions() : filteredSessions();
     const requestedId = requestedSessionId();
+    if (revealLinkedSession()) return requestedSession()?.id === requestedId ? requestedId : "";
     if (requestedId && scopedSessions.some((session) => session.id === requestedId))
       return requestedId;
     if (requestedId && requestedSession.loading) return "";
@@ -236,7 +251,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       : "";
   });
   const selectedSession = createMemo(() =>
-    (compactReader() ? sessions() : filteredSessions()).find(
+    (compactReader() || revealLinkedSession() ? sessions() : filteredSessions()).find(
       (session) => session.id === selectedId(),
     ),
   );
@@ -253,7 +268,8 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
       selectSession(selected);
   });
 
-  const chooserVisible = () => !compactReader() || chooserOpen() || !selectedSession();
+  const chooserVisible = () =>
+    !compactReader() || chooserOpen() || (!selectedSession() && !revealLinkedSession());
 
   function toggleChooser() {
     const open = !chooserVisible();
@@ -264,7 +280,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   function handleDisclosureEscape(event: KeyboardEvent) {
     if (event.key !== "Escape" || event.defaultPrevented || !compactReader()) return;
-    if (chooserOpen() && selectedSession()) {
+    if (chooserOpen() && (selectedSession() || revealLinkedSession())) {
       event.preventDefault();
       setChooserOpen(false);
       chooserButton?.focus({ preventScroll: true });
@@ -316,7 +332,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
             sessionId,
             targetEventId: props.targetEventId,
             query: debouncedTranscriptQuery(),
-            humanOnly: humanOnly(),
+            humanOnly: readerHumanOnly(),
           }
         : undefined;
     },
@@ -664,7 +680,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
             ref={chooserButton}
             aria-controls={chooserId}
             aria-expanded={chooserVisible()}
-            disabled={!selectedSession()}
+            disabled={!selectedSession() && !revealLinkedSession()}
             onClick={toggleChooser}
           >
             Sessions <span>{sessions().length.toLocaleString()}</span>
@@ -760,6 +776,9 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                               <span class="session-row-title-secondary">{secondary()}</span>
                             )}
                           </Show>
+                          <Show when={revealLinkedSession() && session.id === requestedSessionId()}>
+                            <span class="session-linked-badge">Linked</span>
+                          </Show>
                           <small>
                             {session.eventCount.toLocaleString()} · {truncatePath(session.cwd)} ·{" "}
                             {timeAgo(session.lastSeenAt)}
@@ -795,8 +814,31 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
             fallback={
               <div class="empty-detail">
                 <p class="eyebrow">session detail</p>
-                <h1>Select a session</h1>
-                <p>Use the list or ⌘K to jump into a recorded trace.</p>
+                <Show
+                  when={revealLinkedSession()}
+                  fallback={
+                    <>
+                      <h1>Select a session</h1>
+                      <p>Use the list or ⌘K to jump into a recorded trace.</p>
+                    </>
+                  }
+                >
+                  <h1>
+                    {requestedSession.loading
+                      ? "Loading linked session…"
+                      : "Linked session unavailable"}
+                  </h1>
+                  <Show when={!requestedSession.loading}>
+                    <p>This linked session could not be loaded.</p>
+                    <button
+                      type="button"
+                      class="secondary-action"
+                      onClick={() => void refetchRequestedSession()}
+                    >
+                      Retry linked session
+                    </button>
+                  </Show>
+                </Show>
               </div>
             }
           >
@@ -950,6 +992,11 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
                 <div class="detail-body">
                   <div class="timeline-pane">
+                    <Show when={revealLinkedSession()}>
+                      <p class="session-transcript-status" role="status">
+                        Showing this linked session in full. Saved Browse filters are unchanged.
+                      </p>
+                    </Show>
                     <Show
                       when={!transcriptLoading()}
                       fallback={<p class="empty-state">Loading transcript…</p>}
@@ -1018,7 +1065,11 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                                       fallback={<EventRenderer event={event} />}
                                     >
                                       {(role) => (
-                                        <ConversationMessage event={event} role={role()} />
+                                        <ConversationMessage
+                                          event={event}
+                                          role={role()}
+                                          humanOnly={readerHumanOnly()}
+                                        />
                                       )}
                                     </Show>
                                   </div>
@@ -1027,7 +1078,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                               <Show
                                 when={
                                   turn.prompt &&
-                                  !humanOnly() &&
+                                  !readerHumanOnly() &&
                                   !turn.events.some(
                                     (event) => conversationRole(event) === "assistant",
                                   )
@@ -1194,7 +1245,11 @@ function normalizeSessionText(value: unknown): string {
   return String(value ?? "").toLowerCase();
 }
 
-function ConversationMessage(props: { event: AgentEvent; role: "user" | "assistant" }) {
+function ConversationMessage(props: {
+  event: AgentEvent;
+  role: "user" | "assistant";
+  humanOnly: boolean;
+}) {
   const author = () => (props.role === "user" ? "You" : sourceLabel(props.event.source));
 
   return (
@@ -1226,7 +1281,7 @@ function ConversationMessage(props: { event: AgentEvent; role: "user" | "assista
         fallback={<p class="conversation-message-empty">Message text was not captured.</p>}
       >
         {(text) =>
-          humanOnly() && props.event.humanText ? (
+          props.humanOnly && props.event.humanText ? (
             <div class="human-verbatim">
               <ReaderText text={text()} />
             </div>

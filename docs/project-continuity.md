@@ -162,3 +162,33 @@ normal tests only read frozen snapshots. The REST contract matrix remains hand-m
 
 Functional verification establishes isolation and preservation of evidence. It does not establish
 improved agent productivity; continuation quality still needs evaluation on representative tasks.
+
+
+## Saved braids
+
+Projects has a separate **Saved braids** view for durable unassigned synthesis. It is available even
+when the project catalog is empty or unavailable; no synthetic project is created. A detail URL is
+`/projects?view=braids&meld=<id>` and survives reload and browser Back. Ordinary project melds
+remain in their existing project workspace; a project-owned ID opened here links to its owner.
+
+The reader loads 20 artifacts per page, newest saved first. **Loaded** counts describe the items
+already fetched, not the full collection. Load-more errors retain earlier pages and can be retried.
+There is no search or creation control: the listing endpoint does not support query/session filters.
+
+The synthesis is rendered as full plain text. Its timestamp is the save time. Provider, model,
+execution and prompt fields are caller-declared provenance, not an independent verification of who
+created the text. Source sessions retain saved order. New braids keep source/cwd/client-ID snapshots;
+legacy artifacts can fall back to current joined values. Titles and timestamps reflect current
+records and can be unavailable after deletion; the event count is zero for a missing session.
+Links use real internal session IDs at `/sessions/<id>?reveal=session`, without project or invented
+event scope. This explicit direct link reveals only that requested session and its full transcript,
+even with incompatible My turns or source filters, and explains that saved Browse settings remain
+unchanged. Selecting another session exits this mode; missing IDs never select an unrelated session. Caller metadata
+is optional and lazy, with a bounded, explicitly truncated preview and raw saved-artifact JSON download.
+
+See the [reader verification plan](superpowers/plans/2026-10-03-saved-braids-reader.md).
+
+Metadata is a parsed display preview: large JSON numbers may be rounded by the browser. **Download
+saved artifact JSON** fetches the authenticated same-origin detail response as text, preserving
+numeric values without parsing and serializing them again. Download failures remain visible and
+can be retried; the action makes no server-side change.

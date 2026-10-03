@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteProjectAlias,
   getProjectMelds,
+  getUnassignedBraids,
   getProjects,
   getProjectSessions,
   getProjectTimeline,
@@ -18,8 +19,9 @@ import ProjectsPage from "../ProjectsPage";
 
 let routeParams: { projectKey?: string };
 let routeLocation: { search: string; hash: string };
-let searchParams: { focus?: string };
-let setSearchParamsStore: SetStoreFunction<{ focus?: string }>;
+type ProjectSearch = { focus?: string; view?: string; meld?: string };
+let searchParams: ProjectSearch;
+let setSearchParamsStore: SetStoreFunction<ProjectSearch>;
 const navigate = vi.fn();
 
 vi.mock("@solidjs/router", () => ({
@@ -33,10 +35,7 @@ vi.mock("@solidjs/router", () => ({
   useParams: () => routeParams,
   // Same store idiom as the StreamPage tests; the component may pass navigate options as a
   // second argument, which the store setter must never see.
-  useSearchParams: () => [
-    searchParams,
-    (update: { focus?: string }) => setSearchParamsStore(update),
-  ],
+  useSearchParams: () => [searchParams, (update: ProjectSearch) => setSearchParamsStore(update)],
 }));
 
 vi.mock("../../lib/api", async (importOriginal) => {
@@ -45,6 +44,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     ...actual,
     deleteProjectAlias: vi.fn(),
     getProjectMelds: vi.fn(),
+    getUnassignedBraids: vi.fn(),
     getProjects: vi.fn(),
     getProjectSessions: vi.fn(),
     getProjectTimeline: vi.fn(),
@@ -117,8 +117,11 @@ const protectedProjects: ProjectSummary[] = [
 beforeEach(() => {
   routeParams = {};
   routeLocation = { search: "", hash: "" };
-  [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({});
+  [searchParams, setSearchParamsStore] = createStore<ProjectSearch>({});
   localStorage.clear();
+  vi.mocked(getUnassignedBraids)
+    .mockReset()
+    .mockResolvedValue({ items: [], count: 0, nextBefore: null });
   navigate.mockReset();
   vi.mocked(getProjects)
     .mockReset()
@@ -188,6 +191,37 @@ beforeEach(() => {
 });
 
 describe("ProjectsPage", () => {
+  it("opens the braids workspace independently of catalog availability or project auto-selection", async () => {
+    setSearchParamsStore({ view: "braids" });
+    vi.mocked(getProjects).mockRejectedValue(new Error("catalog offline"));
+    render(() => <ProjectsPage />);
+    await screen.findByText("No saved unassigned braids yet.");
+    expect(screen.getByRole("heading", { name: "Saved braids" })).toBeInTheDocument();
+    expect(getProjects).not.toHaveBeenCalled();
+    expect(getProjectSessions).not.toHaveBeenCalled();
+    expect(getProjectMelds).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps Saved braids navigation reachable beside empty and failed catalogs", async () => {
+    vi.mocked(getProjects).mockResolvedValueOnce([]);
+    const empty = render(() => <ProjectsPage />);
+    await screen.findByText("No observed projects");
+    expect(screen.getByRole("link", { name: "Saved braids" })).toHaveAttribute(
+      "href",
+      "/projects?view=braids",
+    );
+    empty.unmount();
+    vi.mocked(getProjects).mockRejectedValue(new Error("catalog offline"));
+    render(() => <ProjectsPage />);
+    await screen.findByText("Project catalog unavailable");
+    expect(screen.getByRole("link", { name: "Saved braids" })).toHaveAttribute(
+      "href",
+      "/projects?view=braids",
+    );
+    expect(getUnassignedBraids).not.toHaveBeenCalled();
+  });
+
   it("preserves evidence selection and URL state when canonicalizing a project alias", async () => {
     routeParams = { projectKey: "sba-worktree-key" };
     routeLocation = {

@@ -398,9 +398,9 @@ export type ProjectTrajectoryResponse = {
 
 export type ProjectMeldSessionRef = {
   id: string;
-  source: string;
-  clientSessionId: string;
-  title: string;
+  source: string | null;
+  clientSessionId: string | null;
+  title: string | null;
   cwd?: string | null;
   eventCount: number;
   startedAt?: string | null;
@@ -409,8 +409,8 @@ export type ProjectMeldSessionRef = {
 
 export type ProjectSavedMeld = {
   id: string;
-  projectKey: string;
-  canonicalKey: string;
+  projectKey: string | null;
+  canonicalKey: string | null;
   title: string;
   body: string;
   provider: string;
@@ -421,6 +421,13 @@ export type ProjectSavedMeld = {
   metadata?: Record<string, unknown> | null;
   createdAt: string;
   sessions: ProjectMeldSessionRef[];
+};
+
+export type ProjectMeldListResponse = {
+  items: ProjectSavedMeld[];
+  // The number in this page, not a total for the collection.
+  count: number;
+  nextBefore: string | null;
 };
 
 export type ProjectMeld = ProjectSavedMeld;
@@ -786,6 +793,29 @@ export function getProjectTrajectory(key: string): Promise<ProjectTrajectoryResp
 
 export function getProjectMelds(key: string): Promise<ProjectMeld[]> {
   return getJson(`/api/projects/${encodeURIComponent(key)}/melds`);
+}
+
+export function getUnassignedBraids(
+  before?: string,
+  signal?: AbortSignal,
+): Promise<ProjectMeldListResponse> {
+  const params = new URLSearchParams({ kind: "braid", scope: "unassigned", limit: "20" });
+  if (before) params.set("before", before);
+  return getJson(`/api/melds?${params.toString()}`, signal);
+}
+
+export function getSavedMeld(id: string, signal?: AbortSignal): Promise<ProjectSavedMeld> {
+  return getJson(`/api/melds/${encodeURIComponent(id)}`, signal);
+}
+
+// Keep the wire text intact for downloads: parsing JSON can round valid 64-bit metadata integers.
+export async function getSavedMeldJson(id: string, signal?: AbortSignal): Promise<string> {
+  const response = await apiRequest(`/api/melds/${encodeURIComponent(id)}`, {
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  if (!response.ok) await readJson<never>(response);
+  return response.text();
 }
 
 export function previewProjectMeld(

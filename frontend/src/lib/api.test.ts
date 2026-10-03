@@ -16,6 +16,9 @@ import {
   getSessions,
   mergeProjectAlias,
   getProjectSessions,
+  getUnassignedBraids,
+  getSavedMeld,
+  getSavedMeldJson,
   getProjectTimeline,
   getRecall,
   captureDecision,
@@ -378,6 +381,52 @@ describe("Phase 2 API helpers", () => {
         body: JSON.stringify(request),
       }),
     );
+  });
+});
+
+describe("saved braid read helpers", () => {
+  it("sends only the supported unassigned braid page parameters and passes cancellation", async () => {
+    const page = { items: [], count: 0, nextBefore: "opaque+/cursor=" };
+    const fetchMock = stubJson(page);
+    const signal = new AbortController().signal;
+    await expect(getUnassignedBraids(undefined, signal)).resolves.toEqual(page);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/melds?kind=braid&scope=unassigned&limit=20",
+      expect.objectContaining({ signal }),
+    );
+    await getUnassignedBraids(page.nextBefore, signal);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/melds?kind=braid&scope=unassigned&limit=20&before=opaque%2B%2Fcursor%3D",
+      expect.objectContaining({ signal }),
+    );
+  });
+
+  it("downloads raw artifact JSON without rounding valid 64-bit values and preserves typed errors", async () => {
+    const raw = '{"metadata":{"largeInteger":9007199254740993}}';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(raw, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response('{"error":{"message":"Artifact unavailable"}}', { status: 503 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const signal = new AbortController().signal;
+    await expect(getSavedMeldJson("saved/id", signal)).resolves.toBe(raw);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/melds/saved%2Fid",
+      expect.objectContaining({ signal, headers: { Accept: "application/json" } }),
+    );
+    await expect(getSavedMeldJson("saved/id")).rejects.toMatchObject({
+      status: 503,
+      message: "Artifact unavailable",
+    });
+  });
+
+  it("retrieves an encoded durable ID independently of project ownership or list pages", async () => {
+    const payload = { id: "meld/one", projectKey: null, canonicalKey: null };
+    const fetchMock = stubJson(payload);
+    await expect(getSavedMeld(payload.id)).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/melds/meld%2Fone", expect.anything());
   });
 });
 
