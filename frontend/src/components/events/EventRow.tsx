@@ -1,8 +1,9 @@
-import { createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { AgentEvent } from "../../lib/api";
 import { timeAgo, truncatePath } from "../../lib/format";
 import { ideaFieldsFromEvent, ideaHeadline } from "../../lib/ideas";
 import { presentationOf } from "../../lib/presenters/registry";
+import { readerTextPreview } from "../../lib/payloadPreview";
 import KindBadge from "../KindBadge";
 import SourceDot from "../SourceDot";
 import DecisionCard from "./DecisionCard";
@@ -36,9 +37,6 @@ const PRIMARY_KEYS = [
   "text",
   "content",
 ];
-
-const COMPACT_TEXT_CHARS = 900;
-const COMPACT_TEXT_LINES = 10;
 
 export default function EventRow(props: EventRowProps) {
   const event = () => props.event;
@@ -144,14 +142,24 @@ export function eventHeadline(event: AgentEvent): string {
 export function ReaderText(props: { text: string; expanded?: boolean }) {
   const [override, setOverride] = createSignal<boolean | null>(null);
   const expanded = () => override() ?? props.expanded ?? false;
-  const compact = () => shouldCompactText(props.text);
+  const textId = createUniqueId();
+  const preview = createMemo(() => readerTextPreview(props.text));
+  const compact = () => preview().truncated;
   const collapsed = () => compact() && !expanded();
 
   return (
     <>
-      <p classList={{ "reader-text": true, "reader-text--collapsed": collapsed() }}>{props.text}</p>
+      <p id={textId} classList={{ "reader-text": true, "reader-text--collapsed": collapsed() }}>
+        {collapsed() ? preview().text : props.text}
+      </p>
       <Show when={compact()}>
-        <button type="button" class="reader-text-toggle" onClick={() => setOverride(!expanded())}>
+        <button
+          type="button"
+          class="reader-text-toggle"
+          aria-expanded={!collapsed()}
+          aria-controls={textId}
+          onClick={() => setOverride(!expanded())}
+        >
           {collapsed() ? "Show full message" : "Collapse message"}
         </button>
       </Show>
@@ -182,11 +190,6 @@ function primaryArgKey(args: Record<string, unknown>): string | null {
     Object.keys(args).find((key) => typeof args[key] === "string" && String(args[key]).trim()) ||
     null
   );
-}
-
-function shouldCompactText(text: string): boolean {
-  if (text.length > COMPACT_TEXT_CHARS) return true;
-  return text.split(/\r?\n/).filter((line) => line.trim()).length > COMPACT_TEXT_LINES;
 }
 
 function duplicatesToolOutput(event: AgentEvent): boolean {

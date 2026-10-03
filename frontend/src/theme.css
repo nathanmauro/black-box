@@ -2243,12 +2243,6 @@ a {
 .reader-text {
   line-height: 1.52;
 }
-.reader-text--collapsed {
-  max-height: 13.8rem;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent);
-  mask-image: linear-gradient(to bottom, #000 78%, transparent);
-}
 .reader-text-toggle {
   display: inline-flex;
   align-items: center;
@@ -2357,6 +2351,10 @@ a {
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
+}
+.tool-payload-note {
+  color: var(--text-dim);
+  font-size: 12px;
 }
 .tool-payload-block--json {
   color: color-mix(in srgb, var(--text) 88%, var(--blue));
