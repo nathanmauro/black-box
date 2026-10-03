@@ -454,3 +454,10 @@ A disposable 50,000-event SQLite fixture (1% intent, 99% hook events) built all 
 temporary sort (73–89 microseconds). Retrieving 100 recent intent events through the real recall
 adapter took 2.9 ms. These are measured warmed fixture results, not production latency guarantees.
 Deployment time, index space and filtered-query cost depend on database size, storage and workload.
+
+### Saved braid ownership upgrade
+
+Startup now upgrades saved-meld ownership on both database profiles to support explicitly unassigned
+braids. See [saved braids and recovery boundaries](projectless-braids.md) before upgrading existing
+storage. Older binaries are unsupported after null-owned braid writes; use forward repair or an
+explicitly restored verified backup. This does not attach artifacts to projects or synchronize databases.

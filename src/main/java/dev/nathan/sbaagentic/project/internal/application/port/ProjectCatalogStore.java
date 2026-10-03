@@ -18,6 +18,12 @@ public interface ProjectCatalogStore {
 
     List<AgentSession> sessionsForProjectByIds(String canonicalKey, List<String> sessionIds);
 
+    List<AgentSession> sessionsByIds(List<String> sessionIds);
+
+    ProjectSavedMeld savedMeld(String id);
+
+    List<ProjectSavedMeld> unassignedBraids(int limit, Instant beforeTime, String beforeId);
+
     long countTimelineBlocks(String canonicalKey);
 
     List<ProjectTimelineBlock> timelineBlocks(String canonicalKey, int limit, int offset);
@@ -27,6 +33,7 @@ public interface ProjectCatalogStore {
     void insertSavedMeld(
             String id,
             String canonicalKey,
+            String artifactKind,
             String title,
             String body,
             String provider,

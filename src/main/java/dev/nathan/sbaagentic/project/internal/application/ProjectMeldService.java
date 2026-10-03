@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.project.internal.application;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
 
+import dev.nathan.sbaagentic.project.ProjectMeldListResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldOperations;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
@@ -11,6 +12,7 @@ import dev.nathan.sbaagentic.project.ProjectMeldSummarizer;
 import dev.nathan.sbaagentic.project.ProjectSavedMeld;
 import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
+import dev.nathan.sbaagentic.project.internal.domain.MeldCursor;
 import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import java.time.Instant;
@@ -105,8 +107,18 @@ public class ProjectMeldService implements ProjectMeldOperations {
         if (request == null) {
             throw new ResponseStatusException(BAD_REQUEST, "Meld save request is required");
         }
-        String canonicalKey = aliasService.resolve(ProjectKeyCodec.decode(request.projectKey()));
+        boolean braid =
+                request.metadata() != null && "braid".equals(request.metadata().get("kind"));
+        boolean unassigned = request.projectKey() == null;
+        if (unassigned && !braid) {
+            throw new ResponseStatusException(BAD_REQUEST, "Missing projectKey requires metadata.kind exactly 'braid'");
+        }
+        String canonicalKey = unassigned ? null : aliasService.resolve(ProjectKeyCodec.decode(request.projectKey()));
         List<String> sessionIds = normalizedSessionIds(request.sessionIds());
+        if (unassigned && sessionIds.size() < 2) {
+            throw new ResponseStatusException(
+                    BAD_REQUEST, "Select at least two distinct existing sessions for an unassigned braid");
+        }
         if (sessionIds.isEmpty()) {
             throw new ResponseStatusException(BAD_REQUEST, "Select at least one project session");
         }
@@ -115,7 +127,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
         }
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         String id = UUID.randomUUID().toString();
-        String title = firstNonBlank(request.title(), "Project meld: " + ProjectKeyCodec.labelFor(canonicalKey));
+        String title = firstNonBlank(
+                request.title(),
+                unassigned ? "Unassigned braid" : "Project meld: " + ProjectKeyCodec.labelFor(canonicalKey));
         String body = requiredText(request.body(), "Meld body is required");
         String provider = firstNonBlank(request.provider(), "local");
         String model = firstNonBlank(request.model(), "context-bundle");
@@ -130,6 +144,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
         repository.insertSavedMeld(
                 id,
                 canonicalKey,
+                braid ? "braid" : "meld",
                 title,
                 body,
                 provider,
@@ -143,7 +158,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         return new ProjectSavedMeld(
                 id,
-                ProjectKeyCodec.encode(canonicalKey),
+                unassigned ? null : ProjectKeyCodec.encode(canonicalKey),
                 canonicalKey,
                 title,
                 body,
@@ -157,14 +172,42 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 sessions.stream().map(ProjectMeldService::sessionRef).toList());
     }
 
+    public ProjectSavedMeld get(String id) {
+        ProjectSavedMeld saved = repository.savedMeld(id);
+        if (saved == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Saved meld not found");
+
+        return saved;
+    }
+
+    public ProjectMeldListResponse list(String kind, String scope, int limit, String before) {
+        if (!"braid".equals(kind) || !"unassigned".equals(scope))
+            throw new ResponseStatusException(BAD_REQUEST, "Listing requires kind=braid and scope=unassigned");
+        if (limit < 1 || limit > 100) throw new ResponseStatusException(BAD_REQUEST, "limit must be between 1 and 100");
+        MeldCursor cursor = MeldCursor.parse(before);
+        List<ProjectSavedMeld> found = repository.unassignedBraids(
+                limit + 1, cursor == null ? null : cursor.createdAt(), cursor == null ? null : cursor.id());
+        boolean more = found.size() > limit;
+        List<ProjectSavedMeld> items = List.copyOf(found.subList(0, Math.min(limit, found.size())));
+        ProjectSavedMeld last = items.isEmpty() ? null : items.get(items.size() - 1);
+
+        return new ProjectMeldListResponse(
+                items, items.size(), more ? new MeldCursor(last.createdAt(), last.id()).encoded() : null);
+    }
+
     private List<AgentSession> orderedSessions(String canonicalKey, List<String> sessionIds) {
-        List<AgentSession> found = repository.sessionsForProjectByIds(canonicalKey, sessionIds);
+        List<AgentSession> found = canonicalKey == null
+                ? repository.sessionsByIds(sessionIds)
+                : repository.sessionsForProjectByIds(canonicalKey, sessionIds);
         Map<String, AgentSession> byId = found.stream().collect(Collectors.toMap(AgentSession::id, session -> session));
         List<String> missing =
                 sessionIds.stream().filter(id -> !byId.containsKey(id)).toList();
         if (!missing.isEmpty()) {
             throw new ResponseStatusException(
-                    BAD_REQUEST, "Selected sessions must belong to this project: " + String.join(", ", missing));
+                    BAD_REQUEST,
+                    (canonicalKey == null
+                                    ? "Selected sessions must exist: "
+                                    : "Selected sessions must belong to this project: ")
+                            + String.join(", ", missing));
         }
 
         return sessionIds.stream().map(byId::get).toList();

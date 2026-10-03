@@ -133,3 +133,10 @@ executables on `PATH`; CI installs PostgreSQL 16 clients and requires the restor
 `./scripts/verify.sh` includes that offline guard. Export the PostgreSQL fixture variables above
 before running it to include the same database contracts required by CI. The cloud image's Docker
 build context admits only built `target/*.jar` files and the one required entrypoint script.
+
+### Saved braid ownership upgrade
+
+Startup now upgrades saved-meld ownership on both database profiles to support explicitly unassigned
+braids. See [saved braids and recovery boundaries](projectless-braids.md) before upgrading existing
+storage. Older binaries are unsupported after null-owned braid writes; use forward repair or an
+explicitly restored verified backup. This does not attach artifacts to projects or synchronize databases.
