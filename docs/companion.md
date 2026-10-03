@@ -49,6 +49,15 @@ menubar title tracks the page's pulse and unseen count. It writes `mini.png`, `c
 touches the real shell's saved position, sizes, or seen-state. Point it at an isolated Black Box
 seeded with a Decision or Handoff and a recent tool call, never the live instance on port 8766.
 
+The shell treats a load as healthy only once the page sends its first bridge `state` message after
+the new document commits; that message may arrive before or after WebKit reports the load finished.
+A non-2xx `/companion` response, a navigation error, a WebContent process termination, or a 2xx
+page that sends no `state` within 10 seconds of finishing flips the menubar to disconnected and
+schedules a reload. Consecutive failures back off at 2, 4, 8, 16, then 30 seconds; the first
+`state` from a recovered page resets that sequence and cancels any pending reload. The shell
+cancelling its own in-flight load (Reload, or a retry superseding a slow attempt) is not counted
+as a failure.
+
 The menubar menu offers Show/Hide Companion, Open Black Box, Reload, and Quit. The panel resizes as the
 page changes level and remembers its position; a manual resize of the expanded panel is remembered
 per mode and preferred over the page's own default size the next time that mode is entered. Links

@@ -11,6 +11,11 @@ struct ShellEnvironment {
     var openExternal: (URL) -> Void
     var onLaunched: ((AppDelegate) -> Void)?
     var onBridgeMessage: ((BridgeMessage) -> Void)?
+    /// Runs the shell's retry and readiness timers; a test can compress time here.
+    var schedule: (TimeInterval, DispatchWorkItem) -> Void = { delay, work in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+    var onRetryScheduled: ((TimeInterval) -> Void)?
 
     static func live() -> ShellEnvironment {
         ShellEnvironment(
@@ -36,14 +41,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // single flag) because two mode messages can overlap within the grace period.
     private var resizeGuard = ProgrammaticResizeGuard()
     // Counts consecutive failed loads (server down at launch, mid-`mvn package`/`launchctl kickstart`
-    // 500s, a WebContent process crash) so retries back off instead of hammering the server; reset on
-    // the next successful navigation.
+    // 500s, a WebContent process crash, a 2xx page that never sends `state`) so retries back off
+    // instead of hammering the server. Reset only when a load proves itself alive (its first bridge
+    // `state`), not on didFinish: a blank 2xx page finishes every time and would never back off.
     private var retryAttempt = 0
     private var pendingRetry: DispatchWorkItem?
-    // Whether the page has sent a bridge `state` message since its most recent load; a load can
+    // Whether the page has sent a bridge `state` message since its most recent commit; a load can
     // didFinish (2xx main-frame response) while never actually rendering (broken JS bundle, blank
     // error page), so readinessCheck below still needs to catch it after a grace period.
     private var readiness = PageReadinessTracker()
+    // The most recently started navigation; callbacks for any other (superseded) navigation are
+    // ignored so a late one cannot reset readiness or schedule a retry.
+    private var currentNavigation: WKNavigation?
     private var readinessCheck: DispatchWorkItem?
     private static let readinessTimeout: TimeInterval = 10
     // Set right before rejecting a non-2xx main-frame response in decidePolicyFor navigationResponse,
@@ -120,6 +129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         defer { environment.onBridgeMessage?(parsed) }
         switch parsed {
         case let .state(pulse, unseen):
+            // Only the first `state` of a committed load is proof of recovery; repeats from an
+            // already-ready page (including one kept alive after a rejected retry) are not.
+            if readiness.isStale {
+                retryAttempt = 0
+                pendingRetry?.cancel()
+                pendingRetry = nil
+            }
             readiness.receivedState()
             readinessCheck?.cancel()
             readinessCheck = nil
@@ -186,11 +202,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         decisionHandler(.allow)
     }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        currentNavigation = navigation
+    }
+
+    // Commit, not provisional start, is when the new document replaces the old one: until then the
+    // old page is still live and its `state` messages must not count as proof for this load. A
+    // rejected non-2xx response never commits, so it leaves readiness alone.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard isCurrent(navigation) else { return }
+        readiness.loadStarted()
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        retryAttempt = 0
-        pendingRetry?.cancel()
-        pendingRetry = nil
-        scheduleReadinessCheck()
+        guard isCurrent(navigation) else { return }
+        // A pending retry is left alone: only a `state` proof cancels it. A failure reported while
+        // this load was still in flight (a WebContent termination) would otherwise be forgotten,
+        // leaving the menubar disconnected with nothing scheduled to recover it.
+        // The page may already have sent `state` before its load event (an inline script while an
+        // image is still loading); that proof stands and needs no grace period.
+        if readiness.isStale { scheduleReadinessCheck() }
+    }
+
+    private func isCurrent(_ navigation: WKNavigation?) -> Bool {
+        navigation == nil || navigation === currentNavigation
     }
 
     // Even a genuine 2xx main-frame response can render nothing (a broken JS bundle, a blank error
@@ -199,13 +234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // silently-blank load the same as a real failure.
     private func scheduleReadinessCheck() {
         readinessCheck?.cancel()
-        readiness.loadStarted()
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.readiness.isStale else { return }
             self.handleLoadFailure()
         }
         readinessCheck = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.readinessTimeout, execute: work)
+        environment.schedule(Self.readinessTimeout, work)
     }
 
     // The server can be down at launch, or return 500s for the SPA's own assets mid `mvn package` /
@@ -214,10 +248,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // ever updates from a bridge `state` message the page never got to send) both looked fine while
     // being silently dead, recoverable only by quitting and relaunching.
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard isCurrent(navigation) else { return }
         handleNavigationError(error)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard isCurrent(navigation) else { return }
         handleNavigationError(error)
     }
 
@@ -258,7 +294,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         retryAttempt += 1
         let work = DispatchWorkItem { [weak self] in self?.reloadNow() }
         pendingRetry = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        environment.onRetryScheduled?(delay)
+        environment.schedule(delay, work)
     }
 
     @objc private func reloadNow() {
