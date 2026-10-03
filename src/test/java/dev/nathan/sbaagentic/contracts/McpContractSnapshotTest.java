@@ -59,7 +59,7 @@ class McpContractSnapshotTest {
                 ? objectMapper.readTree(snapshot.toFile())
                 : objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
         assertThat(actual).isEqualTo(expected);
-        assertThat(callbackProvider.getToolCallbacks()).hasSize(10);
+        assertThat(callbackProvider.getToolCallbacks()).hasSize(12);
     }
 
     @Test
@@ -77,7 +77,7 @@ class McpContractSnapshotTest {
                 annotatedNames.add(method.getName());
             }
         }
-        assertThat(annotatedNames).hasSize(10);
+        assertThat(annotatedNames).hasSize(12);
     }
 
     @Test

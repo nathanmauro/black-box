@@ -92,6 +92,17 @@ class EmbeddingIndexerIntegrationTest {
     }
 
     @Test
+    void recordingEvidenceProducesOneEmbeddingRow() {
+        recorder.ingest(event(
+                "evidence-session",
+                "Evidence",
+                "[Evidence] Zero matches",
+                Map.of("kind", "evidence", "claim", "Zero matches", "excerpt", "rg returned no lines")));
+        assertThat(embeddingCount()).isEqualTo(1);
+        assertThat(embedder.calls()).isEqualTo(1);
+    }
+
+    @Test
     void recordingPostToolUseProducesNoEmbeddingRow() {
         recorder.ingest(event("tool-session", "PostToolUse", "Ran tests", Map.of()));
 

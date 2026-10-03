@@ -27,6 +27,7 @@ public final class EmbeddableText {
                     case "decision" -> firstNonBlank(joinFields(metadata, "decision", "rationale"), text);
                     case "handoff" -> firstNonBlank(joinFields(metadata, "contextSummary", "nextAction"), text);
                     case "idea" -> firstNonBlank(joinFields(metadata, "title", "oneLiner"), text);
+                    case "evidence" -> firstNonBlank(joinFields(metadata, "claim", "excerpt"), text);
                     default -> text;
                 };
 

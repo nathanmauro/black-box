@@ -1207,6 +1207,7 @@ describe("StreamPage", () => {
     // PostToolUse is in the static QUICK_VALUES but not the live searchValues mock — its
     // presence proves the empty-prefix path serves the static list (spec §4.6).
     await screen.findByRole("option", { name: "PostToolUse" });
+    expect(screen.getByRole("option", { name: "Evidence" })).toBeInTheDocument();
     expect(input).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.keyDown(input, { key: "ArrowDown" });

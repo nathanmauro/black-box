@@ -79,7 +79,7 @@ The link clears remembered Activity project scope; source filters still apply. O
 selection and the sticky human-only setting are unchanged. See the
 [Idea source verification](superpowers/plans/2026-10-03-idea-exact-source.md).
 
-Observation and Projection recall items retain a short `headline` and include their full captured text in the
+Observation, Projection, and Evidence recall items retain a short `headline` and include their full captured text in the
 optional `body` field. It reflects the stored evidence after the existing ingest redaction and
 length limits; recall does not change those capture rules. Other kinds and older responses omit
 that field. Recall's expandable reader

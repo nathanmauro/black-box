@@ -1,20 +1,27 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
+import dev.nathan.sbaagentic.recording.EvidenceKind;
+import dev.nathan.sbaagentic.recording.EvidenceRefs;
 import dev.nathan.sbaagentic.recording.Ideas;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.LaneListing;
+import dev.nathan.sbaagentic.recording.Lanes;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -175,6 +182,8 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
                 ? request.ideaKey().strip()
                 : Ideas.defaultKey(redaction.redact(repo), redaction.redact(title));
         List<String> connects = trimList(request.connects());
+        String project = stripOrNull(request.project());
+        List<LaneListing> alsoIn = Lanes.validate(project, repo, request.alsoIn());
 
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", Ideas.KIND);
@@ -192,15 +201,104 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         putIfPresent(metadata, "notes", stripOrNull(request.notes()));
         putIfPresent(metadata, "repo", repo);
         putIfPresent(metadata, "migratedFrom", stripOrNull(migratedFrom));
+        putIfPresent(metadata, "project", project);
+        putIfPresent(metadata, "alsoIn", laneMetadata(alsoIn));
 
         return write(
                 request.source(),
                 request.clientSessionId(),
                 repo,
                 Ideas.EVENT_TYPE,
-                renderIdea(title, oneLiner, origin, status, legs, connects, request, ideaKey),
+                renderIdea(title, oneLiner, origin, status, legs, connects, request, ideaKey, project, alsoIn),
                 metadata,
                 observedAt);
+    }
+
+    @Override
+    public IngestResponse captureEvidence(CaptureEvidenceRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Evidence request is required.");
+        }
+        requireNotBlank("claim", request.claim());
+        requireNotBlank("sourceRef", request.sourceRef());
+        String repo = stripOrNull(request.repo());
+        String digest = stripOrNull(request.outputDigest());
+        if (digest != null && digest.length() > 200) {
+            throw new IllegalArgumentException("outputDigest must be at most 200 characters.");
+        }
+        String observedAt = null;
+        if (notBlank(request.observedAt())) {
+            try {
+                observedAt = OffsetDateTime.parse(request.observedAt().strip())
+                        .toInstant()
+                        .toString();
+            } catch (RuntimeException ex) {
+                throw new IllegalArgumentException("observedAt must be an ISO-8601 instant or offset date-time.");
+            }
+        }
+        List<String> supports = EvidenceRefs.normalizeList(request.supports(), "supports");
+        List<String> refutes = EvidenceRefs.normalizeList(request.refutes(), "refutes");
+        EvidenceRefs.checkDisjoint(supports, refutes);
+        String project = stripOrNull(request.project());
+        List<LaneListing> alsoIn = Lanes.validate(project, repo, request.alsoIn());
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("kind", EvidenceKind.KIND);
+        metadata.put("claim", request.claim().strip());
+        metadata.put("sourceRef", request.sourceRef().strip());
+        putIfPresent(metadata, "excerpt", notBlank(request.excerpt()) ? request.excerpt() : null);
+        putIfPresent(metadata, "outputDigest", digest);
+        putIfPresent(metadata, "observedAt", observedAt);
+        putIfPresent(metadata, "capturedBy", stripOrNull(request.capturedBy()));
+        putIfPresent(metadata, "supports", supports);
+        putIfPresent(metadata, "refutes", refutes);
+        putIfPresent(metadata, "notes", stripOrNull(request.notes()));
+        putIfPresent(metadata, "repo", repo);
+        putIfPresent(metadata, "project", project);
+        putIfPresent(metadata, "alsoIn", laneMetadata(alsoIn));
+        StringBuilder body = new StringBuilder(EvidenceKind.TEXT_PREFIX)
+                .append(' ')
+                .append(request.claim().strip());
+        if (notBlank(request.excerpt())) {
+            body.append("\n\nExcerpt: ").append(request.excerpt());
+        }
+        appendLine(body, "Source", stripOrNull(request.sourceRef()));
+        appendLine(body, "Digest", digest);
+        appendLine(body, "Observed", observedAt);
+        appendLine(body, "Captured by", stripOrNull(request.capturedBy()));
+        if (supports != null) {
+            appendLine(body, "Supports", String.join("; ", supports));
+        }
+        if (refutes != null) {
+            appendLine(body, "Refutes", String.join("; ", refutes));
+        }
+        appendLine(body, "Project", project);
+        appendLanes(body, alsoIn);
+        appendBlock(body, "Notes", request.notes());
+
+        return write(
+                request.source(), request.clientSessionId(), repo, EvidenceKind.EVENT_TYPE, body.toString(), metadata);
+    }
+
+    private static List<Map<String, Object>> laneMetadata(List<LaneListing> lanes) {
+        if (lanes == null) {
+
+            return null;
+        }
+
+        return lanes.stream()
+                .map(lane -> Map.<String, Object>of("project", lane.project(), "score", lane.score()))
+                .toList();
+    }
+
+    private static void appendLanes(StringBuilder body, List<LaneListing> lanes) {
+        if (lanes != null && !lanes.isEmpty()) {
+            appendLine(
+                    body,
+                    "Also in",
+                    lanes.stream()
+                            .map(lane -> lane.project() + " (" + lane.score() + ")")
+                            .collect(Collectors.joining(", ")));
+        }
     }
 
     @Override
@@ -293,7 +391,9 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             Integer legs,
             List<String> connects,
             CaptureIdeaRequest request,
-            String ideaKey) {
+            String ideaKey,
+            String project,
+            List<LaneListing> alsoIn) {
         StringBuilder body = new StringBuilder(Ideas.TEXT_PREFIX)
                 .append(' ')
                 .append(title)
@@ -315,6 +415,8 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         appendLine(body, "Resume", request.resumeStep());
         appendLine(body, "Link", request.link());
         appendLine(body, "Idea key", ideaKey);
+        appendLine(body, "Project", project);
+        appendLanes(body, alsoIn);
         appendBlock(body, "Notes", request.notes());
 
         return body.toString();
