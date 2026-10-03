@@ -164,3 +164,11 @@ an explicit Show all/Show less control linked to the text. One-line session and 
 at most 160 characters plus an ellipsis. Filtering and title deduplication still use the full
 original turn, and opening the header restores that original exactly. CSS may tighten a bounded
 header preview visually, but must not leave the entire original behind the collapsed control.
+
+
+## Replacement session scope
+
+Recall groups manual decision replacements under one generated session per target capture's repo
+for the current page visit. Replacements in the same repo reuse that session, including after
+changing filters; different target repos never share it, including in All projects. This preserves
+project counts and evidence attribution without changing backend session identity or stored history.

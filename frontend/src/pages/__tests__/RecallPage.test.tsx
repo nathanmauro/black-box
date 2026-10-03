@@ -292,6 +292,58 @@ describe("RecallPage", () => {
     );
   });
 
+  it.each([false, true])(
+    "groups replacement sessions by target repo (switch project filters: %s)",
+    async (switchProjects) => {
+      const targets = [
+        { ...item, eventId: "alpha-one", repo: "/repos/alpha", headline: "Alpha decision one" },
+        { ...item, eventId: "beta-one", repo: "/repos/beta", headline: "Beta decision one" },
+        { ...item, eventId: "alpha-two", repo: "/repos/alpha", headline: "Alpha decision two" },
+      ];
+      let remaining = [...targets];
+      vi.mocked(getRecall).mockImplementation(async (scope) => {
+        const selected = typeof scope === "string" ? undefined : scope.project;
+        return result(remaining.filter((candidate) => !selected || candidate.repo === selected));
+      });
+      vi.mocked(captureDecision).mockImplementation(async (request) => {
+        remaining = remaining.filter((candidate) => candidate.eventId !== request.supersedes);
+        return {
+          eventId: `replacement-${request.supersedes}`,
+          sessionId: request.clientSessionId,
+          source: request.source,
+          clientSessionId: request.clientSessionId,
+          eventType: "Decision",
+        };
+      });
+      updateParams({ project: switchProjects ? "/repos/alpha" : undefined, run: "1" });
+      render(() => <RecallPage />);
+      for (const target of targets) {
+        if (switchProjects) updateParams({ project: target.repo, run: "1" });
+        const card = await screen.findByRole("article", { name: target.headline });
+        fireEvent.click(within(card).getByRole("button", { name: "Replace decision" }));
+        fireEvent.input(screen.getByLabelText("New decision"), {
+          target: { value: `Replacement for ${target.headline}` },
+        });
+        fireEvent.input(screen.getByLabelText("Why this replaces the earlier decision"), {
+          target: { value: "Updated project evidence" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Record replacement" }));
+        await waitFor(() =>
+          expect(screen.queryByRole("article", { name: target.headline })).not.toBeInTheDocument(),
+        );
+      }
+      const requests = vi.mocked(captureDecision).mock.calls.map(([request]) => request);
+      expect(requests.map((request) => request.repo)).toEqual([
+        "/repos/alpha",
+        "/repos/beta",
+        "/repos/alpha",
+      ]);
+      expect(requests[0].clientSessionId).toMatch(/^blackbox-recall-/);
+      expect(requests[0].clientSessionId).toBe(requests[2].clientSessionId);
+      expect(requests[0].clientSessionId).not.toBe(requests[1].clientSessionId);
+    },
+  );
+
   it("keeps the replacement draft on a rejected write and reports clipboard failure", async () => {
     updateParams({ run: "1" });
     render(() => <RecallPage />);

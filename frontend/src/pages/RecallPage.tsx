@@ -64,7 +64,9 @@ export default function RecallPage() {
   const [activeSuggestion, setActiveSuggestion] = createSignal(-1);
   const [selectedEvidence, setSelectedEvidence] = createSignal<RecalledItem | null>(null);
   const [copyStatus, setCopyStatus] = createSignal("");
-  const clientSessionId = `blackbox-recall-${crypto.randomUUID()}`;
+  // Backend sessions have one project scope. Keep writes stable within a target repo, not
+  // across every project visited in this page (including the All projects view).
+  const replacementSessions = new Map<string, string>();
   let requestToken = 0;
   let suggestionToken = 0;
   const filteredItems = createMemo(() => sourceFilter.matches(result()?.items || []));
@@ -254,10 +256,16 @@ export default function RecallPage() {
   }
   async function replaceDecision(item: RecalledItem, decision: string, rationale: string) {
     const before = JSON.stringify(recallSnapshot());
+    const repo = item.repo!;
+    let clientSessionId = replacementSessions.get(repo);
+    if (!clientSessionId) {
+      clientSessionId = `blackbox-recall-${crypto.randomUUID()}`;
+      replacementSessions.set(repo, clientSessionId);
+    }
     await captureDecision({
       source: "manual",
       clientSessionId,
-      repo: item.repo!,
+      repo,
       decision,
       rationale,
       supersedes: item.eventId,
