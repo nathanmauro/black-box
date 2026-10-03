@@ -55,3 +55,9 @@ the architecture rerun passed. The shared Query module remains dependency-free. 
 format checks, Markdown file links and `git diff --check` passed. No frontend behavior/assets,
 live service, database or provider was changed. Final integration and exact-head verification
 with the event chronology base remain the coordinator's responsibility.
+
+Coordinator integration: combined the additive session initializer with event chronology's PostgreSQL
+initializer, preserving both on each backend. The integrated SQLite/PostgreSQL chronology selection
+passed 41 tests with zero failures/errors/skips; the two named architecture classes and scoped
+RecordingSqlStore formatting gate also passed. Temporary helper source was replaced by the
+reviewed event chronology commit.
