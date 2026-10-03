@@ -16,7 +16,7 @@ public final class CliCommands {
                     "ingest",
                     "ingest [--text=<note>] [--source=manual] [--session=<id>] [--type=ManualCapture]\n"
                             + "      [--role=user] [--cwd=<path>] [--turn=<id>] [--tool=<name>] [--title=<title>]",
-                    "Capture an event. Without nonblank --text, read available piped stdin; cwd defaults to the working directory."),
+                    "Capture an event. Explicit --text bypasses stdin, including --text= for no text. Otherwise redirected stdin is read through EOF (UTF-8, at most 1 MiB); an attached console is not read. Cwd defaults to the working directory."),
             new Command(
                     "embeddings-backfill",
                     "embeddings-backfill [--apply] [--batch-size=100] [--progress-every=250]",
