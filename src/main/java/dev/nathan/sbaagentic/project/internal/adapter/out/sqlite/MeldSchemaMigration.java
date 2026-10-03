@@ -60,6 +60,10 @@ public class MeldSchemaMigration {
             String key = SqlInstant.column("created_at", postgres).indexColumns();
             jdbc.execute("CREATE INDEX IF NOT EXISTS idx_session_melds_unassigned_chronology_v1 ON session_melds ("
                     + key + ") WHERE artifact_kind = 'braid' AND project_key IS NULL");
+            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_session_melds_braid_chronology_v1 ON session_melds (" + key
+                    + ") WHERE artifact_kind = 'braid'");
+            jdbc.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_session_meld_inputs_session_meld ON session_meld_inputs (session_id,meld_id)");
         });
     }
 

@@ -36,6 +36,7 @@ Restart the client if the tools do not appear. The server keeps the historical M
 | `recallIdea` | Return an idea with supporting and refuting Evidence across revisions |
 | `recallContext` | Recall Decisions, Handoffs, Observations, Ideas, and Evidence lexically or semantically; Projections are lexical-only |
 | `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
+| `findBraids` | Bounded discovery and exact lookup of saved braid artifacts across assigned and unassigned projects |
 | `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
 | `recentSessions` | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn |
 | `localModelStatus` | Inspect the optional local model backend |
@@ -64,6 +65,55 @@ Structured capture endpoints and MCP capture tools remain append-only: a genuine
 response does not make a retry safe, and repeating the request can create another event. Clients
 that need receipt-based retries can use `POST /api/events/idempotent` with a stable `captureId` and
 unchanged event body; see [Idempotent event capture](idempotent-capture.md).
+
+### Saved braid discovery
+
+`findBraids` searches persisted saved braid artifacts across project-owned and unassigned storage.
+It excludes ordinary melds and fallback captured `Braid` events. With no selectors it returns recent
+artifacts, ordered by precise save-time `createdAt` then artifact ID, both descending. Optional
+`query` is a literal case-sensitive title/body substring, trimmed and nonblank, at most 1024 UTF-16
+units; `%`, `_`, quotes and valid Unicode are literal. For portable database behavior, selectors
+reject U+0000 and isolated UTF-16 surrogates before querying; decoded cursor IDs also reject U+0000.
+Optional `sessionId` is exact **internal Black Box session** membership, AND with query; it is not a
+client-session alias. Historical orphan membership
+can still match. Filters apply before the result limit.
+
+Use `id` for one exact saved braid; it cannot be combined with query, sessionId or before. Missing
+IDs and ordinary meld IDs return `status: "not_found"`. Limit defaults to 10 and must be 1–20.
+The response includes artifactId, artifactKind=braid, sourceType=saved_meld, explicit project/unassigned
+ownership with nullable projectKey/canonicalKey, caller-declared provider/model and ordered source
+references. These artifact IDs are not event
+citations. Opaque metadata, members and evidence IDs are omitted. `detailPath` addresses the existing
+REST artifact; discovery does not change storage or the unassigned REST API.
+
+Source provenance is labeled `save_snapshot`, `current_session` for legacy joined data, or
+`unavailable` for missing historical sources. `ownership` remains project/unassigned independently
+of exported path text. Built-in export redaction applies to title, body, ownership paths, provider,
+model and provenance strings even when ingestion redaction is disabled. `transformed` means the
+export redactor changed text through known-secret redaction or its scalar scan limit. The encoded
+projectKey is null when the corresponding path was transformed or clipped, so it cannot disclose
+the original path. Internal artifact/session IDs and detail paths remain exact.
+
+`maxBytes` defaults to 24000 and must be 2048–64000: it bounds the exact serialized application JSON
+in MCP's text result, measured in UTF-8 bytes. MCP framing adds bytes. `titleTruncated`,
+`bodyTruncated`, `provenanceTruncated` and per-source `truncated` describe **additional output-budget
+clipping**; `textComplete: false` also covers the export redactor's transformations/scan limit.
+A false budget-truncation flag alone does not establish verbatim completeness. `textComplete` only
+describes this export, not completeness of the original evidence. The body may already
+have been limited when the artifact was originally saved. Clipping respects Unicode code points.
+
+Body clipping is attempted first to preserve title, ownership and provenance. If that envelope itself
+does not fit, other free text is clipped as well. A tight budget can return a `referenceOnly` hit,
+retaining ordered internal IDs and provenance basis.
+If even the first artifact's identity/reference envelope cannot fit, `budget_exceeded` returns no
+items or continuation; increase maxBytes rather than assuming absence. Invalid options/cursors
+return bounded `invalid_request` diagnostics. For an invalid requested byte budget, the error response
+reports an applied `maxBytes: 2048`; this does not accept the invalid request. Top-level `truncated`
+indicates output-budget clipping or a reference-only hit, not ordinary next-page availability.
+Follow `nextBefore` using the same normalized query and exact session filter; changing filters is rejected, while limit/budget may change. Continuation
+always anchors the last returned artifact, including budget-limited pages. Exact-ID mode never
+returns a next cursor. Newer concurrent saves require a first-page refresh; this is not snapshot
+isolation, semantic recall, a model call or a restricted-gateway tool.
 
 ### Projection evidence
 

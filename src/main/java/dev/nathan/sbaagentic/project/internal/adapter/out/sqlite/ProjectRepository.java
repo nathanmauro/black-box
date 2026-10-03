@@ -10,6 +10,7 @@ import dev.nathan.sbaagentic.project.ProjectScope;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.project.ProjectSummary;
 import dev.nathan.sbaagentic.project.ProjectTimelineBlock;
+import dev.nathan.sbaagentic.project.internal.application.port.BraidReader;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
@@ -34,7 +35,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 @DependsOn("meldSchemaMigration")
-public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore {
+public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore, BraidReader {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -597,6 +598,79 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                         + time.descending("id") + " LIMIT ?",
                 this::mapSavedMeld,
                 args.toArray());
+    }
+
+    @Override
+    public List<BraidReader.Candidate> findBraids(
+            String id, String query, String sessionId, int limit, Instant beforeTime, String beforeId) {
+        SqlInstant time = SqlInstant.column("m.created_at", dialect == ProjectSqlDialect.POSTGRES);
+        List<Object> args = new ArrayList<>();
+        StringBuilder where = new StringBuilder("m.artifact_kind='braid'");
+        if (id != null) {
+            where.append(" AND m.id=?");
+            args.add(id);
+        }
+        if (query != null) {
+            String function = dialect == ProjectSqlDialect.POSTGRES ? "strpos" : "instr";
+            where.append(" AND (" + function + "(m.title,?)>0 OR " + function + "(m.body,?)>0)");
+            args.add(query);
+            args.add(query);
+        }
+        if (sessionId != null) {
+            where.append(" AND EXISTS (SELECT 1 FROM session_meld_inputs i WHERE i.meld_id=m.id AND i.session_id=?)");
+            args.add(sessionId);
+        }
+        if (beforeTime != null) {
+            where.append(" AND " + time.expression() + " <= ? AND " + time.cursorTuple("m.id") + " < (?,?)");
+            SqlInstant.bind(args, beforeTime);
+            SqlInstant.bind(args, beforeTime);
+            args.add(beforeId);
+        }
+        args.add(limit);
+
+        return jdbcTemplate.query(
+                "SELECT m.id,m.project_key,m.title,m.body,m.provider,m.model,m.created_at FROM session_melds m WHERE "
+                        + where + " ORDER BY " + time.descending("m.id") + " LIMIT ?",
+                (rs, n) -> new BraidReader.Candidate(
+                        rs.getString("id"),
+                        rs.getString("project_key") == null ? null : aliasService.resolve(rs.getString("project_key")),
+                        rs.getString("title"),
+                        rs.getString("body"),
+                        rs.getString("provider"),
+                        rs.getString("model"),
+                        Instant.parse(rs.getString("created_at")),
+                        braidSources(rs.getString("id"))),
+                args.toArray());
+    }
+
+    private List<BraidReader.Source> braidSources(String id) {
+
+        return jdbcTemplate.query(
+                """
+            SELECT i.session_id,i.metadata_json,s.id AS existing_id,s.source,s.client_session_id,s.cwd
+              FROM session_meld_inputs i LEFT JOIN agent_sessions s ON s.id=i.session_id
+             WHERE i.meld_id=? ORDER BY i.input_order
+            """,
+                (rs, n) -> {
+                    Map<String, Object> snapshot = fromJsonMap(rs.getString("metadata_json"));
+                    if (snapshot == null) snapshot = Map.of();
+                    boolean captured = Integer.valueOf(1).equals(snapshot.get("provenanceVersion"))
+                            && snapshot.get("source") instanceof String
+                            && snapshot.get("clientSessionId") instanceof String
+                            && snapshot.containsKey("cwd")
+                            && (snapshot.get("cwd") == null || snapshot.get("cwd") instanceof String);
+                    String basis = captured
+                            ? "save_snapshot"
+                            : rs.getString("existing_id") == null ? "unavailable" : "current_session";
+
+                    return new BraidReader.Source(
+                            rs.getString("session_id"),
+                            captured ? (String) snapshot.get("source") : rs.getString("source"),
+                            captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
+                            captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
+                            basis);
+                },
+                id);
     }
 
     public List<ProjectSavedMeld> savedMeldsForProject(String canonicalKey) {

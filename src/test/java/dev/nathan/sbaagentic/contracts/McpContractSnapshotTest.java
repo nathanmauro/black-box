@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.CompactSearchMcpTools;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
+import dev.nathan.sbaagentic.project.internal.adapter.in.mcp.ProjectMcpTools;
 import dev.nathan.sbaagentic.summary.internal.adapter.in.mcp.SummaryMcpTools;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -59,7 +60,7 @@ class McpContractSnapshotTest {
                 ? objectMapper.readTree(snapshot.toFile())
                 : objectMapper.readTree(new ClassPathResource("contracts/mcp-tools.json").getInputStream());
         assertThat(actual).isEqualTo(expected);
-        assertThat(callbackProvider.getToolCallbacks()).hasSize(12);
+        assertThat(callbackProvider.getToolCallbacks()).hasSize(13);
     }
 
     @Test
@@ -68,7 +69,8 @@ class McpContractSnapshotTest {
                 .isSameAs(callbackProvider);
 
         List<String> annotatedNames = new ArrayList<>();
-        for (Class<?> toolGroup : List.of(CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class)) {
+        for (Class<?> toolGroup : List.of(
+                CompactSearchMcpTools.class, MemoryMcpTools.class, SummaryMcpTools.class, ProjectMcpTools.class)) {
             for (Method method : toolGroup.getDeclaredMethods()) {
                 Tool tool = method.getAnnotation(Tool.class);
                 if (tool == null) {
@@ -77,7 +79,7 @@ class McpContractSnapshotTest {
                 annotatedNames.add(method.getName());
             }
         }
-        assertThat(annotatedNames).hasSize(12);
+        assertThat(annotatedNames).hasSize(13);
     }
 
     @Test
