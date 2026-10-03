@@ -997,6 +997,78 @@ describe("SessionsPage", () => {
     expect(getEvent).toHaveBeenCalledWith(olderTarget.id);
   });
 
+  it("keeps an older exact answer before the next prompt and reattaches it after loading its prompt", async () => {
+    const shared = { sessionId: "session-1", source: "codex", clientSessionId: "client-1" };
+    const earlierPrompt: AgentEvent = {
+      ...shared,
+      id: "earlier-prompt",
+      eventType: "UserPromptSubmit",
+      role: "user",
+      text: "Explain the earlier task",
+      observedAt: "2026-10-03T12:00:00.123456787Z",
+    };
+    const target: AgentEvent = {
+      ...shared,
+      id: "previous-answer",
+      eventType: "AssistantMessage",
+      role: "assistant",
+      text: "Answer to the earlier task",
+      observedAt: "2026-10-03T12:00:00.123456788Z",
+    };
+    const prompt: AgentEvent = {
+      ...shared,
+      id: "next-prompt",
+      eventType: "UserPromptSubmit",
+      role: "user",
+      text: "Start an unrelated next task",
+      observedAt: "2026-10-03T12:00:00.123456789Z",
+    };
+    const replies: AgentEvent[] = Array.from({ length: 49 }, (_, i) => ({
+      ...shared,
+      id: `next-reply-${i}`,
+      eventType: "AssistantMessage",
+      role: "assistant",
+      text: `Response fragment ${i} for the next task`,
+      observedAt: `2026-10-03T12:00:00.${123456790 + i}Z`,
+    }));
+    const head = [...replies].reverse().concat(prompt);
+    const cursor = `${prompt.observedAt}|${prompt.id}`;
+    vi.mocked(getSessionTranscript).mockImplementation(async (_id, params = {}) =>
+      params.before
+        ? transcriptResponse([target, earlierPrompt])
+        : transcriptResponse(head, { nextBefore: cursor }),
+    );
+    vi.mocked(getEvent).mockResolvedValue(target);
+
+    render(() => <SessionsPage selectedSessionId="session-1" targetEventId={target.id} />);
+
+    const answer = await screen.findByText(target.text!);
+    expect(answer.closest(".prompt-turn")).toHaveClass("prompt-turn--preamble");
+    expect(document.getElementById(`event-${target.id}`)).toHaveClass("event-flow-row--target");
+    expect(getEvent).toHaveBeenCalledWith(target.id);
+    expect([...document.querySelectorAll(".event-flow-row")].map((row) => row.id)).toEqual([
+      `event-${target.id}`,
+      `event-${prompt.id}`,
+      ...replies.map((reply) => `event-${reply.id}`),
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+    await screen.findByText(earlierPrompt.text!);
+    const turn = screen.getByText(target.text!).closest(".prompt-turn") as HTMLElement;
+    expect(turn).not.toHaveClass("prompt-turn--preamble");
+    expect(within(turn).getByText(earlierPrompt.text!)).toBeInTheDocument();
+    expect(within(turn).queryByText(prompt.text!)).not.toBeInTheDocument();
+    expect(screen.getAllByText(target.text!)).toHaveLength(1);
+    expect(document.querySelectorAll(".prompt-turn")).toHaveLength(2);
+    expect(document.getElementById(`event-${target.id}`)).toHaveClass("event-flow-row--target");
+    expect(getSessionTranscript).toHaveBeenLastCalledWith("session-1", {
+      limit: 50,
+      before: cursor,
+      q: undefined,
+    });
+    expect(screen.queryByRole("button", { name: "Load older events" })).not.toBeInTheDocument();
+  });
+
   it("does not merge an exact target that belongs to another session", async () => {
     vi.mocked(getEvent).mockResolvedValue({
       ...events[1],
