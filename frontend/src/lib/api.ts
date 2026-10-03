@@ -689,9 +689,13 @@ export async function deleteProjectAlias(aliasKey: string): Promise<void> {
   if (!response.ok) await readJson<unknown>(response);
 }
 
-export function getProjectSessions(key: string, limit = 250): Promise<AgentSession[]> {
+export function getProjectSessions(
+  key: string,
+  limit = 250,
+  humanOnly = false,
+): Promise<AgentSession[]> {
   return getJson(
-    `/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}`,
+    `/api/projects/${encodeURIComponent(key)}/sessions?limit=${encodeURIComponent(limit)}${humanOnly ? "&humanOnly=true" : ""}`,
   );
 }
 

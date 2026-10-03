@@ -163,17 +163,18 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     onCleanup(() => compactMedia?.removeEventListener("change", update));
   });
   const [allSessions, { refetch: refetchSessions }] = createResource(
-    () => (props.project ? null : sourceFilter.key()),
-    async () => sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT)),
+    () => (props.project ? null : { source: sourceFilter.key(), human: humanOnly() }),
+    async ({ human }) =>
+      sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT, false, human)),
     { initialValue: [] as AgentSession[] },
   );
   const [projectSessions, { refetch: refetchProjectSessions }] = createResource(
-    () => props.project?.projectKey,
-    async (projectKey): Promise<ProjectSessionResult | null> =>
+    () => ({ projectKey: props.project?.projectKey, human: humanOnly() }),
+    async ({ projectKey, human }): Promise<ProjectSessionResult | null> =>
       projectKey
         ? {
             projectKey,
-            sessions: (await getProjectSessions(projectKey, RECENT_SESSION_LIMIT)).filter(
+            sessions: (await getProjectSessions(projectKey, RECENT_SESSION_LIMIT, human)).filter(
               (s) => !s.spawnedBy,
             ),
           }
@@ -200,14 +201,29 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     { initialValue: null as AgentSession | null },
   );
   const sessions = createMemo(() => {
-    const listed = props.project ? scopedProjectSessions() : allSessions();
+    // Hide stale nonhuman rows immediately while the server-filtered request is refreshing.
+    const listed = (props.project ? scopedProjectSessions() : allSessions()).filter(
+      (session) => !humanOnly() || Boolean(session.firstHumanTurn?.trim()),
+    );
     const requested = requestedSession();
+    if (humanOnly() && !props.targetEventId && !requested?.firstHumanTurn?.trim()) return listed;
     if (!requested || listed.some((session) => session.id === requested.id)) return listed;
     if (props.project && !projectMatchesSession(props.project, requested)) return listed;
     if (!sourceFilter.matches([requested]).length) return listed;
     return [requested, ...listed];
   });
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
+  const requestedExcludedByHumanMode = createMemo(() => {
+    const requested = requestedSession();
+    return (
+      humanOnly() &&
+      !props.targetEventId &&
+      requested?.id === requestedSessionId() &&
+      !requested.firstHumanTurn?.trim() &&
+      (!props.project || projectMatchesSession(props.project, requested)) &&
+      sourceFilter.matches([requested]).length > 0
+    );
+  });
   const selectedId = createMemo(() => {
     // Searching the mobile chooser must not switch the reader before a session is chosen.
     const scopedSessions = compactReader() ? sessions() : filteredSessions();
@@ -215,13 +231,28 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     if (requestedId && scopedSessions.some((session) => session.id === requestedId))
       return requestedId;
     if (requestedId && requestedSession.loading) return "";
-    return props.defaultToFirst ? (scopedSessions[0]?.id ?? "") : "";
+    return props.defaultToFirst || requestedExcludedByHumanMode()
+      ? (scopedSessions[0]?.id ?? "")
+      : "";
   });
   const selectedSession = createMemo(() =>
     (compactReader() ? sessions() : filteredSessions()).find(
       (session) => session.id === selectedId(),
     ),
   );
+  createEffect(() => {
+    if (!requestedExcludedByHumanMode() || allSessions.loading || projectSessions.loading) return;
+    const requested = requestedSession();
+    const selected = selectedId();
+    if (
+      requested?.id === requestedSessionId() &&
+      !requested.firstHumanTurn?.trim() &&
+      selected &&
+      selected !== requested.id
+    )
+      selectSession(selected);
+  });
+
   const chooserVisible = () => !compactReader() || chooserOpen() || !selectedSession();
 
   function toggleChooser() {
