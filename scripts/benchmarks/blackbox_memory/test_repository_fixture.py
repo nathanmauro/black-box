@@ -43,6 +43,17 @@ class RepositoryFixtureTests(unittest.TestCase):
     def main(self, arguments):
         return r.main(arguments + ['--fixture', self.fixture_name])
 
+    def fake_snapshot(self, data):
+        sources = r.overlay_sources(self.spec)
+        added = self.spec.get('added_sources', ())
+        baseline = [path for path in sources if path not in added]
+        for rev, content, paths in ((self.spec['baseline'], b'baseline', baseline),
+                                    (self.spec['reference'], b'reference', sources)):
+            data['tracked_hashes'][rev] = dict({'pom.xml': r.sha(b'trusted')},
+                                             **{path: r.sha(content) for path in paths})
+        return archive([('pom.xml', b'trusted', tarfile.REGTYPE), ('README.md', b'public', tarfile.REGTYPE)]
+                       + [(path, b'baseline', tarfile.REGTYPE) for path in baseline])
+
     def reports(self, failed=(), skipped=(), errors=()):
         folder = self.root / 'target/surefire-reports'
         folder.mkdir(parents=True, exist_ok=True)
@@ -104,6 +115,7 @@ class RepositoryFixtureTests(unittest.TestCase):
             if args[0] == 'cat-file': return b'commit\n'
             if args[0] == 'rev-parse': return self.spec['baseline'].encode() + b'\n'
             if args[0] == 'diff': return '\n'.join(sorted(self.spec['changed_paths'])).encode()
+            if args[0] == 'ls-tree': return b''
             return b'reviewed'
         with patch.object(r, 'git', side_effect=git):
             r.verify_pins(data)
@@ -200,8 +212,8 @@ class RepositoryFixtureTests(unittest.TestCase):
         self.assertIsNotNone(created[0].poll())
 
     def test_private_staging_separates_worker_reference_and_grader_then_cleans(self):
-        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (self.spec['source'], b'baseline', tarfile.REGTYPE),
-                            ('README.md', b'public', tarfile.REGTYPE)])
+        data = copy.deepcopy(self.data)
+        snapshot = self.fake_snapshot(data)
         seen = []
         def stage(root, data, *args):
             seen.append(root)
@@ -213,12 +225,15 @@ class RepositoryFixtureTests(unittest.TestCase):
             self.assertFalse((worker / '.git').exists())
             self.assertTrue((root / self.spec['grader']).is_file())
             baseline = root.name.endswith('baseline')
-            self.assertEqual((root / self.spec['source']).read_bytes(), b'baseline' if baseline else b'reference')
+            for source in r.overlay_sources(self.spec):
+                if source in self.spec.get('added_sources', ()):
+                    self.assertFalse((worker / source).exists())
+                    if baseline:
+                        self.assertFalse((root / source).exists())
+                        continue
+                self.assertEqual((root / source).read_bytes(), b'baseline' if baseline else b'reference')
             return {'tests': len(data['tests']), 'passed': len(data['tests']) - 3 if baseline else len(data['tests']),
                     'failed': sorted(data['baseline_failures']) if baseline else []}
-        data = copy.deepcopy(self.data)
-        for rev, text in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
-            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(text)}
         with patch.object(r, 'git', side_effect=lambda *args: snapshot if args[0] == 'archive' else b'reference'), \
                 patch.object(r, 'command', return_value=(0, b'Java version: 21.0.12', b'')), \
                 patch.object(r, 'run_stage', side_effect=stage):
@@ -279,10 +294,8 @@ sys.exit(1 if failed else 0)
             (parent / '.mvn').mkdir()
             (parent / '.mvn/jvm.config').write_text('-XX:InvalidFixtureOption')
             (parent / '.mvn/maven.config').write_text('-DskipTests')
-        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (self.spec['source'], b'baseline', tarfile.REGTYPE)])
         data = copy.deepcopy(self.data)
-        for rev, text in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
-            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(text)}
+        snapshot = self.fake_snapshot(data)
         original = Path.cwd()
         try:
             os.chdir(caller)
@@ -327,8 +340,8 @@ sys.exit(1 if failed else 0)
         self.assertEqual(target.read_text(), 'preserved')
 
 
-    def test_only_two_known_selectors_and_original_default_are_allowed(self):
-        self.assertEqual(set(r.FIXTURE_SPECS), {'structured-redaction', 'summary-export'})
+    def test_only_three_known_selectors_and_original_default_are_allowed(self):
+        self.assertEqual(set(r.FIXTURE_SPECS), {'structured-redaction', 'summary-export', 'event-chronology'})
         with patch.object(r, 'verify_pins'), patch.object(r, 'qualify') as build:
             with contextlib.redirect_stdout(io.StringIO()) as printed:
                 self.assertEqual(r.main(['plan']), 0)
@@ -350,8 +363,6 @@ sys.exit(1 if failed else 0)
             r.classify_reports(self.root, self.data, 1)
 
     def test_selected_fixture_revalidation_and_failure_cleanup(self):
-        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE),
-                            (self.spec['source'], b'baseline', tarfile.REGTYPE)])
         copied = self.root / 'reviewed'
         shutil.copytree(r.FIXTURES, copied)
         original_manifest = (copied / self.spec['manifest']).read_bytes()
@@ -361,8 +372,7 @@ sys.exit(1 if failed else 0)
                 (copied / self.spec['manifest']).write_bytes(original_manifest)
                 (copied / self.spec['grader_file']).write_bytes(original_grader)
                 data = r.fixture(self.fixture_name)
-                for rev, content in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
-                    data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(content)}
+                snapshot = self.fake_snapshot(data)
                 stages = []
                 def command(argv, **kwargs):
                     if '-version' in argv:
@@ -384,6 +394,63 @@ sys.exit(1 if failed else 0)
 
 class SummaryExportRepositoryFixtureTests(RepositoryFixtureTests):
     fixture_name = 'summary-export'
+
+
+class ChronologyRepositoryFixtureTests(RepositoryFixtureTests):
+    fixture_name = 'event-chronology'
+
+    def test_reviewed_three_source_closure_and_added_helper_are_pinned(self):
+        sources = r.overlay_sources(self.spec)
+        self.assertEqual(len(sources), 3)
+        self.assertEqual(len(self.spec['changed_paths']), 13)
+        self.assertEqual(self.spec['added_sources'], ('src/main/java/dev/nathan/sbaagentic/query/SqlInstant.java',))
+        for source in sources:
+            self.assertIn(source, self.data['tracked_hashes'][self.spec['reference']])
+        self.assertNotIn(self.spec['added_sources'][0], self.data['tracked_hashes'][self.spec['baseline']])
+        for path in ('pom.xml', 'src/main/resources/schema.sql', 'src/main/resources/application.yml'):
+            self.assertEqual(self.data['tracked_hashes'][self.spec['baseline']][path],
+                             self.data['tracked_hashes'][self.spec['reference']][path])
+        def git(*args):
+            if args[0] == 'cat-file': return b'commit'
+            if args[0] == 'rev-parse': return self.spec['baseline'].encode()
+            if args[0] == 'diff': return '\n'.join(self.spec['changed_paths']).encode()
+            if args[0] == 'ls-tree': return self.spec['added_sources'][0].encode()
+            raise AssertionError('hash checks should not run after absent-source mismatch')
+        with patch.object(r, 'git', side_effect=git), self.assertRaisesRegex(r.FixtureError, 'baseline_added_source_already_exists'):
+            r.verify_pins(self.data)
+
+    def test_each_changed_reference_source_is_checked_before_build_and_private_tree_is_removed(self):
+        for changed in r.overlay_sources(self.spec):
+            with self.subTest(changed=changed):
+                data = copy.deepcopy(self.data)
+                snapshot = self.fake_snapshot(data)
+                roots = []
+                original_stage = r.run_stage
+                def stage(root, data, *args):
+                    roots.append(root)
+                    if root.name == 'grading-baseline':
+                        self.assertEqual(r.hashes(root), args[-1])
+                        return {'tests': 7, 'passed': 4, 'failed': sorted(data['baseline_failures'])}
+                    return original_stage(root, data, *args)
+                def git(*args):
+                    if args[0] == 'archive': return snapshot
+                    return b'tampered' if args[1].endswith(':' + changed) else b'reference'
+                with patch.object(r, 'git', side_effect=git), patch.object(r, 'run_stage', side_effect=stage), \
+                        patch.object(r, 'command', return_value=(0, b'Java version: 21.0.12', b'')) as launch:
+                    with self.assertRaisesRegex(r.FixtureError, 'grading_inputs_changed'):
+                        r.qualify(data, self.root, 1)
+                    self.assertEqual(launch.call_count, 1)  # Version preflight only; no build.
+                self.assertEqual(len(roots), 2)
+                self.assertTrue(all(not root.parent.exists() for root in roots))
+
+    def test_original_manifest_and_trusted_file_bytes_remain_pinned(self):
+        self.assertEqual(r.sha((r.FIXTURES / 'structured-redaction.json').read_bytes()),
+                         '96f045b76bda691480286c532d4048ffa5cb13e03da106081f73c8629f081b2a')
+        self.assertEqual(r.sha((r.FIXTURES / 'summary-export.json').read_bytes()),
+                         'd462253622dedcdae6dece623db4574d850a0c7a569db1fbd14ebcf9e8c8084d')
+        for name in ('structured-redaction', 'summary-export'):
+            self.assertEqual(r.overlay_sources(r.specification(name)), (r.specification(name)['source'],))
+            r.fixture(name)
 
 
 if __name__ == '__main__':

@@ -56,15 +56,20 @@ variants of the same failure.
    disqualify that registration. Corrected fixtures need a new version and fresh qualification;
    never silently repair a case after seeing arm outcomes.
 
-One inventory candidate now passes a scoped offline contract: the summary-export fixture reproduces
+Two inventory candidates now pass scoped offline contracts. The summary-export fixture reproduces
 three named baseline failures, preserves four other behaviors, and passes all seven checks on the
 reference. Its [qualification report](evaluation-results/2026-10-03-summary-export-qualification.json)
 records the immutable snapshots and worker-input hash. The checks cover linked destinations, hard-link
 alias preservation, repeated exports with an explicit mode, root aliases, template failure and
 traversal. They do not establish interrupted-write or crash durability or adversarial rename safety.
-The existing structured-redaction fixture was also rerun successfully with its original inputs.
-Both are familiar development fixtures; qualification establishes neither task difficulty nor recall
-benefit. The inventory remains below the twenty-candidate gate.
+The event-chronology fixture independently exercises the canonical SQLite feed: mixed-precision
+first-page order, complete bounded pagination and inclusive nanosecond windows fail on the baseline;
+four preservation checks pass, and all seven checks pass on the reference. Its
+[qualification report](evaluation-results/2026-10-03-event-chronology-qualification.json) records
+fixed inputs and outcomes. Its scope excludes PostgreSQL and broader recall/search behavior.
+The existing structured-redaction fixture, outside this inventory, was also rerun successfully with
+its original inputs. All three are familiar development fixtures; qualification establishes neither
+task difficulty nor recall benefit. The inventory remains below the twenty-candidate gate.
 
 ## Freeze the evidence corpus
 
@@ -253,7 +258,7 @@ a model verdict, patch review or this document cannot manufacture an accepted op
 Make denominators and missing outcomes explicit. Make no efficacy claim from this familiar pool.
 
 Next: qualify a small number of different clusters offline and qualify the Black Box backend
-against the same corpus contract and delivery envelope as the offline literal adapter. Precise chronology is a possible next qualification
-candidate; runtime-dependent cases remain conditional. Collect prospective held-out
-cases separately. No model spend, deployment, transcript export or threshold change is part of
+against the same corpus contract and delivery envelope as the offline literal adapter. Summary
+export and precise chronology are qualified; runtime-dependent cases remain conditional. Collect
+prospective held-out cases separately. No model spend, deployment, transcript export or threshold change is part of
 this protocol and qualification slice.

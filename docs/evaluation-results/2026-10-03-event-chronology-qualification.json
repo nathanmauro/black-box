@@ -1,0 +1,41 @@
+{
+  "accepted_actions": 0,
+  "baseline": "a2f969585dc5b780b3dc4b0611a4084ec7efd0aa",
+  "baseline_archive_sha256": "8fcf159dbf3c710976551364997cf33132d6381fbd10a29882560fedeb0a97dc",
+  "evidence": "infrastructure_only",
+  "fixture": "event-chronology-development",
+  "model_runs": 0,
+  "qualification": "passed",
+  "reference": "aac7a30230687e795f844a971c72ebd5fd393e5c",
+  "results": {
+    "baseline": {
+      "failed": [
+        "fractionalEventsPrecedeWholeSecondOnFirstPage",
+        "mixedPrecisionPagesRetainExactChronologicalOrder",
+        "sinceIncludesNextNanosecondAndExcludesPreviousNanosecond"
+      ],
+      "passed": 4,
+      "seconds": 4.967,
+      "tests": 7
+    },
+    "reference": {
+      "failed": [],
+      "passed": 7,
+      "seconds": 5.106,
+      "tests": 7
+    }
+  },
+  "schema_version": 1,
+  "usefulness_gate": {
+    "acceptance": "must be observed; not established by grading",
+    "accepted_actions_missed_by_comparator_required": 3,
+    "existing_development_gate": "1\u20134 passes among five bare continuations; unchanged and not evaluated",
+    "historical_candidates_required": 20,
+    "minimum_useful_supported_suggestions_percent": 70,
+    "ordinary_latest_handoff_search_comparator": "same model, budget and source window; not evaluated",
+    "resumed_tasks_required": 5,
+    "stale_or_duplicate_suggestions_percent_must_be_below": 10,
+    "status": "not_cleared"
+  },
+  "worker_input_sha256": "299ec5ae5255d1e4f8ea29a02cf0cd96a3c3de019c7ff4f31e166670cfbb878a"
+}
