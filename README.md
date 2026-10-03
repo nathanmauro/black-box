@@ -70,7 +70,7 @@ The current release is [v0.2.0](https://github.com/nathanmauro/black-box/release
 Download the runnable JAR and checksum there, or build from source below. Read the
 [upgrade guidance and release boundaries](docs/releases/v0.2.0.md) before replacing an existing installation.
 
-Requirements: Java 21+, Maven 3.9+, `curl`, and `jq`.
+Requirements: Java 21+, Maven 3.9+, `curl`, `jq`, and `lsof`.
 
 ```bash
 git clone https://github.com/nathanmauro/black-box.git
@@ -80,7 +80,10 @@ cd black-box
 
 The quickstart builds the jar, starts an isolated demo database, seeds a cross-agent story, proves
 recall, and opens the UI at [localhost:8766](http://localhost:8766). It never touches a database you
-already have. Set `SBA_DEMO_PORT` if 8766 is busy.
+already have. Each run gets a private scratch directory and ignores inherited app/JVM settings;
+model calls, external summaries, and editor launching are disabled. Set `SBA_DEMO_PORT` if 8766 is
+busy, or `SBA_DEMO_NO_OPEN=1` to skip opening the browser. The script prints the process ID and
+directory to stop and remove after exploring; subsequent runs keep earlier scratch directories.
 
 ```bash
 ./scripts/demo.sh                          # already built: decision → handoff → recall on a scratch DB

@@ -60,6 +60,8 @@ fi
 
 command -v jq >/dev/null 2>&1 \
   || need "jq" "brew install jq" "apt install jq"
+command -v lsof >/dev/null 2>&1 \
+  || need "lsof" "included with macOS" "apt install lsof"
 
 if (( ${#missing[@]} > 0 )); then
   say ""
@@ -68,7 +70,7 @@ if (( ${#missing[@]} > 0 )); then
   done
   exit 1
 fi
-ok "java, mvn, and jq present."
+ok "java, mvn, jq, and lsof present."
 
 find_jar() {
   local candidate
@@ -83,7 +85,7 @@ find_jar() {
 jar_is_fresh_enough() {
   local jar="$1"
   [[ -f "$jar" ]] || return 1
-  unzip -l "$jar" 2>/dev/null | grep -q "CaptureDecisionRequest" || return 1
+  unzip -l "$jar" 2>/dev/null | grep "CaptureDecisionRequest" >/dev/null || return 1
   [[ -z "$(find "${PROJECT_DIR}/src" "${PROJECT_DIR}/pom.xml" -newer "$jar" -print -quit 2>/dev/null)" ]]
 }
 

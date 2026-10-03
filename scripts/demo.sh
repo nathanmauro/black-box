@@ -5,7 +5,7 @@
 # Black Box is a local "flight recorder for machine minds": AI coding agents
 # (Claude Code, Codex) WRITE structured intent — decisions and handoffs — into
 # it, then QUERY each other's prior reasoning back out at runtime via MCP. No
-# cloud, no file mutation. This script proves the signature moment end to end:
+# cloud or existing-history mutation. This script proves the signature moment end to end:
 #
 #   A Codex session decides an auth strategy and hands off an open loop today.
 #   A FRESH Claude session arrives and recalls that exact decision — rationale,
@@ -31,12 +31,12 @@ set -euo pipefail
 # Derive the repo root from this script's own location (scripts/demo.sh -> repo root),
 # so the demo is portable to wherever the repo is checked out.
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEMO_DB="/tmp/black-box-demo.db"
-DATASOURCE_URL="jdbc:sqlite:${DEMO_DB}"
 # Override with SBA_DEMO_PORT when a real recorder already owns 8766.
 PORT="${SBA_DEMO_PORT:-8766}"
-BASE_URL="http://localhost:${PORT}"
-LOG_FILE="/tmp/black-box-demo.log"
+BASE_URL="http://127.0.0.1:${PORT}"
+DEMO_DIR=""
+DEMO_DB=""
+LOG_FILE=""
 STARTUP_TIMEOUT_SECONDS=90
 
 # Story constants — the two agents and the repo they share.
@@ -65,6 +65,9 @@ step()  { printf '\n%s==>%s %s%s%s\n' "$CYAN" "$RESET" "$BOLD" "$*" "$RESET"; }
 ok()    { printf '%s  ✓%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn()  { printf '%s  !%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die()   { printf '%s  ✗ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
+
+# Local requests must not inherit a user's HTTP proxy or wait indefinitely.
+curl() { command curl -q --noproxy '*' --connect-timeout 2 --max-time 30 "$@"; }
 
 banner() {
   # Print a framed banner so the proof is impossible to miss in the scrollback.
@@ -126,9 +129,14 @@ post_json() {
 # 0. Preflight — required tooling
 # --------------------------------------------------------------------------- #
 step "Preflight checks"
-command -v curl >/dev/null 2>&1 || die "curl is required but not found on PATH."
+type -P curl >/dev/null 2>&1 || die "curl is required but not found on PATH."
 command -v jq   >/dev/null 2>&1 || die "jq is required but not found on PATH. Install with: brew install jq"
-ok "curl and jq present."
+command -v lsof >/dev/null 2>&1 || die "lsof is required to verify ownership of the demo listener."
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] && (( 10#$PORT >= 1 && 10#$PORT <= 65535 )) \
+  || die "SBA_DEMO_PORT must be an integer from 1 to 65535."
+PORT=$((10#$PORT))
+BASE_URL="http://127.0.0.1:${PORT}"
+ok "curl, jq, and lsof present; demo port is valid."
 
 # The demo OWNS the server it starts — it must not attach to, talk to, or kill a
 # recorder someone else is already running on this port (e.g. your real Black Box
@@ -136,26 +144,28 @@ ok "curl and jq present."
 # than seeding a foreign server (which could also be an older build missing the
 # /api/decisions endpoint).
 port_listener_pids() {
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true
-  fi
+  lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true
 }
 if existing_pids="$(port_listener_pids)" && [[ -n "$existing_pids" ]]; then
   warn "Something is already listening on port ${PORT}:"
   # shellcheck disable=SC2086
   ps -o pid,command -p $existing_pids 2>/dev/null | sed 's/^/      /' || true
-  die "Port ${PORT} is in use. Stop the other process first (it is NOT mine to kill), or set SBA_PORT for it, then re-run this demo."
+  die "Port ${PORT} is in use. Set SBA_DEMO_PORT to a free port, then re-run this demo."
 fi
 ok "Port ${PORT} is free — the demo will own its own recorder."
 
 # --------------------------------------------------------------------------- #
 # 1. Dedicated, clean demo database
 # --------------------------------------------------------------------------- #
-step "Preparing a clean, dedicated demo database"
-# Remove the demo DB (and any SQLite WAL/SHM siblings) so every run starts fresh
-# and the demo never touches the user's real ${PROJECT_DIR}/sba-agentic.db.
-rm -f "${DEMO_DB}" "${DEMO_DB}-wal" "${DEMO_DB}-shm"
-ok "Using a throwaway DB at ${DEMO_DB} (deleted at the start of every run)."
+step "Preparing a private, dedicated demo directory"
+# Each run owns new files. Never reset a fixed path or another running demo's WAL.
+umask 077
+DEMO_DIR="$(mktemp -d "${TMPDIR:-/tmp}/black-box-demo.XXXXXX")"
+DEMO_DIR="$(cd "$DEMO_DIR" && pwd -P)"
+DEMO_DB="${DEMO_DIR}/demo.db"
+LOG_FILE="${DEMO_DIR}/recorder.log"
+DATASOURCE_URL="jdbc:sqlite:${DEMO_DB}"
+ok "Using a new throwaway DB at ${DEMO_DB}."
 
 # --------------------------------------------------------------------------- #
 # 2. Locate or build the jar, then launch the recorder
@@ -186,7 +196,7 @@ jar_is_fresh_enough() {
   local jar="$1"
   [[ -f "$jar" ]] || return 1
   # (a) Capability: the recall/decision feature classes must be inside the jar.
-  if ! unzip -l "$jar" 2>/dev/null | grep -q "CaptureDecisionRequest"; then
+  if ! unzip -l "$jar" 2>/dev/null | grep "CaptureDecisionRequest" >/dev/null; then
     return 1
   fi
   # (b) Freshness: rebuild if any source/build file is newer than the jar.
@@ -223,11 +233,20 @@ step "Starting the recorder on the demo database (local AI OFF, Elasticsearch OF
 # Launch in the background on the dedicated DB. Local AI and Elasticsearch are
 # disabled so the demo needs no GPU and no external services — it is fully local
 # and self-contained. stdout/stderr go to the log file for troubleshooting.
-SBA_DATASOURCE_URL="${DATASOURCE_URL}" \
-SBA_LOCAL_AI_ENABLED=false \
-SBA_ELASTICSEARCH_ENABLED=false \
-SBA_PORT="${PORT}" \
-  java -jar "${JAR}" >"${LOG_FILE}" 2>&1 &
+# Spring/JVM overrides, profiles, and working-directory application files must not
+# redirect the demo into an installed database or enable model/provider calls.
+runtime_env=("PATH=$PATH" "HOME=$HOME" "LANG=${LANG:-C}"
+  "SBA_DATASOURCE_URL=${DATASOURCE_URL}" "SBA_PORT=${PORT}"
+  "SBA_BIND_ADDRESS=127.0.0.1" "SBA_LOCAL_AI_ENABLED=false"
+  "SBA_ELASTICSEARCH_ENABLED=false" "SBA_MEMORY_EMBEDDING_ENABLED=false"
+  "SBA_ASK_EMBEDDING_ENABLED=false" "SBA_JUDGE_ENABLED=false"
+  "SBA_SUMMARY_BACKEND=local" "SBA_EDITOR_ENABLED=false")
+[[ -z "${JAVA_HOME:-}" ]] || runtime_env+=("JAVA_HOME=$JAVA_HOME")
+(
+  cd "$DEMO_DIR"
+  exec env -i "${runtime_env[@]}" java -jar "${JAR}" \
+    --spring.config.location=classpath:/application.yml --spring.profiles.active=default
+) >"${LOG_FILE}" 2>&1 &
 APP_PID=$!
 ok "Recorder launched (PID ${APP_PID}); logs at ${LOG_FILE}."
 
@@ -258,6 +277,10 @@ if [[ "$healthy" -ne 1 ]]; then
   die "Recorder did not become healthy within ${STARTUP_TIMEOUT_SECONDS}s."
 fi
 ok "Recorder is healthy at ${BASE_URL}"
+# Close the preflight/startup race: never seed a different process that acquired
+# the port while our JVM was starting. The background subshell execs Java in place.
+[[ "$(port_listener_pids)" == "$APP_PID" ]] \
+  || die "The healthy listener does not belong exclusively to this demo; refusing to seed."
 printf '%s' "$status_json" | jq '{storage, localAi: {enabled: .localAi.enabled, available: .localAi.available}, elasticsearch: {enabled: .elasticsearch.enabled}}'
 
 # --------------------------------------------------------------------------- #
@@ -350,7 +373,7 @@ CODEX_SESSION_ID="$(curl -sS "${BASE_URL}/api/sessions?limit=40" 2>/dev/null \
       'map(select(.clientSessionId == $cs)) | (.[0].id // empty)' 2>/dev/null || true)"
 
 if [[ -n "${CODEX_SESSION_ID:-}" ]]; then
-  if curl -sS -X POST "${BASE_URL}/api/sessions/${CODEX_SESSION_ID}/summarize" >/dev/null 2>&1; then
+  if curl -fsS -X POST "${BASE_URL}/api/sessions/${CODEX_SESSION_ID}/summarize" >/dev/null 2>&1; then
     ok "Summarized Codex session ${CODEX_SESSION_ID} (compacted-transcript fallback, AI off)."
   else
     warn "Summarize call failed — continuing (the summary panel is optional)."
@@ -368,6 +391,12 @@ RECALL_JSON="$(curl -sS \
   --data-urlencode "scope=${REPO}" \
   --data-urlencode "kinds=decision,handoff" \
   2>/dev/null)" || die "Recall request failed."
+
+printf '%s' "$RECALL_JSON" | jq -e \
+  '([.items[] | select(.kind == "decision")] | length) > 0 and
+   ([.items[] | select(.kind == "handoff")] | length) > 0 and
+   any(.items[].openLoops[]?; contains("revoke-on-logout"))' >/dev/null \
+  || die "Recall did not return the seeded decision, handoff, and open loop."
 
 banner \
   "BLACK BOX — the loop just closed." \
@@ -411,7 +440,9 @@ fi
 # 5. Open the UI and print explore/stop instructions
 # --------------------------------------------------------------------------- #
 step "Opening the Black Box UI"
-if [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
+if [[ "${SBA_DEMO_NO_OPEN:-0}" == "1" ]]; then
+  ok "Browser opening disabled; visit ${BASE_URL} to explore."
+elif [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
   open "${BASE_URL}" || warn "Could not auto-open the browser; visit ${BASE_URL} manually."
   ok "Opened ${BASE_URL} in your default browser."
 else
@@ -433,10 +464,11 @@ banner \
   "When you're done exploring:" \
   "  • Stop the recorder:   kill ${APP_PID}" \
   "  • Demo database:       ${DEMO_DB}  (safe to delete)" \
-  "  • Recorder log:        ${LOG_FILE}"
+  "  • Recorder log:        ${LOG_FILE}" \
+  "  • Remove this run's directory after stopping: ${DEMO_DIR}"
 
 say ""
 ok "Recorder PID ${APP_PID} is LEFT RUNNING for you to explore — it was NOT killed."
-say "${DIM}   (Re-running demo.sh resets the demo DB and starts a fresh recorder.)${RESET}"
+say "${DIM}   (Re-running demo.sh creates a separate demo directory.)${RESET}"
 
 exit 0
