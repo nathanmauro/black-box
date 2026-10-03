@@ -54,3 +54,7 @@ for coordinator review and Git publication. All fixture test processes finished;
 database, provider or runtime was changed. No new semantic indexing, default-kind expansion or
 Projection UI filter was introduced. The coordinator owns integration with newer main and the
 next exact-path commit/PR/merge.
+
+Coordinator acceptance: preserved both capture-acknowledgement and Projection documentation
+while integrating main through PR65. All 40 actual structured HTTP/MCP, context-loop and wire
+contract tests passed together, with no skips. Fresh source review found no remaining issues.
