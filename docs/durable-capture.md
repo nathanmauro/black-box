@@ -99,6 +99,12 @@ commit keeps the original transaction and capture ID. Other database errors and 
 fail immediately; an exhausted deadline rolls back unaccepted work. Waiting never extends the
 hook supervisor's three-second budget, and a lock that outlasts it can still prevent acceptance.
 
+SQLite may remove a rollback journal during a concurrent commit after the guard has opened it.
+If that descriptor is otherwise a private regular file but now has no links, the guard closes
+it and rechecks the current journal entry within the same deadline. A missing entry is normal;
+a replacement still must satisfy every file guard. This exception does not apply to the database
+or sender-lock file, and does not extend the acceptance budget.
+
 A nonblocking file lock permits one sender per queue directory. Enqueuers use short database
 transactions and can commit while another process waits for HTTP. The sender posts only to
 `/api/events/idempotent`. It deletes a row only after HTTP 200 with its matching capture UUID,
