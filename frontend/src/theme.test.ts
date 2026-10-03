@@ -26,8 +26,16 @@ describe("theme mobile layout contracts", () => {
   it("keeps the Activity session rail and reader inside bounded mobile panes", () => {
     expect(css).toContain("@media (max-width: 880px)");
     expect(css).toContain(".activity-workspace > .sessions-page");
-    expect(css).toContain("height: calc(100dvh - 224px)");
-    expect(css).toContain("grid-template-rows: minmax(188px, 34%) minmax(0, 1fr)");
+    expectRule(".activity-page:has(> .activity-workspace > .sessions-page)", [
+      "height: calc(100dvh - var(--utility-bar-height));",
+      "min-height: 0;",
+    ]);
+    expectRule(".activity-workspace > .sessions-page", [
+      "grid-template-rows: auto minmax(0, 1fr);",
+      "min-height: 0;",
+      "overflow: hidden;",
+    ]);
+    expectRule(".activity-workspace > .sessions-page", ["height: 100%;"]);
     expect(css).toContain(".activity-workspace > .sessions-page .session-list-pane");
     expect(css).toContain(".activity-workspace > .sessions-page .session-detail-pane");
     expect(css).toContain(".activity-workspace > .sessions-page .session-rows");

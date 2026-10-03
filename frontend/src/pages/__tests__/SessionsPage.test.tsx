@@ -218,6 +218,74 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("offers a compact mobile chooser and details with Escape focus and responsive recovery", async () => {
+    let compact = true;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return query === "(max-width: 880px)" && compact;
+      },
+      addEventListener: (_name: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_name: string, listener: () => void) => listeners.delete(listener),
+    }));
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
+    const [selected, setSelected] = createSignal("session-1");
+    render(() => <SessionsPage selectedSessionId={selected()} onSelectSession={setSelected} />);
+    const heading = await screen.findByRole("heading", { name: "Focused session" });
+    const chooser = screen.getByRole("button", { name: /^Sessions / });
+    const details = screen.getByRole("button", { name: "Session details" });
+    const list = document.getElementById(chooser.getAttribute("aria-controls")!)!;
+    expect(chooser).toHaveAttribute("aria-expanded", "false");
+    expect(list).not.toBeVisible();
+    expect(screen.getByText("A concise summary.")).not.toBeVisible();
+    expect(await screen.findByRole("checkbox", { name: "Show memory events" })).toBeVisible();
+
+    fireEvent.click(chooser);
+    expect(chooser).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(screen.getByLabelText("Find sessions")).toHaveFocus());
+    expect(heading).not.toBeVisible();
+    fireEvent.input(screen.getByLabelText("Find sessions"), {
+      target: { value: "no matching session" },
+    });
+    expect(selected()).toBe("session-1");
+    fireEvent.keyDown(screen.getByLabelText("Find sessions"), { key: "Escape" });
+    expect(chooser).toHaveFocus();
+    expect(heading).toBeVisible();
+    compact = false;
+    listeners.forEach((listener) => listener());
+    await waitFor(() => expect(heading).toBeVisible());
+    compact = true;
+    listeners.forEach((listener) => listener());
+    fireEvent.click(chooser);
+    fireEvent.input(screen.getByLabelText("Find sessions"), { target: { value: "Cockpit" } });
+    fireEvent.click(await within(list).findByRole("button", { name: /Cockpit cleanup/ }));
+    const nextHeading = await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    await waitFor(() => expect(nextHeading).toHaveFocus());
+    expect(list).not.toBeVisible();
+    expect(selected()).toBe("session-2");
+
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    for (const id of details.getAttribute("aria-controls")!.split(" "))
+      expect(document.getElementById(id)).toBeVisible();
+    fireEvent.keyDown(details, { key: "Escape" });
+    expect(details).toHaveFocus();
+    expect(details).toHaveAttribute("aria-expanded", "false");
+    compact = false;
+    listeners.forEach((listener) => listener());
+    await waitFor(() => expect(nextHeading).toHaveFocus());
+    expect(chooser).not.toBeVisible();
+    expect(list).toBeVisible();
+    expect(screen.getByText("No summary captured yet.")).toBeVisible();
+    screen.getByLabelText("Find sessions").focus();
+    compact = true;
+    listeners.forEach((listener) => listener());
+    await waitFor(() => expect(chooser).toHaveFocus());
+    expect(list).not.toBeVisible();
+  });
+
   it("refreshes the open transcript after replay, reconnect and cursor reset", async () => {
     const [status, setStatus] = createSignal<LiveStatus>("live");
     let appended: ((event: EventAppended) => void) | undefined;

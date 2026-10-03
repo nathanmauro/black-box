@@ -201,3 +201,24 @@ Recall groups manual decision replacements under one generated session per targe
 for the current page visit. Replacements in the same repo reuse that session, including after
 changing filters; different target repos never share it, including in All projects. This preserves
 project counts and evidence attribution without changing backend session identity or stored history.
+
+## Mobile Browse reader
+
+At widths up to 880px, Browse uses the available workspace for either the selected reader or its
+searchable **Sessions** chooser. **Session details** reveals path, first-turn context, summary and
+dates; source, title, transcript search and the memory toggle remain available while details are
+closed. The existing desktop rail and details stay visible above that breakpoint.
+
+Both disclosures expose expanded state and controlled-region IDs. Escape returns focus to the
+opening button; choosing a session focuses its heading. Searching the mobile chooser does not
+change the reader until a session is chosen. On a switch to desktop, a chooser filter that would
+hide the selected session is cleared so the current reader remains available. Collapsed regions
+are hidden from keyboard and accessibility navigation, and responsive changes recover focus from
+controls that become hidden.
+
+Exact-source links scroll the mobile transcript container and focus the selected event without
+moving the outer app controls offscreen. Direct `/sessions/:id` pages use the same bounded mobile
+reader, with scrolling owned by its inner panes. The packaged [reader journey](../frontend/tests/e2e/browse-mobile-reader.spec.ts)
+checks this without test-side scrolling at 390×900 and 390×700, plus desktop, selection/search,
+keyboard disclosures, memory, pagination and responsive transitions. See the
+[verification plan](superpowers/plans/2026-10-03-mobile-browse-reader.md) for measured reader space.

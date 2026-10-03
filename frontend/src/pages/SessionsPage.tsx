@@ -8,6 +8,7 @@ import {
   createUniqueId,
   For,
   onCleanup,
+  onMount,
   on,
   Show,
   useContext,
@@ -123,6 +124,44 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const [olderEventsLoading, setOlderEventsLoading] = createSignal(false);
   const [olderEventsError, setOlderEventsError] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
+  const compactMedia =
+    typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 880px)") : null;
+  const [compactReader, setCompactReader] = createSignal(compactMedia?.matches ?? false);
+  const [chooserOpen, setChooserOpen] = createSignal(false);
+  const [detailsOpen, setDetailsOpen] = createSignal(false);
+  const chooserId = createUniqueId();
+  const titleDetailsId = createUniqueId();
+  const summaryDetailsId = createUniqueId();
+  let pageElement: HTMLElement | undefined;
+  let chooserButton: HTMLButtonElement | undefined;
+  let detailsButton: HTMLButtonElement | undefined;
+  let sessionSearch: HTMLInputElement | undefined;
+  let readerHeading: HTMLHeadingElement | undefined;
+  let focusedExactTarget = "";
+
+  onMount(() => {
+    const update = () => {
+      const focused = document.activeElement as HTMLElement | null;
+      const compact = compactMedia?.matches ?? false;
+      const selected = selectedId();
+      // A dismissed mobile chooser filter must not remove the current reader on desktop.
+      if (!compact && selected && !filteredSessions().some((session) => session.id === selected)) {
+        setSessionFilter("");
+      }
+      setCompactReader(compact);
+      setChooserOpen(false);
+      setDetailsOpen(false);
+      queueMicrotask(() => {
+        if (focused && pageElement?.contains(focused) && focused.closest("[hidden]")) {
+          (compact ? chooserButton : (readerHeading ?? sessionSearch))?.focus({
+            preventScroll: true,
+          });
+        }
+      });
+    };
+    compactMedia?.addEventListener("change", update);
+    onCleanup(() => compactMedia?.removeEventListener("change", update));
+  });
   const [allSessions, { refetch: refetchSessions }] = createResource(
     () => (props.project ? null : sourceFilter.key()),
     async () => sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT)),
@@ -170,7 +209,8 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   });
   const filteredSessions = createMemo(() => filterSessions(sessions(), sessionFilter()));
   const selectedId = createMemo(() => {
-    const scopedSessions = filteredSessions();
+    // Searching the mobile chooser must not switch the reader before a session is chosen.
+    const scopedSessions = compactReader() ? sessions() : filteredSessions();
     const requestedId = requestedSessionId();
     if (requestedId && scopedSessions.some((session) => session.id === requestedId))
       return requestedId;
@@ -178,8 +218,32 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     return props.defaultToFirst ? (scopedSessions[0]?.id ?? "") : "";
   });
   const selectedSession = createMemo(() =>
-    filteredSessions().find((session) => session.id === selectedId()),
+    (compactReader() ? sessions() : filteredSessions()).find(
+      (session) => session.id === selectedId(),
+    ),
   );
+  const chooserVisible = () => !compactReader() || chooserOpen() || !selectedSession();
+
+  function toggleChooser() {
+    const open = !chooserVisible();
+    setChooserOpen(open);
+    if (open) setDetailsOpen(false);
+    queueMicrotask(() => (open ? sessionSearch : chooserButton)?.focus({ preventScroll: true }));
+  }
+
+  function handleDisclosureEscape(event: KeyboardEvent) {
+    if (event.key !== "Escape" || event.defaultPrevented || !compactReader()) return;
+    if (chooserOpen() && selectedSession()) {
+      event.preventDefault();
+      setChooserOpen(false);
+      chooserButton?.focus({ preventScroll: true });
+    } else if (detailsOpen()) {
+      event.preventDefault();
+      setDetailsOpen(false);
+      detailsButton?.focus({ preventScroll: true });
+    }
+  }
+
   const [lineageDag, { refetch: refetchLineageDag }] = createResource(
     () => (selectedId() ? selectedId() : undefined),
     (sessionId) => getSessionDag(sessionId),
@@ -446,16 +510,34 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   createEffect(() => {
     const targetId = props.targetEventId;
-    if (!targetId || transcript.loading) return;
+    if (!targetId) focusedExactTarget = "";
+    if (!targetId || transcript.loading || (compactReader() && (chooserVisible() || detailsOpen())))
+      return;
     const exists = timelineEvents().some((event) => event.id === targetId);
     if (!exists) return;
     queueMicrotask(() => {
       const element = document.getElementById(`event-${targetId}`);
-      element?.scrollIntoView?.({ block: "center" });
+      if (compactReader() && element) {
+        // Scroll the reader itself; scrolling every ancestor can hide the mobile app controls.
+        const pane = element.closest<HTMLElement>(".timeline-pane");
+        if (pane) {
+          const target = element.getBoundingClientRect();
+          const bounds = pane.getBoundingClientRect();
+          pane.scrollTop +=
+            target.top - bounds.top - Math.max(0, (pane.clientHeight - target.height) / 2);
+        }
+        if (focusedExactTarget !== targetId) element.focus({ preventScroll: true });
+        focusedExactTarget = targetId;
+      } else element?.scrollIntoView?.({ block: "center" });
     });
   });
 
   function selectSession(id: string) {
+    if (compactReader()) {
+      setChooserOpen(false);
+      setDetailsOpen(false);
+      queueMicrotask(() => readerHeading?.focus({ preventScroll: true }));
+    }
     if (props.onSelectSession) {
       props.onSelectSession(id);
       return;
@@ -544,8 +626,35 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
 
   return (
     <>
-      <section class="sessions-page">
-        <aside class="session-list-pane">
+      <section class="sessions-page" ref={pageElement} onKeyDown={handleDisclosureEscape}>
+        <div class="session-mobile-controls" hidden={!compactReader()}>
+          <button
+            type="button"
+            ref={chooserButton}
+            aria-controls={chooserId}
+            aria-expanded={chooserVisible()}
+            disabled={!selectedSession()}
+            onClick={toggleChooser}
+          >
+            Sessions <span>{sessions().length.toLocaleString()}</span>
+          </button>
+          <button
+            type="button"
+            ref={detailsButton}
+            aria-controls={`${titleDetailsId} ${summaryDetailsId}`}
+            aria-expanded={detailsOpen()}
+            disabled={!selectedSession() || chooserVisible()}
+            onClick={() => setDetailsOpen((open) => !open)}
+          >
+            Session details
+          </button>
+        </div>
+        <aside
+          id={chooserId}
+          class="session-list-pane"
+          aria-label="Session chooser"
+          hidden={!chooserVisible()}
+        >
           <div class="pane-head">
             <span class="eyebrow">sessions</span>
             <span>
@@ -557,6 +666,10 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
             <div class="session-filter-row">
               <input
                 id="session-filter"
+                ref={sessionSearch}
+                onFocus={() => {
+                  if (compactReader()) setChooserOpen(true);
+                }}
                 value={sessionFilter()}
                 onInput={(event) => setSessionFilter(event.currentTarget.value)}
                 placeholder="source:codex project:sba-agentic prompt text"
@@ -637,7 +750,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
           </Show>
         </aside>
 
-        <section class="session-detail-pane">
+        <section class="session-detail-pane" hidden={compactReader() && chooserVisible()}>
           <Show
             when={selectedSession()}
             fallback={
@@ -657,20 +770,36 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                       <span>{session().eventCount.toLocaleString()} recorded</span>
                       <span>{timeAgo(session().lastSeenAt)}</span>
                     </div>
-                    <h1 title={session().title || session().clientSessionId}>
+                    <h1
+                      ref={readerHeading}
+                      tabIndex={-1}
+                      title={session().title || session().clientSessionId}
+                    >
                       {session().title || session().clientSessionId}
                     </h1>
-                    <p>{truncatePath(session().cwd)}</p>
-                    <Show when={session().firstHumanTurn?.trim()}>
-                      {(turn) => <FirstTurnLead text={turn()} />}
-                    </Show>
+                    <div
+                      id={titleDetailsId}
+                      class="session-title-extra"
+                      hidden={compactReader() && !detailsOpen()}
+                    >
+                      <p>{truncatePath(session().cwd)}</p>
+                      <Show when={session().firstHumanTurn?.trim()}>
+                        {(turn) => <FirstTurnLead text={turn()} />}
+                      </Show>
+                    </div>
                   </div>
                   <div class="detail-summary">
-                    <span class="eyebrow">summary</span>
-                    <p>{session().summary || "No summary captured yet."}</p>
-                    <small>
-                      {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
-                    </small>
+                    <div
+                      id={summaryDetailsId}
+                      class="session-summary-content"
+                      hidden={compactReader() && !detailsOpen()}
+                    >
+                      <span class="eyebrow">summary</span>
+                      <p>{session().summary || "No summary captured yet."}</p>
+                      <small>
+                        {formatDate(session().startedAt)} → {formatDate(session().lastSeenAt)}
+                      </small>
+                    </div>
                     <Show when={memoryEventCount() > 0}>
                       <label class="reading-toggle">
                         <input
@@ -839,6 +968,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
                                 {(event) => (
                                   <div
                                     id={`event-${event.id}`}
+                                    tabIndex={props.targetEventId === event.id ? -1 : undefined}
                                     classList={{
                                       "event-flow-row": true,
                                       "event-flow-row--target": props.targetEventId === event.id,
