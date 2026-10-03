@@ -756,6 +756,255 @@ class OutboxTest(unittest.TestCase):
         self.assertFalse(self.directory.exists())
         self.assertNotIn("x" * 100, result.stderr)
 
+    def test_cli_enqueue_waits_for_short_startup_writer_lock(self):
+        queue = outbox.Queue(self.directory)
+        queue.close()
+        with sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None) as holder:
+            holder.execute("BEGIN IMMEDIATE")
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                pending = worker.submit(self.cli, "enqueue", event("short-lock"))
+                # Longer than the old 200 ms timeout, comfortably inside the invocation budget.
+                time.sleep(0.55)
+                holder.execute("ROLLBACK")
+                result = pending.result(timeout=4)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, b"")
+        rows = self.rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(json.loads(rows[0]["event_bytes"])["clientSessionId"], "short-lock")
+        self.assertTrue(outbox.canonical_uuid(rows[0]["capture_id"]))
+
+    def test_enqueue_retries_busy_begin_and_commit_without_repeating_insert(self):
+        for lock_at in ("begin", "commit"):
+            with self.subTest(lock_at=lock_at):
+                directory = self.root / lock_at
+                queue = outbox.Queue(directory, time.monotonic() + 2)
+                holder = sqlite3.connect(str(directory / outbox.DB_NAME), isolation_level=None)
+                statements = []
+                queue.db.set_trace_callback(statements.append)
+                data = outbox.sanitize_event(event(lock_at))
+                try:
+                    holder.execute("BEGIN IMMEDIATE" if lock_at == "begin" else "BEGIN")
+                    if lock_at == "commit":
+                        holder.execute("SELECT count(*) FROM captures").fetchone()
+                    def unlock(unused_delay):
+                        self.assertEqual(queue.db.in_transaction, lock_at == "commit")
+                        holder.execute("ROLLBACK")
+                    with patch.object(outbox.time, "sleep", side_effect=unlock) as waited, \
+                            patch.object(outbox.uuid, "uuid4", wraps=uuid.uuid4) as identities:
+                        capture_id = queue.enqueue("http://127.0.0.1:1", data)
+                    waited.assert_called_once()
+                    identities.assert_called_once()
+                    self.assertEqual(sum(sql.startswith("INSERT INTO captures") for sql in statements), 1)
+                    self.assertEqual(queue.db.execute("SELECT capture_id,event_bytes FROM captures").fetchall(),
+                                     [(capture_id, data)])
+                    self.assertFalse(queue.db.in_transaction)
+                finally:
+                    holder.close()
+                    queue.close()
+
+    def test_busy_commit_deadline_rolls_back_unaccepted_row(self):
+        queue = outbox.Queue(self.directory)
+        holder = sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None)
+        try:
+            holder.execute("BEGIN")
+            holder.execute("SELECT count(*) FROM captures").fetchone()
+            queue.deadline = time.monotonic() + 0.08
+            with self.assertRaisesRegex(outbox.OutboxError, "^deadline$"):
+                queue.enqueue("http://127.0.0.1:1", outbox.sanitize_event(event()))
+            self.assertFalse(queue.db.in_transaction)
+            self.assertEqual(queue.db.execute("SELECT count(*) FROM captures").fetchone()[0], 0)
+            holder.execute("ROLLBACK")
+            queue.deadline = time.monotonic() + 1
+            queue.enqueue("http://127.0.0.1:1", outbox.sanitize_event(event("later")))
+            self.assertEqual(len(self.rows()), 1)
+        finally:
+            holder.close()
+            queue.close()
+
+    def test_drain_autocommit_busy_update_and_delete_apply_once(self):
+        for acknowledged in (False, True):
+            with self.subTest(acknowledged=acknowledged):
+                server = self.server()
+                server.code = 200 if acknowledged else 500
+                directory = self.root / ("drain-release-" + str(acknowledged))
+                queue = outbox.Queue(directory)
+                data = outbox.sanitize_event(event("autocommit"))
+                capture = queue.enqueue(server.origin, data)
+                holder = sqlite3.connect(str(directory / outbox.DB_NAME), isolation_level=None)
+                statements = []
+                queue.db.set_trace_callback(statements.append)
+                try:
+                    holder.execute("BEGIN")
+                    holder.execute("SELECT * FROM captures").fetchall()
+                    queue.deadline = time.monotonic() + 2
+                    def unlock(unused_delay):
+                        # A failed autocommit statement must have rolled itself back.
+                        self.assertFalse(queue.db.in_transaction)
+                        self.assertEqual(holder.execute("SELECT attempts FROM captures").fetchall(), [(0,)])
+                        holder.execute("ROLLBACK")
+                    with patch.object(outbox.time, "sleep", side_effect=unlock) as waited:
+                        sent = queue.drain(server.origin, "127.0.0.1", server.server_port, queue.deadline, 1)
+                    waited.assert_called_once()
+                    mutation = "DELETE FROM captures" if acknowledged else "UPDATE captures SET category="
+                    self.assertEqual(sum(sql.startswith(mutation) for sql in statements), 2)
+                    self.assertEqual(sent, int(acknowledged))
+                    self.assertFalse(queue.db.in_transaction)
+                    rows = queue.db.execute("SELECT capture_id,event_bytes,category,attempts FROM captures").fetchall()
+                    self.assertEqual(rows, [] if acknowledged else [(capture, data, "retry", 1)])
+                    self.assertEqual(len(server.received), 1)
+                finally:
+                    holder.close()
+                    queue.close()
+
+    def test_drain_autocommit_deadline_leaves_original_row_and_replays(self):
+        for acknowledged in (False, True):
+            with self.subTest(acknowledged=acknowledged):
+                server = self.server()
+                server.code = 200 if acknowledged else 500
+                directory = self.root / ("drain-deadline-" + str(acknowledged))
+                queue = outbox.Queue(directory)
+                queue.enqueue(server.origin, outbox.sanitize_event(event("autocommit-deadline")))
+                before = queue.db.execute("SELECT * FROM captures").fetchall()
+                holder = sqlite3.connect(str(directory / outbox.DB_NAME), isolation_level=None)
+                statements = []
+                queue.db.set_trace_callback(statements.append)
+                try:
+                    holder.execute("BEGIN")
+                    holder.execute("SELECT * FROM captures").fetchall()
+                    queue.deadline = time.monotonic() + 0.15
+                    with self.assertRaisesRegex(outbox.OutboxError, "^deadline$"):
+                        queue.drain(server.origin, "127.0.0.1", server.server_port, queue.deadline, 1)
+                    mutation = "DELETE FROM captures" if acknowledged else "UPDATE captures SET category="
+                    self.assertGreater(sum(sql.startswith(mutation) for sql in statements), 1)
+                    self.assertFalse(queue.db.in_transaction)
+                    self.assertEqual(queue.db.execute("SELECT * FROM captures").fetchall(), before)
+                    self.assertEqual(len(server.received), 1)
+                    holder.execute("ROLLBACK")
+                    server.code = 200
+                    queue.deadline = time.monotonic() + 2
+                    self.assertEqual(queue.drain(server.origin, "127.0.0.1", server.server_port, queue.deadline, 1), 1)
+                    self.assertEqual(queue.db.execute("SELECT * FROM captures").fetchall(), [])
+                    self.assertEqual(len(server.committed), 1)
+                    self.assertEqual(server.received[0][1], server.received[1][1])
+                finally:
+                    holder.close()
+                    queue.close()
+
+    def test_constructor_deadline_closes_partial_handles(self):
+        queue = outbox.Queue(self.directory)
+        queue.close()
+        with sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None) as holder:
+            holder.execute("BEGIN IMMEDIATE")
+            incomplete = outbox.Queue.__new__(outbox.Queue)
+            with self.assertRaisesRegex(outbox.OutboxError, "^deadline$"):
+                incomplete.__init__(self.directory, time.monotonic() + 0.08)
+            self.assertIsNone(incomplete.db)
+            self.assertIsNone(incomplete.directory_fd)
+            holder.execute("ROLLBACK")
+        self.assertEqual(self.rows(), [])
+
+    def test_only_verified_sqlite_contention_retries(self):
+        for message in ("database is locked", "database table is locked", "database schema is locked: main"):
+            self.assertTrue(outbox.sqlite_contention(sqlite3.OperationalError(message)))
+        for message in ("database disk image is malformed", "attempt to write a readonly database",
+                        "database is locked: unrelated failure", "no such table: captures"):
+            self.assertFalse(outbox.sqlite_contention(sqlite3.OperationalError(message)))
+        for code, expected in ((5, True), (6, True), (5 | (1 << 8), True), (13, False), (11, False)):
+            error = sqlite3.OperationalError("database is locked")
+            error.sqlite_errorcode = code
+            self.assertEqual(outbox.sqlite_contention(error), expected)
+        queue = outbox.Queue(self.directory, time.monotonic() + 2)
+        try:
+            with patch.object(outbox.time, "sleep") as waited:
+                with self.assertRaises(sqlite3.OperationalError):
+                    queue.execute("INSERT INTO missing_table VALUES(1)")
+                waited.assert_not_called()
+        finally:
+            queue.close()
+
+    def test_file_guards_remain_active_during_contention(self):
+        queue = outbox.Queue(self.directory, time.monotonic() + 2)
+        holder = sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None)
+        unsafe = self.directory / outbox.LOCK_NAME
+        try:
+            holder.execute("BEGIN IMMEDIATE")
+            def change_guard(unused_delay):
+                unsafe.write_text("fixture")
+                unsafe.chmod(0o644)
+                holder.execute("ROLLBACK")
+            with patch.object(outbox.time, "sleep", side_effect=change_guard) as waited:
+                with self.assertRaisesRegex(outbox.OutboxError, "^unsafe_file$"):
+                    queue.enqueue("http://127.0.0.1:1", outbox.sanitize_event(event()))
+                waited.assert_called_once()
+            self.assertFalse(queue.db.in_transaction)
+            self.assertEqual(self.rows(), [])
+        finally:
+            holder.close()
+            queue.close()
+
+    def test_cli_sustained_lock_exhausts_one_deadline_without_acceptance(self):
+        queue = outbox.Queue(self.directory)
+        queue.close()
+        with sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None) as holder:
+            holder.execute("BEGIN IMMEDIATE")
+            started = time.monotonic()
+            result = self.cli("enqueue", event("expired"), extra=("--max-seconds", "0.35"))
+            elapsed = time.monotonic() - started
+            self.assertEqual(result.returncode, 0)
+            self.assertGreater(elapsed, 0.3)
+            self.assertLess(elapsed, 1.5)
+            self.assertTrue(b"interrupted" in result.stderr or b"deadline" in result.stderr)
+            holder.execute("ROLLBACK")
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(self.cli("enqueue", event("after-unlock")).stderr, b"")
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_hook_sustained_lock_keeps_supervisor_deadline_and_reaps_children(self):
+        wrapper = self.root / "bin"
+        wrapper.mkdir()
+        audit = self.root / "owned-child-group"
+        executable = wrapper / "python3"
+        executable.write_text("#!" + sys.executable + "\n"
+                              "import os,sys\n"
+                              "if sys.argv[2:3] == ['enqueue']:\n"
+                              "    with open(os.environ['OUTBOX_GROUP_AUDIT'], 'w') as log:\n"
+                              "        log.write(str(os.getpgrp()))\n"
+                              "os.execv(sys.executable, [sys.executable] + sys.argv[1:])\n")
+        executable.chmod(0o700)
+        env = self.env()
+        env.update(PATH=str(wrapper) + os.pathsep + env["PATH"], OUTBOX_GROUP_AUDIT=str(audit))
+        queue = outbox.Queue(self.directory)
+        queue.close()
+        with sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None) as holder:
+            holder.execute("BEGIN IMMEDIATE")
+            started = time.monotonic()
+            process = subprocess.Popen([str(HOOK), "codex"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, env=env, start_new_session=True)
+            child = None
+            try:
+                process.stdin.write(json.dumps({"session_id": "held-lock", "prompt": "fixture"}).encode())
+                process.stdin.close()
+                process.stdin = None
+                until = time.monotonic() + 1.5
+                while child is None and time.monotonic() < until:
+                    if audit.exists() and audit.read_text():
+                        child = int(audit.read_text())
+                    else:
+                        time.sleep(0.01)
+                self.assertIsNotNone(child, "supervised hook child observed")
+                output, errors = process.communicate(timeout=4.5)
+                self.assertEqual(process.returncode, 0)
+                self.assertGreater(time.monotonic() - started, 2.5)
+                self.assertLess(time.monotonic() - started, 4.5)
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(child, 0)
+            finally:
+                if process.poll() is None:
+                    self.kill(process)
+                holder.execute("ROLLBACK")
+        self.assertEqual(self.rows(), [])
+
     def test_concurrent_enqueue_can_progress_while_one_sender_holds_flock(self):
         server = self.server()
         server.mode = "hold"

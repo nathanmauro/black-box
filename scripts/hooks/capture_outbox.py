@@ -311,8 +311,19 @@ def private_file(directory_fd, name, create=False, writable=False):
     return descriptor
 
 
+def sqlite_contention(error):
+    code = getattr(error, "sqlite_errorcode", None)
+    if code is not None:
+        # Extended result codes retain the primary BUSY (5) or LOCKED (6) low byte.
+        return code & 0xff in (5, 6)
+    # Python 3.9/3.10 do not expose result codes. Match only SQLite's fixed messages,
+    # never arbitrary substrings or other OperationalError conditions.
+    return str(error) in ("database is locked", "database table is locked", "database schema is locked: main")
+
+
 class Queue:
-    def __init__(self, directory):
+    def __init__(self, directory, deadline=None):
+        self.deadline = deadline
         self.path, self.directory_fd = open_private_directory(directory)
         self.db = None
         try:
@@ -320,23 +331,22 @@ class Queue:
             descriptor = private_file(self.directory_fd, DB_NAME, create=True, writable=True)
             try:
                 expected = os.fstat(descriptor)
-                self.db = sqlite3.connect(str(self.path / DB_NAME), timeout=0.2, isolation_level=None)
+                self.db = sqlite3.connect(str(self.path / DB_NAME), timeout=0, isolation_level=None)
                 current = os.stat(DB_NAME, dir_fd=self.directory_fd, follow_symlinks=False)
                 if (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
                     raise OutboxError("unsafe_file")
             finally:
                 os.close(descriptor)
-            self.db.execute("PRAGMA busy_timeout=200")
-            self.db.execute("PRAGMA temp_store=MEMORY")
-            if self.db.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
+            self.execute("PRAGMA temp_store=MEMORY")
+            if self.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
                 raise OutboxError("unsafe_database")
-            self.db.execute("PRAGMA synchronous=FULL")
-            self.db.execute("PRAGMA secure_delete=ON")
-            self.db.execute("BEGIN IMMEDIATE")
-            version = self.db.execute("PRAGMA user_version").fetchone()[0]
+            self.execute("PRAGMA synchronous=FULL")
+            self.execute("PRAGMA secure_delete=ON")
+            self.execute("BEGIN IMMEDIATE")
+            version = self.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise OutboxError("unsupported_database")
-            self.db.execute("""CREATE TABLE IF NOT EXISTS captures (
+            self.execute("""CREATE TABLE IF NOT EXISTS captures (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 origin TEXT NOT NULL,
                 capture_id TEXT NOT NULL UNIQUE,
@@ -348,13 +358,32 @@ class Queue:
                 attempts INTEGER NOT NULL DEFAULT 0,
                 reason TEXT
             )""")
-            self.db.execute("CREATE INDEX IF NOT EXISTS capture_delivery ON captures(origin, category, id)")
-            self.db.execute("PRAGMA user_version=1")
-            self.db.execute("COMMIT")
+            self.execute("CREATE INDEX IF NOT EXISTS capture_delivery ON captures(origin, category, id)")
+            self.execute("PRAGMA user_version=1")
+            self.execute("COMMIT")
             self.check_files()
         except BaseException:
             self.close()
             raise
+
+    def execute(self, statement, parameters=()):
+        # Direct in-process callers retain the previous short wait; CLI operations share
+        # one absolute deadline across setup, acceptance and delivery, never per retry.
+        deadline = self.deadline if self.deadline is not None else time.monotonic() + 0.2
+        while True:
+            if time.monotonic() >= deadline:
+                raise OutboxError("deadline")
+            try:
+                return self.db.execute(statement, parameters)
+            except sqlite3.OperationalError as error:
+                if not sqlite_contention(error):
+                    raise
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise OutboxError("deadline") from None
+                time.sleep(min(0.025, remaining))
+                # Recheck after the wait, before a now-unblocked statement can run.
+                self.check_files()
 
     def check_files(self):
         for name in (DB_NAME, DB_NAME + "-journal", LOCK_NAME):
@@ -382,15 +411,15 @@ class Queue:
         capture_id = str(uuid.uuid4())
         logical_bytes = len(data) + len(origin.encode("ascii")) + 64
         self.check_files()
-        self.db.execute("BEGIN IMMEDIATE")
         try:
-            count, size = self.db.execute("SELECT count(*), coalesce(sum(logical_bytes),0) FROM captures").fetchone()
+            self.execute("BEGIN IMMEDIATE")
+            count, size = self.execute("SELECT count(*), coalesce(sum(logical_bytes),0) FROM captures").fetchone()
             if count >= MAX_QUEUE_ROWS or size + logical_bytes > MAX_QUEUE_BYTES:
                 raise OutboxError("queue_full")
-            self.db.execute("""INSERT INTO captures
+            self.execute("""INSERT INTO captures
                 (origin,capture_id,event_bytes,sanitizer_version,created_at,logical_bytes)
                 VALUES (?,?,?,?,?,?)""", (origin, capture_id, data, SANITIZER_VERSION, time.time(), logical_bytes))
-            self.db.execute("COMMIT")
+            self.execute("COMMIT")
         except BaseException:
             if self.db.in_transaction:
                 self.db.execute("ROLLBACK")
@@ -398,7 +427,7 @@ class Queue:
         return capture_id
 
     def status(self, origin):
-        rows = self.db.execute("""SELECT category,count(*),coalesce(sum(logical_bytes),0),min(created_at)
+        rows = self.execute("""SELECT category,count(*),coalesce(sum(logical_bytes),0),min(created_at)
             FROM captures WHERE origin=? GROUP BY category""", (origin,)).fetchall()
         if any(row[0] not in ("pending", "retry", "paused", "rejected") for row in rows):
             raise OutboxError("invalid_database")
@@ -417,13 +446,13 @@ class Queue:
             except BlockingIOError:
                 return sent
             if retry_paused:
-                self.db.execute("UPDATE captures SET category='retry',reason=NULL WHERE origin=? AND category='paused'", (origin,))
-            if self.db.execute("SELECT 1 FROM captures WHERE origin=? AND category='paused' LIMIT 1", (origin,)).fetchone():
+                self.execute("UPDATE captures SET category='retry',reason=NULL WHERE origin=? AND category='paused'", (origin,))
+            if self.execute("SELECT 1 FROM captures WHERE origin=? AND category='paused' LIMIT 1", (origin,)).fetchone():
                 return sent
             for unused in range(max_events):
                 if time.monotonic() >= deadline:
                     break
-                row = self.db.execute("""SELECT id,capture_id,event_bytes,sanitizer_version FROM captures
+                row = self.execute("""SELECT id,capture_id,event_bytes,sanitizer_version FROM captures
                     WHERE origin=? AND category IN ('pending','retry') ORDER BY id LIMIT 1""", (origin,)).fetchone()
                 if row is None:
                     break
@@ -435,10 +464,10 @@ class Queue:
                     category, reason = deliver(host, port, capture_id, data, deadline, origin=origin)
                 self.check_files()
                 if category == "acknowledged":
-                    self.db.execute("DELETE FROM captures WHERE id=? AND capture_id=? AND origin=?", (row_id, capture_id, origin))
+                    self.execute("DELETE FROM captures WHERE id=? AND capture_id=? AND origin=?", (row_id, capture_id, origin))
                     sent += 1
                 else:
-                    self.db.execute("UPDATE captures SET category=?,reason=?,attempts=attempts+1 WHERE id=?", (category, reason, row_id))
+                    self.execute("UPDATE captures SET category=?,reason=?,attempts=attempts+1 WHERE id=?", (category, reason, row_id))
                     if category in ("retry", "paused"):
                         break
             return sent
@@ -598,7 +627,7 @@ def main(argv=None):
             if len(raw) > MAX_PAYLOAD:
                 raise OutboxError("capture_too_large")
             data = sanitize_event(json.loads(raw.decode("utf-8")))
-        queue = Queue(args.directory)
+        queue = Queue(args.directory, deadline)
         if args.command == "status":
             print(json.dumps(queue.status(origin), sort_keys=True))
         else:
