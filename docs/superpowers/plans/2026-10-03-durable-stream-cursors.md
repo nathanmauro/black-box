@@ -75,3 +75,12 @@ publication or running-service change was performed. The coordinator owns final 
 regeneration of the combined frontend bundle, publication and any later deployment. Multiple API
 replicas, direct SQL writers, position retention, live restore and managed-proxy behavior remain
 outside this contract.
+
+## Coordinator integration verification
+
+Integrated merged PR58/59 with current main and regenerated the static bundle from combined sources.
+All 650 frontend tests and check gates passed (70 preexisting lint warnings). The entire packaged
+Chromium suite passed: 37 journeys, including native TCP reconnect, exact fixture persistence,
+Recall replacements, Browse and editor behavior. Fixture directories and port 8799 were cleaned;
+the existing local service PID stayed unchanged. Backend production/test sources are unchanged
+from the worker's 597-test run with all PostgreSQL gates enabled. No live deployment was performed.
