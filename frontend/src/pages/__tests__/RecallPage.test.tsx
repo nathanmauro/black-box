@@ -344,6 +344,72 @@ describe("RecallPage", () => {
     expect(captureDecision).not.toHaveBeenCalled();
   });
 
+  it.each(["empty first", "populated first"])(
+    "updates retained suggestion lists in both directions (%s)",
+    async (startingPoint) => {
+      const empty = {
+        ...item,
+        eventId: "empty-decision",
+        headline: "Storage without recorded follow-up",
+        rationale: "Keep this first experiment local.",
+        alternatives: [],
+        openLoops: [],
+      };
+      const populated = {
+        ...item,
+        eventId: "populated-decision",
+        headline: "Storage with recorded follow-up",
+        rationale: "Verify recovery before sharing the store.",
+        alternatives: ["Shared server"],
+        openLoops: ["Verify recovery"],
+      };
+      vi.mocked(getRecall).mockResolvedValue(result([empty, populated]));
+      updateParams({ project: "/repos/alpha" });
+      render(() => <RecallPage />);
+      const input = screen.getByLabelText("Question");
+      fireEvent.input(input, { target: { value: "storage" } });
+      await screen.findByRole("option", { name: new RegExp(empty.headline) });
+      const sequence =
+        startingPoint === "empty first" ? [empty, populated, empty] : [populated, empty, populated];
+      let retainedCard: HTMLElement | undefined;
+      for (const selected of sequence) {
+        // Reopen suggestions without changing the query or closing the retained evidence.
+        fireEvent.focus(input);
+        fireEvent.click(await screen.findByRole("option", { name: new RegExp(selected.headline) }));
+        const evidence = screen.getByRole("region", { name: "Selected evidence" });
+        const card = within(evidence).getByRole("article", { name: selected.headline });
+        if (retainedCard) expect(card).toBe(retainedCard);
+        retainedCard = card;
+        expect(card).toHaveTextContent(selected.rationale);
+        expect(card).not.toHaveTextContent(
+          selected === empty ? populated.rationale : empty.rationale,
+        );
+        expect(within(card).getByRole("link")).toHaveAttribute(
+          "href",
+          expect.stringContaining(`event=${selected.eventId}`),
+        );
+        if (selected === populated) {
+          expect(within(card).getByText("alternatives")).toBeInTheDocument();
+          expect(within(card).getByText("open loops")).toBeInTheDocument();
+          expect(
+            within(card)
+              .getAllByRole("listitem")
+              .map((li) => li.textContent),
+          ).toEqual([...populated.alternatives, ...populated.openLoops]);
+        } else {
+          expect(within(card).queryByText("alternatives")).not.toBeInTheDocument();
+          expect(within(card).queryByText("open loops")).not.toBeInTheDocument();
+          expect(within(card).queryByRole("list")).not.toBeInTheDocument();
+          expect(card).not.toHaveTextContent(populated.alternatives[0]);
+          expect(card).not.toHaveTextContent(populated.openLoops[0]);
+        }
+        expect(input).toHaveValue("storage");
+        expect(params.project).toBe("/repos/alpha");
+      }
+      expect(captureDecision).not.toHaveBeenCalled();
+    },
+  );
+
   it("ignores stale full recall and suggestion responses after scope or filter changes", async () => {
     let resolveOld!: (value: RecallResult) => void;
     vi.mocked(getRecall).mockImplementationOnce(
