@@ -13,7 +13,9 @@ import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
@@ -51,13 +53,16 @@ class MemoryMcpToolsTest {
     @Mock
     RecordingCaptureOperations captureOperations;
 
+    @Mock
+    EvidenceService evidence;
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     private MemoryMcpTools tools;
 
     @BeforeEach
     void setUp() {
-        tools = new MemoryMcpTools(recordingCatalog, memoryRecall, memorySearch, captureOperations);
+        tools = new MemoryMcpTools(recordingCatalog, memoryRecall, memorySearch, captureOperations, evidence);
     }
 
     @Test
@@ -144,7 +149,7 @@ class MemoryMcpToolsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"observation", "projection"})
+    @ValueSource(strings = {"observation", "projection", "evidence"})
     void capturedBodyUsesTheBudgetAndReportsExactlyWhatWasRemoved(String kind) throws Exception {
         String body = "Observation evidence\n" + "🧪".repeat(3000);
         RecalledItem observation = new RecalledItem(
@@ -307,6 +312,23 @@ class MemoryMcpToolsTest {
         assertThat(request.paths().getFirst().title()).isEqualTo("Ship projection capture");
         assertThat(request.paths().getFirst().description()).isEqualTo("Add MCP and REST capture surfaces.");
         assertThat(request.paths().getFirst().confidence()).isEqualTo(0.72);
+    }
+
+    @Test
+    void captureEvidenceAndRecallIdeaAreRegistered() {
+        when(captureOperations.captureEvidence(any(CaptureEvidenceRequest.class)))
+                .thenReturn(new IngestResponse("evidence-1", "session-1", "codex", "c1", "Evidence", false));
+        String result = callback("captureEvidence").call("""
+                {"source":"codex","clientSessionId":"c1","claim":"Command found zero matches",
+                 "sourceRef":"rg run","supports":["idea:sample"],
+                 "alsoIn":[{"project":"Other","score":0.7}]}
+                """);
+        assertThat(result).contains("evidence-1");
+        ArgumentCaptor<CaptureEvidenceRequest> capture = ArgumentCaptor.forClass(CaptureEvidenceRequest.class);
+        verify(captureOperations).captureEvidence(capture.capture());
+        assertThat(capture.getValue().alsoIn().getFirst().project()).isEqualTo("Other");
+        callback("recallIdea").call("{\"ideaKey\":\"sample\"}");
+        verify(evidence).detail("sample");
     }
 
     @Test

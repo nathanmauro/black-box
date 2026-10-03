@@ -73,6 +73,22 @@ class EmbeddingSourceSqlReaderTest {
                         + "[Idea] Lanes board — One swimlane per project. Origin: human-aside");
     }
 
+    @Test
+    void includesEvidenceAndEmbedsClaimAndExcerpt() {
+        Fixture fixture = fixture();
+        fixture.insertSession("session-1");
+        fixture.insertEvent(
+                "event-1",
+                "session-1",
+                "Evidence",
+                "[Evidence] Zero matches",
+                Map.of("kind", "evidence", "claim", "Zero matches", "excerpt", "rg returned no lines"));
+        EmbeddingSource source = fixture.reader().nextBatch(null, null, 10).getFirst();
+        assertThat(source.targetId()).isEqualTo("event-1");
+        assertThat(EmbeddableText.forEvent(source.eventType(), source.text(), source.metadata()))
+                .contains("Zero matches", "rg returned no lines");
+    }
+
     private static Fixture fixture() {
         Path database = Path.of(
                 System.getProperty("java.io.tmpdir"), "bb-embedding-source-reader-test-" + UUID.randomUUID() + ".db");

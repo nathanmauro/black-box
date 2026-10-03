@@ -35,7 +35,7 @@ public class EmbeddingSourceSqlReader implements EmbeddingSourceReader {
                         SELECT 'event' AS target_kind, e.id AS target_id, e.event_type, e.text, e.metadata_json
                           FROM agent_events e
                          WHERE lower(replace(replace(replace(e.event_type, '_', ''), '-', ''), ' ', ''))
-                               IN ('decision', 'handoff', 'observation', 'idea')
+                               IN ('decision', 'handoff', 'observation', 'idea', 'evidence')
                         UNION ALL
                         SELECT 'session_summary' AS target_kind, s.id AS target_id, NULL AS event_type,
                                s.summary AS text, NULL AS metadata_json

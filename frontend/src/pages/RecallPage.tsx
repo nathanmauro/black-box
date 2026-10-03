@@ -28,7 +28,14 @@ import { findProjectByIdentifier, primaryProjectScope } from "../lib/projects";
 import { buildRecallBriefing, newestRecorded, recalledItemHref } from "../lib/recall";
 import { sourceFilter } from "../lib/stores";
 
-const RECALL_KINDS = ["decision", "handoff", "observation", "idea", "projection"] as const;
+const RECALL_KINDS = [
+  "decision",
+  "handoff",
+  "observation",
+  "idea",
+  "projection",
+  "evidence",
+] as const;
 const TIME_WINDOWS = [
   { label: "24h", value: 24 },
   { label: "1w", value: 168 },
@@ -443,9 +450,9 @@ export default function RecallPage() {
             </For>
             <RecallHelp label="Help with filters">
               <p>
-                Choose decisions, handoffs, observations, ideas, or projections. Keep at least one
-                kind selected. The source filter in the top bar can hide captures returned by
-                recall.
+                Choose decisions, handoffs, observations, ideas, projections, or evidence. Keep at
+                least one kind selected. The source filter in the top bar can hide captures returned
+                by recall.
               </p>
               <p>Projections are recorded possibilities and use text matching only.</p>
             </RecallHelp>

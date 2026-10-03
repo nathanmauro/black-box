@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureIdea,
+  captureEvidence,
+  getEvidence,
+  getIdeaDetail,
   getIdeas,
   previewIdeaMigration,
   type CaptureIdeaRequest,
@@ -70,6 +73,8 @@ describe("idea API clients", () => {
       origin: "human-aside",
       legs: 6,
       connects: ["human-turn-first"],
+      project: "Home",
+      alsoIn: [{ project: "Other", score: 0.8 }],
     };
 
     const response = await captureIdea(request);
@@ -80,6 +85,39 @@ describe("idea API clients", () => {
     expect(init?.method).toBe("POST");
     expect(init?.body).toBe(JSON.stringify(request));
     expect(init?.headers).toMatchObject({ "X-XSRF-TOKEN": "idea-token" });
+  });
+
+  it("round-trips Evidence and Idea lane fields without reinterpreting typed provenance", async () => {
+    const fetchMock = stubJson({ eventId: "evidence-1", eventType: "Evidence" });
+    document.cookie = "XSRF-TOKEN=evidence-token; path=/";
+    const request = {
+      source: "manual",
+      clientSessionId: "fixture",
+      claim: "Fact",
+      sourceRef: "file:12",
+      excerpt: "    exact excerpt\n",
+      supports: ["idea:fixture"],
+      project: "Home",
+      alsoIn: [{ project: "Other", score: 0.8 }],
+    };
+    await captureEvidence(request);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/evidence");
+    expect(fetchMock.mock.calls[0][1]?.body).toBe(JSON.stringify(request));
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({ "X-XSRF-TOKEN": "evidence-token" });
+    await getEvidence({
+      target: " idea:fixture ",
+      project: "/repo A",
+      repo: "/alias",
+      q: " exact ",
+      limit: 10,
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "/api/evidence?target=idea%3Afixture&project=%2Frepo+A&repo=%2Falias&q=exact&limit=10",
+    );
+    await getIdeaDetail("key with / separator");
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      "/api/ideas/detail?ideaKey=key%20with%20%2F%20separator",
+    );
   });
 
   it("previews the observation migration as a dry run only", async () => {

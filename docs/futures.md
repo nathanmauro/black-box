@@ -47,7 +47,7 @@ with an optional confidence, plus an optional basis for the set; see
 [`MemoryMcpTools`](../src/main/java/dev/nathan/sbaagentic/memory/internal/adapter/in/mcp/MemoryMcpTools.java).
 [`trajectory.ts`](../frontend/src/lib/trajectory.ts) turns captures into a graph of history and
 possible next paths. Its text-overlap handling is not an explicit outcome relation. Projections
-are recalled lexically; semantic recall covers Decisions, Handoffs, Observations, and Ideas only.
+are recalled lexically; semantic recall covers Decisions, Handoffs, Observations, Ideas, and Evidence only.
 [Evidence-to-Linear](linear-integration.md) can propose source-linked candidates for explicit
 selection. Agents can record outcomes with a normal Handoff.
 

@@ -28,5 +28,7 @@ public interface RecordingCaptureOperations {
      */
     IngestResponse captureIdea(CaptureIdeaRequest request, String migratedFrom, Instant observedAt);
 
+    IngestResponse captureEvidence(CaptureEvidenceRequest request);
+
     IngestResponse captureObservation(String source, String clientSessionId, String repo, String text);
 }

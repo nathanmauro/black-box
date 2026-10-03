@@ -311,7 +311,7 @@ every model argument. External wrappers require their CLI and credentials in the
 | `SBA_ELASTICSEARCH_INDEX` | `sba-agentic-events` | Event index name |
 | `SBA_ELASTICSEARCH_REPLICAS` | `0` | Replica setting when creating the event index |
 
-Semantic recall returns Decisions, Handoffs, Observations, and Ideas. Projections are lexical-only;
+Semantic recall returns Decisions, Handoffs, Observations, Ideas, and Evidence. Projections are lexical-only;
 summary vectors are stored but not returned by recall, and the full event corpus is not
 semantically indexed. Elasticsearch is independent of memory embeddings. The floor is a dated
 measurement, not a universal relevance guarantee; remeasure when the model or corpus changes.

@@ -5,12 +5,16 @@ import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
+import dev.nathan.sbaagentic.memory.internal.application.IdeaDetail;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
+import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
 import dev.nathan.sbaagentic.recording.CaptureHandoffRequest;
 import dev.nathan.sbaagentic.recording.CaptureIdeaRequest;
 import dev.nathan.sbaagentic.recording.CaptureProjectionRequest;
 import dev.nathan.sbaagentic.recording.IngestResponse;
+import dev.nathan.sbaagentic.recording.LaneListing;
 import dev.nathan.sbaagentic.recording.ProjectionPath;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -37,16 +41,19 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
     private final MemoryRecallOperations memoryRecall;
     private final MemorySearchOperations memorySearch;
     private final RecordingCaptureOperations captureOperations;
+    private final EvidenceService evidence;
 
     public MemoryMcpTools(
             RecordingCatalog recordingCatalog,
             MemoryRecallOperations memoryRecall,
             MemorySearchOperations memorySearch,
-            RecordingCaptureOperations captureOperations) {
+            RecordingCaptureOperations captureOperations,
+            EvidenceService evidence) {
         this.recordingCatalog = recordingCatalog;
         this.memoryRecall = memoryRecall;
         this.memorySearch = memorySearch;
         this.captureOperations = captureOperations;
+        this.evidence = evidence;
     }
 
     @Override
@@ -161,8 +168,9 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     Integer withinHours,
             @ToolParam(
                             required = false,
-                            description = "Which kinds of intent to recall: any of 'decision', 'handoff', "
-                                    + "'observation', 'projection', or 'idea'. Omit to recall decisions and handoffs.")
+                            description =
+                                    "Which kinds of intent to recall: any of 'decision', 'handoff', "
+                                            + "'observation', 'projection', 'idea', or 'evidence'. Omit to recall decisions and handoffs.")
                     List<String> kinds,
             @ToolParam(
                             required = false,
@@ -173,7 +181,7 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                             required = false,
                             description = "Upper bound on the total characters of the returned items' text fields. "
                                     + "Omit for 24000 (minimum 500). When the result overflows, the first overflowing "
-                                    + "item's Observation/Projection body, then rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
+                                    + "item's Observation/Projection/Evidence body, then rationale, then headline, is cut with a visible '… (+N chars)' suffix and "
                                     + "every later item is dropped; `truncated` reports whether anything was cut.")
                     Integer maxChars,
             @ToolParam(
@@ -394,6 +402,10 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     String link,
             @ToolParam(required = false, description = "Optional free-form markdown body: prior art, motivating case.")
                     String notes,
+            @ToolParam(required = false, description = "Home project lane, a repo path or project name.")
+                    String project,
+            @ToolParam(required = false, description = "Other relevant lanes, each with project and score 0..1.")
+                    List<LaneListing> alsoIn,
             @ToolParam(
                             required = false,
                             description = "Stable identity across status changes. Omit to default to a slug of "
@@ -415,7 +427,56 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                 resumeStep,
                 link,
                 notes,
-                ideaKey));
+                ideaKey,
+                project,
+                alsoIn));
+    }
+
+    @Tool(
+            description =
+                    "Capture a verifiable fact with provenance, especially one that supports or refutes an idea, decision, or handoff.")
+    public IngestResponse captureEvidence(
+            @ToolParam(description = "Source client: claude, codex, or manual.") String source,
+            @ToolParam(description = "Client session id or stable grouping key.") String clientSessionId,
+            @ToolParam(required = false, description = "Repo path this evidence is about.") String repo,
+            @ToolParam(description = "One sentence stating the fact.") String claim,
+            @ToolParam(required = false, description = "Verbatim transcript, command output, or file excerpt.")
+                    String excerpt,
+            @ToolParam(description = "Provenance: session id, path:line, URL, or command.") String sourceRef,
+            @ToolParam(required = false, description = "Output digest, at most 200 characters.") String outputDigest,
+            @ToolParam(required = false, description = "ISO-8601 observation time, with offset.") String observedAt,
+            @ToolParam(required = false, description = "Person or agent that captured the fact.") String capturedBy,
+            @ToolParam(required = false, description = "Typed idea:<key> or event:<id> refs supported by this fact.")
+                    List<String> supports,
+            @ToolParam(required = false, description = "Typed idea:<key> or event:<id> refs refuted by this fact.")
+                    List<String> refutes,
+            @ToolParam(required = false, description = "Optional markdown notes.") String notes,
+            @ToolParam(required = false, description = "Home project lane.") String project,
+            @ToolParam(required = false, description = "Other project lanes, each with project and score 0..1.")
+                    List<LaneListing> alsoIn) {
+
+        return captureOperations.captureEvidence(new CaptureEvidenceRequest(
+                source,
+                clientSessionId,
+                repo,
+                claim,
+                excerpt,
+                sourceRef,
+                outputDigest,
+                observedAt,
+                capturedBy,
+                supports,
+                refutes,
+                notes,
+                project,
+                alsoIn));
+    }
+
+    @Tool(description = "Recall an idea and the evidence that supports or refutes it across every revision.")
+    public IdeaDetail recallIdea(
+            @ToolParam(description = "Stable idea key from captureIdea or GET /api/ideas.") String ideaKey) {
+
+        return evidence.detail(ideaKey);
     }
 
     @Tool(description = "Capture a free-form observation or note into the local recorder.")

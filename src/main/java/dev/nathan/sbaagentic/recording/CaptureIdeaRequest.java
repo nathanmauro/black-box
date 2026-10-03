@@ -27,4 +27,43 @@ public record CaptureIdeaRequest(
         String resumeStep,
         String link,
         String notes,
-        String ideaKey) {}
+        String ideaKey,
+        String project,
+        List<LaneListing> alsoIn) {
+    /** Compatibility constructor for callers that predate lane fields. */
+    public CaptureIdeaRequest(
+            String source,
+            String clientSessionId,
+            String repo,
+            String title,
+            String oneLiner,
+            String origin,
+            String quote,
+            String sourceRef,
+            Integer legs,
+            String status,
+            List<String> connects,
+            String resumeStep,
+            String link,
+            String notes,
+            String ideaKey) {
+        this(
+                source,
+                clientSessionId,
+                repo,
+                title,
+                oneLiner,
+                origin,
+                quote,
+                sourceRef,
+                legs,
+                status,
+                connects,
+                resumeStep,
+                link,
+                notes,
+                ideaKey,
+                null,
+                null);
+    }
+}
