@@ -28,10 +28,12 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@DependsOn("meldSchemaMigration")
 public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
@@ -171,6 +173,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                            ROW_NUMBER() OVER (PARTITION BY project_key ORDER BY %1$s ASC, id ASC) AS first_rank,
                            ROW_NUMBER() OVER (PARTITION BY project_key ORDER BY %1$s DESC, id DESC) AS last_rank
                       FROM session_melds
+                     WHERE project_key IS NOT NULL
                 )
                 SELECT project_key AS scope_key,
                        COUNT(*) AS saved_meld_count,
@@ -251,6 +254,19 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                                         .descending("s.id")),
                 this::mapSession,
                 args.toArray());
+    }
+
+    public List<AgentSession> sessionsByIds(List<String> sessionIds) {
+        if (sessionIds.isEmpty())
+
+            return List.of();
+
+        return jdbcTemplate.query(
+                "SELECT id,source,client_session_id,title,cwd,summary,started_at,last_seen_at,"
+                        + "event_count,spawned_by,first_human_turn FROM agent_sessions WHERE id IN ("
+                        + placeholders(sessionIds.size()) + ")",
+                this::mapSession,
+                sessionIds.toArray());
     }
 
     public long countTimelineBlocks(String canonicalKey) {
@@ -501,6 +517,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     public void insertSavedMeld(
             String id,
             String canonicalKey,
+            String artifactKind,
             String title,
             String body,
             String provider,
@@ -514,12 +531,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         jdbcTemplate.update(
                 """
                 INSERT INTO session_melds
-                       (id, project_key, title, body, provider, model, prompt_version,
+                       (id, project_key, artifact_kind, title, body, provider, model, prompt_version,
                         execution_mode, saved_from_preview, metadata_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 id,
                 canonicalKey,
+                artifactKind,
                 title,
                 body,
                 provider,
@@ -541,8 +559,44 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                     session.id(),
                     i,
                     session.summary() == null || session.summary().isBlank() ? 0 : 1,
-                    null);
+                    "braid".equals(artifactKind) ? toJson(sessionProvenance(session)) : null);
         }
+    }
+
+    private Map<String, Object> sessionProvenance(AgentSession session) {
+        Map<String, Object> provenance = new LinkedHashMap<>();
+        provenance.put("provenanceVersion", 1);
+        provenance.put("source", session.source());
+        provenance.put("clientSessionId", session.clientSessionId());
+        provenance.put("cwd", session.cwd());
+
+        return provenance;
+    }
+
+    public ProjectSavedMeld savedMeld(String id) {
+        List<ProjectSavedMeld> found =
+                jdbcTemplate.query("SELECT * FROM session_melds WHERE id=?", this::mapSavedMeld, id);
+
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public List<ProjectSavedMeld> unassignedBraids(int limit, Instant beforeTime, String beforeId) {
+        SqlInstant time = SqlInstant.column("created_at", dialect == ProjectSqlDialect.POSTGRES);
+        List<Object> args = new ArrayList<>();
+        String seek = "";
+        if (beforeTime != null) {
+            seek = " AND " + time.expression() + " <= ? AND " + time.cursorTuple("id") + " < (?,?)";
+            SqlInstant.bind(args, beforeTime);
+            SqlInstant.bind(args, beforeTime);
+            args.add(beforeId);
+        }
+        args.add(limit);
+
+        return jdbcTemplate.query(
+                "SELECT * FROM session_melds WHERE artifact_kind='braid' AND project_key IS NULL" + seek + " ORDER BY "
+                        + time.descending("id") + " LIMIT ?",
+                this::mapSavedMeld,
+                args.toArray());
     }
 
     public List<ProjectSavedMeld> savedMeldsForProject(String canonicalKey) {
@@ -743,12 +797,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     }
 
     private ProjectSavedMeld mapSavedMeld(ResultSet rs, int rowNum) throws SQLException {
-        String canonicalKey = aliasService.resolve(rs.getString("project_key"));
+        String storedKey = rs.getString("project_key");
+        String canonicalKey = storedKey == null ? null : aliasService.resolve(storedKey);
         String id = rs.getString("id");
 
         return new ProjectSavedMeld(
                 id,
-                ProjectKeyCodec.encode(canonicalKey),
+                canonicalKey == null ? null : ProjectKeyCodec.encode(canonicalKey),
                 canonicalKey,
                 rs.getString("title"),
                 rs.getString("body"),
@@ -764,14 +819,35 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
 
     private List<ProjectMeldSessionRef> sourceSessionsForMeld(String meldId) {
 
-        return jdbcTemplate.query("""
-                SELECT s.id, s.source, s.client_session_id, s.title, s.cwd,
+        return jdbcTemplate.query(
+                """
+                SELECT i.session_id AS id, i.metadata_json AS input_metadata, s.source, s.client_session_id, s.title, s.cwd,
                        s.started_at, s.last_seen_at, s.event_count
                   FROM session_meld_inputs i
-                  JOIN agent_sessions s ON s.id = i.session_id
+                  LEFT JOIN agent_sessions s ON s.id = i.session_id
                  WHERE i.meld_id = ?
                  ORDER BY i.input_order ASC
-                """, this::mapSessionRef, meldId);
+                """,
+                (rs, rowNum) -> {
+                    Map<String, Object> snapshot = fromJsonMap(rs.getString("input_metadata"));
+                    if (snapshot == null) snapshot = Map.of();
+                    boolean captured = Integer.valueOf(1).equals(snapshot.get("provenanceVersion"))
+                            && snapshot.get("source") instanceof String
+                            && snapshot.get("clientSessionId") instanceof String
+                            && snapshot.containsKey("cwd")
+                            && (snapshot.get("cwd") == null || snapshot.get("cwd") instanceof String);
+
+                    return new ProjectMeldSessionRef(
+                            rs.getString("id"),
+                            captured ? (String) snapshot.get("source") : rs.getString("source"),
+                            captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
+                            rs.getString("title"),
+                            captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
+                            rs.getLong("event_count"),
+                            parseInstant(rs.getString("started_at")),
+                            parseInstant(rs.getString("last_seen_at")));
+                },
+                meldId);
     }
 
     private ProjectMeldSessionRef mapSessionRef(ResultSet rs, int rowNum) throws SQLException {

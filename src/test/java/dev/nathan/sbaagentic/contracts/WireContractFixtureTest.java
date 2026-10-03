@@ -42,6 +42,7 @@ import dev.nathan.sbaagentic.project.CodeProjectScope;
 import dev.nathan.sbaagentic.project.CodeReference;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
+import dev.nathan.sbaagentic.project.ProjectMeldListResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldSaveRequest;
@@ -191,6 +192,21 @@ class WireContractFixtureTest {
                 "IdeaDetail",
                 new IdeaDetail((IdeaView) updates.get("IdeaView"), java.util.List.of(evidence), java.util.List.of()));
         updates.put("LaneListing", lanes.getFirst());
+        var braid = new ProjectSavedMeld(
+                "braid-1",
+                null,
+                null,
+                "Unassigned braid",
+                "Saved synthesis",
+                "local",
+                "context-bundle",
+                "project-meld-v1",
+                "export_bundle",
+                true,
+                Map.of("kind", "braid"),
+                java.time.Instant.parse("2026-10-03T12:00:00.000000001Z"),
+                java.util.List.of());
+        updates.put("ProjectMeldListResponse", new ProjectMeldListResponse(java.util.List.of(braid), 1, null));
         for (var update : updates.entrySet()) {
             String serialized = objectMapper
                     .copy()
@@ -285,6 +301,7 @@ class WireContractFixtureTest {
                 entry("ProjectMeldSaveRequest", ProjectMeldSaveRequest.class),
                 entry("ProjectMeldSessionRef", ProjectMeldSessionRef.class),
                 entry("ProjectSavedMeld", ProjectSavedMeld.class),
+                entry("ProjectMeldListResponse", ProjectMeldListResponse.class),
                 entry("ProjectScope", ProjectScope.class),
                 entry("ProjectSummary", ProjectSummary.class),
                 entry("ProjectTimelineBlock", ProjectTimelineBlock.class),

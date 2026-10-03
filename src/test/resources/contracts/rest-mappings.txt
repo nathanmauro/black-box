@@ -14,6 +14,8 @@ GET /api/health/judge
 GET /api/health/local-ai
 GET /api/ideas
 GET /api/ideas/detail
+GET /api/melds
+GET /api/melds/{id}
 GET /api/projects
 GET /api/projects/code-scopes
 GET /api/projects/{projectKey}/graph

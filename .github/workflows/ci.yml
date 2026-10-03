@@ -116,6 +116,11 @@ jobs:
           evidence_suite = ET.parse(evidence_report).getroot()
           assert int(evidence_suite.get('tests', '0')) > 0, 'Evidence PostgreSQL consumer checks did not run'
           assert int(evidence_suite.get('skipped', '0')) == 0, 'Evidence PostgreSQL consumer checks were skipped'
+          for name in ('ProjectlessBraidPostgresHttpTest', 'MeldSchemaPostgresMigrationTest'):
+              report = Path('target/surefire-reports') / f'TEST-dev.nathan.sbaagentic.project.{name}.xml'
+              suite = ET.parse(report).getroot()
+              assert int(suite.get('tests', '0')) > 0, f'{name} did not run'
+              assert int(suite.get('skipped', '0')) == 0, f'{name} was skipped'
           PYTEST
 
   frontend:

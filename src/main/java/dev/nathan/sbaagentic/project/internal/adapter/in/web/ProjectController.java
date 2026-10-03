@@ -7,6 +7,7 @@ import dev.nathan.sbaagentic.project.CodeReference;
 import dev.nathan.sbaagentic.project.ProjectAlias;
 import dev.nathan.sbaagentic.project.ProjectAliasRequest;
 import dev.nathan.sbaagentic.project.ProjectGraphOperations;
+import dev.nathan.sbaagentic.project.ProjectMeldListResponse;
 import dev.nathan.sbaagentic.project.ProjectMeldOperations;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewRequest;
 import dev.nathan.sbaagentic.project.ProjectMeldPreviewResponse;
@@ -19,8 +20,10 @@ import dev.nathan.sbaagentic.project.ProjectTrajectoryResponse;
 import dev.nathan.sbaagentic.project.internal.application.CodeNavigationException;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import java.util.List;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +34,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api")
@@ -117,6 +121,29 @@ public class ProjectController {
     public List<ProjectSavedMeld> projectMelds(@PathVariable String projectKey) {
 
         return projectService.melds(projectKey);
+    }
+
+    @GetMapping("/melds/{id}")
+    public ProjectSavedMeld savedMeld(@PathVariable String id) {
+
+        return projectMeldService.get(id);
+    }
+
+    @GetMapping("/melds")
+    public ProjectMeldListResponse unassignedBraids(@RequestParam MultiValueMap<String, String> parameters) {
+        Set<String> allowed = Set.of("kind", "scope", "limit", "before");
+        if (!allowed.containsAll(parameters.keySet())
+                || parameters.values().stream().anyMatch(values -> values.size() != 1))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported or repeated meld listing parameter");
+        int limit = 50;
+        try {
+            if (parameters.containsKey("limit")) limit = Integer.parseInt(parameters.getFirst("limit"));
+        } catch (NumberFormatException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "limit must be between 1 and 100");
+        }
+
+        return projectMeldService.list(
+                parameters.getFirst("kind"), parameters.getFirst("scope"), limit, parameters.getFirst("before"));
     }
 
     @PostMapping("/melds")

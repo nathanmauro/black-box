@@ -122,7 +122,8 @@ CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
 
 CREATE TABLE IF NOT EXISTS session_melds (
     id TEXT PRIMARY KEY,
-    project_key TEXT NOT NULL,
+    project_key TEXT,
+    artifact_kind TEXT NOT NULL DEFAULT 'meld',
     title TEXT NOT NULL,
     body TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -131,7 +132,9 @@ CREATE TABLE IF NOT EXISTS session_melds (
     execution_mode TEXT NOT NULL,
     saved_from_preview INTEGER NOT NULL,
     metadata_json TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    CONSTRAINT ck_session_melds_ownership CHECK
+        (artifact_kind IN ('meld', 'braid') AND (project_key IS NOT NULL OR artifact_kind = 'braid'))
 );
 
 CREATE TABLE IF NOT EXISTS session_meld_inputs (
