@@ -226,6 +226,13 @@ for new events.
 | `project_aliases` | project | Reversible logical-project grouping over recorded working directories |
 | `event_fts`, `search_index_state` | recording | Contentless FTS5 index over `agent_events` (text, tool_name, clipped tool JSON) plus its backfill progress row; trigger-maintained inside the canonical write transaction and fully rebuildable |
 
+When sqlite-vec is configured and loadable, startup rebuilds its optional `memory_vec` index in a
+transaction from canonical vectors matching the configured model and dimensions. This recovers
+embeddings recorded before enabling the extension and interrupted index updates, without calling a
+model or changing canonical bytes. Rebuild time grows with that corpus. A failed rebuild (including
+an incompatible existing native-table dimension) leaves portable canonical ranking available;
+queries for another model also use that path. Leaving the extension unconfigured remains the default.
+
 The FTS index is a rebuildable secondary inside canonical SQLite: insert/delete/update triggers on
 `agent_events` keep it consistent by construction, the chunked background backfill doubles as the
 rebuild job, and free-text search falls back to per-term LIKE whenever FTS is unavailable.
