@@ -17,6 +17,7 @@ import {
 import ProjectsPage from "../ProjectsPage";
 
 let routeParams: { projectKey?: string };
+let routeLocation: { search: string; hash: string };
 let searchParams: { focus?: string };
 let setSearchParamsStore: SetStoreFunction<{ focus?: string }>;
 const navigate = vi.fn();
@@ -28,6 +29,7 @@ vi.mock("@solidjs/router", () => ({
     </a>
   ),
   useNavigate: () => navigate,
+  useLocation: () => routeLocation,
   useParams: () => routeParams,
   // Same store idiom as the StreamPage tests; the component may pass navigate options as a
   // second argument, which the store setter must never see.
@@ -114,6 +116,7 @@ const protectedProjects: ProjectSummary[] = [
 
 beforeEach(() => {
   routeParams = {};
+  routeLocation = { search: "", hash: "" };
   [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({});
   localStorage.clear();
   navigate.mockReset();
@@ -185,6 +188,27 @@ beforeEach(() => {
 });
 
 describe("ProjectsPage", () => {
+  it("preserves evidence selection and URL state when canonicalizing a project alias", async () => {
+    routeParams = { projectKey: "sba-worktree-key" };
+    routeLocation = {
+      search: "?focus=capture%3Atrajectory-handoff&source=shared%20link",
+      hash: "#evidence",
+    };
+    [searchParams, setSearchParamsStore] = createStore<{ focus?: string }>({
+      focus: "capture:trajectory-handoff",
+    });
+    render(() => <ProjectsPage />);
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        "/projects/sba-key?focus=capture%3Atrajectory-handoff&source=shared%20link#evidence",
+        { replace: true },
+      ),
+    );
+    expect(await screen.findByRole("region", { name: "Trajectory detail" })).toHaveTextContent(
+      "Current project state",
+    );
+  });
+
   it("uses the trajectory graph as the default center-pane view", async () => {
     render(() => <ProjectsPage />);
 
