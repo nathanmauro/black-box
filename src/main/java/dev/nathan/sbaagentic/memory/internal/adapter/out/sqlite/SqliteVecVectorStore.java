@@ -21,13 +21,18 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Primary
 @Repository
+@DependsOnDatabaseInitialization
 @ConditionalOnProperty(name = "sba.storage.backend", havingValue = "sqlite", matchIfMissing = true)
 public class SqliteVecVectorStore implements MemoryVectorStore {
 
@@ -65,15 +70,28 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
 
             return;
         }
-        if (createTable(false)) {
-            available.set(true);
-
-            return;
+        available.set(false);
+        if (createTable(false) || (SqliteVecSupport.load(dataSource, extensionPath.get()) && createTable(true))) {
+            rebuildFromCanonical();
         }
-        if (SqliteVecSupport.load(dataSource, extensionPath.get()) && createTable(true)) {
+    }
+
+    private void rebuildFromCanonical() {
+        try {
+            // The native index is disposable. Canonical embeddings can predate extension enablement
+            // or survive an interrupted index update, so never trust an existing index at startup.
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)).executeWithoutResult(status -> {
+                jdbcTemplate.update("DELETE FROM memory_vec");
+                jdbcTemplate.update("""
+                        INSERT INTO memory_vec(key, embedding)
+                        SELECT target_kind || ':' || target_id, vector
+                          FROM memory_embeddings
+                         WHERE model = ? AND dimensions = ?
+                        """, embeddingProperties.getModel(), embeddingProperties.getDimensions());
+            });
             available.set(true);
-        } else {
-            available.set(false);
+        } catch (DataAccessException | TransactionException ex) {
+            LOGGER.info("sqlite-vec rebuild failed; using canonical brute-force memory vectors", ex);
         }
     }
 
@@ -103,7 +121,7 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
 
             return List.of();
         }
-        if (!available.get()) {
+        if (!available.get() || !matchesConfiguredModel(query)) {
 
             return fallback.knn(query, k, keyFilter);
         }
@@ -223,6 +241,11 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
 
             return;
         }
+        if (!matchesConfiguredModel(embedding.vector())) {
+            deleteFor(embedding.targetKind(), embedding.targetId());
+
+            return;
+        }
         try {
             jdbcTemplate.update(
                     """
@@ -246,6 +269,12 @@ public class SqliteVecVectorStore implements MemoryVectorStore {
             available.set(false);
             LOGGER.info("sqlite-vec delete failed; using brute-force memory vectors", ex);
         }
+    }
+
+    private boolean matchesConfiguredModel(EmbeddingVector vector) {
+
+        return embeddingProperties.getModel().equals(vector.model())
+                && embeddingProperties.getDimensions() == vector.values().length;
     }
 
     boolean available() {
