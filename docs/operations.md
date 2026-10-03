@@ -163,6 +163,19 @@ including short strings, numbers, nulls, lists, and objects. This conservative p
 [durable hook](durable-capture.md#privacy-and-limits); it may also hide benign values such as
 `tokenCount`. Ordinary identity and metadata fields keep their structure.
 
+Default text rules also scan named assignments inside string leaves, including JSON text returned
+by tools. Existing secret-name spellings (such as `password`, `api_key`, `client_secret` and
+`access_token`, including their existing prefixes/suffixes) accept `=` or `:`, bare or matching
+single/double quoted keys, and values of any length. Quoted values can contain whitespace and
+backslash-escaped quotes; bare values end at whitespace or a JSON comma/closing bracket/brace.
+Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned
+scalar. Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping
+and the existing truncation marker; replacement markers can expand short values. This is a small
+assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled
+secrets. Model export also applies these default
+assignment rules independently of ingestion settings and retains its conservative fallback for
+escaped quoted credential keys, which may remove the rest of a text leaf.
+
 String member names are also scanned with the active text-redaction patterns. If redacting a name
 would collide with another member, the changed name gains a ` (redacted key N)` suffix so that the
 other field is preserved. Custom `sba.ingestion.redact-patterns` replace the default text patterns
