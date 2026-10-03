@@ -32,11 +32,37 @@ mode `0700`; database, journal, and lock files must be regular, singly linked, u
 files. Unsafe files, ownership, and permissions are refused rather than repaired. Do not put the
 queue on a shared or synchronized filesystem.
 
-Only numeric loopback HTTP origins with an explicit port are accepted, such as
-`http://127.0.0.1:8766` or `http://[::1]:8766`. `localhost`, HTTPS, credentials, a trailing slash,
-other paths, query strings, fragments, and remote addresses are rejected. An explicit unsupported
+By default only numeric loopback HTTP origins with an explicit port are accepted, such as
+`http://127.0.0.1:8766` or `http://[::1]:8766`. HTTP `localhost`, credentials, a trailing slash,
+other paths, query strings, fragments, and remote HTTP addresses are rejected. An explicit unsupported
 or empty URL is never replaced with the default. Proxy environment variables and redirects are
 ignored. A destination is a local routing choice, not authentication of the listening process.
+
+### Explicit HTTPS delivery
+
+For an existing authenticated server, set `SBA_AGENTIC_URL` and `SBA_CAPTURE_HTTPS_ORIGIN` to the
+same HTTPS origin, for example `https://blackbox.example.com`. Both settings are required for
+remote capture; changing the base URL alone does not authorize it. DNS names are ASCII, ports are
+optional (443 is normalized away), and credentials, paths, trailing slashes, queries and fragments
+are refused. An HTTPS URL must match the separately configured origin after normalization.
+
+On macOS, store the server's machine bearer as a generic password in Keychain Access, service
+`blackbox-capture`, account equal to the normalized HTTPS origin. Do not put the secret in shell
+arguments, URLs or a hook payload. The outbox reads that one account through `/usr/bin/security`
+only when an eligible queued row is ready to send, after local acceptance, within the remaining
+invocation deadline (at most one second for credential lookup). `status` never reads credentials. The HTTP loopback path needs no Keychain
+and remains portable; HTTPS credential lookup currently requires macOS.
+
+TLS uses normal certificate and hostname verification, with no insecure mode. Bearers are sent
+only as an Authorization header, never stored with the queue or printed. No proxy, redirect,
+downgrade or unauthenticated HTTPS fallback is used. Missing, locked, invalid or timed-out
+credentials retain the accepted row and pause that origin. After fixing credentials, use
+`drain --retry-paused` with both origin settings present. A changed destination cannot consume
+another origin's queue or credential.
+
+This prepares transport only: it does not provision a server, activate hooks, schedule retries,
+migrate history or make the Mac-independent service available. See
+[cloud transport readiness](cloud-transport-readiness.md) for the remaining release boundary.
 
 Rows belong to the normalized origin at capture time. Changing the configured URL does not move
 old rows; run `status` or `drain` with the original URL to inspect or retry that partition. The row
@@ -69,6 +95,7 @@ and the response is lost, the same request can be retried and acknowledged with 
 | Valid matching acknowledgement | Delete that row |
 | Timeout, connection failure, interruption, 408, 429, 5xx, redirect, or malformed acknowledgement | Retain; stop this drain and retry later |
 | 401, 403, 404, or 405 | Retain and pause delivery for this origin |
+| HTTPS credential missing, invalid, locked or timed out | Retain and pause delivery for this origin |
 | 400, 409, 413, or 422 | Retain as rejected; later rows may be attempted |
 
 Attempts follow insertion order within the selected origin. A retryable failure blocks later
@@ -124,4 +151,7 @@ durable tests. Durable tests use temporary directories, real local HTTP servers,
 processes, process interruption, SQLite storage inspection, and synthetic sanitizer fixtures.
 They cover outage recovery, lost acknowledgements, stable retry bytes, origin separation, malformed
 acknowledgements, quotas, unsafe files, corruption, partial responses, held-open input, and the shared
-hook deadline. They do not activate installed client hooks or write to a running Black Box database.
+hook deadline. HTTPS checks use local TLS servers, a test-scoped trust context and mocked Keychain
+responses: opt-in, credentials, certificate/hostname rejection, redirects and immutable retries.
+They do not read the real Keychain, change system trust, activate installed client hooks or write
+to a running Black Box database.

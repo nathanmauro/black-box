@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in, local-only, sanitized event outbox. Python 3.9 standard library only."""
+"""Opt-in sanitized event outbox; loopback HTTP or explicitly authorized HTTPS."""
 import argparse
 import datetime
 import fcntl
@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import signal
 import sqlite3
+import ssl
 import stat
 import subprocess
 import sys
@@ -206,11 +207,47 @@ def sanitize_event(event):
     return data
 
 
-def normalized_origin(value):
+def normalized_https_origin(value):
+    # Deliberately accept an origin, not a URL that a permissive parser can reinterpret.
+    if not isinstance(value, str) or len(value) > 300:
+        raise OutboxError("invalid_origin")
+    match = re.fullmatch(r"https://(\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::([0-9]{1,5}))?", value, re.I)
+    if match is None:
+        raise OutboxError("invalid_origin")
+    host = match.group(1).lower()
+    port = int(match.group(2) or 443)
+    if not 1 <= port <= 65535:
+        raise OutboxError("invalid_origin")
+    if host.startswith("["):
+        try:
+            address = ipaddress.IPv6Address(host[1:-1])
+        except ValueError:
+            raise OutboxError("invalid_origin") from None
+        host = str(address)
+        wire_host = "[" + host + "]"
+    else:
+        if len(host) > 253 or any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                                  for label in host.split(".")):
+            raise OutboxError("invalid_origin")
+        if re.fullmatch(r"[0-9.]+", host):
+            try:
+                host = str(ipaddress.IPv4Address(host))
+            except ValueError:
+                raise OutboxError("invalid_origin") from None
+        wire_host = host
+    return "https://" + wire_host + (":" + str(port) if port != 443 else ""), host, port
+
+
+def normalized_origin(value, https_origin=None):
     # Parsing only this grammar excludes DNS names, credentials, paths, escapes, query,
     # fragment, implicit ports, and parser normalization of an explicitly supplied URL.
     if not isinstance(value, str):
         raise OutboxError("invalid_origin")
+    if value.lower().startswith("https://"):
+        origin = normalized_https_origin(value)
+        if not https_origin or normalized_https_origin(https_origin)[0] != origin[0]:
+            raise OutboxError("invalid_origin")
+        return origin
     match = re.fullmatch(r"http://(\[[0-9a-fA-F:]+\]|[0-9.]+):([0-9]{1,5})", value, re.I)
     if match is None:
         raise OutboxError("invalid_origin")
@@ -390,7 +427,7 @@ class Queue:
                         or not isinstance(data, bytes) or len(data) + 64 > MAX_PAYLOAD):
                     category, reason = "rejected", "unsupported_capture"
                 else:
-                    category, reason = deliver(host, port, capture_id, data, deadline)
+                    category, reason = deliver(host, port, capture_id, data, deadline, origin=origin)
                 self.check_files()
                 if category == "acknowledged":
                     self.db.execute("DELETE FROM captures WHERE id=? AND capture_id=? AND origin=?", (row_id, capture_id, origin))
@@ -422,15 +459,43 @@ def unique_object(pairs):
     return value
 
 
-def deliver(host, port, capture_id, data, deadline):
+def keychain_bearer(origin, deadline):
+    """Read an origin-bound secret only after queue acceptance; never expose raw errors."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise OutboxError("credential_unavailable")
+    try:
+        result = subprocess.run(
+            ["/usr/bin/security", "find-generic-password", "-s", "blackbox-capture", "-a", origin, "-w"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=min(1.0, remaining), check=False)
+    except (OSError, subprocess.SubprocessError):
+        raise OutboxError("credential_unavailable") from None
+    raw = result.stdout
+    # security terminates its output with one newline. Interior/control characters are refused.
+    if raw.endswith(b"\n"):
+        raw = raw[:-1]
+    if result.returncode != 0 or len(raw) > 4096 or not re.fullmatch(rb"[A-Za-z0-9._~+/-]+={0,2}", raw):
+        raise OutboxError("credential_unavailable")
+    return raw.decode("ascii")
+
+
+def deliver(host, port, capture_id, data, deadline, origin=None):
     connection = None
     try:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return "retry", "deadline"
-        connection = http.client.HTTPConnection(host, port, timeout=remaining)
+        headers = {"Content-Type": "application/json"}
+        if origin and origin.startswith("https://"):
+            headers["Authorization"] = "Bearer " + keychain_bearer(origin, deadline)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return "retry", "deadline"
+            connection = http.client.HTTPSConnection(host, port, timeout=remaining, context=ssl.create_default_context())
+        else:
+            connection = http.client.HTTPConnection(host, port, timeout=remaining)
         body = b'{"captureId":"' + capture_id.encode("ascii") + b'","event":' + data + b'}'
-        connection.request("POST", "/api/events/idempotent", body=body, headers={"Content-Type": "application/json"})
+        connection.request("POST", "/api/events/idempotent", body=body, headers=headers)
         response = connection.getresponse()
         if response.status in (401, 403, 404, 405):
             return "paused", "endpoint_unavailable"
@@ -452,6 +517,10 @@ def deliver(host, port, capture_id, data, deadline):
                 or not canonical_uuid(ack.get("sessionId")) or type(ack.get("replayed")) is not bool):
             return "retry", "invalid_acknowledgement"
         return "acknowledged", None
+    except OutboxError as error:
+        if str(error) == "credential_unavailable":
+            return "paused", "credential_unavailable"
+        raise
     except (OSError, ValueError, http.client.HTTPException):
         return "retry", "delivery_failed"
     finally:
@@ -512,7 +581,7 @@ def main(argv=None):
             raise OutboxError("invalid_arguments")
         if args.retry_paused and args.command != "drain":
             raise OutboxError("invalid_arguments")
-        origin, host, port = normalized_origin(args.url)
+        origin, host, port = normalized_origin(args.url, os.environ.get("SBA_CAPTURE_HTTPS_ORIGIN"))
         signal.signal(signal.SIGALRM, interrupted)
         signal.signal(signal.SIGTERM, interrupted)
         signal.signal(signal.SIGINT, interrupted)
