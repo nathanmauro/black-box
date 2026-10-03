@@ -44,3 +44,11 @@ Browse. Use only the runner's disposable storage and disabled provider configura
   database was not discovered, so no production database row-count claim is made.
 - No live history, provider, infrastructure, backend session identity, or Git publication changed.
   Existing sessions are not rewritten; the change applies to new UI replacement captures.
+
+## Combined coordinator acceptance
+
+Combined this fix with alias evidence-link preservation and regenerated the frontend bundle.
+All 649 frontend tests, check/build/format gates and both packaged regression journeys passed
+on the combined source. The alias route retained evidence/query/fragment through reload and Back;
+All projects replacements retained exact per-project counts, sessions and history. Fixture cleanup
+completed and port 8799 was free afterward. No live deployment was performed.
