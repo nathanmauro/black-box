@@ -5,8 +5,9 @@ The [development inventory](evaluation-candidates/2026-10-03-development-pool.js
 17 real fixes in 12 proposed clusters. All are familiar development examples with published
 reference fixes. None is held out; this inventory does not satisfy the twenty-candidate gate.
 An offline, synthetic-fixture adapter for the ordinary latest-handoff/literal-search arm now
-exists ([below](#offline-literal-adapter)); it is not wired into any model runner, and the
-comparison itself has not run.
+exists ([below](#offline-literal-adapter)), as does a development
+[compact canonical adapter](#compact-canonical-adapter) qualified against the packaged server
+with synthetic corpora. Neither is wired into any model runner, and the comparison itself has not run.
 
 The [benchmark and offline qualifier](memory-benchmark.md) remain authoritative for completed
 runs. This proposal does not change the runner, its flags, the earlier negative difficulty result,
@@ -242,10 +243,9 @@ that literal delivery bytes and accounting stayed identical: seven scripted sess
 case-fold expansion, deep excerpt anchors, clipping, both budget closes, invalid requests,
 `no_handoff` and `no_history`.
 
-A `compact-search-v1` backend over the real `GET /api/search/compact` was evaluated (NAT-319) and
-**not built**. It would have been a compact-search arm only, not the full, hybrid or semantic Black Box arm.
-The current read-only API cannot satisfy this envelope for useful corpora without a
-product change:
+A `compact-search-v1` backend over the original `GET /api/search/compact` was evaluated (NAT-319)
+and **not built**. It would have been a compact-search arm only, not the full, hybrid or semantic Black Box arm.
+That API could not satisfy this envelope for useful corpora without a product change:
 
 - **Bounded totals and incomplete hits.** SQLite candidates stop at 200. Below that ceiling,
   ungrouped candidate counts remain exact, including omitted hits; at the ceiling they cannot
@@ -260,9 +260,162 @@ product change:
   metadata JSON.
 
 Restricting corpus size, timestamp ties or query characters would selectively abort otherwise valid
-trials and bias paired outcomes. Such restrictions do not satisfy the shared corpus/query contract. The prerequisite is a separate read-only product
-API slice with typed literal terms and exact keyset pagination. No compact arm, model run or
-accepted action exists. The usefulness gate stays not_cleared.
+trials and bias paired outcomes. Such restrictions do not satisfy the shared corpus/query contract. The prerequisite was a separate read-only product
+API slice with typed literal terms and exact keyset pagination (NAT-320, `mode=canonical`). The
+adapter below uses that slice. No model comparison or accepted-action result exists. The usefulness gate stays not_cleared.
+
+## Compact canonical adapter
+
+`compact_history_search.py`, `compact_server.py` and `compact_backend.py` (NAT-319) serve the
+unchanged `history_search` session from `GET /api/search/compact?mode=canonical`. Standard library,
+Python 3.9. **Status:** fake contracts and independent packaged-JAR qualification passed. The
+[qualification report](evaluation-results/2026-10-03-compact-corpus-qualification.json) records
+26 fresh private server runs and 10 pre-launch rejection checks, with identical delivery bytes
+across each repeated batch, exact database readback, budget checks and owned cleanup. This
+qualifies the compact-search adapter only; no model comparison or efficacy result exists.
+
+**Unchanged literal arm.** The literal parser, ranking, `source_ref` matching, the 32 literal tests
+and the pinned golden trace are unchanged. The previous inline stdin/stdout loop is now
+`history_search.stream()`, a pure move. A pinned CLI transcript over the golden corpora is
+byte-identical before and after.
+
+**Private server owner.** `PrivateCompactServer` is a context manager that takes:
+
+- an explicit trusted JAR path and its SHA-256;
+- an explicit Java 21 executable;
+- a corpus already validated by `load_corpus`.
+
+There is no server-URL parameter, no reuse or discovery of databases, and no download.
+
+On launch it:
+
+- creates a fresh 0700 temporary root holding the SQLite file, a private HOME/TMP/XDG and the log;
+- copies the JAR into that root and re-hashes the copy;
+- builds the environment from scratch, so no `SBA_*`, `SPRING_*`, JVM, proxy or provider variable
+  is inherited;
+- loads only the classpath `application.yml`, overridden on the command line. Redaction is off,
+  `max-text-length` is 65,536, the summary backend is `local` with local AI off, and embeddings,
+  ask-embeddings, Elasticsearch, judge, editor and workflow retirement are off. Transcript roots
+  point inside the private HOME;
+- binds a fresh loopback port, never 8766, 8799 or 18879, in the server's own process group.
+
+Identity checks:
+
+- Before any write: the child is the only listener on the port, holds the private database file,
+  has a command line naming the copied JAR and database, and has an empty database.
+- Before every request, captures and searches included: the child is still the only listener.
+- Missing `lsof`/`ps` fails closed.
+
+Cleanup:
+
+- It signals only its own process group, whose ID is the launched session leader's PID. Liveness
+  checks use `ps` and the listener, never `wait`, so the leader stays unreaped and its PID, which
+  is also the group ID, cannot be reused while the group is signalled.
+- TERM, then a bounded wait until no live group member remains, then KILL. Descendants that ignore
+  TERM or outlive an already-exited leader are included. Only then is the leader reaped. If the
+  group cannot be emptied, the storage is kept and cleanup fails closed.
+- It removes the root only after marker, inode and owner checks.
+- SIGTERM/SIGHUP unwind through the same path.
+
+This isolates trusted code; it is not a JVM sandbox.
+
+**Capture and fidelity.** Every item goes through `POST /api/events/idempotent`:
+
+- The receipt UUID is uuid5 of a fixed namespace, the manifest SHA-256 and the item ID.
+- The synthetic client session is a hash of the original (project, session) pair and never
+  becomes a path.
+- All events share one synthetic cwd/project. `load_corpus` already enforces the selected scope.
+- `text` is unmodified, `toolName` is null and `metadata` is `{"sourceRef": source_ref}`.
+- The event type is neutral: not terminal, embeddable or a prompt type.
+- `observedAt` is the UTC instant computed with integer arithmetic and nine fractional digits.
+  Offset normalization can reach year 0 or year 10000; those stay in the domain.
+
+Before `Session.start()`, a read-only SQLite proof requires:
+
+- exactly N events and N receipts with the expected capture IDs;
+- each acknowledgement's event and session IDs;
+- text exactly equal, and NULL exactly when the item is Java-blank;
+- a NULL tool name;
+- metadata JSON semantically equal, with the stored bytes kept for matching;
+- the exact observed nanoseconds, spelled exactly as `Instant.toString()`;
+- a one-to-one session mapping with the synthetic cwd.
+
+Any failure before the start is a host-only `ControllerError`: no delivery, exit 2.
+
+**Search.** Query validity is the frozen `parse_query` only. Terms are the distinct raw-case tokens
+of `query.split()`. Every valid query (at most 512 bytes and 16 tokens) fits the API limits of
+16 terms, 512 code points each and 2,048 bytes in total. There is no case folding, no local
+inclusion fallback and no union or intersection substitute. Server inclusion is authoritative.
+
+The backend pages to exhaustion with `limit=50`, `maxBytes=64000`, the fixed project and the
+corpus cutoff as `until`. It verifies:
+
+- HTTP 200 and the exact page and hit key sets;
+- `mode`, `limit`, `maxBytes`, count and booleans;
+- `appliedFilters`: UTF-16-sorted terms, project and the Java `Instant.toString()` cutoff;
+- every event ID is known, with its verified session mapping and exact observed nanoseconds in
+  canonical `Instant.toString()` form;
+- strictly descending (observed, event ID) across pages;
+- a non-repeating cursor with no empty progress, and a null cursor only on exhaustion;
+- bodies of at most 64,000 bytes;
+- integer `limit` and `maxBytes`;
+- completeness: the returned set must equal every indexed event whose stored text or metadata
+  contains all terms. This verifies the server; it never substitutes for it.
+
+Bounds:
+
+- Pages are bounded by N+1, not ceil(N/50)+1, because byte fitting may return fewer than 50 hits.
+- Each request has an absolute 10-second wall-clock deadline across connect, headers and body, so a
+  dribbled reply cannot extend it. Each search has a 300-second deadline, checked again after
+  every page and after local validation, so late results are never accepted.
+- Any HTTP error, including `cursor_unavailable` and `budget_exceeded`, malformed response,
+  transport failure or identity loss raises `BackendFailure`. The session closes silently and the
+  pair is invalid; the CLI exits 3. A controller failure after the handoff, including a cleanup
+  failure, also exits 3 and is reported as `phase: cleanup` with `pair_invalid: true`. Exit 2 is
+  reserved for failures before any delivery.
+
+Delivery:
+
+- `total_matches` is the exact count.
+- Order is newest `observed_at` first, then smaller corpus item ID, which makes equal-instant ties
+  deterministic across fresh random event IDs. Up to the first 20 fit within the delivery budget.
+- `match.terms` lists every raw term; the API ANDs them.
+- `match.fields` is `text` and/or `metadata`, whichever actually contain a term. Every hit must
+  contain each term in one of them, or the search fails.
+- `exact` means the single-space-joined raw phrase occurs in the original text.
+- `anchor` is the first exact phrase, else the earliest raw term in the text, else `null`.
+- The session still owns the handoff, excerpts, six attempts, 6,000/24,000 bytes and full UTF-8
+  wire accounting. Results carry the original corpus provenance and text, never API excerpts.
+
+**Disclosed differences from `literal-v1`.**
+
+| Aspect | `literal-v1` | `compact-canonical-v1` |
+| --- | --- | --- |
+| Case | Per-character casefold | Case-sensitive raw tokens |
+| Terms | Any term (OR), ranked by coverage | Every term (AND) |
+| Echoed terms | Folded | Raw |
+| Ranking | Exact phrase, term count, recency, ID | Recency, then ID |
+| Whitespace in exact phrase | Runs collapsed | Single spaces in raw text |
+| Source reference | Matched as plain `source_ref` text (`fields: source_ref`) | Matched inside stored metadata JSON (`fields: metadata`) |
+
+Because metadata is JSON, the key `sourceRef`, braces, quotes and JSON escapes (`\"`, `\\`) are
+matchable. That is native API behavior, disclosed rather than filtered. A query naming them can
+match every item.
+
+**Limitations.**
+
+- Real Jackson/SQLite handling of NUL, years 0 and +10000, and 64 KiB text passed for the
+  pinned JAR on macOS. This does not establish behavior on every runtime; mismatches fail closed.
+- Each request pays an `lsof` identity check, so large corpora capture slowly.
+- `recorded_at` is not sent to the server; it is delivered from the corpus.
+- Searching after an embedded NUL passed in the pinned runtime. If another runtime misses a
+  term, the completeness check fails closed.
+- The database proof needs the JVM to hold the SQLite file open, as verified in every private
+  server run. Without that, it fails closed.
+- The pre-launch free-port check treats `lsof` exit 1 with no output as no listener. Every later
+  check requires the launched PID exactly.
+- A SIGKILL of the controller orphans the server's own session; nothing reaps it.
+- The page bound is defense in depth; the order check fires first.
 
 ## Registration and unchanged gates
 
@@ -300,8 +453,8 @@ Record approval separately from implementation and verify what happened. Hidden-
 a model verdict, patch review or this document cannot manufacture an accepted operational action.
 Make denominators and missing outcomes explicit. Make no efficacy claim from this familiar pool.
 
-Next: qualify a small number of different clusters offline. Qualify a Black Box backend against
-the same corpus contract and delivery envelope once the read-only search prerequisite above exists.
+Next: qualify a small number of different clusters offline, then register a same-model comparison
+using the qualified ordinary literal and compact canonical adapters with identical budgets.
 Summary export, precise chronology and the capture-acknowledgement easy control are qualified;
 runtime-dependent cases remain conditional.
 Collect prospective held-out cases separately. No model spend, deployment, transcript export or
