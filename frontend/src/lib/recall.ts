@@ -1,4 +1,5 @@
 import type { RecalledItem } from "./api";
+import { compareCanonicalInstants } from "./instant";
 
 export function recalledItemHref(item: Pick<RecalledItem, "sessionId" | "eventId">): string {
   const query = new URLSearchParams({
@@ -14,9 +15,32 @@ export function recalledItemHref(item: Pick<RecalledItem, "sessionId" | "eventId
 export function newestRecorded(items: RecalledItem[], kind: string): RecalledItem | undefined {
   return items
     .filter((item) => item.kind.toLowerCase() === kind && !item.supersededByEventId)
-    .sort(
-      (a, b) => (Date.parse(b.observedAt || "") || 0) - (Date.parse(a.observedAt || "") || 0),
-    )[0];
+    .sort((a, b) => {
+      const order = compareCanonicalInstants(b.observedAt, a.observedAt);
+      if (order !== undefined) {
+        return order || (a.eventId < b.eventId ? 1 : a.eventId > b.eventId ? -1 : 0);
+      }
+      // Preserve the legacy Date-or-epoch policy, without collapsing a valid extended year.
+      const fallbackOrder =
+        compareCanonicalInstants(legacyInstant(b.observedAt), legacyInstant(a.observedAt)) || 0;
+      if (fallbackOrder) return fallbackOrder;
+      // At the same effective time, canonical evidence wins over fallback-only values.
+      // Otherwise an invalid epoch fallback between two real epoch captures breaks ID ties.
+      return (
+        Number(compareCanonicalInstants(b.observedAt, b.observedAt) !== undefined) -
+        Number(compareCanonicalInstants(a.observedAt, a.observedAt) !== undefined)
+      );
+    })[0];
+}
+
+function legacyInstant(value: string | null | undefined): string {
+  if (value && compareCanonicalInstants(value, value) !== undefined) return value;
+  return new Date(Date.parse(value || "") || 0)
+    .toISOString()
+    .replace(
+      /^([+-])(\d+)-/,
+      (_, sign: string, digits: string) => `${sign}${String(Number(digits)).padStart(4, "0")}-`,
+    );
 }
 
 export const BRIEFING_MAX_CHARS = 24_000;

@@ -120,4 +120,61 @@ describe("continuity evidence export", () => {
     ).toBe("e-new");
     expect(newestRecorded([{ ...base, supersededByEventId: "e2" }], "decision")).toBeUndefined();
   });
+  it("selects the newer nanosecond handoff despite relevance order and a lower event ID", () => {
+    const older = {
+      ...base,
+      kind: "handoff",
+      eventId: "z-older",
+      observedAt: "2026-10-03T12:00:00.123456788Z",
+    };
+    const newer = {
+      ...base,
+      kind: "handoff",
+      eventId: "a-newer",
+      observedAt: "2026-10-03T12:00:00.123456789Z",
+    };
+    expect(newestRecorded([older, newer], "handoff")).toBe(newer);
+    expect(newestRecorded([newer, older], "handoff")).toBe(newer);
+    expect(
+      newestRecorded([older, { ...newer, supersededByEventId: "replacement" }], "handoff"),
+    ).toBe(older);
+  });
+  it("uses descending event IDs only for equal canonical instants", () => {
+    const a = { ...base, kind: "handoff", eventId: "a", observedAt: "2026-10-03T12:00:00.1Z" };
+    const z = { ...a, eventId: "z", observedAt: "2026-10-03T12:00:00.100000000Z" };
+    expect(newestRecorded([a, z], "handoff")).toBe(z);
+    expect(newestRecorded([z, a], "handoff")).toBe(z);
+    const missing = { ...a, observedAt: null };
+    const invalid = { ...z, observedAt: "invalid" };
+    expect(newestRecorded([missing, invalid], "handoff")).toBe(missing);
+    expect(newestRecorded([invalid, missing], "handoff")).toBe(invalid);
+    expect(newestRecorded([invalid, a], "handoff")).toBe(a);
+    const future = { ...a, observedAt: "+1000000000-12-31T23:59:59.999999999Z" };
+    expect(newestRecorded([invalid, a, future], "handoff")).toBe(future);
+    expect(newestRecorded([future, invalid, a], "handoff")).toBe(future);
+    const offset = { ...a, observedAt: "2026-10-03T13:00:00.100+01:00" };
+    expect(newestRecorded([offset, a], "handoff")).toBe(a);
+    const sameOffsetTime = { ...z, observedAt: "2026-10-03T14:00:00.100+02:00" };
+    expect(newestRecorded([offset, sameOffsetTime], "handoff")).toBe(offset);
+    expect(newestRecorded([sameOffsetTime, offset], "handoff")).toBe(sameOffsetTime);
+  });
+  it("consistently prefers canonical evidence over epoch fallbacks before applying ID ties", () => {
+    const a = { ...base, kind: "handoff", eventId: "a", observedAt: "1970-01-01T00:00:00Z" };
+    const z = { ...a, eventId: "z", observedAt: "1970-01-01T00:00:00.000000000Z" };
+    for (const value of [null, "invalid"]) {
+      const fallback = { ...a, eventId: "fallback", observedAt: value };
+      for (const order of [
+        [a, fallback, z],
+        [a, z, fallback],
+        [fallback, a, z],
+        [fallback, z, a],
+        [z, a, fallback],
+        [z, fallback, a],
+      ]) {
+        expect(newestRecorded(order, "handoff")).toBe(z);
+      }
+      expect(newestRecorded([fallback, a], "handoff")).toBe(a);
+      expect(newestRecorded([a, fallback], "handoff")).toBe(a);
+    }
+  });
 });
