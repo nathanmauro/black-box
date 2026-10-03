@@ -198,6 +198,11 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     }
 
     public List<AgentSession> sessionsForProject(String canonicalKey, int limit) {
+
+        return sessionsForProject(canonicalKey, limit, false);
+    }
+
+    public List<AgentSession> sessionsForProject(String canonicalKey, int limit, boolean humanOnly) {
         List<String> scopes = aliasService.scopesFor(canonicalKey);
         List<Object> args = new ArrayList<>(scopes);
         args.add(limit);
@@ -205,14 +210,15 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         return jdbcTemplate.query(
                 """
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
-                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by
+                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by, s.first_human_turn
                   FROM agent_sessions s
-                 WHERE %s IN (%s)
+                 WHERE %s IN (%s)%s
                  ORDER BY %s
                  LIMIT ?
                 """.formatted(
                                 SESSION_CANONICAL_KEY_SQL,
                                 placeholders(scopes.size()),
+                                humanOnly ? " AND s.first_human_turn IS NOT NULL" : "",
                                 SqlInstant.column("s.last_seen_at", dialect == ProjectSqlDialect.POSTGRES)
                                         .descending("s.id")),
                 this::mapSession,
@@ -232,7 +238,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         return jdbcTemplate.query(
                 """
                 SELECT s.id, s.source, s.client_session_id, s.title, s.cwd, s.summary,
-                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by
+                       s.started_at, s.last_seen_at, s.event_count, s.spawned_by, s.first_human_turn
                   FROM agent_sessions s
                  WHERE %s IN (%s)
                    AND s.id IN (%s)
@@ -625,7 +631,8 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 Instant.parse(rs.getString("started_at")),
                 Instant.parse(rs.getString("last_seen_at")),
                 rs.getLong("event_count"),
-                rs.getString("spawned_by"));
+                rs.getString("spawned_by"),
+                rs.getString("first_human_turn"));
     }
 
     private ProjectTimelineBlock mapTimelineBlock(ResultSet rs, int rowNum) throws SQLException {

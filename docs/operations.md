@@ -5,6 +5,35 @@ session lineage, and lexical recall need neither a model nor Elasticsearch. An o
 profile owns a separate database for shared clients; it does not synchronize local history.
 Commands below assume the repository root unless a path is explicit.
 
+## Command-line help
+
+Discover the JAR's commands without starting the application:
+
+```bash
+java -jar target/sba-agentic-0.2.0.jar --help
+java -jar target/sba-agentic-0.2.0.jar ingest --help
+java -jar target/sba-agentic-0.2.0.jar help search
+```
+
+Top-level `-h` and `help`, and a known command followed by `-h`, also print help and exit
+successfully. Help is handled before Spring reads configuration, opens a database, starts HTTP,
+contacts a provider, or reads stdin. Command-specific help lists that command's implemented options.
+Unknown or retired leading commands remain errors even when followed by `--help`; `help unknown`
+is also an error, with no application startup.
+
+Help flags must be separate arguments. Values such as `--text=--help`, `--q=--help`, and the
+positional query `search help` remain normal command data. Running without a command starts the
+HTTP service. Running a command without a help flag performs its normal operation: `ingest` writes
+an event, summary commands use the configured summary backend and persist results, and
+`embeddings-backfill --apply` generates and writes missing embeddings. The help-only guarantee
+does not make those operations read-only or disable their configured providers.
+
+A normal command closes its application context and exits after its synchronous operation finishes.
+A command failure still exits nonzero. Successful `ingest` confirms canonical capture; optional
+background terminal summaries and judgments can be interrupted during shutdown. Run `summarize`
+or `summarize-missing` explicitly when you need to wait for the summary operation and its stored
+result. No-command HTTP service mode stays running until shutdown.
+
 ## Run as a service
 
 ### macOS launchd

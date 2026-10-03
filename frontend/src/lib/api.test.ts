@@ -553,6 +553,7 @@ describe("humanOnly query parameter", () => {
       ["/api/sessions/s1/events", (h) => getSessionEvents("s1", 10, h)],
       ["/api/search", (h) => search("q", 5, h)],
       ["/api/sessions?", (h) => getSessions(5, false, h)],
+      ["/api/projects/p/sessions?", (h) => getProjectSessions("p", 5, h)],
     ];
     for (const [path, call] of calls) {
       const off = stubJson({});

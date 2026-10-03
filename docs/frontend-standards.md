@@ -164,6 +164,7 @@ local macOS success alone does not establish Linux compatibility.
 ## Responsive utility header
 
 At widths up to 700px, the utility header places navigation and display controls on separate rows.
+Browse at compact landscape sizes uses the single-row exception described below.
 All destinations, source filters, My turns, connection status, and the command palette remain
 available; navigation must not shrink underneath adjacent controls. Keep the header height variable
 in sync so sticky panels and viewport-sized pages clear both rows. The source panel stays inside
@@ -222,3 +223,31 @@ reader, with scrolling owned by its inner panes. The packaged [reader journey](.
 checks this without test-side scrolling at 390×900 and 390×700, plus desktop, selection/search,
 keyboard disclosures, memory, pagination and responsive transitions. See the
 [verification plan](superpowers/plans/2026-10-03-mobile-browse-reader.md) for measured reader space.
+
+At 600–880px wide and no more than 500px tall, Browse puts its two disclosure buttons beside the
+reader, uses a vertical scrollable turn rail, and places the search label beside its input.
+The Activity and session headers reduce spacing; project/source/title, memory, search and status
+remain available. The utility bar uses one row only while Browse is present at these dimensions.
+This avoids stacking controls into the entire landscape viewport without changing portrait or
+larger desktop layouts. The same packaged journey checks 667×375 and 844×390, full exact-source
+visibility, keyboard turn-rail scrolling, project scope and non-overlapping utility actions.
+See the [landscape verification plan](superpowers/plans/2026-10-03-browse-landscape-reader.md).
+
+## Human-only session pickers
+
+The sticky **My turns** setting applies to ordinary Browse session lists, including project scopes,
+and command-palette session picks and event search. Requests include `humanOnly=true`; the server
+filters before applying the result limit, so recent machine-only sessions cannot displace older
+human sessions. The project sessions endpoint accepts this optional parameter (default `false`)
+and returns the existing `firstHumanTurn` field for both filtered and ordinary lists.
+
+Switching the setting refreshes lists and immediately hides stale nonhuman rows. If a known ordinary
+selected session in the active project/source scope has no human turn, Browse selects a matching human session and updates its link.
+Unknown direct session IDs retain the unselected state; they do not silently open another session.
+Existing visual fallbacks for source/project mismatches do not rewrite the requested session URL.
+An explicit event link can still reveal a nonhuman event and its owning session while **My turns**
+is enabled. This exception continues to respect the selected project and source filters.
+
+The [picker journey](../frontend/tests/e2e/human-session-pickers.spec.ts) exercises actual HTTP
+capture, global/project selection, off/on/reload, palette picks, source filtering and exact evidence.
+See the [verification plan](superpowers/plans/2026-10-03-human-only-session-pickers.md).

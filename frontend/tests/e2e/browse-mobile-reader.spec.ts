@@ -6,6 +6,9 @@ for (const [width, height] of [
   [1440, 900],
   [390, 900],
   [390, 700],
+  [320, 700],
+  [844, 390],
+  [667, 375],
 ]) {
   test(`Browse reading and disclosures at ${width}x${height}`, async ({ page, request }) => {
     assertSafeSeedBaseUrl(test.info().project.use.baseURL || "http://127.0.0.1:8799");
@@ -50,7 +53,7 @@ for (const [width, height] of [
             : i === 40
               ? "Unique transcript needle for search."
               : `Recorded response ${i}.`,
-          "assistant",
+          height < 500 && i > 0 && i % 4 === 0 && i !== 40 ? "user" : "assistant",
           new Date(now - 60_000 + i * 1000).toISOString(),
         ),
       );
@@ -71,12 +74,23 @@ for (const [width, height] of [
     });
     expect(projectionResponse.ok()).toBeTruthy();
     const projection = (await projectionResponse.json()) as { eventId: string };
+    // Projection is timestamped by the server after the capture loop. Derive the next session
+    // from that persisted endpoint, not the clock sampled before dozens of HTTP requests.
+    const primaryResponse = await request.get(`/api/sessions/${prompt.sessionId}`);
+    expect(primaryResponse.ok()).toBeTruthy();
+    const primarySession = (await primaryResponse.json()) as { lastSeenAt: string };
+    const primaryLastSeen = Date.parse(primarySession.lastSeenAt);
+    expect(Number.isFinite(primaryLastSeen)).toBe(true);
     const secondary = await capture(
       "secondary",
       "Secondary reading session",
       "user",
-      new Date(now + 1000).toISOString(),
+      new Date(primaryLastSeen + 1000).toISOString(),
     );
+    const newestResponse = await request.get("/api/sessions?limit=1");
+    expect(newestResponse.ok()).toBeTruthy();
+    const newestSessions = (await newestResponse.json()) as { id: string }[];
+    expect(newestSessions.map((session) => session.id)).toEqual([secondary.sessionId]);
     await page.goto("/?view=browse&project=");
     await expect(page.getByRole("heading", { name: "Secondary reading session" })).toBeVisible();
     const chooser = page.getByRole("button", { name: /^Sessions / });
@@ -122,6 +136,21 @@ for (const [width, height] of [
       await expect(page.getByRole("complementary", { name: "Session chooser" })).toBeVisible();
       await expect(page.locator(".session-title-extra")).toBeVisible();
     }
+    if (height < 500) {
+      const initialMetrics = await page.locator(".timeline-pane").evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return {
+          height: box.height,
+          visibleHeight: Math.max(0, Math.min(innerHeight, box.bottom) - Math.max(0, box.top)),
+          documentHeight: document.documentElement.scrollHeight,
+        };
+      });
+      console.log(`COMPACT READER ${width}x${height}`, JSON.stringify(initialMetrics));
+      await page.screenshot({
+        path: test.info().outputPath(`compact-reader-${width}x${height}.png`),
+      });
+      expect(initialMetrics.visibleHeight).toBeGreaterThan(140);
+    }
     const memory = page.getByRole("checkbox", { name: "Show memory events" });
     await memory.focus();
     await page.keyboard.press("Space");
@@ -145,6 +174,20 @@ for (const [width, height] of [
     await page.keyboard.press("Space");
     await expect(page.locator(`#event-${prompt.eventId}`)).toHaveCount(1);
     await expect(loadOlder).toHaveCount(0);
+    if (height < 500) {
+      const rail = page.locator(".conversation-navigator-list");
+      expect(await rail.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      const lastTurn = page.locator(".conversation-navigator-link").last();
+      await lastTurn.focus();
+      await expect(lastTurn).toBeInViewport({ ratio: 0.95 });
+      expect(await rail.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(`#event-${replies[48].eventId}`)).toBeInViewport({ ratio: 0.95 });
+    }
+    const firstTurn = page.getByRole("link", { name: /^Turn 1: Primary reading session/ });
+    await firstTurn.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(`#event-${prompt.eventId}`)).toBeInViewport({ ratio: 0.95 });
 
     // A fresh exact-source link must reveal the answer without a test-side scrolling workaround.
     await page.goto(
@@ -154,6 +197,16 @@ for (const [width, height] of [
     await expect(target).toHaveClass(/event-flow-row--target/);
     await expect(target).toBeInViewport({ ratio: 0.95 });
     if (mobile) await expect(target).toBeFocused();
+    // The reader scrolls smoothly; wait for its own reveal to settle before measuring full bounds.
+    await expect
+      .poll(() =>
+        page.locator(".timeline-pane").evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const target = el.querySelector(".event-flow-row--target")!.getBoundingClientRect();
+          return target.top >= box.top && target.bottom <= box.bottom;
+        }),
+      )
+      .toBe(true);
     const metrics = await page.locator(".timeline-pane").evaluate((el) => {
       const box = el.getBoundingClientRect();
       const target = el.querySelector(".event-flow-row--target")!.getBoundingClientRect();
@@ -165,7 +218,9 @@ for (const [width, height] of [
       };
     });
     expect(metrics.targetInside).toBe(true);
-    expect(metrics.visibleHeight).toBeGreaterThan(mobile ? (height === 700 ? 150 : 350) : 400);
+    expect(metrics.visibleHeight).toBeGreaterThan(
+      mobile ? (height < 500 ? 140 : height === 700 ? 150 : 350) : 400,
+    );
     if (mobile) expect(metrics.scrollY).toBe(0);
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
@@ -181,6 +236,12 @@ for (const [width, height] of [
       await page.getByLabel("Find sessions", { exact: true }).fill("No matching fixture session");
       await page.keyboard.press("Escape");
       await expect(chooser).toBeFocused();
+      if (height < 500) {
+        await page.setViewportSize({ width: 390, height: 700 });
+        await expect(target).toBeInViewport({ ratio: 0.95 });
+        await page.setViewportSize({ width, height });
+        await expect(target).toBeInViewport({ ratio: 0.95 });
+      }
       await page.setViewportSize({ width: 1440, height: 900 });
       await expect(chooser).toBeHidden();
       await expect(page.getByRole("complementary", { name: "Session chooser" })).toBeVisible();
@@ -210,12 +271,12 @@ for (const [width, height] of [
         .poll(() =>
           page.locator(".timeline-pane").evaluate((el) => el.getBoundingClientRect().height),
         )
-        .toBeGreaterThan(height - 420);
+        .toBeGreaterThan(Math.max(140, height - 420));
       expect(
         await page
           .locator(".detail-header")
           .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length),
-      ).toBe(1);
+      ).toBe(height < 500 ? 2 : 1);
       await expect
         .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
         .toBe(true);
@@ -232,6 +293,69 @@ for (const [width, height] of [
       await page.screenshot({
         path: test.info().outputPath(`direct-reader-${width}x${height}.png`),
       });
+      if (height < 500) {
+        // A long scoped project label must not take back the recovered reading space.
+        await page.goto(
+          `/?view=browse&session=${prompt.sessionId}&event=${replies[0].eventId}&project=${encodeURIComponent(repo)}`,
+        );
+        await expect(page.locator(".project-picker-button")).toContainText(repo);
+        await expect(target).toBeInViewport({ ratio: 0.95 });
+        await expect(target).toBeFocused();
+        const scopedMetrics = await page.locator(".timeline-pane").evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          return { height: box.height, width: box.width, bottom: box.bottom };
+        });
+        expect(scopedMetrics.height).toBeGreaterThan(140);
+        expect(scopedMetrics.width).toBeGreaterThan(width - 200);
+        expect(scopedMetrics.bottom).toBeLessThanOrEqual(height);
+        await page.screenshot({
+          path: test.info().outputPath(`scoped-reader-${width}x${height}.png`),
+        });
+        await page.locator(".project-picker-button").focus();
+        await page.keyboard.press("Enter");
+        await expect(page.getByRole("combobox", { name: "Search projects" })).toBeFocused();
+        await page.getByRole("combobox", { name: "Search projects" }).fill(repo);
+        await page.keyboard.press("Enter");
+        await expect(
+          page.getByRole("heading", { name: "Secondary reading session" }),
+        ).toBeVisible();
+        await expect(page.locator(".project-picker-button")).toBeFocused();
+        const header = page.getByRole("banner", { name: "Black Box utility bar" });
+        const controls = await header.locator("a, button").evaluateAll((nodes) =>
+          nodes
+            .map((node) => {
+              const box = node.getBoundingClientRect();
+              return { x: box.x, y: box.y, right: box.right, bottom: box.bottom };
+            })
+            .filter((box) => box.right > box.x && box.bottom > box.y),
+        );
+        for (const [index, box] of controls.entries()) {
+          expect(box.x).toBeGreaterThanOrEqual(0);
+          expect(box.right).toBeLessThanOrEqual(width);
+          expect(box.y).toBeGreaterThanOrEqual(0);
+          expect(box.bottom).toBeLessThanOrEqual(44);
+          for (const other of controls.slice(index + 1)) {
+            expect(
+              Math.min(box.right, other.right) <= Math.max(box.x, other.x) ||
+                Math.min(box.bottom, other.bottom) <= Math.max(box.y, other.y),
+            ).toBe(true);
+          }
+        }
+        const sources = header.getByRole("button", { name: "Filter sources" });
+        await sources.focus();
+        await page.keyboard.press("Enter");
+        await expect(header.getByRole("group", { name: "Filter by source" })).toBeInViewport({
+          ratio: 1,
+        });
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("Tab");
+        await expect(header.getByRole("button", { name: "My turns", exact: true })).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(header.getByRole("button", { name: "Open command palette" })).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
     }
   });
 }
