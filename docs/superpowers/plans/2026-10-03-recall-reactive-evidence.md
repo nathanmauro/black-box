@@ -47,3 +47,11 @@ The coordinator owns final Git review, integration and publication. No live serv
 configuration, provider, or canonical production data was changed. No full backend suite was run
 for this frontend-only change. The current diff and the verification above form the handoff;
 next step is the coordinator's integration and publication gate.
+
+## Integrated verification
+
+The coordinator integrated the exact Idea source fix, regenerated combined assets, and reran
+frontend checks and all 709 unit tests successfully (68 existing lint warnings). Twelve packaged
+Recall selection, Idea, Evidence, Projection and Observation journeys passed with zero retries.
+The verified shared Stream fixture isolation was then integrated without conflicts. No backend
+behavior changed in this slice; hosted CI exercises the full combined suite before merge.
