@@ -90,6 +90,23 @@ describe("createLiveStore", () => {
     });
   });
 
+  it("invalidates the snapshot on an explicit cursor reset", () => {
+    createRoot((dispose) => {
+      const store = createLiveStore();
+      const reset = vi.fn();
+      const stop = store.onReset?.(reset);
+      const source = FakeEventSource.instances[0]!;
+      source.emit("event.appended", JSON.stringify({ id: "old", sessionId: "s" }));
+      source.emit("replay.reset", JSON.stringify({ cursor: "v2|replacement" }));
+      expect(store.events()).toEqual([]);
+      expect(reset).toHaveBeenCalledTimes(1);
+      stop?.();
+      source.emit("replay.reset", "{}");
+      expect(reset).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+  });
+
   it("stops notifying after unsubscribe", () => {
     createRoot((dispose) => {
       const store = createLiveStore();
