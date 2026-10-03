@@ -4,6 +4,7 @@ import dev.nathan.sbaagentic.lineage.LinkDomainException;
 import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
 import java.util.Locale;
 import java.util.stream.Collectors;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+    private static final int MAX_CAUSE_DEPTH = 16;
 
     @ExceptionHandler(CaptureIdConflictException.class)
     public ResponseEntity<ApiError> handleCaptureIdConflict(CaptureIdConflictException ex) {
@@ -144,8 +146,23 @@ public class ApiExceptionHandler {
         return ResponseEntity.noContent().build();
     }
 
+    @ExceptionHandler(ClientAbortException.class)
+    public ResponseEntity<Void> handleAbortedClient(ClientAbortException ex) {
+        // Tomcat's typed signal that the client closed the socket mid-response, e.g. a popup closed
+        // during a static font download. The response may already carry a non-JSON content type, so
+        // writing the JSON error envelope would fail a second time; there is nobody left to read it.
+        log.debug("Client disconnected before the response completed.", ex);
+
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
+        if (causedByClientAbort(ex)) {
+            log.debug("Client disconnected before the response completed.", ex);
+
+            return ResponseEntity.noContent().build();
+        }
         // Deliberately generic: the detail is logged server-side, never returned to the caller.
         log.error("Unhandled API exception", ex);
 
@@ -154,5 +171,24 @@ public class ApiExceptionHandler {
                         HttpStatus.INTERNAL_SERVER_ERROR,
                         "internal_error",
                         "The recorder hit an unexpected error handling this request."));
+    }
+
+    /**
+     * Matches only Tomcat's typed abort within a bounded cause chain. Plain {@code IOException},
+     * {@code EOFException}, and message text are deliberately ignored so real I/O failures in
+     * subprocesses or outbound calls still surface as logged 500s.
+     */
+    private static boolean causedByClientAbort(Throwable ex) {
+        Throwable current = ex;
+        for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++) {
+            if (current instanceof ClientAbortException) {
+
+                return true;
+            }
+            Throwable cause = current.getCause();
+            current = cause == current ? null : cause;
+        }
+
+        return false;
     }
 }
