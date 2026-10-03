@@ -142,6 +142,51 @@ class MemoryMcpToolsTest {
     }
 
     @Test
+    void observationBodyUsesTheBudgetAndReportsExactlyWhatWasRemoved() throws Exception {
+        String body = "Observation evidence\n" + "🧪".repeat(3000);
+        RecalledItem observation = new RecalledItem(
+                "observation-1",
+                "session-1",
+                "observation",
+                "codex",
+                "client-1",
+                "/repo",
+                Instant.parse("2026-08-28T12:00:00Z"),
+                "Observation evidence",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                body);
+        when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))
+                .thenReturn(new RecallResult(
+                        "sba-agentic", 168, List.of("observation"), 1, List.of(observation), "lexical"));
+        RecallResult result =
+                recallResult(callback("recallContext").call("{\"repoOrTopic\":\"sba-agentic\",\"maxChars\":700}"));
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.count()).isEqualTo(1);
+        RecalledItem item = result.items().getFirst();
+        assertThat(item.headline()).isEqualTo(observation.headline());
+        assertThat(item.eventId()).isEqualTo(observation.eventId());
+        assertThat(item.sessionId()).isEqualTo(observation.sessionId());
+        assertThat(item.observedAt()).isEqualTo(observation.observedAt());
+        int suffixStart = item.body().lastIndexOf("… (+");
+        String prefix = item.body().substring(0, suffixStart);
+        assertThat(body).startsWith(prefix);
+        assertThat(Character.isHighSurrogate(prefix.charAt(prefix.length() - 1)))
+                .isFalse();
+        assertThat(item.body().substring(suffixStart))
+                .isEqualTo("… (+" + (body.length() - prefix.length()) + " chars)");
+        assertThat(RecallResultClamp.cost(result)).isLessThanOrEqualTo(700);
+        assertThat(observation.body()).isEqualTo(body);
+    }
+
+    @Test
     void recallContextRaisesExplicitMaxCharsToFiveHundredFloor() throws Exception {
         List<RecalledItem> items = List.of(item("event-1", null, "r".repeat(290)));
         when(memoryRecall.recall(eq("sba-agentic"), eq(0), isNull(), isNull()))

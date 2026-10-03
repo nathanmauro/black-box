@@ -2243,6 +2243,9 @@ a {
 .reader-text {
   line-height: 1.52;
 }
+.recall-card .reader-text {
+  white-space: pre-wrap;
+}
 .reader-text-toggle {
   display: inline-flex;
   align-items: center;

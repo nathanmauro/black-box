@@ -88,6 +88,58 @@ class StructuredCaptureHttpTest {
     }
 
     @Test
+    void multilineObservationRetainsItsBodyAcrossMcpHttpAndCanonicalEvidence() throws Exception {
+        initialize();
+        String body = "Fixture migration check\nVerification failed: preserve the old database.\n"
+                + "Next: investigate the foreign-key error before proceeding.";
+        Map<String, Object> args = validArguments("captureObservation");
+        args.put("text", body);
+        String eventId =
+                textJson(call("captureObservation", args)).path("eventId").asText();
+        JsonNode http = get("/api/recall?scope=" + eventId + "&kinds=observation");
+        JsonNode mcp = textJson(call("recallContext", Map.of("repoOrTopic", eventId, "kinds", List.of("observation"))));
+        for (JsonNode recalled : List.of(http, mcp)) {
+            assertThat(recalled.path("count").asInt()).isEqualTo(1);
+            assertThat(recalled.path("truncated").asBoolean()).isFalse();
+            JsonNode item = recalled.path("items").get(0);
+            assertThat(item.path("headline").asText()).isEqualTo("Fixture migration check");
+            assertThat(item.path("body").asText()).isEqualTo(body);
+            assertThat(item.path("eventId").asText()).isEqualTo(eventId);
+            assertThat(item.path("sessionId").asText()).isNotBlank();
+        }
+        assertThat(get("/api/events/" + eventId).path("text").asText()).isEqualTo(body);
+    }
+
+    @Test
+    void oversizedObservationIsExplicitlyBoundedInMcpWhileHttpAndEvidenceStayComplete() throws Exception {
+        initialize();
+        String body = "Large fixture observation\n" + "Supporting evidence 🧪. ".repeat(400);
+        Map<String, Object> args = validArguments("captureObservation");
+        args.put("text", body);
+        String eventId =
+                textJson(call("captureObservation", args)).path("eventId").asText();
+        JsonNode mcp = textJson(call(
+                "recallContext", Map.of("repoOrTopic", eventId, "kinds", List.of("observation"), "maxChars", 700)));
+        assertThat(mcp.path("count").asInt()).isEqualTo(1);
+        assertThat(mcp.path("truncated").asBoolean()).isTrue();
+        JsonNode item = mcp.path("items").get(0);
+        assertThat(item.path("headline").asText()).isEqualTo("Large fixture observation");
+        assertThat(item.path("body").asText())
+                .startsWith("Large fixture observation\n")
+                .contains("… (+")
+                .hasSizeLessThan(700);
+        assertThat(item.path("eventId").asText()).isEqualTo(eventId);
+        assertThat(item.path("sessionId").asText()).isNotBlank();
+        assertThat(get("/api/recall?scope=" + eventId + "&kinds=observation")
+                        .path("items")
+                        .get(0)
+                        .path("body")
+                        .asText())
+                .isEqualTo(body);
+        assertThat(get("/api/events/" + eventId).path("text").asText()).isEqualTo(body);
+    }
+
+    @Test
     void projectRecallAndExplicitReplacementWorkThroughRealMcpTransport() throws Exception {
         initialize();
         Map<String, Object> args = validArguments("captureDecision");
@@ -131,6 +183,7 @@ class StructuredCaptureHttpTest {
         assertThat(item.path("eventId").asText()).isEqualTo(eventId);
         assertThat(item.path("source").asText()).isEqualTo("manual");
         assertThat(item.path("headline").asText()).isEqualTo("Verified the synthetic checkpoint");
+        assertThat(item.has("body")).isFalse();
         assertThat(item.path("repo").asText()).isEqualTo("/fixture/capture-contract");
         assertThat(item.path("clientSessionId").asText()).isEqualTo("capture-http-fixture");
         assertThat(item.path("toAgent").asText()).isEqualTo("next-session");

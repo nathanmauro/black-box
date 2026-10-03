@@ -108,6 +108,35 @@ async function chooseProject(name: string) {
 }
 
 describe("RecallPage", () => {
+  it("keeps observation headings short while exposing the complete body through reader and clipboard", async () => {
+    const headline = "Observation checkpoint";
+    const body =
+      headline + "\n" + "Supporting evidence. ".repeat(80) + "\nDo not proceed until verified.";
+    vi.mocked(getRecall).mockResolvedValue(
+      result([{ ...item, kind: "observation", headline, body }]),
+    );
+    render(() => <RecallPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    const card = await screen.findByRole("article", { name: headline });
+    expect(
+      within(card).getByRole("link", { name: `Open ${headline} in Browse` }),
+    ).toHaveTextContent(headline);
+    expect(card).not.toHaveTextContent("Do not proceed until verified.");
+    const toggle = within(card).getByRole("button", { name: "Show full message" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(card).toHaveTextContent("Do not proceed until verified.");
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "Copy context" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain(body);
+    expect(writeText.mock.calls[0][0]).toContain("event=evt-1");
+    expect(writeText.mock.calls[0][0]).toContain(
+      "Export limits: 0 captures truncated; 0 captures omitted.",
+    );
+  });
+
   it("separates project from question and exports only the displayed evidence with provenance", async () => {
     render(() => <RecallPage />);
     await chooseProject("alpha");

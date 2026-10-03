@@ -45,6 +45,14 @@ resolves to the canonical project while retaining its evidence selection, query 
 fragment. Canonicalization replaces the current history entry, so Back returns to the preceding
 page rather than revisiting the alias redirect.
 
+Observation recall items retain a short `headline` and include their full captured text in the
+optional `body` field. It reflects the stored evidence after the existing ingest redaction and
+length limits; recall does not change those capture rules. Other kinds and older responses omit
+that field. Recall's expandable reader
+and **Copy context** use the body when available; original evidence remains accessible through the
+source link. MCP counts body text toward `maxChars`, marking any shortening with an explicit suffix
+and `truncated: true`. Copied context reports its own truncation and omission counts.
+
 Use **Replace decision** on a current decision and enter the new choice plus the reason. This writes
 only when **Record replacement** is pressed. **Include replaced decisions** requests historical
 results; the earlier/replacement links resolve their own sessions even across different clients.
