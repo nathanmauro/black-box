@@ -138,6 +138,16 @@ The result is stored beside the event, never in place of it:
   reclassifies stored rows on the next start (`human_turn_state` records the applied version).
   Semantic recall does not index human turns.
 
+### Session transcript tool output
+
+`GET /api/sessions/{id}/transcript` omits repeated event `text` when it equals the decoded
+canonical `toolOutputJson` string after trimming surrounding whitespace. This projection works
+for durable captures without `metadata.rawHook` and legacy captures alike; `rawHook` is omitted
+from returned transcript metadata. Tool payloads, stored event rows and timestamps are unchanged.
+Distinct status text, malformed/non-string JSON outputs and truncated prefixes remain visible.
+The browser already suppresses exact short duplicates separately; this API rule does not solve
+ambiguous truncated-prefix duplication or require local JSONL files.
+
 ### Bounded evidence discovery
 
 Use `recallContext` first to recover structured prior intent. For broader discovery, prefer
