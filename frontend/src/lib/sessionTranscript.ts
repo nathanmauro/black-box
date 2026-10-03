@@ -12,7 +12,13 @@ const INLINE_PAYLOAD_IDENTITY_CHARS = 32_768;
 
 export function isSessionMemoryEvent(event: AgentEvent): boolean {
   const type = normalizedEventType(event);
-  return type === "decision" || type === "observation" || type === "handoff" || type === "idea";
+  return (
+    type === "decision" ||
+    type === "observation" ||
+    type === "handoff" ||
+    type === "idea" ||
+    type === "projection"
+  );
 }
 
 export function isSessionToolEvent(event: AgentEvent): boolean {
