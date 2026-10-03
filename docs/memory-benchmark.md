@@ -263,14 +263,16 @@ conditions using authored reference code. The ordinary local service was not dep
 ## Offline Java repository-fixture qualification
 
 Before adding real Java repository continuations, qualify their staging and behavioral grader
-without running an agent. The separate development qualifier supports exactly **two fixed public
+without running an agent. The separate development qualifier supports exactly **three fixed public
 repairs**. The default
 `structured-redaction` fixture uses baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
 `d833fa96942a558cc7bc453b504656a2df41148f`. The `summary-export` fixture uses baseline
 `9933ade549c37af5d784edff650f74705d55fa83` and reference
-`16ce9f343706d1818f0b73e67043e6e84a1104e0`. The selected commit objects must already exist locally.
+`16ce9f343706d1818f0b73e67043e6e84a1104e0`. The `event-chronology` fixture uses baseline
+`a2f969585dc5b780b3dc4b0611a4084ec7efd0aa` and reference
+`aac7a30230687e795f844a971c72ebd5fd393e5c`. The selected commit objects must already exist locally.
 The qualifier does not fetch history, accept arbitrary revisions/candidates, change existing benchmark
-runs, or provision Docker. Both familiar published bugs are development fixtures, not held-out
+runs, or provision Docker. These familiar published bugs are development fixtures, not held-out
 difficulty cases.
 
 ```bash
@@ -287,6 +289,10 @@ python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execut
 # Select the second reviewed fixture; all seven filesystem/controller checks are mandatory.
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture summary-export
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture summary-export
+
+# Select the third reviewed fixture; all seven canonical SQLite feed checks are mandatory.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture event-chronology
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture event-chronology
 ```
 
 `--maven-repo` selects an existing local artifact cache; the default is `~/.m2/repository`.
@@ -298,7 +304,7 @@ and existing files or symbolic-link path components are refused. The default pri
 The worker-facing export contains tracked baseline `pom.xml`, README, license, Java sources/resources
 and public Java tests, plus the fixture task text. It contains no Git metadata, post-fix history/docs,
 reference patch, or private regression grader. Baseline and reference grading use separate private
-copies. Only the reviewed production-source replacement crosses into the reference grading copy;
+copies. Only the reviewed production-source overlay crosses into the reference grading copy;
 identical controller-owned tests are added to both. Fixture/build/source hashes, exact reference-path
 allowlists, and grading-input hashes fail closed on drift. Only bytes already validated against the
 pinned grader/task digests are staged; the full expected source/build/grader inventory is checked
@@ -314,7 +320,10 @@ directly instantiates the redactor. The
 summary-export grader uses the existing controller through standalone MockMvc and the real export
 service with an in-memory catalog and controlled templates. Neither starts Spring Boot, a provider,
 a listening server or a database, and neither reads authentication files or existing notes. The export
-grader places its entire filesystem fixture under its private grading `target/` directory. Temporary
+grader places its entire filesystem fixture under its private grading `target/` directory.
+The chronology grader uses the existing recording API, canonical schema, fixed clock and explicit
+transactions with its own SQLite file under that directory. It starts no Spring Boot context,
+listening server or provider and never opens an installed database. Temporary
 source/build trees are removed on normal completion and handled failure; owned
 process groups are killed on timeout/interruption. A hard process/host crash can leave temporary data.
 Reports retain only fixed labels, reviewed revision/content hashes, test outcomes and timings; raw
@@ -355,11 +364,26 @@ passed from a deliberately contaminated caller/ancestor Maven configuration with
 Maven options; an empty cache failed explicitly, and owned temporary trees were removed. This is
 fixture infrastructure evidence only; no model continuation or accepted-action study was run.
 
+The event-chronology fixture requires seven named feed checks. Its baseline must fail fractional
+first-page ordering, mixed-precision bounded pagination and inclusive nanosecond windows. Both
+snapshots must preserve timestamp text, equal-instant ID ties, conjunctive project/source/query
+bounds and invalid-cursor rejection without mutation. The reference passes all seven. Expected
+order comes from an independent Java Instant oracle, with cursor progress, unique IDs and bounded
+termination checked across pages. The reviewed overlay includes two changed production sources
+and one new helper; this does not extend the grader’s claims to all search/recall or PostgreSQL.
+
+Actual offline replay reproduced three expected baseline failures and four preservation passes,
+then seven reference passes. All three fixture pairs passed again with contaminated caller Maven
+settings; an empty cache failed explicitly. The original two worker-input hashes remain unchanged.
+The [chronology report](evaluation-results/2026-10-03-event-chronology-qualification.json) records
+these infrastructure outcomes, with zero model runs and accepted actions.
+
 ## Next comparison preparation
 
 The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
 17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
-paths. The summary-export candidate now has the seven-check offline qualification described above.
+paths. Summary-export and event-chronology now have the seven-check offline qualifications
+described above, making two qualified inventory members. Structured-redaction is outside that inventory.
 No model trials or human accepted actions were established. The existing usefulness and difficulty
 gates stay unchanged.
 

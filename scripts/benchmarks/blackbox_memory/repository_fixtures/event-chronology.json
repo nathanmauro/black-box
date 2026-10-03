@@ -1,0 +1,42 @@
+{
+  "baseline": "a2f969585dc5b780b3dc4b0611a4084ec7efd0aa",
+  "baseline_failures": [
+    "fractionalEventsPrecedeWholeSecondOnFirstPage",
+    "mixedPrecisionPagesRetainExactChronologicalOrder",
+    "sinceIncludesNextNanosecondAndExcludesPreviousNanosecond"
+  ],
+  "development_only": true,
+  "public_repository": "https://github.com/nathanmauro/black-box",
+  "reference": "aac7a30230687e795f844a971c72ebd5fd393e5c",
+  "schema_version": 1,
+  "tests": [
+    "fractionalEventsPrecedeWholeSecondOnFirstPage",
+    "mixedPrecisionPagesRetainExactChronologicalOrder",
+    "sinceIncludesNextNanosecondAndExcludesPreviousNanosecond",
+    "storedTimestampTextRemainsUnchanged",
+    "equalInstantsRetainDescendingIdTieBreak",
+    "projectSourceAndTextBoundsRemainConjunctive",
+    "invalidCursorsRejectWithoutChangingRows"
+  ],
+  "tracked_hashes": {
+    "a2f969585dc5b780b3dc4b0611a4084ec7efd0aa": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/memory/internal/adapter/out/sqlite/MemorySqlQueryAdapter.java": "634202e6d8e4eda9b7474eb694032fe741ca5343c5b41053aaa3a0539a6e4872",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java": "3bf05d68a4fad4b81d1b9b2ac8764094feb904e50a0ccc2060897163ba285e01",
+      "src/main/resources/application.yml": "88d1f51e7576c7e2fe6f53d7663bbe95c1a13ea426edd387a6d44d8e572d2744",
+      "src/main/resources/schema.sql": "a784036332884386c281367696ddc4fa53b3bf9a561ed2b95142d6018b806e67"
+    },
+    "aac7a30230687e795f844a971c72ebd5fd393e5c": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/memory/internal/adapter/out/sqlite/MemorySqlQueryAdapter.java": "390b800c3445dbb6adfea6df5bef680d73fcec829a350a3628f3d18b4a6e892f",
+      "src/main/java/dev/nathan/sbaagentic/query/SqlInstant.java": "41636d76cd73218f6209d92a801001142d98cf6825b79e5cf22cbf0d17ea3500",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java": "8b7a2cc5a55c20c8dfd471d769ad7e3c31965b849055fd4355dabfe3844f447b",
+      "src/main/resources/application.yml": "88d1f51e7576c7e2fe6f53d7663bbe95c1a13ea426edd387a6d44d8e572d2744",
+      "src/main/resources/schema.sql": "a784036332884386c281367696ddc4fa53b3bf9a561ed2b95142d6018b806e67"
+    }
+  },
+  "trusted_files": {
+    "CHRONOLOGY_TASK.md": "db0769b8866d2785360ba41d4b8d6cfb78aa455212a2cea716018a291e842c5e",
+    "ChronologyFixtureContractTest.java": "3260309a8cc18d269213d36e7f6ed9a2f6937bbe554b33526f5b14e498695099"
+  }
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify one of two fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
+"""Qualify one of three fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
 
 import argparse
 import hashlib
@@ -53,6 +53,38 @@ FIXTURE_SPECS = {
             'docs/superpowers/plans/2026-10-03-summary-export-safety.md',
             'src/test/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportSafetyTest.java')),
         'task_file': 'SUMMARY_EXPORT_TASK.md', 'grader_file': 'SummaryExportFixtureContractTest.java',
+    },
+    'event-chronology': {
+        'baseline': 'a2f969585dc5b780b3dc4b0611a4084ec7efd0aa',
+        'reference': 'aac7a30230687e795f844a971c72ebd5fd393e5c',
+        'source': 'src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java',
+        'sources': (
+            'src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java',
+            'src/main/java/dev/nathan/sbaagentic/memory/internal/adapter/out/sqlite/MemorySqlQueryAdapter.java',
+            'src/main/java/dev/nathan/sbaagentic/query/SqlInstant.java',
+        ),
+        'added_sources': ('src/main/java/dev/nathan/sbaagentic/query/SqlInstant.java',),
+        'grader': 'src/test/java/dev/nathan/sbaagentic/recording/ChronologyFixtureContractTest.java',
+        'class': 'dev.nathan.sbaagentic.recording.ChronologyFixtureContractTest',
+        'manifest': 'event-chronology.json',
+        'manifest_sha256': '11dc2100b2d7ab9cf2e998dc8a73ba57148994e6cc1a9ea6b5297709a9cc79aa',
+        'changed_paths': frozenset((
+            'docs/agent-integration.md',
+            'docs/operations.md',
+            'docs/superpowers/plans/2026-10-03-canonical-time-ordering.md',
+            'src/main/java/dev/nathan/sbaagentic/memory/internal/adapter/out/sqlite/MemorySqlQueryAdapter.java',
+            'src/main/java/dev/nathan/sbaagentic/query/SqlInstant.java',
+            'src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java',
+            'src/test/java/dev/nathan/sbaagentic/postgres/PostgresBackendContractTest.java',
+            'src/test/java/dev/nathan/sbaagentic/project/internal/adapter/out/sqlite/ProjectTimelineQueryPlanTest.java',
+            'src/test/java/dev/nathan/sbaagentic/project/internal/adapter/out/sqlite/ProjectTrajectoryQueryPlanTest.java',
+            'src/test/java/dev/nathan/sbaagentic/query/SqlInstantAssertions.java',
+            'src/test/java/dev/nathan/sbaagentic/query/SqlInstantTest.java',
+            'src/test/java/dev/nathan/sbaagentic/recording/CanonicalTimeHttpContract.java',
+            'src/test/java/dev/nathan/sbaagentic/recording/CanonicalTimeHttpTest.java',
+        )),
+        'task_file': 'CHRONOLOGY_TASK.md',
+        'grader_file': 'ChronologyFixtureContractTest.java',
     },
 }
 GATE = {
@@ -110,6 +142,11 @@ def specification(name):
     return FIXTURE_SPECS[name]
 
 
+def overlay_sources(spec):
+    # Only fixed reviewed specs select overlays; retain the original single-source fixtures.
+    return spec.get('sources') or (spec['source'],)
+
+
 def fixture(name='structured-redaction'):
     spec = specification(name)
     raw = (FIXTURES / spec['manifest']).read_bytes()
@@ -156,6 +193,9 @@ def verify_pins(data):
                             baseline, reference).decode().splitlines())
     if changed != spec['changed_paths']:
         raise FixtureError('reference_change_allowlist_mismatch')
+    for path in spec.get('added_sources', ()):
+        if git('ls-tree', '--name-only', baseline, '--', path).strip():
+            raise FixtureError('baseline_added_source_already_exists')
     for revision in (baseline, reference):
         for path, expected in data['tracked_hashes'][revision].items():
             if sha(git('show', revision + ':' + path)) != expected:
@@ -314,7 +354,10 @@ def qualify(data, cache, timeout):
             target.write_bytes(trusted[spec['grader_file']])
             (grading / '.mvn').mkdir(mode=0o700)
             if name == 'reference':
-                (grading / spec['source']).write_bytes(git('show', spec['reference'] + ':' + spec['source']))
+                for path in overlay_sources(spec):
+                    target = grading / path
+                    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    target.write_bytes(git('show', spec['reference'] + ':' + path))
             expected = dict(worker_hashes, **{spec['grader']: data['trusted_files'][spec['grader_file']]})
             expected.update(data['tracked_hashes'][revision])
             results[name] = run_stage(grading, data, settings, cache, home, timeout, expected)
