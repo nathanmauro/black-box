@@ -32,6 +32,29 @@ export default function App(props: AppProps) {
   const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
+  let sourcesMenuRef: HTMLDivElement | undefined;
+  let sourcesTriggerRef: HTMLButtonElement | undefined;
+
+  // Escape returns focus to Sources; an outside pointer press closes without stealing focus.
+  // Listeners exist only while this panel is open.
+  createEffect(() => {
+    if (!sourcesOpen()) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!sourcesMenuRef?.contains(event.target as Node)) setSourcesOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      setSourcesOpen(false);
+      sourcesTriggerRef?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    });
+  });
 
   createEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -108,9 +131,10 @@ export default function App(props: AppProps) {
                 </nav>
 
                 <div class="utility-controls" role="group" aria-label="Display controls">
-                  <div class="sources-menu">
+                  <div ref={sourcesMenuRef} class="sources-menu">
                     <button
                       type="button"
+                      ref={sourcesTriggerRef}
                       class="utility-icon-button sources-menu-trigger"
                       aria-label="Filter sources"
                       aria-expanded={sourcesOpen()}

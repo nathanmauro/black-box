@@ -719,7 +719,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
           <Show
             when={filteredSessions().length}
             fallback={
-              <p class="empty-state session-list-empty">No sessions match the active filters.</p>
+              <p class="empty-state session-list-empty">
+                {allSessions.loading || projectSessions.loading
+                  ? "Loading sessions..."
+                  : sessionFilter().trim() || sourceFilter.key() || props.project
+                    ? "No sessions match the active filters."
+                    : humanOnly()
+                      ? "No sessions with human turns recorded yet."
+                      : "No sessions recorded yet."}
+              </p>
             }
           >
             <div class="session-rows">

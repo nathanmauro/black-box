@@ -1,3 +1,4 @@
+import { readerTextPreview } from "../lib/payloadPreview";
 import { useNavigate } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { getSessions, search, type AgentSession } from "../lib/api";
@@ -104,8 +105,8 @@ export default function CommandPalette(props: CommandPaletteProps) {
           id: `event-${event.id}`,
           label: humanOnly()
             ? leadLine(event.humanText) || event.eventType
-            : event.text && event.text.length < 120
-              ? event.text
+            : event.text?.trim()
+              ? eventLabel(event.text)
               : event.toolName || event.eventType,
           meta: `${sourceLabel(event.source)} · ${timeAgo(event.observedAt)}`,
           kind: "event" as const,
@@ -264,4 +265,12 @@ function fuzzy(session: AgentSession, q: string): boolean {
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Presentation only: keep search and exact-source navigation on the complete canonical event.
+function eventLabel(text: string): string {
+  const singleLine = text.replace(/\s+/g, " ").trim();
+  return singleLine.length <= 120
+    ? singleLine
+    : readerTextPreview(singleLine, { chars: 119, nonemptyLines: 1 }).text;
 }

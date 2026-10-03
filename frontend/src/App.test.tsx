@@ -36,6 +36,32 @@ beforeEach(() => {
 });
 
 describe("App shell", () => {
+  it("dismisses the Sources panel on Escape and on an outside pointer-down", () => {
+    render(() => (
+      <App>
+        <section aria-label="Current page">Page content</section>
+      </App>
+    ));
+
+    const utilityBar = screen.getByRole("banner", { name: "Black Box utility bar" });
+    const trigger = within(utilityBar).getByRole("button", { name: "Filter sources" });
+    const panel = document.getElementById("source-filter-panel") as HTMLElement;
+
+    fireEvent.click(trigger);
+    expect(panel).not.toHaveAttribute("hidden");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(panel).toHaveAttribute("hidden");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    // Pressing a chip inside the panel keeps it open; pressing the page behind it closes it.
+    fireEvent.pointerDown(within(panel).getByRole("button", { name: /Codex/ }));
+    expect(panel).not.toHaveAttribute("hidden");
+    fireEvent.pointerDown(screen.getByRole("region", { name: "Current page" }));
+    expect(panel).toHaveAttribute("hidden");
+  });
+
   it("renders secondary controls in a compact utility header", async () => {
     render(() => (
       <App>

@@ -89,6 +89,8 @@ const VIEW_PRESETS: Array<{ name: string; q: string }> = [
 // The expanded landmark cards that earn a "Trajectory →" link (spec §9, D14).
 const TRAJECTORY_LINK_KINDS = new Set(["Decision", "Handoff", "Observation"]);
 
+type StreamPanel = "views" | "options";
+
 type EditingToken = { key: FacetField["key"] | "session"; prefix: string };
 
 // Popover option: counts ride along when the suggestion came from the facets endpoint (§6.4).
@@ -175,10 +177,30 @@ export default function StreamPage(props: StreamPageProps = {}) {
     }
   }
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
-  // "Options" disclosure (spec §4.6): density + meaningful live behind one quiet control.
-  const [optionsOpen, setOptionsOpen] = createSignal(false);
-  // "Views" disclosure (spec §8, D13): presets + localStorage-saved views, same quiet pattern.
-  const [viewsOpen, setViewsOpen] = createSignal(false);
+  // "Options" (spec §4.6: density + meaningful) and "Views" (spec §8, D13: presets + saved views)
+  // are two quiet disclosures sharing one slot: opening one closes the other, and Escape or a
+  // pointer-down outside the open panel dismisses it.
+  const [openPanel, setOpenPanel] = createSignal<StreamPanel | null>(null);
+  const optionsOpen = () => openPanel() === "options";
+  const viewsOpen = () => openPanel() === "views";
+  let viewsRef: HTMLDivElement | undefined;
+  let optionsRef: HTMLDivElement | undefined;
+
+  function togglePanel(panel: StreamPanel) {
+    setOpenPanel((current) => (current === panel ? null : panel));
+  }
+
+  // Escape returns focus to the trigger that owns the panel so keyboard users are not dropped
+  // onto <body> when the panel's contents unmount.
+  function closePanel(restoreFocus = false) {
+    const panel = openPanel();
+    if (!panel) return;
+    setOpenPanel(null);
+    if (restoreFocus) {
+      const wrap = panel === "views" ? viewsRef : optionsRef;
+      wrap?.querySelector<HTMLButtonElement>(".stream-options-trigger")?.focus();
+    }
+  }
   const [savedViews, setSavedViews] = createSignal(listSavedViews());
   const [saveViewName, setSaveViewName] = createSignal("");
   // On-demand counted browser (spec §6.5, D10): opened from the match count, never standing.
@@ -470,7 +492,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   // project is picker state, not q, so it stays untouched.
   function applyView(q: string) {
     run(q);
-    setViewsOpen(false);
+    setOpenPanel(null);
   }
 
   function saveCurrentView() {
@@ -502,6 +524,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   function handleInputKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape") {
+      // Dismiss the closest visible popup first; a later Escape can close a surrounding panel.
+      if (showSuggestions()) event.preventDefault();
       dismissSuggestions();
       return;
     }
@@ -533,7 +557,15 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   function handleDocumentPointerDown(event: PointerEvent) {
-    if (!inputWrapRef?.contains(event.target as Node)) dismissSuggestions();
+    const target = event.target as Node;
+    if (!inputWrapRef?.contains(target)) dismissSuggestions();
+    if (openPanel() && !viewsRef?.contains(target) && !optionsRef?.contains(target)) closePanel();
+  }
+
+  function handleDocumentKeyDown(event: KeyboardEvent) {
+    if (event.key !== "Escape" || event.defaultPrevented || !openPanel()) return;
+    event.preventDefault();
+    closePanel(true);
   }
 
   async function loadMore() {
@@ -615,8 +647,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   document.addEventListener("pointerdown", handleDocumentPointerDown);
+  document.addEventListener("keydown", handleDocumentKeyDown);
   onCleanup(() => {
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
+    document.removeEventListener("keydown", handleDocumentKeyDown);
     if (liveTimer) clearTimeout(liveTimer);
     if (facetsTimer) clearTimeout(facetsTimer);
     facetsAbort?.abort();
@@ -678,13 +712,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
               </ul>
             </Show>
           </div>
-          <div class="stream-options stream-views">
+          <div ref={viewsRef} class="stream-options stream-views">
             <button
               type="button"
               class="stream-options-trigger"
               aria-expanded={viewsOpen()}
               aria-controls="stream-views-panel"
-              onClick={() => setViewsOpen((open) => !open)}
+              onClick={() => togglePanel("views")}
             >
               Views
             </button>
@@ -755,13 +789,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
               </div>
             </Show>
           </div>
-          <div class="stream-options">
+          <div ref={optionsRef} class="stream-options">
             <button
               type="button"
               class="stream-options-trigger"
               aria-expanded={optionsOpen()}
               aria-controls="stream-options-panel"
-              onClick={() => setOptionsOpen((open) => !open)}
+              onClick={() => togglePanel("options")}
             >
               Options
             </button>
@@ -1086,11 +1120,17 @@ export default function StreamPage(props: StreamPageProps = {}) {
               </Switch>
             )}
           </For>
-          <Show when={!items().length}>
+          <Show when={!items().length && !error()}>
             <p class="empty-state">
-              {humanOnly()
-                ? "No human turns match the current filters."
-                : "No stream events match the current filters."}
+              {hasVisibleFilter() || props.project
+                ? humanOnly()
+                  ? "No human turns match the current filters."
+                  : "No stream events match the current filters."
+                : humanOnly()
+                  ? "No human turns recorded yet."
+                  : parsed().isAll
+                    ? "No events recorded yet."
+                    : "No meaningful events recorded yet."}
             </p>
           </Show>
         </Show>

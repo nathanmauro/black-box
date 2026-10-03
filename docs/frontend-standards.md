@@ -251,3 +251,20 @@ is enabled. This exception continues to respect the selected project and source 
 The [picker journey](../frontend/tests/e2e/human-session-pickers.spec.ts) exercises actual HTTP
 capture, global/project selection, off/on/reload, palette picks, source filtering and exact evidence.
 See the [verification plan](superpowers/plans/2026-10-03-human-only-session-pickers.md).
+
+## Stream controls and empty states
+
+Views and Options are mutually exclusive disclosures. Escape closes the active panel and returns
+focus to its trigger; a pointer press outside closes it without moving focus. The Sources panel
+also closes on Escape or an outside press. Interacting inside a panel keeps it open. When query
+suggestions are visible, the first Escape dismisses only those suggestions and keeps query focus;
+a subsequent Escape closes an open Views, Options or Sources panel.
+
+Narrow Stream layouts wrap the query controls and session actions so they remain reachable.
+Command-palette event labels retain a bounded single-line excerpt; My turns continues to use the
+cleaned human text, and selection still opens the exact original event.
+
+Empty copy distinguishes an unfiltered recorder, meaningful-only results, My turns, and explicit
+project/query/source filtering. Loading and failed requests must not claim the recorder is empty.
+The packaged `stream-controls.spec.ts` journey covers the controls at desktop, narrow portrait and
+landscape sizes; intercepted empty/error responses supplement real capture and navigation checks.
