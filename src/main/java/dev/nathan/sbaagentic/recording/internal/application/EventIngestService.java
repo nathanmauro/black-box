@@ -57,9 +57,11 @@ public class EventIngestService implements EventRecorder {
         RecordingStore.Persisted persisted =
                 repository.persistEvent(normalized, observedAt, title.value(), title.rank());
         EventRecorded recorded = new EventRecorded(persisted.session(), persisted.event());
-        eventPublisher.publishEvent(recorded);
+        publishOptional(recorded, recorded.event().id());
         if (isFinalEvent(recorded.event().eventType())) {
-            eventPublisher.publishEvent(new SessionStopped(recorded.session(), recorded.event()));
+            publishOptional(
+                    new SessionStopped(recorded.session(), recorded.event()),
+                    recorded.event().id());
         }
 
         return new IngestResponse(
@@ -238,7 +240,14 @@ public class EventIngestService implements EventRecorder {
             return value;
         }
 
-        return value.substring(0, max) + "\n[truncated]";
+        int keep = max;
+        if (keep > 0
+                && Character.isHighSurrogate(value.charAt(keep - 1))
+                && Character.isLowSurrogate(value.charAt(keep))) {
+            keep--;
+        }
+
+        return value.substring(0, keep) + "\n[truncated]";
     }
 
     private record TitleCandidate(String value, int rank) {}
