@@ -44,7 +44,7 @@ public class RedactionService implements ExportRedactor {
 
             return null;
 
-        String result = text.length() > MAX_SCAN_CHARS ? text.substring(0, MAX_SCAN_CHARS) + CLIP_MARKER : text;
+        String result = clipScalar(text);
         for (RedactionRule rule : exportRules) result = rule.redact(result);
 
         return result;
@@ -70,12 +70,25 @@ public class RedactionService implements ExportRedactor {
 
             return text;
         }
-        String redacted = text.length() > MAX_SCAN_CHARS ? text.substring(0, MAX_SCAN_CHARS) + CLIP_MARKER : text;
+        String redacted = clipScalar(text);
         for (RedactionRule rule : rules) {
             redacted = rule.redact(redacted);
         }
 
         return redacted;
+    }
+
+    private static String clipScalar(String text) {
+        if (text.length() <= MAX_SCAN_CHARS) {
+
+            return text;
+        }
+        int keep = MAX_SCAN_CHARS;
+        if (Character.isHighSurrogate(text.charAt(keep - 1)) && Character.isLowSurrogate(text.charAt(keep))) {
+            keep--;
+        }
+
+        return text.substring(0, keep) + CLIP_MARKER;
     }
 
     /** Whether {@link #redact(String)} will clip this scalar before scanning it. */
