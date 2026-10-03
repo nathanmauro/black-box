@@ -30,12 +30,16 @@ public class SbaAgenticApplication {
             throw new IllegalArgumentException("Unknown command: " + args[0]);
         }
         SpringApplication application = new SpringApplication(SbaAgenticApplication.class);
-        if (args.length > 0 && CliCommands.isCommand(args[0])) {
+        boolean cli = args.length > 0 && CliCommands.isCommand(args[0]);
+        if (cli) {
             application.setWebApplicationType(WebApplicationType.NONE);
             application.setDefaultProperties(Map.of(
                     "spring.main.banner-mode", "off",
                     "logging.level.root", "ERROR"));
         }
-        application.run(args);
+        var context = application.run(args);
+        if (cli) {
+            context.close();
+        }
     }
 }
