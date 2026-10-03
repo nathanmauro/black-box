@@ -40,6 +40,11 @@ context** exports visible retrieved captures with timestamps and exact source li
 24,000 characters and with explicit truncation/omission counts. It is bounded evidence, not a
 generated assessment or a complete project history. Source/client filters affect what is copied.
 
+**Latest retrieved handoff** compares complete stored UTC timestamps, including nanoseconds,
+independently of retrieval relevance order. Exact timestamp ties use event ID descending. If a legacy missing/invalid timestamp falls back
+to the same effective time as a canonical capture, the canonical capture takes precedence. It remains
+a statement about retrieved evidence, not the current state of the project.
+
 Projects evidence links use `?focus=capture:<eventId>`. A link through a registered project alias
 resolves to the canonical project while retaining its evidence selection, query parameters and
 fragment. Canonicalization replaces the current history entry, so Back returns to the preceding
