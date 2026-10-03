@@ -53,6 +53,10 @@ for (const width of [1440, 390]) {
       rail.getByRole("button", { name: "Current agent: Lineage coordinator" }),
     ).toBeVisible();
     await expect(rail.getByRole("button", { name: /Subagent:.*Lineage reviewer/ })).toBeVisible();
+    if (width <= 880) {
+      await page.getByRole("button", { name: /^Sessions / }).click();
+      await expect(page.getByLabel("Find sessions", { exact: true })).toBeFocused();
+    }
     await page
       .locator(".session-row-block")
       .filter({ has: page.locator(".session-row--active") })
@@ -61,6 +65,7 @@ for (const width of [1440, 390]) {
     await expect(page.getByRole("group", { name: "Subagent sessions" })).toContainText(
       "Lineage reviewer",
     );
+    if (width <= 880) await page.keyboard.press("Escape");
     await rail.getByRole("button", { name: /Subagent:.*Lineage reviewer/ }).click();
     await expect(page).toHaveURL(new RegExp(`/sessions/${childId}$`));
     await expect(
