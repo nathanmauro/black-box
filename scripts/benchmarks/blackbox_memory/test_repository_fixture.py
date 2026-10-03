@@ -30,52 +30,58 @@ def archive(entries):
 
 
 class RepositoryFixtureTests(unittest.TestCase):
+    fixture_name = 'structured-redaction'
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
-        self.data = r.fixture()
+        self.data = r.fixture(self.fixture_name)
+        self.spec = r.specification(self.fixture_name)
         (self.root / 'settings').write_bytes(r.SETTINGS)
+
+    def main(self, arguments):
+        return r.main(arguments + ['--fixture', self.fixture_name])
 
     def reports(self, failed=(), skipped=(), errors=()):
         folder = self.root / 'target/surefire-reports'
         folder.mkdir(parents=True, exist_ok=True)
-        suite = ET.Element('testsuite', name=r.CLASS, tests=str(len(self.data['tests'])),
+        suite = ET.Element('testsuite', name=self.spec['class'], tests=str(len(self.data['tests'])),
                            failures=str(len(failed)), skipped=str(len(skipped)), errors=str(len(errors)))
         for name in self.data['tests']:
-            case = ET.SubElement(suite, 'testcase', name=name, classname=r.CLASS)
+            case = ET.SubElement(suite, 'testcase', name=name, classname=self.spec['class'])
             if name in failed:
                 ET.SubElement(case, 'failure', type='org.opentest4j.AssertionFailedError')
             if name in skipped:
                 ET.SubElement(case, 'skipped')
             if name in errors:
                 ET.SubElement(case, 'error', type='java.lang.IllegalStateException')
-        path = folder / ('TEST-' + r.CLASS + '.xml')
+        path = folder / ('TEST-' + self.spec['class'] + '.xml')
         ET.ElementTree(suite).write(path)
         return path
 
     def test_fixture_pins_and_public_development_status(self):
-        self.assertEqual(self.data['baseline'], r.BASELINE)
-        self.assertEqual(self.data['reference'], r.REFERENCE)
+        self.assertEqual(self.data['baseline'], self.spec['baseline'])
+        self.assertEqual(self.data['reference'], self.spec['reference'])
         self.assertTrue(self.data['development_only'])
         self.assertEqual(self.data['public_repository'], 'https://github.com/nathanmauro/black-box')
-        self.assertEqual(len(self.data['tests']), 6)
+        self.assertEqual(len(self.data['tests']), 6 if self.fixture_name == 'structured-redaction' else 7)
 
     def test_changed_manifest_and_grader_fail_closed(self):
         copy_root = self.root / 'fixtures'
         shutil.copytree(r.FIXTURES, copy_root)
         with patch.object(r, 'FIXTURES', copy_root):
-            (copy_root / 'RepositoryFixtureContractTest.java').write_text('changed')
+            (copy_root / self.spec['grader_file']).write_text('changed')
             with self.assertRaisesRegex(r.FixtureError, 'trusted_fixture_changed'):
-                r.fixture()
-            (copy_root / 'structured-redaction.json').write_text('{}')
+                r.fixture(self.fixture_name)
+            (copy_root / self.spec['manifest']).write_text('{}')
             with self.assertRaisesRegex(r.FixtureError, 'fixture_manifest_changed'):
-                r.fixture()
+                r.fixture(self.fixture_name)
 
     def test_linked_or_non_regular_trusted_inputs_are_never_read(self):
         copied = self.root / 'trusted'
         shutil.copytree(r.FIXTURES, copied)
-        grader = copied / 'RepositoryFixtureContractTest.java'
+        grader = copied / next(iter(self.data['trusted_files']))
         external = self.root / 'external-fixture-only'
         external.write_text('must not be read')
         grader.unlink()
@@ -93,11 +99,11 @@ class RepositoryFixtureTests(unittest.TestCase):
 
     def test_pins_reject_extra_reference_paths_and_wrong_build_bytes(self):
         data = copy.deepcopy(self.data)
-        data['tracked_hashes'] = {rev: {'pom.xml': r.sha(b'reviewed')} for rev in (r.BASELINE, r.REFERENCE)}
+        data['tracked_hashes'] = {rev: {'pom.xml': r.sha(b'reviewed')} for rev in (self.spec['baseline'], self.spec['reference'])}
         def git(*args):
             if args[0] == 'cat-file': return b'commit\n'
-            if args[0] == 'rev-parse': return r.BASELINE.encode() + b'\n'
-            if args[0] == 'diff': return '\n'.join(sorted(r.CHANGED_PATHS)).encode()
+            if args[0] == 'rev-parse': return self.spec['baseline'].encode() + b'\n'
+            if args[0] == 'diff': return '\n'.join(sorted(self.spec['changed_paths'])).encode()
             return b'reviewed'
         with patch.object(r, 'git', side_effect=git):
             r.verify_pins(data)
@@ -125,7 +131,7 @@ class RepositoryFixtureTests(unittest.TestCase):
         result = r.classify_reports(self.root, self.data, 1)
         self.assertEqual(result['failed'], sorted(self.data['baseline_failures']))
         self.reports()
-        self.assertEqual(r.classify_reports(self.root, self.data, 0)['passed'], 6)
+        self.assertEqual(r.classify_reports(self.root, self.data, 0)['passed'], len(self.data['tests']))
         with self.assertRaisesRegex(r.FixtureError, 'inconsistent_build_exit'):
             r.classify_reports(self.root, self.data, 1)
 
@@ -158,11 +164,11 @@ class RepositoryFixtureTests(unittest.TestCase):
         for forbidden in ('OPENAI_API_KEY', 'SPRING_APPLICATION_JSON', 'MAVEN_ARGS', 'JAVA_TOOL_OPTIONS'):
             self.assertNotIn(forbidden, env)
         self.assertEqual(env['MAVEN_SKIP_RC'], 'true')
-        command = r.maven_recipe(self.root, self.root / 'settings', self.root / 'cache', self.root)
+        command = r.maven_recipe(self.root, self.root / 'settings', self.root / 'cache', self.root, self.data)
         self.assertIn('-o', command)
         self.assertIn('-gs', command)
         self.assertIn('-s', command)
-        self.assertIn('-Dtest=' + r.CLASS, command)
+        self.assertIn('-Dtest=' + self.spec['class'], command)
         self.assertNotIn('spring-boot:run', command)
 
     def test_missing_dependencies_and_compile_failure_are_not_behavioral_failures(self):
@@ -194,7 +200,7 @@ class RepositoryFixtureTests(unittest.TestCase):
         self.assertIsNotNone(created[0].poll())
 
     def test_private_staging_separates_worker_reference_and_grader_then_cleans(self):
-        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (r.SOURCE, b'baseline', tarfile.REGTYPE),
+        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (self.spec['source'], b'baseline', tarfile.REGTYPE),
                             ('README.md', b'public', tarfile.REGTYPE)])
         seen = []
         def stage(root, data, *args):
@@ -202,17 +208,17 @@ class RepositoryFixtureTests(unittest.TestCase):
             expected = args[-1]
             self.assertEqual(r.hashes(root), expected)
             worker = root.parent / 'worker-input'
-            self.assertFalse((worker / r.GRADER).exists())
-            self.assertEqual((worker / r.SOURCE).read_bytes(), b'baseline')
+            self.assertFalse((worker / self.spec['grader']).exists())
+            self.assertEqual((worker / self.spec['source']).read_bytes(), b'baseline')
             self.assertFalse((worker / '.git').exists())
-            self.assertTrue((root / r.GRADER).is_file())
+            self.assertTrue((root / self.spec['grader']).is_file())
             baseline = root.name.endswith('baseline')
-            self.assertEqual((root / r.SOURCE).read_bytes(), b'baseline' if baseline else b'reference')
-            return {'tests': 6, 'passed': 3 if baseline else 6,
+            self.assertEqual((root / self.spec['source']).read_bytes(), b'baseline' if baseline else b'reference')
+            return {'tests': len(data['tests']), 'passed': len(data['tests']) - 3 if baseline else len(data['tests']),
                     'failed': sorted(data['baseline_failures']) if baseline else []}
         data = copy.deepcopy(self.data)
-        for rev, text in ((r.BASELINE, b'baseline'), (r.REFERENCE, b'reference')):
-            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), r.SOURCE: r.sha(text)}
+        for rev, text in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
+            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(text)}
         with patch.object(r, 'git', side_effect=lambda *args: snapshot if args[0] == 'archive' else b'reference'), \
                 patch.object(r, 'command', return_value=(0, b'Java version: 21.0.12', b'')), \
                 patch.object(r, 'run_stage', side_effect=stage):
@@ -224,8 +230,8 @@ class RepositoryFixtureTests(unittest.TestCase):
         copied = self.root / 'trusted'
         shutil.copytree(r.FIXTURES, copied)
         with patch.object(r, 'FIXTURES', copied):
-            data = r.fixture()
-            (copied / 'RepositoryFixtureContractTest.java').write_text('unreviewed replacement')
+            data = r.fixture(self.fixture_name)
+            (copied / self.spec['grader_file']).write_text('unreviewed replacement')
             with patch.object(r, 'command') as execute, self.assertRaisesRegex(r.FixtureError, 'trusted_fixture_changed'):
                 r.qualify(data, self.root, 1)
             execute.assert_not_called()
@@ -256,7 +262,7 @@ if '-version' in sys.argv:
     sys.exit(0)
 names = NAMES
 failed = FAILURES if cwd.name == 'grading-baseline' else []
-suite = ET.Element('testsuite', name=CLASS, tests='6', failures=str(len(failed)), errors='0', skipped='0')
+suite = ET.Element('testsuite', name=CLASS, tests=str(len(names)), failures=str(len(failed)), errors='0', skipped='0')
 for name in names:
     case = ET.SubElement(suite, 'testcase', name=name, classname=CLASS)
     if name in failed: ET.SubElement(case, 'failure', type='org.opentest4j.AssertionFailedError')
@@ -265,7 +271,7 @@ reports.mkdir(parents=True)
 ET.ElementTree(suite).write(reports / ('TEST-' + CLASS + '.xml'))
 sys.exit(1 if failed else 0)
 """.replace('NAMES', repr(self.data['tests'])).replace('FAILURES', repr(self.data['baseline_failures']))
-                .replace('CLASS', repr(r.CLASS)))
+                .replace('CLASS', repr(self.spec['class'])))
         launcher.chmod(0o700)
         caller = self.root / 'contaminated/caller'
         caller.mkdir(parents=True)
@@ -273,10 +279,10 @@ sys.exit(1 if failed else 0)
             (parent / '.mvn').mkdir()
             (parent / '.mvn/jvm.config').write_text('-XX:InvalidFixtureOption')
             (parent / '.mvn/maven.config').write_text('-DskipTests')
-        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (r.SOURCE, b'baseline', tarfile.REGTYPE)])
+        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE), (self.spec['source'], b'baseline', tarfile.REGTYPE)])
         data = copy.deepcopy(self.data)
-        for rev, text in ((r.BASELINE, b'baseline'), (r.REFERENCE, b'reference')):
-            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), r.SOURCE: r.sha(text)}
+        for rev, text in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
+            data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(text)}
         original = Path.cwd()
         try:
             os.chdir(caller)
@@ -291,18 +297,18 @@ sys.exit(1 if failed else 0)
         output = self.root / 'result.json'
         with patch.object(r, 'verify_pins'), patch.object(r, 'qualify') as build:
             with contextlib.redirect_stdout(io.StringIO()) as printed:
-                self.assertEqual(r.main(['plan', '--output', str(output)]), 0)
+                self.assertEqual(self.main(['plan', '--output', str(output)]), 0)
             self.assertEqual(json.loads(printed.getvalue())['qualification'], 'planned')
             self.assertFalse(output.exists())
             build.assert_not_called()
             with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(r.main(['verify']), 2)
+                self.assertEqual(self.main(['verify']), 2)
             build.assert_not_called()
 
     def test_qualified_fixture_never_clears_usefulness_gate(self):
         with patch.object(r, 'verify_pins'), patch.object(r, 'qualify', return_value={'qualification': 'passed'}):
             with contextlib.redirect_stdout(io.StringIO()) as printed:
-                self.assertEqual(r.main(['verify', '--execute']), 0)
+                self.assertEqual(self.main(['verify', '--execute']), 0)
         result = json.loads(printed.getvalue())
         self.assertEqual(result['evidence'], 'infrastructure_only')
         self.assertEqual(result['usefulness_gate']['status'], 'not_cleared')
@@ -319,6 +325,65 @@ sys.exit(1 if failed else 0)
         for path in (target, link / 'new'):
             with self.assertRaises(r.FixtureError): r.output_path(str(path))
         self.assertEqual(target.read_text(), 'preserved')
+
+
+    def test_only_two_known_selectors_and_original_default_are_allowed(self):
+        self.assertEqual(set(r.FIXTURE_SPECS), {'structured-redaction', 'summary-export'})
+        with patch.object(r, 'verify_pins'), patch.object(r, 'qualify') as build:
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                self.assertEqual(r.main(['plan']), 0)
+            self.assertEqual(json.loads(printed.getvalue())['fixture'], 'structured-redaction-development')
+            for unknown in ('../summary-export', 'HEAD', self.spec['reference']):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                    r.main(['plan', '--fixture', unknown])
+                self.assertEqual(error.exception.code, 2)
+                with self.assertRaisesRegex(r.FixtureError, 'unreviewed_fixture'):
+                    r.fixture(unknown)
+            build.assert_not_called()
+
+    def test_filesystem_prerequisite_error_cannot_count_as_behavior(self):
+        path = self.reports(errors=self.data['tests'][:1])
+        tree = ET.parse(path)
+        tree.getroot()[0].find('error').set('message', 'fixture_filesystem_unavailable')
+        tree.write(path)
+        with self.assertRaisesRegex(r.FixtureError, 'fixture_filesystem_unavailable'):
+            r.classify_reports(self.root, self.data, 1)
+
+    def test_selected_fixture_revalidation_and_failure_cleanup(self):
+        snapshot = archive([('pom.xml', b'trusted', tarfile.REGTYPE),
+                            (self.spec['source'], b'baseline', tarfile.REGTYPE)])
+        copied = self.root / 'reviewed'
+        shutil.copytree(r.FIXTURES, copied)
+        original_manifest = (copied / self.spec['manifest']).read_bytes()
+        original_grader = (copied / self.spec['grader_file']).read_bytes()
+        for failure in ('timeout', 'manifest', 'grader'):
+            with self.subTest(failure=failure), patch.object(r, 'FIXTURES', copied):
+                (copied / self.spec['manifest']).write_bytes(original_manifest)
+                (copied / self.spec['grader_file']).write_bytes(original_grader)
+                data = r.fixture(self.fixture_name)
+                for rev, content in ((self.spec['baseline'], b'baseline'), (self.spec['reference'], b'reference')):
+                    data['tracked_hashes'][rev] = {'pom.xml': r.sha(b'trusted'), self.spec['source']: r.sha(content)}
+                stages = []
+                def command(argv, **kwargs):
+                    if '-version' in argv:
+                        return 0, b'Java version: 21.0.12', b''
+                    stages.append(kwargs['cwd'])
+                    if failure == 'timeout':
+                        raise r.FixtureError('process_timeout_or_interruption')
+                    target = self.spec['manifest'] if failure == 'manifest' else self.spec['grader_file']
+                    (copied / target).write_text('changed during selected build')
+                    return 0, b'', b''
+                expected = {'timeout': 'process_timeout_or_interruption', 'manifest': 'fixture_manifest_changed',
+                            'grader': 'trusted_fixture_changed'}[failure]
+                with patch.object(r, 'git', side_effect=lambda *args: snapshot if args[0] == 'archive' else b'reference'), \
+                        patch.object(r, 'command', side_effect=command), self.assertRaisesRegex(r.FixtureError, expected):
+                    r.qualify(data, self.root, 1)
+                self.assertEqual(len(stages), 1)
+                self.assertTrue(all(not path.parent.exists() for path in stages))
+
+
+class SummaryExportRepositoryFixtureTests(RepositoryFixtureTests):
+    fixture_name = 'summary-export'
 
 
 if __name__ == '__main__':

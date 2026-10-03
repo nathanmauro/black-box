@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify one reviewed Java fixture offline; never execute arbitrary candidate code."""
+"""Qualify one of two fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
 
 import argparse
 import hashlib
@@ -34,6 +34,27 @@ CHANGED_PATHS = frozenset((SOURCE, 'docs/operations.md',
 SETTINGS = (b'<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"><offline>true</offline>'
             b'<interactiveMode>false</interactiveMode></settings>')
 FIXTURE_SHA256 = '96f045b76bda691480286c532d4048ffa5cb13e03da106081f73c8629f081b2a'
+FIXTURE_SPECS = {
+    'structured-redaction': {
+        'baseline': BASELINE, 'reference': REFERENCE, 'source': SOURCE,
+        'grader': GRADER, 'class': CLASS, 'manifest': 'structured-redaction.json',
+        'manifest_sha256': FIXTURE_SHA256, 'changed_paths': CHANGED_PATHS,
+        'task_file': 'TASK.md', 'grader_file': 'RepositoryFixtureContractTest.java',
+    },
+    'summary-export': {
+        'baseline': '9933ade549c37af5d784edff650f74705d55fa83',
+        'reference': '16ce9f343706d1818f0b73e67043e6e84a1104e0',
+        'source': 'src/main/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportService.java',
+        'grader': 'src/test/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportFixtureContractTest.java',
+        'class': 'dev.nathan.sbaagentic.summary.internal.application.SummaryExportFixtureContractTest',
+        'manifest': 'summary-export.json', 'manifest_sha256': 'd462253622dedcdae6dece623db4574d850a0c7a569db1fbd14ebcf9e8c8084d',
+        'changed_paths': frozenset((
+            'src/main/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportService.java', 'docs/operations.md',
+            'docs/superpowers/plans/2026-10-03-summary-export-safety.md',
+            'src/test/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportSafetyTest.java')),
+        'task_file': 'SUMMARY_EXPORT_TASK.md', 'grader_file': 'SummaryExportFixtureContractTest.java',
+    },
+}
 GATE = {
     'status': 'not_cleared', 'historical_candidates_required': 20, 'resumed_tasks_required': 5,
     'ordinary_latest_handoff_search_comparator': 'same model, budget and source window; not evaluated',
@@ -83,14 +104,22 @@ def git(*args):
     return out
 
 
-def fixture():
-    raw = (FIXTURES / 'structured-redaction.json').read_bytes()
-    if sha(raw) != FIXTURE_SHA256:
+def specification(name):
+    if name not in FIXTURE_SPECS:
+        raise FixtureError('unreviewed_fixture')
+    return FIXTURE_SPECS[name]
+
+
+def fixture(name='structured-redaction'):
+    spec = specification(name)
+    raw = (FIXTURES / spec['manifest']).read_bytes()
+    if sha(raw) != spec['manifest_sha256']:
         raise FixtureError('fixture_manifest_changed')
     data = json.loads(raw)
-    if data['baseline'] != BASELINE or data['reference'] != REFERENCE:
+    if data['baseline'] != spec['baseline'] or data['reference'] != spec['reference']:
         raise FixtureError('unreviewed_revision')
     trusted_bytes(data)
+    data['_fixture'] = name
     return data
 
 
@@ -116,16 +145,18 @@ def trusted_bytes(data):
 
 
 def verify_pins(data):
-    for revision in (BASELINE, REFERENCE):
+    spec = specification(data['_fixture'])
+    baseline, reference = spec['baseline'], spec['reference']
+    for revision in (baseline, reference):
         if git('cat-file', '-t', revision).strip() != b'commit':
             raise FixtureError('pinned_commit_missing')
-    if git('rev-parse', REFERENCE + '^').decode().strip() != BASELINE:
+    if git('rev-parse', reference + '^').decode().strip() != baseline:
         raise FixtureError('reference_parent_changed')
     changed = frozenset(git('diff', '--no-ext-diff', '--no-textconv', '--name-only',
-                            BASELINE, REFERENCE).decode().splitlines())
-    if changed != CHANGED_PATHS:
+                            baseline, reference).decode().splitlines())
+    if changed != spec['changed_paths']:
         raise FixtureError('reference_change_allowlist_mismatch')
-    for revision in (BASELINE, REFERENCE):
+    for revision in (baseline, reference):
         for path, expected in data['tracked_hashes'][revision].items():
             if sha(git('show', revision + ':' + path)) != expected:
                 raise FixtureError('tracked_source_or_build_changed')
@@ -180,10 +211,11 @@ def build_environment(home, basedir):
     return env
 
 
-def maven_recipe(root, settings, cache, home):
+def maven_recipe(root, settings, cache, home, data=None):
+    name = CLASS if data is None else specification(data['_fixture'])['class']
     return ['mvn', '-o', '-B', '--no-transfer-progress', '-s', str(settings), '-gs', str(settings),
             '-Dmaven.repo.local=' + str(cache), '-Duser.home=' + str(home),
-            '-Dtest=' + CLASS, '-DfailIfNoTests=true', '-Dsurefire.failIfNoSpecifiedTests=true',
+            '-Dtest=' + name, '-DfailIfNoTests=true', '-Dsurefire.failIfNoSpecifiedTests=true',
             '-DforkCount=1', '-DreuseForks=false', '-Dspring.main.web-application-type=none',
             '-Dsba.local-ai.enabled=false', '-Dsba.memory.embedding.enabled=false',
             '-Dsba.ask.embedding-enabled=false', '-Dsba.judge.enabled=false',
@@ -192,6 +224,7 @@ def maven_recipe(root, settings, cache, home):
 
 
 def classify_reports(root, data, exit_code):
+    name = specification(data['_fixture'])['class']
     reports = list((root / 'target/surefire-reports').glob('TEST-*.xml'))
     if len(reports) != 1:
         raise FixtureError('missing_or_unexpected_test_report')
@@ -200,10 +233,13 @@ def classify_reports(root, data, exit_code):
     except (ET.ParseError, OSError):
         raise FixtureError('invalid_test_report') from None
     cases = suite.findall('testcase')
+    if any(error.get('message') == 'fixture_filesystem_unavailable'
+           for case in cases for error in case.findall('error')):
+        raise FixtureError('fixture_filesystem_unavailable')
     names = [case.get('name') for case in cases]
     expected = data['tests']
-    if (suite.get('name') != CLASS or len(names) != len(expected) or set(names) != set(expected)
-            or any(case.get('classname') != CLASS for case in cases)):
+    if (suite.get('name') != name or len(names) != len(expected) or set(names) != set(expected)
+            or any(case.get('classname') != name for case in cases)):
         raise FixtureError('test_inventory_mismatch')
     if any(case.find('skipped') is not None for case in cases) or int(suite.get('skipped', '0')):
         raise FixtureError('skipped_tests')
@@ -224,15 +260,15 @@ def classify_reports(root, data, exit_code):
 
 
 def run_stage(root, data, settings, cache, home, timeout, expected):
-    fixture()
+    fixture(data['_fixture'])
     if hashes(root) != expected or settings.read_bytes() != SETTINGS:
         raise FixtureError('grading_inputs_changed')
     started = time.monotonic()
-    code, out, err = command(maven_recipe(root, settings, cache, home), cwd=root,
+    code, out, err = command(maven_recipe(root, settings, cache, home, data), cwd=root,
                             env=build_environment(home, root), timeout=timeout)
     if hashes(root) != expected or settings.read_bytes() != SETTINGS:
         raise FixtureError('grading_inputs_changed')
-    fixture()  # Controller-owned grading files must also stay unchanged during execution.
+    fixture(data['_fixture'])  # Controller-owned grading files must also stay unchanged during execution.
     if not (root / 'target/surefire-reports').is_dir():
         text = (out + err).decode(errors='replace')
         if 'Cannot access' in text and 'offline mode' in text or 'has not been downloaded' in text:
@@ -246,10 +282,11 @@ def run_stage(root, data, settings, cache, home, timeout, expected):
 
 
 def qualify(data, cache, timeout):
+    spec = specification(data['_fixture'])
     if not cache.is_dir():
         raise FixtureError('maven_cache_missing')
     trusted = trusted_bytes(data)
-    archive = git('archive', '--format=tar', BASELINE, '--', *EXPORT_PATHS)
+    archive = git('archive', '--format=tar', spec['baseline'], '--', *EXPORT_PATHS)
     with tempfile.TemporaryDirectory(prefix='blackbox-repository-fixture-') as temp:
         private = Path(temp).resolve()
         home = private / 'home'
@@ -264,21 +301,21 @@ def qualify(data, cache, timeout):
         worker = private / 'worker-input'
         worker.mkdir(mode=0o700)
         extract_snapshot(archive, worker)
-        (worker / 'TASK.md').write_bytes(trusted['TASK.md'])
+        (worker / 'TASK.md').write_bytes(trusted[spec['task_file']])
         worker_hashes = hashes(worker)
         results = {}
-        for name, revision in (('baseline', BASELINE), ('reference', REFERENCE)):
+        for name, revision in (('baseline', spec['baseline']), ('reference', spec['reference'])):
             grading = private / ('grading-' + name)
             shutil.copytree(worker, grading)
-            target = grading / GRADER
+            target = grading / spec['grader']
             if target.exists():
                 raise FixtureError('grader_path_already_exists')
             target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            target.write_bytes(trusted['RepositoryFixtureContractTest.java'])
+            target.write_bytes(trusted[spec['grader_file']])
             (grading / '.mvn').mkdir(mode=0o700)
             if name == 'reference':
-                (grading / SOURCE).write_bytes(git('show', REFERENCE + ':' + SOURCE))
-            expected = dict(worker_hashes, **{GRADER: data['trusted_files']['RepositoryFixtureContractTest.java']})
+                (grading / spec['source']).write_bytes(git('show', spec['reference'] + ':' + spec['source']))
+            expected = dict(worker_hashes, **{spec['grader']: data['trusted_files'][spec['grader_file']]})
             expected.update(data['tracked_hashes'][revision])
             results[name] = run_stage(grading, data, settings, cache, home, timeout, expected)
             required = sorted(data['baseline_failures']) if name == 'baseline' else []
@@ -300,18 +337,20 @@ def output_path(value):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', nargs='?', default='plan', choices=('plan', 'verify'))
+    parser.add_argument('--fixture', choices=tuple(FIXTURE_SPECS), default='structured-redaction')
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--output', help='Optional new JSON report; no source/log artifacts are retained')
     parser.add_argument('--maven-repo', type=Path, default=Path.home() / '.m2/repository')
     parser.add_argument('--timeout', type=int, default=180)
     args = parser.parse_args(argv)
-    report = {'schema_version': 1, 'evidence': 'infrastructure_only', 'fixture': 'structured-redaction-development',
-              'baseline': BASELINE, 'reference': REFERENCE, 'usefulness_gate': GATE,
+    spec = specification(args.fixture)
+    report = {'schema_version': 1, 'evidence': 'infrastructure_only', 'fixture': args.fixture + '-development',
+              'baseline': spec['baseline'], 'reference': spec['reference'], 'usefulness_gate': GATE,
               'model_runs': 0, 'accepted_actions': 0, 'qualification': 'failed'}
     destination = None
     status = 2
     try:
-        data = fixture()
+        data = fixture(args.fixture)
         verify_pins(data)
         if args.timeout <= 0:
             raise FixtureError('positive_timeout_required')

@@ -263,11 +263,15 @@ conditions using authored reference code. The ordinary local service was not dep
 ## Offline Java repository-fixture qualification
 
 Before adding real Java repository continuations, qualify their staging and behavioral grader
-without running an agent. The separate development qualifier currently supports **one fixed public
-structured-redaction repair**: baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
-`d833fa96942a558cc7bc453b504656a2df41148f`. Both commit objects must already exist locally. It does
-not fetch history, accept arbitrary revisions/candidates, change existing benchmark runs, or provision
-Docker. This familiar published bug is a development fixture, not a held-out difficulty case.
+without running an agent. The separate development qualifier supports exactly **two fixed public
+repairs**. The default
+`structured-redaction` fixture uses baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
+`d833fa96942a558cc7bc453b504656a2df41148f`. The `summary-export` fixture uses baseline
+`9933ade549c37af5d784edff650f74705d55fa83` and reference
+`16ce9f343706d1818f0b73e67043e6e84a1104e0`. The selected commit objects must already exist locally.
+The qualifier does not fetch history, accept arbitrary revisions/candidates, change existing benchmark
+runs, or provision Docker. Both familiar published bugs are development fixtures, not held-out
+difficulty cases.
 
 ```bash
 # Read-only pin/hash/allowlist verification. No output files, builds, or model calls.
@@ -279,6 +283,10 @@ python3 -m unittest discover -s scripts/benchmarks/blackbox_memory -p 'test_repo
 # Run the fixed reviewed baseline/reference through six trusted pure-Java assertions.
 # Requires Java 21, Maven, and already-cached dependencies for these historical sources.
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute
+
+# Select the second reviewed fixture; all seven filesystem/controller checks are mandatory.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture summary-export
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture summary-export
 ```
 
 `--maven-repo` selects an existing local artifact cache; the default is `~/.m2/repository`.
@@ -301,14 +309,19 @@ an adversarial sandbox or a way to execute model submissions on the host.
 The fixed Maven recipe is offline, uses isolated empty settings/home, bypasses Maven startup rc files,
 and strips inherited provider, proxy, Spring, Maven and JVM options. Every Maven invocation, including
 the Java-version preflight, runs from an owned directory with an empty `.mvn` and explicit
-`MAVEN_BASEDIR`, so caller/ancestor Maven configuration is not discovered. The grader directly instantiates
-the redactor and never starts Spring, a provider, a server, or a database. It reads no authentication
-files. Temporary source/build trees are removed on normal completion and handled failure; owned
+`MAVEN_BASEDIR`, so caller/ancestor Maven configuration is not discovered. The redaction grader
+directly instantiates the redactor. The
+summary-export grader uses the existing controller through standalone MockMvc and the real export
+service with an in-memory catalog and controlled templates. Neither starts Spring Boot, a provider,
+a listening server or a database, and neither reads authentication files or existing notes. The export
+grader places its entire filesystem fixture under its private grading `target/` directory. Temporary
+source/build trees are removed on normal completion and handled failure; owned
 process groups are killed on timeout/interruption. A hard process/host crash can leave temporary data.
 Reports retain only fixed labels, reviewed revision/content hashes, test outcomes and timings; raw
 build logs and source trees are not retained.
 
-Qualification requires all six named tests to execute: the baseline must fail exactly three known
+Structured-redaction qualification requires all six named tests to execute: the baseline must fail
+exactly three known
 behavioral assertions while passing three preservation checks; the reference must pass all six.
 Compiler/dependency/tooling failures, errors, skipped/zero/duplicate/unexpected tests, inconsistent
 exit codes and altered inputs cannot masquerade as reproduced behavior. Actual offline checks
@@ -325,9 +338,27 @@ three observed useful accepted actions that comparator missed. The existing five
 screen (continue only at 1–4 bare passes) is unchanged. This qualifier supplies none of those missing
 outcomes and makes no efficacy claim.
 
+The summary-export fixture requires exactly seven named tests. Its baseline must fail three
+behavioral assertions: descendant-directory symlink containment, final-note symlink containment and
+preservation of an outside hard-link alias. Both snapshots must preserve ordinary/repeated exports
+with an explicitly assigned mode, intentionally configured root aliases, existing notes on template
+failure, and parent-directory traversal rejection. The reference must pass all seven. All files,
+including the deliberately outside-target sentinels, belong to one private temporary fixture.
+POSIX modes, symbolic/hard links, stable file identities and atomic sibling replacement are required;
+unavailable capabilities report an infrastructure failure, never a skipped or successful grade.
+The grader uses no new write/publication injection seams. It does not establish interrupted-write or
+crash durability, adversarial concurrent rename resistance, task difficulty or continuation efficacy.
+
+The second fixture was also qualified offline on Java 21: exactly three expected baseline assertion
+failures, four baseline preservation passes, and seven reference passes. Both fixture selections
+passed from a deliberately contaminated caller/ancestor Maven configuration with inherited JVM and
+Maven options; an empty cache failed explicitly, and owned temporary trees were removed. This is
+fixture infrastructure evidence only; no model continuation or accepted-action study was run.
+
 ## Next comparison preparation
 
 The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
 17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
-paths. Its ordinary handoff/search adapter is not implemented; no new fixtures, model trials or
-human accepted actions were established. The existing usefulness and difficulty gates stay unchanged.
+paths. The summary-export candidate now has the seven-check offline qualification described above.
+Its ordinary handoff/search adapter is not implemented; no model trials or human accepted actions
+were established. The existing usefulness and difficulty gates stay unchanged.

@@ -1,0 +1,35 @@
+{
+  "baseline": "9933ade549c37af5d784edff650f74705d55fa83",
+  "baseline_failures": [
+    "directorySymlinkPreservesOutsideSentinel",
+    "destinationSymlinkPreservesOutsideSentinel",
+    "hardLinkReplacementPreservesOutsideAlias"
+  ],
+  "development_only": true,
+  "public_repository": "https://github.com/nathanmauro/black-box",
+  "reference": "16ce9f343706d1818f0b73e67043e6e84a1104e0",
+  "schema_version": 1,
+  "tests": [
+    "directorySymlinkPreservesOutsideSentinel",
+    "destinationSymlinkPreservesOutsideSentinel",
+    "hardLinkReplacementPreservesOutsideAlias",
+    "ordinaryRepeatedExportsPreserveContentAndExplicitMode",
+    "configuredRootAliasRemainsSupported",
+    "templateFailurePreservesExistingNote",
+    "traversalStillRejectsWithoutOutsideWrite"
+  ],
+  "tracked_hashes": {
+    "16ce9f343706d1818f0b73e67043e6e84a1104e0": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportService.java": "6a98bb9a2af52832f6fe5f2e0beee5d38ec25a486efaf32c69a64f29e182de49"
+    },
+    "9933ade549c37af5d784edff650f74705d55fa83": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/summary/internal/application/SummaryExportService.java": "784886f2d57c08b83b11819e0bc5b1f7ec6b865e29ab1c820f79823cdc687b9e"
+    }
+  },
+  "trusted_files": {
+    "SUMMARY_EXPORT_TASK.md": "df823302089eabead76e3d8a7a32a23e7eeda9d0b4c1a1fcd3d7cc7c9c14af1b",
+    "SummaryExportFixtureContractTest.java": "d9fbe57d796ac6b7077a18b384c14ef060b02e7d77de81b93ae997c49672ae67"
+  }
+}

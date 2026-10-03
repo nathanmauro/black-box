@@ -1,6 +1,6 @@
 # Continuation comparison: evidence and proposed protocol
 
-Preparation only, 2026-10-03. No new model comparison or fixture qualification has run.
+Protocol preparation and offline qualification, 2026-10-03. No new model comparison has run.
 The [development inventory](evaluation-candidates/2026-10-03-development-pool.json) records
 17 real fixes in 12 proposed clusters. All are familiar development examples with published
 reference fixes. None is held out; this inventory does not satisfy the twenty-candidate gate.
@@ -54,8 +54,15 @@ variants of the same failure.
    disqualify that registration. Corrected fixtures need a new version and fresh qualification;
    never silently repair a case after seeing arm outcomes.
 
-This inventory qualifies zero new tasks. The existing Java redaction qualifier retains its
-previously documented result; it has not been rerun or extended here.
+One inventory candidate now passes a scoped offline contract: the summary-export fixture reproduces
+three named baseline failures, preserves four other behaviors, and passes all seven checks on the
+reference. Its [qualification report](evaluation-results/2026-10-03-summary-export-qualification.json)
+records the immutable snapshots and worker-input hash. The checks cover linked destinations, hard-link
+alias preservation, repeated exports with an explicit mode, root aliases, template failure and
+traversal. They do not establish interrupted-write or crash durability or adversarial rename safety.
+The existing structured-redaction fixture was also rerun successfully with its original inputs.
+Both are familiar development fixtures; qualification establishes neither task difficulty nor recall
+benefit. The inventory remains below the twenty-candidate gate.
 
 ## Freeze the evidence corpus
 
@@ -151,7 +158,7 @@ a model verdict, patch review or this document cannot manufacture an accepted op
 Make denominators and missing outcomes explicit. Make no efficacy claim from this familiar pool.
 
 Next: qualify a small number of different clusters offline and freeze the ordinary-search adapter
-design against the common corpus contract. Summary export and precise chronology are reasonable
-qualification candidates; runtime-dependent cases remain conditional. Collect prospective held-out
+design against the common corpus contract. Precise chronology is a possible next qualification
+candidate; runtime-dependent cases remain conditional. Collect prospective held-out
 cases separately. No model spend, deployment, transcript export or threshold change is part of
-this documentation slice.
+this protocol and qualification slice.

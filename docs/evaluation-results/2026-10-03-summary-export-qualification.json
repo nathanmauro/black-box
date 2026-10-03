@@ -1,0 +1,41 @@
+{
+  "accepted_actions": 0,
+  "baseline": "9933ade549c37af5d784edff650f74705d55fa83",
+  "baseline_archive_sha256": "d33a93770d6010e4afc9b73fabe64c527830c02d7f52580d0af0602afcd55062",
+  "evidence": "infrastructure_only",
+  "fixture": "summary-export-development",
+  "model_runs": 0,
+  "qualification": "passed",
+  "reference": "16ce9f343706d1818f0b73e67043e6e84a1104e0",
+  "results": {
+    "baseline": {
+      "failed": [
+        "destinationSymlinkPreservesOutsideSentinel",
+        "directorySymlinkPreservesOutsideSentinel",
+        "hardLinkReplacementPreservesOutsideAlias"
+      ],
+      "passed": 4,
+      "seconds": 4.938,
+      "tests": 7
+    },
+    "reference": {
+      "failed": [],
+      "passed": 7,
+      "seconds": 4.922,
+      "tests": 7
+    }
+  },
+  "schema_version": 1,
+  "usefulness_gate": {
+    "acceptance": "must be observed; not established by grading",
+    "accepted_actions_missed_by_comparator_required": 3,
+    "existing_development_gate": "1\u20134 passes among five bare continuations; unchanged and not evaluated",
+    "historical_candidates_required": 20,
+    "minimum_useful_supported_suggestions_percent": 70,
+    "ordinary_latest_handoff_search_comparator": "same model, budget and source window; not evaluated",
+    "resumed_tasks_required": 5,
+    "stale_or_duplicate_suggestions_percent_must_be_below": 10,
+    "status": "not_cleared"
+  },
+  "worker_input_sha256": "ae29350d56eeefb749215a4badac33d8208681534a1fbe60357d93480313b48a"
+}
