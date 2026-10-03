@@ -32,6 +32,7 @@ export type LiveStore = {
   events: () => EventAppended[];
   onEventAppended: (callback: (event: EventAppended) => void) => () => void;
   onSessionUpdated: (callback: (event: SessionUpdated) => void) => () => void;
+  onReset?: (callback: () => void) => () => void;
 };
 
 export const LiveStoreContext = createContext<LiveStore>();
@@ -41,6 +42,7 @@ export function createLiveStore(): LiveStore {
   const [events, setEvents] = createSignal<EventAppended[]>([]);
   const eventListeners = new Set<(event: EventAppended) => void>();
   const sessionListeners = new Set<(event: SessionUpdated) => void>();
+  const resetListeners = new Set<() => void>();
 
   if (typeof EventSource === "undefined") {
     setStatus("down");
@@ -74,11 +76,20 @@ export function createLiveStore(): LiveStore {
     for (const listener of sessionListeners) listener(payload);
   });
 
+  source.addEventListener("replay.reset", () => {
+    setEvents([]);
+    for (const listener of resetListeners) listener();
+  });
+
   onCleanup(() => source.close());
 
   return {
     status,
     events,
+    onReset: (callback) => {
+      resetListeners.add(callback);
+      return () => resetListeners.delete(callback);
+    },
     onEventAppended: (callback) => {
       eventListeners.add(callback);
       return () => eventListeners.delete(callback);

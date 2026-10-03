@@ -9,6 +9,7 @@ import type {
   ProjectSummary,
 } from "../../lib/api";
 import { setHumanOnly } from "../../lib/humanOnly";
+import type { LiveStatus } from "../../lib/sse";
 import StreamPage from "../StreamPage";
 
 let params: { q?: string };
@@ -19,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   getEventFacets: vi.fn(),
   liveEvents: () => [] as unknown[],
   setLiveEvents: (_events: unknown[]) => undefined,
+  liveStatus: (): LiveStatus => "live",
+  setLiveStatus: (_status: LiveStatus) => undefined,
+  resetListeners: new Set<() => void>(),
 }));
 
 const getEventFeed = mocks.getEventFeed;
@@ -83,7 +87,11 @@ vi.mock("../../lib/sse", async (importOriginal) => {
   return {
     ...actual,
     useLiveStore: () => ({
-      status: () => "live",
+      status: mocks.liveStatus,
+      onReset: (callback: () => void) => {
+        mocks.resetListeners.add(callback);
+        return () => mocks.resetListeners.delete(callback);
+      },
       events: mocks.liveEvents,
       onSessionUpdated: () => () => undefined,
     }),
@@ -97,6 +105,10 @@ beforeEach(() => {
   const [liveEvents, setLiveEvents] = createSignal<unknown[]>([]);
   mocks.liveEvents = liveEvents;
   mocks.setLiveEvents = setLiveEvents;
+  const [liveStatus, setLiveStatus] = createSignal<LiveStatus>("live");
+  mocks.liveStatus = liveStatus;
+  mocks.setLiveStatus = setLiveStatus;
+  mocks.resetListeners.clear();
   getEventFeed.mockReset();
   getEventFeed.mockResolvedValue(feed([eventItem("event-1", "Make stream default")]));
   mocks.getEventFacets.mockReset();
@@ -598,6 +610,142 @@ describe("StreamPage", () => {
     );
   });
 
+  it("discards rows and rejects a pre-reset page before reloading the scoped snapshot", async () => {
+    const stalePage = deferred<EventFeedResponse>();
+    const restored = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("removed", "Removed after restore")], "old-cursor"))
+      .mockReturnValueOnce(stalePage.promise)
+      .mockReturnValueOnce(restored.promise);
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Removed after restore/ });
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(2));
+
+    resetStream();
+
+    expect(screen.queryByRole("button", { name: /Removed after restore/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    await waitFor(() => expect(getEventFeed).toHaveBeenCalledTimes(3));
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
+      meaningful: true,
+    });
+    stalePage.resolve(feed([eventItem("stale", "Old asynchronous page")], "stale-cursor"));
+    await Promise.resolve();
+    expect(screen.queryByRole("button", { name: /Old asynchronous page/ })).not.toBeInTheDocument();
+    restored.resolve(feed([eventItem("restored", "Canonical restored evidence")]));
+    expect(
+      await screen.findByRole("button", { name: /Canonical restored evidence/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("reloads the canonical snapshot on reconnect without an observed-time lower bound", async () => {
+    const late = eventItem("backdated", "Backdated while disconnected", "2000-01-01T00:00:00Z");
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("old", "Before disconnect")]))
+      .mockResolvedValueOnce(feed([late]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "until:2026-08-18" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Before disconnect/ });
+    mocks.setLiveStatus("down");
+    mocks.setLiveStatus("live");
+    expect(
+      await screen.findByRole("button", { name: /Backdated while disconnected/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Before disconnect/ })).not.toBeInTheDocument();
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: "until:2026-08-18",
+      meaningful: true,
+    });
+    expect(screen.getByText("live paused — historical scope")).toBeInTheDocument();
+  });
+
+  it("clears pending rows, counts and a scheduled head request on reset", async () => {
+    const restored = deferred<EventFeedResponse>();
+    getEventFeed
+      .mockResolvedValueOnce(feed([eventItem("old", "Existing before reset")]))
+      .mockResolvedValueOnce(
+        feed([eventItem("pending", "Pending before reset", "2026-07-01T12:01:00Z")]),
+      )
+      .mockReturnValueOnce(restored.promise);
+    mocks.getEventFacets
+      .mockResolvedValueOnce(countsPayload(9))
+      .mockResolvedValueOnce(countsPayload(1));
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(screen.getByRole("button", { name: "9 matches" })).toBeInTheDocument();
+      (document.querySelector(".stream-feed") as HTMLElement).scrollTop = 120;
+      mocks.setLiveEvents([{ id: "pending" }]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(screen.getByRole("button", { name: "1 new" })).toBeInTheDocument();
+      mocks.setLiveEvents([{ id: "scheduled" }, { id: "pending" }]);
+
+      resetStream();
+
+      expect(screen.queryByRole("button", { name: "1 new" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "9 matches" })).not.toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(getEventFeed).toHaveBeenCalledTimes(3);
+      expect(screen.getByRole("button", { name: "1 match" })).toBeInTheDocument();
+      restored.resolve(feed([eventItem("restored", "Current evidence")]));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(
+        screen.queryByRole("button", { name: /Pending before reset/ }),
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["snapshot", "head"] as const)(
+    "rejects pre-reset %s and facet responses",
+    async (requestKind) => {
+      const staleFeed = deferred<EventFeedResponse>();
+      const staleFacets = deferred<EventFacetCounts>();
+      let staleSignal: AbortSignal | undefined;
+      getEventFeed.mockReset();
+      if (requestKind === "head")
+        getEventFeed.mockResolvedValueOnce(feed([eventItem("old", "Before reset")]));
+      getEventFeed.mockReturnValueOnce(staleFeed.promise).mockResolvedValueOnce(feed([]));
+      mocks.getEventFacets
+        .mockImplementationOnce((_params: unknown, signal: AbortSignal) => {
+          staleSignal = signal;
+          return staleFacets.promise;
+        })
+        .mockResolvedValueOnce(countsPayload(0));
+      try {
+        vi.useFakeTimers();
+        render(() => <StreamPage />);
+        await vi.advanceTimersByTimeAsync(300);
+        if (requestKind === "head") {
+          mocks.setLiveEvents([{ id: "late" }]);
+          await vi.advanceTimersByTimeAsync(500);
+        }
+        resetStream();
+        expect(staleSignal?.aborted).toBe(true);
+        await vi.advanceTimersByTimeAsync(300);
+        staleFeed.resolve(feed([eventItem("stale", "Restored-away response")], "stale-cursor"));
+        staleFacets.resolve(countsPayload(999));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(
+          screen.queryByRole("button", { name: /Restored-away response/ }),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "999 matches" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "0 matches" })).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("clears pagination while a primary stream reload is pending", async () => {
     const primaryReload = deferred<EventFeedResponse>();
     getEventFeed
@@ -620,6 +768,96 @@ describe("StreamPage", () => {
     primaryReload.resolve(feed([eventItem("event-scoped", "New scope row")]));
     expect(await screen.findByRole("button", { name: /New scope row/ })).toBeInTheDocument();
   });
+
+  it("keeps refreshing after the notification buffer reaches its 50-event cap", async () => {
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      const fullBuffer = Array.from({ length: 50 }, (_, index) => ({ id: `notice-${50 - index}` }));
+      mocks.setLiveEvents(fullBuffer);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(getEventFeed).toHaveBeenCalledTimes(2);
+      mocks.setLiveEvents([{ id: "notice-51" }, ...fullBuffer.slice(0, 49)]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(getEventFeed).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("includes a backdated capture appended while connected", async () => {
+    const old = eventItem("old", "Existing current row", "2026-07-01T12:00:00Z");
+    const late = eventItem("late", "Connected backdated row", "2000-01-01T00:00:00Z");
+    getEventFeed.mockReset();
+    getEventFeed.mockResolvedValueOnce(feed([old]));
+    getEventFeed.mockImplementation(async (query: { since?: string }) =>
+      feed(
+        [old, late].filter(
+          (item) => !query.since || Date.parse(item.observedAt) >= Date.parse(query.since),
+        ),
+      ),
+    );
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      mocks.setLiveEvents([{ id: "late", observedAt: late.observedAt }]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(screen.getByRole("button", { name: /Connected backdated row/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps canonical recovery sticky across a mixed backdated and current burst", async () => {
+    const old = eventItem("old", "Existing row", "2026-07-01T12:00:00Z");
+    const late = eventItem("late", "Backdated burst row", "2000-01-01T00:00:00Z");
+    const current = eventItem("current", "Current burst row", "2026-07-01T12:01:00Z");
+    getEventFeed
+      .mockResolvedValueOnce(feed([old]))
+      .mockResolvedValueOnce(feed([current, old, late]));
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      mocks.setLiveEvents([{ id: "late", observedAt: late.observedAt }]);
+      await vi.advanceTimersByTimeAsync(100);
+      mocks.setLiveEvents([
+        { id: "current", observedAt: current.observedAt },
+        { id: "late", observedAt: late.observedAt },
+      ]);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(getEventFeed).toHaveBeenCalledTimes(2);
+      expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
+      expect(screen.getByRole("button", { name: /Backdated burst row/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Current burst row/ })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["empty", "tied"] as const)(
+    "refreshes the full snapshot for an %s feed boundary",
+    async (boundary) => {
+      const old = eventItem("old", "Existing row", "2026-07-01T12:00:00Z");
+      const appended = eventItem("appended", "Boundary capture", old.observedAt);
+      getEventFeed
+        .mockResolvedValueOnce(feed(boundary === "empty" ? [] : [old]))
+        .mockResolvedValueOnce(feed(boundary === "empty" ? [appended] : [appended, old]));
+      try {
+        vi.useFakeTimers();
+        render(() => <StreamPage />);
+        await vi.advanceTimersByTimeAsync(0);
+        mocks.setLiveEvents([{ id: "appended", observedAt: appended.observedAt }]);
+        await vi.advanceTimersByTimeAsync(500);
+        expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: "", meaningful: true });
+        expect(screen.getByRole("button", { name: /Boundary capture/ })).toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("uses pending live rows for head refetch and new-count dedupe", async () => {
     const old = eventItem("event-old", "Existing row");
@@ -647,7 +885,7 @@ describe("StreamPage", () => {
       });
       expect(screen.getByRole("button", { name: "1 new" })).toBeInTheDocument();
 
-      mocks.setLiveEvents([{ id: "sse-a" }, { id: "sse-b" }]);
+      mocks.setLiveEvents([{ id: "sse-b" }, { id: "sse-a" }]);
       await vi.advanceTimersByTimeAsync(500);
       expect(getEventFeed).toHaveBeenLastCalledWith({
         limit: 100,
@@ -1377,6 +1615,11 @@ describe("StreamPage", () => {
     expect(screen.queryByRole("link", { name: "Trajectory" })).not.toBeInTheDocument();
   });
 });
+
+function resetStream() {
+  mocks.setLiveEvents([]);
+  for (const listener of mocks.resetListeners) listener();
+}
 
 function countsPayload(total: number): EventFacetCounts {
   return {

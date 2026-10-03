@@ -6,6 +6,7 @@ import {
   For,
   Match,
   onCleanup,
+  on,
   Show,
   Switch,
 } from "solid-js";
@@ -101,8 +102,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   let feedRef: HTMLDivElement | undefined;
   let liveTimer: ReturnType<typeof setTimeout> | undefined;
   let loadToken = 0;
+  let canonicalRefreshNeeded = false;
 
   const live = useLiveStore();
+  const [snapshotRevision, setSnapshotRevision] = createSignal(0);
   const [params, setParams] = useSearchParams<{ q?: string; project?: string }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
@@ -269,6 +272,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   });
 
   createEffect(() => {
+    snapshotRevision();
+    if (liveTimer) clearTimeout(liveTimer);
+    liveTimer = undefined;
+    canonicalRefreshNeeded = false;
     if (props.projectScopePending) {
       loadToken += 1;
       setLoading(true);
@@ -319,6 +326,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   // moment q moves, the in-flight request is aborted, and only the newest response ever lands —
   // a count for a different q must never render (spec §4.6/§6.5).
   createEffect(() => {
+    snapshotRevision();
     const pendingScope = props.projectScopePending;
     const q = apiQuery();
     const human = humanOnly();
@@ -392,17 +400,43 @@ export default function StreamPage(props: StreamPageProps = {}) {
     setActiveSuggestion(-1);
   });
 
-  createEffect((previousLiveCount = 0) => {
-    const liveCount = live.events().length;
-    if (livePaused()) return liveCount;
-    if (!liveCount) return liveCount;
-    if (!newestObservedAt()) return previousLiveCount;
-    if (liveCount === previousLiveCount) return liveCount;
+  function refreshCanonicalSnapshot() {
+    // Recovery can remove rows or reveal backdated captures. Reuse the full scoped load rather
+    // than merging a head request bounded by the old observedAt; its tokens reject earlier reads.
+    if (liveTimer) clearTimeout(liveTimer);
+    liveTimer = undefined;
+    canonicalRefreshNeeded = false;
+    setSnapshotRevision((revision) => revision + 1);
+  }
+  const stopReset = live.onReset?.(refreshCanonicalSnapshot);
+  onCleanup(() => stopReset?.());
+  createEffect(
+    on(
+      live.status,
+      (status, previous) => {
+        if (status === "live" && previous === "down") refreshCanonicalSnapshot();
+      },
+      { defer: true },
+    ),
+  );
+
+  createEffect<string | undefined>((previousEventId) => {
+    // The live store retains at most 50 frames, so its length cannot signal later arrivals.
+    const notification = live.events()[0];
+    const newestEventId = notification?.id;
+    if (livePaused() || !newestEventId) return newestEventId;
+    if (newestEventId === previousEventId) return newestEventId;
+    const head = newestObservedAt();
+    // Keep this sticky across the burst: a later fresh timestamp cannot erase an earlier
+    // backdated/tied append, and an empty feed has no timestamp suitable for a head request.
+    canonicalRefreshNeeded ||= !head || Date.parse(notification.observedAt) <= Date.parse(head);
     if (liveTimer) clearTimeout(liveTimer);
     liveTimer = setTimeout(() => {
-      void refetchHead(newestObservedAt());
+      liveTimer = undefined;
+      if (canonicalRefreshNeeded) refreshCanonicalSnapshot();
+      else void refetchHead(newestObservedAt());
     }, 500);
-    return liveCount;
+    return newestEventId;
   });
 
   function run(next: string) {
