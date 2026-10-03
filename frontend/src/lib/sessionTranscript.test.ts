@@ -88,6 +88,93 @@ describe("session transcript event merging", () => {
     ]);
   });
 
+  it("orders exact targets and loaded pages by nanoseconds before origin precedence", () => {
+    const target = event({ id: "target", observedAt: "2026-10-03T12:00:00.123456788Z" });
+    const prompt = event({ id: "prompt", observedAt: "2026-10-03T12:00:00.123456789Z" });
+    const olderPrompt = event({ id: "older-prompt", observedAt: "2026-10-03T12:00:00.123456787Z" });
+    const head = mergeSessionEvents([target], [prompt]);
+    expect(head.map((item) => item.id)).toEqual(["prompt", "target"]);
+    expect(mergeSessionEvents(head, [target, olderPrompt]).map((item) => item.id)).toEqual([
+      "prompt",
+      "target",
+      "older-prompt",
+    ]);
+  });
+
+  it("keeps recorded precedence and input order for genuinely equal instants", () => {
+    const recorded = [
+      event({ id: "z", observedAt: "2026-10-03T12:00:00Z" }),
+      event({ id: "a", observedAt: "2026-10-03T12:00:00.000000000Z" }),
+    ];
+    const transcript = [
+      event({ id: "b", observedAt: "2026-10-03T12:00:00.000Z" }),
+      event({ id: "y", observedAt: "2026-10-03T12:00:00.000000Z" }),
+    ];
+    expect(mergeSessionEvents(recorded, transcript).map((item) => item.id)).toEqual([
+      "z",
+      "a",
+      "b",
+      "y",
+    ]);
+  });
+
+  it("orders the full canonical year range ahead of invalid timestamps", () => {
+    const rows = [
+      event({ id: "negative", observedAt: "-1000000000-01-01T00:00:00Z" }),
+      event({ id: "invalid", observedAt: "not a timestamp" }),
+      event({ id: "positive", observedAt: "+1000000000-12-31T23:59:59.999999999Z" }),
+      event({ id: "before-extended", observedAt: "9999-12-31T23:59:59.999999999Z" }),
+      event({ id: "extended", observedAt: "+10000-01-01T00:00:00Z" }),
+    ];
+    expect(mergeSessionEvents(rows, []).map((item) => item.id)).toEqual([
+      "positive",
+      "extended",
+      "before-extended",
+      "negative",
+      "invalid",
+    ]);
+  });
+
+  it("retains Date fallback and invalid tie behavior alongside canonical precision", () => {
+    const invalid = event({ id: "invalid", observedAt: "invalid" });
+    const missing = event({ id: "missing", observedAt: "" });
+    Reflect.deleteProperty(missing, "observedAt"); // Simulate a legacy response missing its timestamp.
+    const offset = event({ id: "offset", observedAt: "2026-10-03T13:00:00.123+01:00" });
+    const equal = event({ id: "equal", observedAt: "2026-10-03T12:00:00.123000000Z" });
+    const later = event({ id: "later", observedAt: "2026-10-03T12:00:00.123000001Z" });
+    // A fallback between two canonical values must not collapse their precise comparison.
+    for (const rows of [
+      [equal, offset, later],
+      [later, offset, equal],
+      [offset, equal, later],
+    ]) {
+      const merged = mergeSessionEvents([invalid, ...rows], [missing]);
+      expect(merged[0].id).toBe("later");
+      expect(merged.slice(1, 3).map((item) => item.id)).toEqual(
+        rows.filter((item) => item !== later).map((item) => item.id),
+      );
+      expect(merged.slice(-2).map((item) => item.id)).toEqual(["invalid", "missing"]);
+    }
+  });
+
+  it("retains the existing semantic duplicate window", () => {
+    const recorded = event({
+      id: "recorded",
+      role: "assistant",
+      text: "Repeated answer",
+      observedAt: "2026-10-03T12:00:00Z",
+    });
+    const atBoundary = event({ ...recorded, id: "boundary", observedAt: "2026-10-03T12:00:10Z" });
+    const beyondBoundary = event({
+      ...recorded,
+      id: "beyond",
+      observedAt: "2026-10-03T12:00:10.001Z",
+    });
+    expect(
+      mergeSessionEvents([recorded], [atBoundary, beyondBoundary]).map((item) => item.id),
+    ).toEqual(["beyond", "recorded"]);
+  });
+
   it("keeps same-text turns that are not clearly the same occurrence and sorts deterministically", () => {
     const recorded = [
       event({
