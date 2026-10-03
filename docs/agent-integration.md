@@ -100,6 +100,9 @@ agent's suggestion that would otherwise vanish into a transcript. Capture it wit
   worktree or clone under a different directory name gets a different key, so pass an explicit
   `ideaKey` when an idea is captured from more than one checkout. A re-capture only needs the
   required fields: optional fields it omits keep their earlier values in the listing.
+  Project attribution uses the newest revision with a nonblank captured `repo` or legacy session
+  cwd, preferring captured `repo` within that revision. A newer explicit repo or cwd still wins;
+  an unattributed revision inherits an older project without rewriting either event.
 - `GET /api/ideas` returns `{items, count}`, newest first, collapsed to the latest event per
   `ideaKey`, with `revisions`, `firstCapturedAt`, and `migratedFrom`. Filters: `status` (repeatable
   or comma-separated), `origin`, `project` or `repo` (a project path, alias-aware like the stream's
