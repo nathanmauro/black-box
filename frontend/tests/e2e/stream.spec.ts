@@ -1,30 +1,76 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { assertSafeSeedBaseUrl, E2E_PROJECT_CWD } from "../../src/e2e/seedData";
 import { E2E_INJECTION_FILE } from "./project-fixture";
+import type { IngestResponse } from "../../src/lib/api";
 
 const SHOT_DIR = "test-results/shots";
 
+async function captureStreamFixture(request: APIRequestContext) {
+  assertSafeSeedBaseUrl(test.info().project.use.baseURL || "http://127.0.0.1:8799");
+  const id = randomUUID();
+  const repo = `/tmp/stream-source-${id}`;
+  const identity = { source: "codex", clientSessionId: `stream-source-${id}` };
+  const decision = `Choose local storage for stream source ${id}`;
+  const rationale = `Keep canonical recording independent of optional indexes (${id}).`;
+  const observation = `Verified stream source ${id}.`;
+  const prompt = `Inspect stream source ${id}`;
+  expect(
+    (
+      await request.post("/api/events", {
+        data: { ...identity, cwd: repo, eventType: "UserPromptSubmit", role: "user", text: prompt },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  const response = await request.post("/api/decisions", {
+    data: { ...identity, repo, decision, rationale },
+  });
+  expect(response.ok()).toBeTruthy();
+  const captured = (await response.json()) as IngestResponse;
+  expect(
+    (
+      await request.post("/api/events", {
+        data: {
+          ...identity,
+          cwd: repo,
+          eventType: "Observation",
+          role: "assistant",
+          text: observation,
+        },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  return { repo, decision, rationale, observation, prompt, captured };
+}
+
 test("stream is the default landing view and shows meaningful events newest-first", async ({
   page,
+  request,
 }) => {
+  // The shared seed can move beyond page one as other journeys append records. Keep the default
+  // unfiltered landing path, but own fresh records whose presence and ordering this test proves.
+  const fixture = await captureStreamFixture(request);
   await page.goto("/");
 
   const modes = page.getByRole("tablist", { name: "Activity mode" });
   await expect(modes.getByRole("tab", { name: "Stream" })).toHaveAttribute("aria-selected", "true");
 
-  // Seeded codex decision + observation are meaningful; they render as compact rows.
+  // Decision and observation are meaningful; the later observation renders first.
   const rows = page.locator(".stream-row");
   await expect(rows.first()).toBeVisible();
-  await expect(page.getByText("Use SolidJS + Vite for the UI rewrite").first()).toBeVisible();
-  await expect(
-    page.getByText("Frontend build completed for the self-contained SolidJS jar.").first(),
-  ).toBeVisible();
+  const ownedRows = rows.filter({
+    hasText: new RegExp(`${fixture.decision}|${fixture.observation}`),
+  });
+  await expect(ownedRows).toHaveCount(2);
+  await expect(ownedRows.nth(0)).toBeVisible();
+  await expect(ownedRows.nth(1)).toBeVisible();
+  await expect(ownedRows.nth(0)).toContainText(fixture.observation);
+  await expect(ownedRows.nth(1)).toContainText(fixture.decision);
 
-  // The seeded user prompt is not meaningful, so the default view hides it.
-  await expect(page.getByText("Rewrite the UI to match agent-observatory")).toHaveCount(0);
+  // The user prompt is not meaningful, so the default stream hides that event row.
+  await expect(rows.filter({ hasText: fixture.prompt })).toHaveCount(0);
 
   await page.screenshot({ path: `${SHOT_DIR}/stream.png`, fullPage: true });
 });
@@ -85,12 +131,13 @@ test("meaningful toggle widens the stream and a source facet narrows it", async 
   await page.screenshot({ path: `${SHOT_DIR}/stream-filtered.png`, fullPage: true });
 });
 
-test("clicking a stream row expands it inline with the full event card", async ({ page }) => {
-  await page.goto("/");
-  const decisionRow = page
-    .locator(".stream-row")
-    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })
-    .first();
+test("clicking a stream row expands it inline with the full event card", async ({
+  page,
+  request,
+}) => {
+  const fixture = await captureStreamFixture(request);
+  await page.goto(`/?q=${encodeURIComponent(`project_exact:${fixture.repo}`)}`);
+  const decisionRow = page.locator(".stream-row").filter({ hasText: fixture.decision });
   await expect(decisionRow).toBeVisible();
   await expect(decisionRow).toHaveAttribute("type", "button");
 
@@ -98,24 +145,21 @@ test("clicking a stream row expands it inline with the full event card", async (
   await expect(decisionRow).toHaveAttribute("aria-expanded", "true");
   const expanded = page.locator(".stream-row-expanded");
   await expect(expanded).toBeVisible();
-  await expect(expanded.getByRole("link", { name: "Open at this event" })).toHaveAttribute(
-    "href",
-    /view=browse.*session=.*event=/,
-  );
-  await expect(
-    expanded.getByText("Matches agent-observatory; stays self-contained in the jar at runtime"),
-  ).toBeVisible();
+  const sourceLink = expanded.getByRole("link", { name: "Open at this event" });
+  await expect(sourceLink).toHaveAttribute("href", /view=browse/);
+  const source = new URL((await sourceLink.getAttribute("href"))!, page.url());
+  expect(source.searchParams.get("session")).toBe(fixture.captured.sessionId);
+  expect(source.searchParams.get("event")).toBe(fixture.captured.eventId);
+  await expect(expanded.getByText(fixture.rationale)).toBeVisible();
 
   await decisionRow.click();
   await expect(page.locator(".stream-row-expanded")).toHaveCount(0);
 });
 
-test("the explicit Stream action opens the exact event in Browse", async ({ page }) => {
-  await page.goto("/");
-  const decisionRow = page
-    .locator(".stream-row")
-    .filter({ hasText: "Use SolidJS + Vite for the UI rewrite" })
-    .first();
+test("the explicit Stream action opens the exact event in Browse", async ({ page, request }) => {
+  const fixture = await captureStreamFixture(request);
+  await page.goto(`/?q=${encodeURIComponent(`project_exact:${fixture.repo}`)}`);
+  const decisionRow = page.locator(".stream-row").filter({ hasText: fixture.decision });
   await decisionRow.click();
   await page
     .locator(".stream-row-expanded")
@@ -123,11 +167,16 @@ test("the explicit Stream action opens the exact event in Browse", async ({ page
     .click();
 
   await expect(page).toHaveURL(/view=browse/);
-  await expect(page).toHaveURL(/session=/);
-  await expect(page).toHaveURL(/event=/);
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get("session") === fixture.captured.sessionId &&
+      url.searchParams.get("event") === fixture.captured.eventId,
+  );
   await expect(page.getByRole("tab", { name: "Browse" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "UI rewrite kickoff" })).toBeVisible();
-  await expect(page.locator(".event-flow-row--target")).toBeVisible();
+  const target = page.locator(`#event-${fixture.captured.eventId}`);
+  await expect(target).toBeVisible();
+  await expect(target).toHaveClass(/event-flow-row--target/);
+  await expect(target).toContainText(fixture.decision);
 });
 
 test("a newly ingested event flows into the stream live", async ({ page, request }) => {

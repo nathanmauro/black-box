@@ -46,6 +46,13 @@ Verified against the integrated documentation and scripts on 2026-10-03:
 - Frontend lint, formatting, and TypeScript checks passed with the existing 68 lint warnings.
   Shell syntax and `git diff --check` passed. No application static bundle changed.
 
+The first PR CI run exposed three existing stream tests that assumed a shared seed stayed on the
+first 100-result page. Its trace showed a valid continuation cursor and the older fixture beyond
+that page; the showcase test was skipped and had made no captures. The tests now capture their own
+fresh records, keep the unfiltered default landing check, and assert ordering, visibility, expansion,
+rationale, and exact event/session navigation. The corrected full local browser suite passed
+91 journeys with only the opt-in showcase skipped; that showcase was verified separately above.
+
 These checks did not qualify native Windows use or display refresh rates. GIF timing was measured
 from encoded frame delays. No installed service, real history, or cloud infrastructure was changed;
 the installed listener retained its original PID throughout. Full PR CI remains the merge gate.
