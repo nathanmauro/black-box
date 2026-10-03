@@ -49,6 +49,17 @@ loading its preceding prompt restores the complete turn. Equal instants retain r
 and input-order precedence, and duplicate detection is unchanged. Invalid or missing legacy
 timestamps remain last. See the [Browse ordering verification](superpowers/plans/2026-10-03-transcript-precise-ordering.md).
 
+When Browse merges search results or older pages, tool-payload comparison preserves numeric JSON
+values that JavaScript would round, overflow or underflow. Safely roundtripping numbers retain
+sorted-key semantic matching (for example, `1`, `1.0` and `1e0`). Other inline JSON uses compact
+captured text with whitespace removed only outside strings. This conservative comparison can
+retain extra duplicates when inexact numbers have different spelling or key order; it avoids
+hiding distinct evidence. Deep inline JSON uses the same bounded fallback. Stored payloads,
+occurrence windows and exact event IDs are unchanged. The existing hash comparison for payloads
+above 32,768 characters remains in place and is not a collision-free guarantee. See the
+[numeric identity verification](superpowers/plans/2026-10-03-transcript-number-identity.md).
+
+
 ## Record a changed decision
 
 In the web interface, choose a project in **Recall**, then enter a separate question. Suggestions

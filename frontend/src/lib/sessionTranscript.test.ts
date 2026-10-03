@@ -208,6 +208,127 @@ describe("session transcript event merging", () => {
   });
 });
 
+describe("numeric tool payload identity", () => {
+  function mergePayloads(
+    left: string,
+    right: string,
+    field: "toolOutputJson" | "toolInputJson" = "toolOutputJson",
+  ) {
+    const tool = {
+      eventType: "PostToolUse",
+      role: "tool",
+      toolName: "Lookup",
+      turnId: "same-turn",
+      observedAt: "2026-10-03T12:00:00Z",
+    };
+    return mergeSessionEvents(
+      [event({ ...tool, id: "recorded", [field]: left })],
+      [event({ ...tool, id: "transcript", [field]: right })],
+    ).map((item) => item.id);
+  }
+
+  it.each([
+    ["9007199254740992", "9007199254740993"],
+    ["-9007199254740992", "-9007199254740993"],
+    ["1", "1.0000000000000001"],
+    ["1", "10000000000000001e-16"],
+    ["0.1", "0.10000000000000001"],
+    ["1e400", "null"],
+    ["1e400", "1e401"],
+    ["-1e400", "1e400"],
+    ["1e-400", "0"],
+    ["-1e-400", "0"],
+  ])("retains distinct numeric values %s and %s for input and output", (left, right) => {
+    for (const field of ["toolOutputJson", "toolInputJson"] as const)
+      expect(mergePayloads(`{"reference":${left}}`, `{"reference":${right}}`, field)).toEqual([
+        "recorded",
+        "transcript",
+      ]);
+  });
+
+  it.each([
+    ["1", "1.0"],
+    ["1e2", "100"],
+    ["0.10", "1e-1"],
+    ["-0", "0.0"],
+    ["1e+000002", "100"],
+    ["123.4500", "12345e-2"],
+  ])("preserves safe key-order and numeric equivalence for %s and %s", (left, right) => {
+    expect(mergePayloads(`{"b":2,"a":${left}}`, `{ "a": ${right}, "b": 2 }`)).toEqual(["recorded"]);
+  });
+
+  it("compacts outside-string whitespace for identical inexact JSON without normalizing string contents", () => {
+    const left = '{"reference":9007199254740993,"label":"two  spaces"}';
+    expect(
+      mergePayloads(left, '{\n "reference" : 9007199254740993, "label" : "two  spaces"\n}'),
+    ).toEqual(["recorded"]);
+    expect(mergePayloads(left, left.replace("two  spaces", "two spaces"))).toEqual([
+      "recorded",
+      "transcript",
+    ]);
+    // Conservative fallback deliberately retains uncertain key-order/spelling duplicates.
+    expect(mergePayloads(left, '{"label":"two  spaces","reference":9007199254740993}')).toEqual([
+      "recorded",
+      "transcript",
+    ]);
+    expect(mergePayloads('{"n":9007199254740993}', '{"n":9007199254740993.0}')).toEqual([
+      "recorded",
+      "transcript",
+    ]);
+  });
+
+  it("does not scan numbers or structural punctuation inside escaped strings", () => {
+    const label = 'quoted "9007199254740993" \\ path 1e400 { [ with  spaces';
+    const left = JSON.stringify({ label, count: 1 });
+    const right = JSON.stringify({ count: 1.0, label }, null, 2);
+    expect(mergePayloads(left, right)).toEqual(["recorded"]);
+    const inexact = left.replace('"count":1', '"count":9007199254740993');
+    expect(mergePayloads(inexact, inexact.replace('"count":', '"count": '))).toEqual(["recorded"]);
+  });
+
+  it("keeps identity categories distinct from arbitrary invalid-text payloads", () => {
+    const raw = '{"n":9007199254740993}';
+    expect(mergePayloads(raw, `raw-json:${raw}`)).toEqual(["recorded", "transcript"]);
+    expect(mergePayloads('{"n":1}', 'json:{"n":1}')).toEqual(["recorded", "transcript"]);
+    expect(mergePayloads("invalid   text", "invalid text")).toEqual(["recorded"]);
+  });
+
+  it("bounds huge exponent work without expanding decimal powers", () => {
+    const exponent = "9".repeat(12_000);
+    const left = `{"n":1e${exponent}}`;
+    expect(mergePayloads(left, left.replace("1e", "2e"))).toEqual(["recorded", "transcript"]);
+    expect(mergePayloads(left, `{ "n" : 1e${exponent} }`)).toEqual(["recorded"]);
+    expect(mergePayloads(`{"n":1e-${exponent}}`, '{"n":0}')).toEqual(["recorded", "transcript"]);
+  });
+
+  it("uses bounded raw identity for deeply nested JSON and preserves string whitespace", () => {
+    const wrap = (text: string) =>
+      '{"item":'.repeat(2200) + JSON.stringify(text) + "}".repeat(2200);
+    expect(mergePayloads(wrap("two  spaces"), wrap("two spaces"))).toEqual([
+      "recorded",
+      "transcript",
+    ]);
+    expect(mergePayloads(wrap("same"), wrap("same").replaceAll('"item":', '"item": '))).toEqual([
+      "recorded",
+    ]);
+  });
+
+  it("handles long inline significands without decimal expansion", () => {
+    const value = `1${"0".repeat(30_000)}1e-30001`;
+    expect(mergePayloads(`{"n":${value}}`, '{"n":1}')).toEqual(["recorded", "transcript"]);
+    expect(mergePayloads(`{"n":${value}}`, `{ "n": ${value} }`)).toEqual(["recorded"]);
+  });
+
+  it("keeps the existing bounded long-payload path usable without claiming collision freedom", () => {
+    const left = JSON.stringify({ padding: "x".repeat(40_000), n: 9007199254740992 });
+    expect(mergePayloads(left, left)).toEqual(["recorded"]);
+    expect(mergePayloads(left, left.replace("9007199254740992", "9007199254740993"))).toEqual([
+      "recorded",
+      "transcript",
+    ]);
+  });
+});
+
 describe("session transcript reading and search", () => {
   it.each(["Projection", "projection", " PROJECTION ", "Evidence", "evidence", " EVIDENCE "])(
     "classifies %s as memory rather than a conversation reply",
