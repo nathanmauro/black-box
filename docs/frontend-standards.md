@@ -182,6 +182,22 @@ stay directly readable. This changes only
 presentation: canonical evidence and API responses remain unchanged, and no media is loaded or sent
 to a provider. Existing specialized presenters keep their own disclosure behavior.
 
+Generic Input/Result previews flag numeric values that change when decoded into JavaScript numbers,
+including rounding, overflow, underflow and displayed negative zero. Each successful JSON decoding
+layer is checked, up to the existing two-pass decoding limit. Numeric-looking text inside strings
+is unchanged; malformed JSON remains raw text without a misleading precision warning. The legacy
+text-result exit-code conversion receives the same diagnostics without changing its return values.
+
+A changed value adds a warning and **Original input/result** even for a small payload. Original
+always contains the complete captured string, including any outer JSON encoding. Numeric checking
+is bounded to 131,072 UTF-16 code units per decoded layer; larger layers and unsupported legacy
+numeric forms receive an explicit unchecked-precision note and original access. A later successful
+check does not erase an earlier uncertainty; proven loss takes precedence. Ordinary safe small
+payloads gain no warning or extra control. The separate transcript identity bound stays at 32,768
+characters, with its existing conservative matching rules. Specialized presenters and metadata
+parsing are outside this generic-preview behavior. See the
+[numeric preview verification](superpowers/plans/2026-10-03-tool-payload-number-preview.md).
+
 Native `details` controls support keyboard access. As with existing tool disclosures, opened content
 stays mounted after closing but is excluded from accessibility while closed. ReaderText instead
 renders an actual excerpt (at most 900 characters or 10 nonempty lines, plus an ellipsis) while
