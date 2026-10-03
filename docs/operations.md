@@ -168,6 +168,8 @@ by tools. Existing secret-name spellings (such as `password`, `api_key`, `client
 `access_token`, including their existing prefixes/suffixes) accept `=` or `:`, bare or matching
 single/double quoted keys, and values of any length. Quoted values can contain whitespace and
 backslash-escaped quotes; bare values end at whitespace or a JSON comma/closing bracket/brace.
+Complete `[REDACTED]` markers inside a bare credential are consumed as whole spans, so repeated
+markers cannot expose a trailing credential suffix. Genuine closing delimiters still end the value.
 Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned
 scalar. Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping
 and the existing truncation marker; replacement markers can expand short values. This is a small

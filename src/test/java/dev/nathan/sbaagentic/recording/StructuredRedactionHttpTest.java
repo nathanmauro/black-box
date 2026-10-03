@@ -138,10 +138,12 @@ class StructuredRedactionHttpTest {
     void credentialAssignmentsInStringLeavesAreSanitizedBeforeStorageAndRead(boolean idempotent) throws Exception {
         String text = "before password=\"FAKE SPACE CREDENTIAL\" after\n"
                 + "{\"api_key\":\"F4KE7\",\"note\":\"readable\"}\n"
-                + "client_secret='FAKE \\'QUOTED\\' CREDENTIAL' finish";
+                + "client_secret='FAKE \\'QUOTED\\' CREDENTIAL' finish"
+                + "\ntoken=[REDACTED].[REDACTED].FAKE_MARKER_SUFFIX neighboring=evidence";
         String expected = "before password=\"[REDACTED]\" after\n"
                 + "{\"api_key\":\"[REDACTED]\",\"note\":\"readable\"}\n"
-                + "client_secret='[REDACTED]' finish";
+                + "client_secret='[REDACTED]' finish"
+                + "\ntoken=[REDACTED] neighboring=evidence";
         Map<String, Object> event = Map.of(
                 "source",
                 "codex",
