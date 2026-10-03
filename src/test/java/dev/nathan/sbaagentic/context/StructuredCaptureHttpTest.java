@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
@@ -276,6 +277,15 @@ class StructuredCaptureHttpTest {
         return args;
     }
 
+    @Test
+    void mcpResponseParserRetainsNanosecondTimestampPrecision() throws Exception {
+        Instant expected = Instant.parse("2026-10-03T04:12:34.123456789Z");
+        JsonNode result = mapper.valueToTree(Map.of(
+                "content", List.of(Map.of("text", "{\"observedAt\":" + expected.getEpochSecond() + ".123456789}"))));
+        assertThat(mapper.convertValue(textJson(result).path("observedAt"), Instant.class))
+                .isEqualTo(expected);
+    }
+
     private void assertProjectionIdentity(JsonNode item, JsonNode canonical) {
         for (String field : List.of("sessionId", "source", "clientSessionId")) {
             assertThat(item.path(field)).as(field).isEqualTo(canonical.path(field));
@@ -417,7 +427,9 @@ class StructuredCaptureHttpTest {
     private JsonNode textJson(JsonNode result) throws Exception {
         assertThat(result.path("isError").asBoolean()).as(result.toString()).isFalse();
 
-        return mapper.readTree(result.path("content").get(0).path("text").asText());
+        return mapper.reader()
+                .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .readTree(result.path("content").get(0).path("text").asText());
     }
 
     private long eventCount() throws Exception {
