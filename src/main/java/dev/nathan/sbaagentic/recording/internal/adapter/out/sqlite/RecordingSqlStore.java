@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
+import dev.nathan.sbaagentic.query.SqlInstant;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
@@ -104,6 +105,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     @PostConstruct
     public void ensureSchema() {
         StreamPositionStore.initialize(jdbcTemplate);
+        ensureSessionTimeIndex();
         if (postgres)
 
             return;
@@ -435,6 +437,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
     }
 
+    private void ensureSessionTimeIndex() {
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_last_seen_instant ON agent_sessions ("
+                + SqlInstant.column("last_seen_at", postgres).indexColumns() + ")");
+    }
+
     public List<AgentSession> recentSessions(int limit) {
 
         return recentSessions(limit, false);
@@ -453,26 +460,32 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         String filter = predicates.isEmpty() ? "" : " WHERE " + String.join(" AND ", predicates) + "\n";
 
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(
+                """
                 SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
                            first_human_turn
                   FROM agent_sessions
-                """ + filter + """
-                 ORDER BY last_seen_at DESC
+                """ + filter
+                        + """
+                 ORDER BY %s
                  LIMIT ?
-                """, this::mapSession, limit);
+                """.formatted(SqlInstant.column("last_seen_at", postgres)
+                                .descending("id")),
+                this::mapSession,
+                limit);
     }
 
     public List<AgentSession> recentSessionsMissingSummary(int limit) {
 
-        return jdbcTemplate.query("""
+        return jdbcTemplate.query(
+                """
                 SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
                            first_human_turn
                   FROM agent_sessions
                  WHERE summary IS NULL OR trim(summary) = ''
-                 ORDER BY last_seen_at DESC
+                 ORDER BY %s
                  LIMIT ?
-                """, this::mapSession, limit);
+                """.formatted(SqlInstant.column("last_seen_at", postgres).descending("id")), this::mapSession, limit);
     }
 
     @Override
