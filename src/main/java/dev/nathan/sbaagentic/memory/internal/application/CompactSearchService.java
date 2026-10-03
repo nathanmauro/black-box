@@ -1,29 +1,42 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
+import dev.nathan.sbaagentic.memory.CompactPageRequest;
 import dev.nathan.sbaagentic.memory.CompactSearchOperations;
+import dev.nathan.sbaagentic.memory.CompactSearchPage;
 import dev.nathan.sbaagentic.memory.CompactSearchResult;
 import dev.nathan.sbaagentic.memory.CompactSearchResult.*;
 import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader;
 import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.Candidate;
+import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.PageQuery;
+import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader.PageRow;
 import dev.nathan.sbaagentic.memory.internal.application.port.SearchIndex;
+import dev.nathan.sbaagentic.project.ProjectKey;
 import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.query.CompactQueryDiagnostics;
 import dev.nathan.sbaagentic.query.EventQuery;
+import dev.nathan.sbaagentic.query.SqlInstant;
 import dev.nathan.sbaagentic.recording.EventTypes;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
 public class CompactSearchService implements CompactSearchOperations {
     private static final int CANDIDATE_LIMIT = 200;
+    private static final int MAX_TERMS = 16;
+    private static final int MAX_TERM_CODE_POINTS = 512;
+    private static final int MAX_TERM_BYTES = 2048;
+    private static final int MAX_PROJECT_CODE_POINTS = 1024;
     private static final String UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
     private static final Pattern VOICE = Pattern.compile("^codex-voice:[^:]{1,64}:(" + UUID + "):" + UUID + "$");
     private final CompactEventReader events;
@@ -154,6 +167,238 @@ public class CompactSearchService implements CompactSearchOperations {
                         "invalid_request",
                         budget,
                         "Query/filter metadata exceeds maxBytes; shorten the query or increase the budget.");
+    }
+
+    @Override
+    public CompactSearchPage searchPage(CompactPageRequest request) {
+        int budget = request.maxBytes() == null ? 24_000 : request.maxBytes();
+        int limit = request.limit() == null ? 10 : request.limit();
+        if (budget < 2048 || budget > 64_000)
+
+            return pageError("invalid_request", 2048, limit, "maxBytes must be between 2048 and 64000.");
+        if (limit < 1 || limit > 50)
+
+            return pageError("invalid_request", budget, 10, "limit must be between 1 and 50.");
+
+        List<String> rawTerms = request.terms() == null ? List.of() : request.terms();
+        if (rawTerms.isEmpty() || rawTerms.size() > MAX_TERMS)
+
+            return pageError("invalid_request", budget, limit, "Supply 1 to " + MAX_TERMS + " term values.");
+        int termBytes = 0;
+        for (String term : rawTerms) {
+            if (term == null
+                    || term.isEmpty()
+                    || !CompactPageCursor.wellFormed(term)
+                    || term.codePointCount(0, term.length()) > MAX_TERM_CODE_POINTS
+                    || term.chars().anyMatch(c -> Character.isISOControl(c) && c != '\t' && c != '\n' && c != '\r'))
+
+                return pageError(
+                        "invalid_request",
+                        budget,
+                        limit,
+                        "Each term must be 1-" + MAX_TERM_CODE_POINTS
+                                + " Unicode code points without control characters other than tab, LF or CR.");
+            termBytes += term.getBytes(StandardCharsets.UTF_8).length;
+        }
+        if (termBytes > MAX_TERM_BYTES)
+
+            return pageError(
+                    "invalid_request", budget, limit, "Terms may total at most " + MAX_TERM_BYTES + " UTF-8 bytes.");
+        List<String> terms = List.copyOf(new TreeSet<>(rawTerms));
+        String project = null;
+        if (request.projectExact() != null) {
+            String raw = request.projectExact();
+            if (raw.isBlank()
+                    || !CompactPageCursor.wellFormed(raw)
+                    || raw.codePointCount(0, raw.length()) > MAX_PROJECT_CODE_POINTS
+                    || raw.chars().anyMatch(Character::isISOControl))
+
+                return pageError(
+                        "invalid_request",
+                        budget,
+                        limit,
+                        "projectExact must be a nonblank path of at most " + MAX_PROJECT_CODE_POINTS
+                                + " code points without control characters; use __no_project__ for none.");
+            project = ProjectKey.of(raw).value();
+        }
+        String session = request.sessionId();
+        if (session != null
+                && (session.isEmpty()
+                        || session.length() > 256
+                        || !CompactPageCursor.wellFormed(session)
+                        || session.chars().anyMatch(Character::isISOControl)))
+
+            return pageError(
+                    "invalid_request",
+                    budget,
+                    limit,
+                    "sessionId must be an exact internal session ID of 1-256 characters without control characters.");
+        Instant until = null;
+        if (request.until() != null) {
+            try {
+                if (request.until().length() > 64) throw new DateTimeParseException("too long", request.until(), 0);
+                until = Instant.parse(request.until());
+            } catch (DateTimeParseException ex) {
+
+                return pageError(
+                        "invalid_request",
+                        budget,
+                        limit,
+                        "until must be an ISO-8601 instant such as 2026-08-18T00:00:00.000000001Z.");
+            }
+        }
+        CompactPageCursor.Position position = null;
+        if (request.before() != null) {
+            try {
+                position = CompactPageCursor.decode(request.before());
+            } catch (IllegalArgumentException ex) {
+
+                return pageError("invalid_cursor", budget, limit, ex.getMessage());
+            }
+            if (until != null && !until.equals(position.until()))
+
+                return pageError(
+                        "cursor_mismatch", budget, limit, "until differs from the cutoff carried by the cursor.");
+            until = position.until();
+        }
+        if (until == null) until = clock.instant();
+        String fingerprint = CompactPageCursor.fingerprint(terms, project, session, until);
+        if (position != null && !position.fingerprint().equals(fingerprint))
+
+            return pageError(
+                    "cursor_mismatch",
+                    budget,
+                    limit,
+                    "The cursor belongs to different terms, projectExact or sessionId; restart without before.");
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("terms", terms);
+        if (project != null) filters.put("projectExact", project);
+        if (session != null) filters.put("sessionId", session);
+        filters.put("until", until.toString());
+        PageFit empty = new PageFit(List.of(), List.of(), false, filters, fingerprint, until, limit, budget);
+        if (bytes(empty.page(List.of(), false)) > budget)
+
+            return pageError(
+                    "invalid_request",
+                    budget,
+                    limit,
+                    "Filter metadata exceeds maxBytes; shorten the terms or increase the budget.");
+
+        List<PageRow> rows = events.pageCompact(
+                new PageQuery(
+                        terms,
+                        project,
+                        session,
+                        SqlInstant.key(until),
+                        position == null ? null : position.orderKey(),
+                        position == null ? null : position.eventId()),
+                limit + 1);
+        List<PageRow> delivered = rows.subList(0, Math.min(limit, rows.size()));
+        PageFit fit = new PageFit(
+                delivered,
+                delivered.stream()
+                        .map(row -> hit(row.candidate(), true, List.of("local")))
+                        .toList(),
+                rows.size() > limit,
+                filters,
+                fingerprint,
+                until,
+                limit,
+                budget);
+        try {
+
+            return fit.fitted();
+        } catch (IllegalStateException ex) {
+
+            return pageError("cursor_unavailable", budget, limit, ex.getMessage());
+        }
+    }
+
+    /** Fits one page to the byte budget, advancing only from the last hit that is actually delivered. */
+    private record PageFit(
+            List<PageRow> rows,
+            List<Hit> hits,
+            boolean moreRows,
+            Map<String, Object> filters,
+            String fingerprint,
+            Instant until,
+            int limit,
+            int budget) {
+
+        CompactSearchPage fitted() {
+            List<Hit> kept = new ArrayList<>(hits);
+            CompactSearchPage page = page(kept, false);
+            while (bytes(page) > budget && kept.size() > 1) {
+                kept.removeLast();
+                page = page(kept, true);
+            }
+            if (bytes(page) > budget && kept.size() == 1 && kept.getFirst().excerpt() != null) {
+                Hit first = kept.getFirst();
+                int low = 0,
+                        high = first.excerpt().codePointCount(0, first.excerpt().length());
+                Hit best = withExcerpt(first, "");
+                while (low <= high) {
+                    int middle = (low + high) / 2;
+                    Hit candidate = withExcerpt(first, clip(first.excerpt(), middle));
+                    if (bytes(page(List.of(candidate), true)) <= budget) {
+                        best = candidate;
+                        low = middle + 1;
+                    } else high = middle - 1;
+                }
+                kept.set(0, best);
+                page = page(kept, true);
+            }
+
+            return bytes(page) <= budget
+                    ? page
+                    : pageError(
+                            "budget_exceeded",
+                            budget,
+                            limit,
+                            "The next hit cannot fit maxBytes even with an empty excerpt; increase maxBytes. No cursor advanced.");
+        }
+
+        CompactSearchPage page(List<Hit> kept, boolean limited) {
+            boolean hasMore = moreRows || kept.size() < hits.size();
+            String next = null;
+            if (hasMore && !kept.isEmpty()) {
+                PageRow last = rows.get(kept.size() - 1);
+                next = CompactPageCursor.encode(
+                        new CompactPageCursor.Position(fingerprint, until, last.orderKey(), last.eventId()));
+            }
+
+            return new CompactSearchPage(
+                    "ok",
+                    "canonical",
+                    kept.size(),
+                    List.copyOf(kept),
+                    filters,
+                    hasMore,
+                    next,
+                    limited,
+                    kept.stream().anyMatch(Hit::excerptTruncated),
+                    limit,
+                    budget,
+                    List.of(
+                            "Literal case-sensitive matches over text, tool name and stored metadata JSON; excerpts can omit the match."));
+        }
+    }
+
+    private static CompactSearchPage pageError(String status, int budget, int limit, String diagnostic) {
+
+        return new CompactSearchPage(
+                status,
+                "canonical",
+                0,
+                List.of(),
+                Map.of(),
+                false,
+                null,
+                false,
+                false,
+                limit,
+                budget,
+                List.of(diagnostic));
     }
 
     private static Map<String, Object> filters(EventQuery parsed, Clock clock, String exclude) {

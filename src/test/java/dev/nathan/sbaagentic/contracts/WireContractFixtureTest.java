@@ -22,6 +22,7 @@ import dev.nathan.sbaagentic.lineage.SessionLink;
 import dev.nathan.sbaagentic.lineage.SessionLinkView;
 import dev.nathan.sbaagentic.lineage.SessionLinksResponse;
 import dev.nathan.sbaagentic.lineage.SessionRef;
+import dev.nathan.sbaagentic.memory.CompactSearchPage;
 import dev.nathan.sbaagentic.memory.CompactSearchResult;
 import dev.nathan.sbaagentic.memory.ElasticHealth;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
@@ -287,6 +288,7 @@ class WireContractFixtureTest {
                 entry("CompactSearchResult.Hit", CompactSearchResult.Hit.class),
                 entry("CompactSearchResult.SourceReference", CompactSearchResult.SourceReference.class),
                 entry("CompactSearchResult.Coverage", CompactSearchResult.Coverage.class),
+                entry("CompactSearchPage", CompactSearchPage.class),
                 entry("AgentEvent", AgentEvent.class),
                 entry("AgentSession", AgentSession.class),
                 entry("AiHealth", AiHealth.class),

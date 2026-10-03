@@ -320,6 +320,50 @@ oversized identities remain unresolved; no file scan, credential access or exter
 performed. Neither a capture type, matching phrase, summary, nor source candidate proves origin,
 user agreement or causation. Verify original statements and label remaining inference.
 
+#### Canonical literal pages (`mode=canonical`)
+
+To traverse every match rather than a bounded sample, opt in with `mode=canonical` on the same HTTP
+route. This mode is HTTP only; `searchContext` and requests without `mode` are unchanged.
+
+```text
+GET /api/search/compact?mode=canonical&term=backend&term=%22engine%20A%22&projectExact=/repo&limit=20
+GET /api/search/compact?mode=canonical&term=backend&term=%22engine%20A%22&projectExact=/repo&limit=20&before=<nextBefore>
+```
+
+- `term` is repeatable (1–16 values, each 1–512 code points, 2,048 UTF-8 bytes total). Every term
+  must occur as a **case-sensitive literal substring** of the event `text`, `tool_name` or stored
+  `metadata_json` text. Quotes, `%`, `_`, backslashes, commas, `key:value` text and Unicode are
+  literal; nothing is parsed as query grammar or a wildcard. Metadata is matched as stored JSON, so
+  a quote inside a metadata value is matched in its JSON-escaped form. Control characters other
+  than tab, LF and CR, and unpaired surrogates, are rejected. Other columns are not searched.
+- `projectExact` is canonicalized like project identity (trimmed, trailing `/` removed) and compared
+  with the session working directory exactly; `__no_project__` selects sessions without one. It is
+  not grouped project identity. `sessionId` matches one internal session ID only, never a client
+  session ID.
+- `until` is an inclusive ISO-8601 instant compared at nanosecond precision. If omitted, the first
+  page uses the request time. The effective value appears in `appliedFilters.until` and travels in
+  the cursor, so later pages do not drift.
+- Results are ordered newest first by observed time, then event ID, with no global candidate cap.
+  `limit` must be 1–50 (default 10) and `maxBytes` follows the legacy budget rules. There is no
+  total count, Elasticsearch participation or similarity grouping.
+- The page reports `hasMore` and `nextBefore` (null when exhausted). Pass `nextBefore` as `before`
+  with the same `term`, `projectExact` and `sessionId` values; repeating `until` is optional but must
+  match. Malformed cursors return `invalid_cursor`; a cursor reused with other filters returns
+  `cursor_mismatch`.
+- `nextBefore` always continues after the last hit actually returned. When the byte budget drops
+  hits from a page, they come back on the next page; `budgetLimited` says the page or an excerpt was
+  shortened to fit, and `excerptsTruncated` reports shortened excerpts. If even one hit with an empty
+  excerpt cannot fit, the response is `budget_exceeded` with no items and no cursor; raise `maxBytes`.
+- `q`, `groupSimilar` and `excludeSession` are rejected with `mode=canonical`, and canonical
+  parameters are rejected without it, instead of being ignored. Canonical validation errors are
+  HTTP 400 with the page shape and a non-`ok` `status`. Non-integer `limit` or `maxBytes` values
+  retain the standard API error body (`error.type=invalid_argument`). Requests without `mode`
+  retain the legacy error shape.
+
+The fixed cutoff keeps later arrivals out, but pages read live tables: concurrent, backdated or
+deleted writes inside the window are not snapshot-isolated. Exactly-once traversal is guaranteed for
+a corpus that does not change during the walk, such as a fixture ingested before the first page.
+
 For external source readers, inspect the current tool schema, follow returned pagination cursors,
 check errors before parsing JSON, and bound the whole displayed response. Black Box does not
 control those tools' page sizes or promise that every external task has a local transcript.
