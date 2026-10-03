@@ -8,6 +8,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class RedactionServiceTest {
 
@@ -70,6 +72,29 @@ class RedactionServiceTest {
         assertThat(redacted).startsWith("password=[REDACTED]");
         assertThat(redacted).endsWith("…[truncated]");
         assertThat(redacted.length()).isLessThan(51_000);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {49_998, 49_999, 50_000})
+    void scalarScanLimitKeepsSupplementaryCharactersWhole(int prefixLength) {
+        RedactionService redaction = redactionService();
+        String prefix = "x".repeat(prefixLength);
+        String input = prefix + "🧪" + "tail";
+        String expected = (prefixLength == 49_998 ? prefix + "🧪" : prefix) + " …[truncated]";
+
+        assertThat(redaction.redact(input)).isEqualTo(expected);
+        assertThat(redaction.redactForExport(input)).isEqualTo(expected);
+        assertThat(redaction.redactDeep(Map.of("nested", List.of(input))))
+                .isEqualTo(Map.of("nested", List.of(expected)));
+    }
+
+    @Test
+    void scalarExactlyAtScanLimitRemainsUnchanged() {
+        RedactionService redaction = redactionService();
+        String input = "x".repeat(49_998) + "🧪";
+
+        assertThat(redaction.redact(input)).isEqualTo(input);
+        assertThat(redaction.redactForExport(input)).isEqualTo(input);
     }
 
     @Test
