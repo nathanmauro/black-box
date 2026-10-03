@@ -58,3 +58,13 @@ next exact-path commit/PR/merge.
 Coordinator acceptance: preserved both capture-acknowledgement and Projection documentation
 while integrating main through PR65. All 40 actual structured HTTP/MCP, context-loop and wire
 contract tests passed together, with no skips. Fresh source review found no remaining issues.
+
+## Linux precision follow-up
+
+Linux CI exposed nanosecond loss in the test's JSON tree parser: numeric MCP epoch timestamps
+were first converted to binary doubles, while macOS capture timestamps had only microsecond
+precision. A deterministic `.123456789` fixture reproduced the failure locally. The test now
+uses a per-call decimal-preserving reader for inner MCP content; production serialization and
+the exact Instant equality assertion are unchanged. Fresh independent review found no issues.
+After integrating main through PR68, all 43 structured HTTP/MCP, context, wire and redaction
+integration cases passed with no skips. The new browser CI gate will also run on this head.
