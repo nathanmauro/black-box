@@ -117,3 +117,29 @@ needed a scoped rerun after the sandbox blocked its private loopback fixtures; i
 source or assertion changes. Fresh review accepted the final code and 78 additional synthetic
 budget boundary checks. Only two prose qualifiers were tightened after the frozen handoff.
 No model comparison, live corpus, provider, deployment or usefulness result is claimed.
+
+## CI portability correction
+
+PR CI on commit `91076131` passed the pinned `python-minimum` job (`actions/setup-python`,
+Python 3.9, asserted on PATH). The `backend` job runs the same benchmark suite with the runner
+image's unpinned system `python3` (a newer Python). There, `test_schema_utf8_json_and_bounds`
+failed with `'invalid_schema' != 'invalid_json'`: its fixture was **valid** JSON nested 5,000
+arrays deep. Python 3.9's parser raises `RecursionError` at that depth (reported as
+`invalid_json`); 3.13 and 3.14 parse it, and validation then correctly rejects the schema. Both
+outcomes fail closed; the test, not production, held a runtime-specific recursion assumption.
+
+Production code is unchanged. The test now uses:
+
+- a deep **malformed** fixture (5,000 `[`, 4,999 `]`), which is `invalid_json` on every runtime;
+- a real balanced-deep corpus with a valid items schema, asserting it is rejected as either
+  `invalid_json` or `invalid_schema` (version-dependent) and never loaded;
+- a deterministic `unittest.mock` `RecursionError` from `json.loads`, proving both the corpus
+  loader and the request handler map it to `invalid_json`, the latter as a metered error that
+  consumes an attempt.
+
+The request-side deep fixture was already malformed (3,000 `[`, 1,000 `]`) and stays portable.
+Local results, no installs: 28 focused, 97 benchmark and 20 evaluation tests pass on Python
+3.9.6, 3.11.15, 3.12.14 and 3.13.15. On 3.14.7 the focused and benchmark suites pass; one
+pre-existing evaluation test outside NAT-315 (`test_resumption_eval`, `24:00:00` timestamp
+accepted by the newer runtime) fails. `scripts/evaluation` is unchanged since the base commit and
+is not in this slice's ownership.

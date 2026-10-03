@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import history_search as h
 
@@ -119,7 +120,9 @@ class CorpusValidationTests(CorpusFixture):
         self.rejects("invalid_utf8", [item("a", "x")], items_bytes=good.replace(b'"x"', b'"\\ud800"'))
         self.rejects("invalid_json", [item("a", "x")], items_bytes=good.replace(b'"text"', b'"kind": "message", "text"'))
         self.rejects("invalid_json", [item("a", "x")], items_bytes=good[:-1])
-        self.rejects("invalid_json", [], items_bytes=b'{"schema": "x", "items": ' + b"[" * 5000 + b"]" * 5000 + b"}")
+        # Deep but malformed (one bracket short): invalid_json whether or not the runtime's parser
+        # reaches its recursion limit first, so this expectation is portable across Python versions.
+        self.rejects("invalid_json", [], items_bytes=b'{"schema": "x", "items": ' + b"[" * 5000 + b"]" * 4999 + b"}")
         self.rejects("invalid_json", [item("a", "x")], items_bytes=good.replace(b'"items"', b'"n": NaN, "items"'))
         self.rejects("invalid_schema", [dict(item("a", "x"), extra=1)])
         self.rejects("invalid_schema", [item("a", "x", kind="summary")])
@@ -137,6 +140,31 @@ class CorpusValidationTests(CorpusFixture):
         with self.assertRaises(h.CorpusError) as caught:
             h.load_corpus(big, hashlib.sha256(big.read_bytes()).hexdigest())
         self.assertEqual(caught.exception.code, "too_large")
+
+    def test_deep_valid_json_fails_closed_on_any_runtime(self):
+        # Balanced nesting is valid JSON. Whether Python's parser accepts this depth is
+        # version-specific (3.9 raises RecursionError; newer parsers may not), so either
+        # rejection is correct as long as no corpus is loaded.
+        nested = b"[" * 5000 + b"]" * 5000
+        data = b'{"schema": "' + h.ITEMS_SCHEMA.encode() + b'", "items": [' + nested + b"]}"
+        path, digest = write_corpus(self.root, [item("a", "x")], items_bytes=data)
+        with self.assertRaises(h.CorpusError) as caught:
+            h.load_corpus(path, digest)
+        self.assertIn(caught.exception.code, ("invalid_json", "invalid_schema"))
+
+    def test_parser_recursion_error_is_handled_deterministically(self):
+        path, digest = write_corpus(self.root, [item("a", "x")])
+        with mock.patch.object(h.json, "loads", side_effect=RecursionError):
+            with self.assertRaises(h.CorpusError) as caught:
+                h.load_corpus(path, digest)
+        self.assertEqual(caught.exception.code, "invalid_json")
+        session = h.Session(self.corpus([item("a", "alpha")]))
+        session.start()
+        with mock.patch.object(h.json, "loads", side_effect=RecursionError):
+            payload = session.handle_line(b'{"query": "alpha"}')
+        body = decode(payload)
+        self.assertEqual((body["status"], body["error"]["code"], body["attempt"]), ("error", "invalid_json", 1))
+        self.assertEqual(session.delivered, sum(entry["bytes"] for entry in session.log))
 
     def test_fractional_and_offset_ordering_is_exact(self):
         self.assertLess(h.parse_time("2026-09-01T00:00:00.09Z", "t"), h.parse_time("2026-09-01T00:00:00.1Z", "t"))
