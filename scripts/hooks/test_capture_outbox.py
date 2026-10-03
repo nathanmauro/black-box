@@ -326,6 +326,41 @@ class OutboxTest(unittest.TestCase):
             with self.subTest(input=fixture["input"]):
                 self.assertEqual(outbox.redact_text(fixture["input"]), fixture["expected"])
 
+    def test_redaction_marker_does_not_exempt_attached_credential_text(self):
+        for value in ("[REDACTED]", "[REDACTED]SYNTHETIC_SUFFIX",
+                      "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.SYNTHETIC_SUFFIX"):
+            for tail in (" neighboring=evidence", ",next=evidence", "}next", "]next"):
+                with self.subTest(value=value, tail=tail):
+                    result = outbox.redact_text("token=" + value + tail)
+                    self.assertEqual(result, "token=[REDACTED]" + tail)
+                    self.assertEqual(outbox.redact_text(result), result)
+        self.assertEqual(outbox.redact_text("ordinary [REDACTED]SYNTHETIC_SUFFIX"),
+                         "ordinary [REDACTED]SYNTHETIC_SUFFIX")
+
+    def test_marker_suffix_is_removed_before_hook_queue_disk_and_replayed_delivery(self):
+        server = self.server()
+        server.mode = "drop"
+        secret = "SYNTHETIC_MARKER_REMAINDER"
+        result = self.hook({"session_id": "marker-fixture", "hook_event_name": "Stop",
+                            "last_assistant_message": "token=[REDACTED]" + secret + " neighboring=evidence"},
+                           server.origin)
+        self.assertEqual(result.returncode, 0)
+        row = self.rows()[0]
+        self.assertEqual(json.loads(row["event_bytes"])["text"], "token=[REDACTED] neighboring=evidence")
+        with sqlite3.connect(str(self.directory / outbox.DB_NAME), isolation_level=None) as database:
+            database.execute("BEGIN IMMEDIATE")
+            database.execute("UPDATE captures SET attempts=attempts+1")
+            disk = b"".join(path.read_bytes() for path in self.directory.iterdir() if path.is_file())
+            database.execute("ROLLBACK")
+        self.assertNotIn(secret.encode(), disk + result.stdout.encode() + result.stderr.encode())
+        self.assertNotIn(secret.encode(), server.received[0][1])
+        server.mode = "ok"
+        self.cli("drain", origin=server.origin)
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(len(server.committed), 1)
+        self.assertEqual(server.received[0][1], server.received[1][1])
+        self.assertEqual(json.loads(server.received[1][1])["captureId"], row["capture_id"])
+
     def test_nested_secret_keys_raw_hook_and_oversized_strings_are_sanitized_before_disk(self):
         secrets = ("sensitive-short", "longsyntheticsecretvalue", "private material never stored", "raw-hook-only-secret")
         payload = event(text="password=" + secrets[1] + " " + "x" * 70000)
