@@ -218,6 +218,104 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it.each(["source", "project"])(
+    "does not rewrite a nonhuman request excluded by %s scope",
+    async (scope) => {
+      setHumanOnly(true);
+      const human = { ...sessions[1], firstHumanTurn: "A scoped human aside" };
+      const selected = vi.fn();
+      vi.mocked(getSessions).mockResolvedValue([human]);
+      vi.mocked(getProjectSessions).mockResolvedValue([human]);
+      if (scope === "source")
+        vi.mocked(sourceFilter.matches).mockImplementation(
+          <T extends { source: string }>(items: T[]) =>
+            items.filter((item) => item.source === "claude"),
+        );
+      render(() => (
+        <SessionsPage
+          selectedSessionId="session-1"
+          defaultToFirst
+          onSelectSession={selected}
+          project={
+            scope === "project"
+              ? {
+                  projectKey: "cockpit",
+                  canonicalKey: human.cwd!,
+                  label: "Cockpit",
+                  sessionCount: 1,
+                  eventCount: 8,
+                  savedMeldCount: 0,
+                }
+              : undefined
+          }
+        />
+      ));
+      await screen.findByRole("heading", { name: "Cockpit cleanup" });
+      expect(selected).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not replace an unknown direct session with an unrelated human session", async () => {
+    setHumanOnly(true);
+    vi.mocked(getSession).mockRejectedValue(new Error("Not found"));
+    vi.mocked(getSessions).mockResolvedValue([{ ...sessions[1], firstHumanTurn: "A human aside" }]);
+    render(() => <SessionsPage selectedSessionId="missing-session" />);
+    await waitFor(() => expect(getSessions).toHaveBeenCalled());
+    await waitFor(() => expect(getSession).toHaveBeenCalledWith("missing-session"));
+    await waitFor(() => expect(document.querySelector(".session-row")).toBeInTheDocument());
+    expect(screen.getByRole("heading", { name: "Select a session" })).toBeInTheDocument();
+    expect(getSessionTranscript).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("filters ordinary requested sessions reactively but retains exact evidence in human mode", async () => {
+    const human = { ...sessions[1], firstHumanTurn: "A human aside" };
+    vi.mocked(getSessions).mockImplementation(async (_limit, _children, humanOnly) =>
+      humanOnly ? [human] : [sessions[0], human],
+    );
+    const [target, setTarget] = createSignal<string | undefined>();
+    render(() => (
+      <SessionsPage selectedSessionId="session-1" targetEventId={target()} defaultToFirst />
+    ));
+    await screen.findByRole("heading", { name: "Focused session" });
+    setHumanOnly(true);
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    expect(getSessions).toHaveBeenLastCalledWith(120, false, true);
+    expect(document.querySelector(".session-list-pane")).not.toHaveTextContent("Focused session");
+    setTarget("evt-tool");
+    await screen.findByRole("heading", { name: "Focused session" });
+    setTarget(undefined);
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    setHumanOnly(false);
+    await screen.findByRole("heading", { name: "Focused session" });
+    expect(getSessions).toHaveBeenLastCalledWith(120, false, false);
+  });
+
+  it("passes human mode to project session retrieval before choosing an ordinary session", async () => {
+    const human = { ...sessions[1], cwd: sessions[0].cwd, firstHumanTurn: "A human aside" };
+    vi.mocked(getProjectSessions).mockImplementation(async (_key, _limit, humanOnly) =>
+      humanOnly ? [human] : [sessions[0], human],
+    );
+    render(() => (
+      <SessionsPage
+        project={{
+          projectKey: "sba-key",
+          canonicalKey: sessions[0].cwd!,
+          label: "SBA",
+          sessionCount: 2,
+          eventCount: 12,
+          savedMeldCount: 0,
+        }}
+        defaultToFirst
+      />
+    ));
+    await screen.findByRole("heading", { name: "Focused session" });
+    setHumanOnly(true);
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    expect(getProjectSessions).toHaveBeenLastCalledWith("sba-key", 120, true);
+    expect(getSessions).not.toHaveBeenCalled();
+  });
+
   it("offers a compact mobile chooser and details with Escape focus and responsive recovery", async () => {
     let compact = true;
     const listeners = new Set<() => void>();
@@ -432,6 +530,9 @@ describe("SessionsPage", () => {
   });
 
   it("passes humanOnly to the transcript fetch and refetches when toggled", async () => {
+    const humanSession = { ...sessions[0], firstHumanTurn: "Focus the session reader." };
+    vi.mocked(getSessions).mockResolvedValue([humanSession]);
+    vi.mocked(getSession).mockResolvedValue(humanSession);
     render(() => <SessionsPage />);
     await screen.findByRole("heading", { name: "Focused session" });
     await waitFor(() => expect(getSessionTranscript).toHaveBeenCalled());
@@ -883,7 +984,7 @@ describe("SessionsPage", () => {
     expect(await within(rail).findByText("Focused session")).toBeInTheDocument();
     expect(within(rail).queryByText("Cockpit cleanup")).not.toBeInTheDocument();
     expect(rail.querySelector(".session-group")).not.toBeInTheDocument();
-    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120, false);
     expect(createSessionsResource).not.toHaveBeenCalled();
     expect(getSessions).not.toHaveBeenCalled();
   });
@@ -1023,7 +1124,7 @@ describe("SessionsPage", () => {
       savedMeldCount: 0,
     });
 
-    await waitFor(() => expect(getProjectSessions).toHaveBeenCalledWith("project-b", 120));
+    await waitFor(() => expect(getProjectSessions).toHaveBeenCalledWith("project-b", 120, false));
     expect(within(rail).queryByText("Focused session")).not.toBeInTheDocument();
     expect(getSessionTranscript).not.toHaveBeenCalled();
   });
@@ -1071,7 +1172,7 @@ describe("SessionsPage", () => {
     ));
 
     expect(await screen.findByRole("heading", { name: "Focused session" })).toBeInTheDocument();
-    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120);
+    expect(getProjectSessions).toHaveBeenCalledWith("sba-key", 120, false);
     await waitFor(() =>
       expect(getSessionTranscript).toHaveBeenCalledWith("session-1", { limit: 50, q: undefined }),
     );
@@ -1225,7 +1326,7 @@ describe("SessionsPage", () => {
       await within(rail).findByRole("button", { name: "Toggle 2 subagent sessions" }),
     ).toHaveAttribute("aria-expanded", "false");
     expect(getSessionChildCounts).toHaveBeenCalledWith(["session-1", "session-2"]);
-    expect(getSessions).toHaveBeenCalledWith(120);
+    expect(getSessions).toHaveBeenCalledWith(120, false, false);
     const cockpitRow = within(rail)
       .getByText("Cockpit cleanup")
       .closest(".session-row-block") as HTMLElement;
