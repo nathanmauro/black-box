@@ -155,6 +155,20 @@ These tables cover the application variables; hook and wrapper variables are sep
 | `SBA_EXPORT_OBSIDIAN_DIR` | Empty | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI |
 | `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
 
+Summary Markdown export resolves its explicitly configured root to a canonical directory; a
+configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
+notes are rejected. Existing hard-linked notes are replaced without changing their other aliases. Ordinary repeat exports replace the completed note atomically, preserving
+existing POSIX permissions where supported. Failed rendering, staging or atomic publication leaves
+the previous note intact; filesystems without stable file identities or atomic replacement fail
+closed. New staged files use the platform's private temporary-file permissions.
+
+Export directories must be caller-controlled and remain stable during the operation. Identity
+checks detect observed directory/file replacements, but portable Java filesystem operations do
+not guarantee resistance to adversarial concurrent directory renames. This is not a crash-durability
+or cross-process editing protocol. Normal failures clean up staging files. If a directory moves
+mid-export, a `.blackbox-export-*.tmp` file may remain in the displaced directory: cleanup avoids
+following the replacement path. Inspect that orphan only after restoring a trusted directory layout.
+
 Authentication represents one trusted workspace with one browser user and one agent token, not
 tenant isolation or per-agent permissions. Both secrets must be independently generated, different,
 at least 32 characters, and satisfy startup validation; never put secret values in command
