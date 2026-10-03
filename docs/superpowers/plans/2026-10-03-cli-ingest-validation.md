@@ -67,3 +67,16 @@ unit/process checks passed again on the combined source, with zero failures/erro
 selection also ran 36 adjacent client tests (one optional Elasticsearch check skipped). The
 new guard remains confined to ingest argument validation; hosted CI runs the complete backend,
 PostgreSQL, frontend and packaged-browser gates before merge. No deployment is included.
+
+## Browser CI qualification
+
+The first hosted run passed backend and minimum-Python checks but exposed a shared Stream test
+fixture assumption: after other journeys appended events, the expected global prompt was older
+than the first 100 all-events rows. The retained network trace showed a successful filtered
+response, 100 rows, a next-page cursor, and no expected prompt; the toggle itself worked.
+The Stream filter test now owns two uniquely named captures in one unique project and retains
+that exact project scope while checking meaningful and source filters. Its original visibility
+assertions remain, strengthened by 1 → 2 → 1 row counts. Distinct fixture text prevents collisions
+with unrelated global-seed selectors. No product limits, retries or assertions were relaxed.
+After current-main integration, frontend checks and all 66 packaged Chromium journeys passed
+with zero retries. An independent read-only review accepted the fixture repair.

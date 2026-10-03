@@ -37,8 +37,8 @@ test("meaningful toggle widens the stream and a source facet narrows it", async 
   const id = randomUUID();
   const repo = `/tmp/stream-visibility-${id}`;
   const scope = `project_exact:${repo}`;
-  const decision = "Use SolidJS + Vite for the UI rewrite";
-  const prompt = "Rewrite the UI to match agent-observatory";
+  const decision = `Choose local storage for scoped filter fixture ${id}`;
+  const prompt = `Show the human prompt for scoped filter fixture ${id}`;
   // Other journeys append hundreds of events. Own this slice instead of assuming a global seed
   // is still within the first page when meaningful-only is turned off.
   const capturedDecision = await request.post("/api/decisions", {
