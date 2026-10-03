@@ -2,6 +2,7 @@
 """Disposable filesystem/process/HTTP verification; never uses the real queue or service."""
 import contextlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import signal
 import shutil
 import socket
 import sqlite3
+import ssl
 import stat
 import subprocess
 import sys
@@ -37,11 +39,15 @@ class Recorder(ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, port=0):
+    def __init__(self, port=0, tls_context=None):
         super().__init__(("127.0.0.1", port), Handler)
         self.origin = "http://127.0.0.1:" + str(self.server_port)
+        if tls_context:
+            self.socket = tls_context.wrap_socket(self.socket, server_side=True)
+            self.origin = "https://localhost:" + str(self.server_port)
         self.lock = threading.Lock()
         self.received = []
+        self.auth_headers = []
         self.committed = {}
         self.mode = "ok"
         self.code = 200
@@ -70,6 +76,7 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw)
             with self.server.lock:
                 self.server.received.append((self.path, raw))
+                self.server.auth_headers.append(self.headers.get("Authorization"))
                 capture = body["captureId"]
                 replayed = capture in self.server.committed
                 if not replayed:
@@ -135,6 +142,7 @@ class OutboxTest(unittest.TestCase):
     def env(self, origin="http://127.0.0.1:1", directory=None):
         env = dict(os.environ)
         env.pop("SBA_AGENT_SOURCE", None)
+        env.pop("SBA_CAPTURE_HTTPS_ORIGIN", None)
         env.update(SBA_CAPTURE_DURABLE="1", SBA_CAPTURE_OUTBOX_DIR=str(directory or self.directory), SBA_AGENTIC_URL=origin)
         return env
 
@@ -391,6 +399,165 @@ class OutboxTest(unittest.TestCase):
         self.assertEqual(second.received, [])
         self.cli("drain", origin=first.origin, env_extra={"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": "http://127.0.0.1:1", "NO_PROXY": ""})
         self.assertEqual(self.rows(), [])
+
+    def tls_server(self):
+        certificate = self.root / "fixture-cert.pem"
+        key = self.root / "fixture-key.pem"
+        config = self.root / "fixture-cert.cnf"
+        config.write_text("[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n"
+                          "[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost\n"
+                          "basicConstraints=critical,CA:TRUE\n")
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                        "-keyout", str(key), "-out", str(certificate), "-config", str(config)],
+                       check=True, capture_output=True, timeout=10)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certificate, key)
+        recorder = Recorder(tls_context=context)
+        self.servers.append(recorder)
+        return recorder, certificate
+
+    def https_command(self, command, origin, payload=None, secret=b"fixture-bearer\n", certificate=None,
+                      extra=(), credential_error=None, env_extra=None):
+        env = self.env(origin)
+        env["SBA_CAPTURE_HTTPS_ORIGIN"] = origin
+        env.pop("SSL_CERT_FILE", None)
+        if certificate:
+            env["SSL_CERT_FILE"] = str(certificate)
+        if env_extra:
+            env.update(env_extra)
+        # Apple's bundled Python may ignore SSL_CERT_FILE when loading system roots. Keep this
+        # fixture CA inside the test's verified context; never change machine trust or verification.
+        tls_context = ssl.create_default_context(cafile=str(certificate)) if certificate else ssl.create_default_context()
+        output, errors = io.StringIO(), io.StringIO()
+        stdin = io.TextIOWrapper(io.BytesIO(json.dumps(payload or event()).encode()))
+        handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGALRM, signal.SIGTERM, signal.SIGINT)}
+        try:
+            with patch.dict(os.environ, env, clear=True), patch.object(sys, "stdin", stdin), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors), \
+                    patch.object(outbox.ssl, "create_default_context", return_value=tls_context), \
+                    patch.object(outbox.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, secret),
+                                 side_effect=credential_error) as lookup:
+                outbox.main([command, *extra])
+        finally:
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)
+        return output.getvalue(), errors.getvalue(), lookup
+
+    def test_https_requires_exact_explicit_origin_and_strict_grammar(self):
+        self.assertEqual(outbox.normalized_origin("https://EXAMPLE.test:0443", "https://example.test"),
+                         ("https://example.test", "example.test", 443))
+        self.assertEqual(outbox.normalized_origin("https://[::1]:8443", "https://[0:0:0:0:0:0:0:1]:8443"),
+                         ("https://[::1]:8443", "::1", 8443))
+        invalid = ("https://user:pass@example.test", "https://example.test/", "https://example.test?",
+                   "https://example.test#", "https://example.test:0", "https://example.test:65536",
+                   "https://example.test.", "https://ex ample.test", "https://example%2etest",
+                   "https://-example.test", "https://example..test", "https://2130706433",
+                   "https://[::1%lo0]", "https://éxample.test", "https://example.test\n")
+        for origin in invalid:
+            with self.subTest(origin=origin), self.assertRaises(outbox.OutboxError):
+                outbox.normalized_origin(origin, origin)
+        for allow in (None, "", "https://different.test", "https://example.test:8443"):
+            with self.subTest(allow=allow), self.assertRaises(outbox.OutboxError):
+                outbox.normalized_origin("https://example.test", allow)
+
+    def test_https_entrypoint_delivers_with_origin_bound_bearer_and_no_disk_secret(self):
+        server, certificate = self.tls_server()
+        output, errors, lookup = self.https_command("enqueue", server.origin, certificate=certificate,
+                                                  env_extra={"HTTPS_PROXY": "http://127.0.0.1:1", "NO_PROXY": ""})
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(server.auth_headers, ["Bearer fixture-bearer"])
+        self.assertEqual(len(server.received), 1)
+        args, kwargs = lookup.call_args
+        self.assertEqual(args[0], ["/usr/bin/security", "find-generic-password", "-s", "blackbox-capture",
+                                   "-a", server.origin, "-w"])
+        self.assertLessEqual(kwargs["timeout"], 3)
+        self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+        disk = b"".join(p.read_bytes() for p in self.directory.iterdir())
+        self.assertNotIn(b"fixture-bearer", disk + output.encode() + errors.encode())
+        self.assertNotIn("fixture-bearer", str(args))
+
+    def test_https_credential_failure_happens_after_durable_acceptance_and_status_never_reads_it(self):
+        origin = "https://example.invalid"
+        def missing(*args, **kwargs):
+            self.assertEqual(len(self.rows()), 1)
+            raise FileNotFoundError("sensitive raw error")
+        output, errors, lookup = self.https_command("enqueue", origin, credential_error=missing)
+        self.assertEqual(self.rows()[0]["reason"], "credential_unavailable")
+        self.assertEqual(self.rows()[0]["category"], "paused")
+        self.assertNotIn("sensitive", output + errors)
+        output, errors, lookup = self.https_command("status", origin)
+        lookup.assert_not_called()
+        self.assertEqual(json.loads(output)["count"], 1)
+
+    def test_https_invalid_credentials_never_create_anonymous_requests(self):
+        server, certificate = self.tls_server()
+        for secret in (b"", b"bad\r\nInjected: value", b"bad\n\n", b"space token\n", b"x" * 4100, b"\xff"):
+            self.https_command("enqueue", server.origin, secret=secret, certificate=certificate)
+            self.https_command("drain", server.origin, secret=secret, certificate=certificate, extra=("--retry-paused",))
+        self.assertEqual(server.received, [])
+        self.assertEqual(len(self.rows()), 6)
+
+    def test_https_untrusted_and_wrong_hostname_certificates_retain_capture(self):
+        server, certificate = self.tls_server()
+        self.https_command("enqueue", server.origin)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(server.received, [])
+        wrong_host = server.origin.replace("localhost", "127.0.0.1")
+        self.https_command("enqueue", wrong_host, certificate=certificate)
+        self.assertEqual(len(self.rows()), 2)
+        self.assertEqual(server.received, [])
+        self.https_command("drain", server.origin, certificate=certificate)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(self.rows()[0]["origin"], wrong_host)
+
+    def test_https_redirect_never_forwards_payload_or_credential(self):
+        server, certificate = self.tls_server()
+        other = self.server()
+        server.mode, server.code = "redirect", 302
+        server.redirect_to = other.origin + "/api/events/idempotent"
+        self.https_command("enqueue", server.origin, certificate=certificate)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertEqual(other.received, [])
+        self.assertEqual(other.auth_headers, [])
+
+    def test_https_rotated_token_preserves_retry_bytes_identity_and_origin_partition(self):
+        server, certificate = self.tls_server()
+        server.code = 401
+        self.https_command("enqueue", server.origin, certificate=certificate, secret=b"first-token\n")
+        original = self.rows()[0]
+        self.https_command("drain", server.origin, certificate=certificate, secret=b"second-token\n")
+        self.assertEqual(len(server.received), 1)
+        output, errors, lookup = self.https_command("drain", "https://other.invalid")
+        lookup.assert_not_called()
+        server.code = 200
+        self.https_command("drain", server.origin, certificate=certificate, secret=b"second-token\n",
+                           extra=("--retry-paused",))
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(server.auth_headers, ["Bearer first-token", "Bearer second-token"])
+        self.assertEqual(server.received[0][1], server.received[1][1])
+        self.assertEqual(json.loads(server.received[1][1])["captureId"], original["capture_id"])
+
+    def test_https_keychain_timeout_retains_capture_without_raw_error(self):
+        origin = "https://example.invalid"
+        error = subprocess.TimeoutExpired(["secret-raw-argument"], 0.1, output=b"secret-output")
+        output, errors, lookup = self.https_command("enqueue", origin, credential_error=error)
+        self.assertEqual(len(self.rows()), 1)
+        self.assertNotIn("secret", output + errors)
+        self.assertLessEqual(lookup.call_args.kwargs["timeout"], 3)
+
+    def test_https_credential_timeout_reaps_its_actual_subprocess(self):
+        pid_file = self.root / "credential-fixture.pid"
+        fixture = "import os,time,pathlib; pathlib.Path(" + repr(str(pid_file)) + ").write_text(str(os.getpid())); time.sleep(30)"
+        real_run = subprocess.run
+        def slow_credential(unused_args, **kwargs):
+            return real_run([sys.executable, "-c", fixture], **kwargs)
+        started = time.monotonic()
+        self.https_command("enqueue", "https://example.invalid", credential_error=slow_credential)
+        self.assertLess(time.monotonic() - started, 2.5)
+        self.assertEqual(self.rows()[0]["category"], "paused")
+        self.assertTrue(pid_file.exists())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid_file.read_text()), 0)
 
     def test_redirect_is_not_followed(self):
         first = self.server()
