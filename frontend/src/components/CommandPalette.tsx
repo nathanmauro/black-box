@@ -33,7 +33,6 @@ const NAV_ITEMS = [
     path: "/projects",
     meta: "inspect grouped project history and storylines",
   },
-  { id: "nav-board", label: "Board", path: "/board", meta: "inspect the live agent task queue" },
   { id: "nav-recall", label: "Recall", path: "/recall", meta: "structured decisions and handoffs" },
   {
     id: "nav-ideas",

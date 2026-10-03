@@ -1,5 +1,7 @@
 # How Black Box evolved
 
+> Current boundary (2026-10-02): NAT-243 retired the task board and runner after extracting the retained lineage module. Board/runner references below describe historical behavior; their designs now live in the [retired archive](history/retired-board/README.md). See [upgrade notes](board-retirement.md).
+
 This is a curated history through `1833e07` (2026-09-17), not a roadmap. The dated designs and
 implementation plans under [docs/superpowers](superpowers/) are the primary sources. They preserve
 both original proposals and later corrections; a proposal alone does not establish shipped behavior.
@@ -35,15 +37,15 @@ starting with the stream and narrowing it.
 
 ### 3. Memory acquires ownership rules — July 9–17
 
-The [task-queue design](superpowers/specs/2026-06-28-agent-task-queue-design.md) asked whether
+The [task-queue design](history/retired-board/specs/2026-06-28-agent-task-queue-design.md) asked whether
 independent agents could divide work without making the server an executor. `dac5d52`,
 `6100960`, and `ee70724` (all 2026-07-09) established exact-lane claiming, lifecycle records,
 and completion Handoffs. PR #14 integrated the loop as `5aab0a3` (2026-07-10).
 
 The server never launches a worker or executes a task command. `0d578a0` (2026-07-10) made that
-boundary explicit in the docs. An external [FULL_AUTO runner](superpowers/specs/2026-07-15-full-auto-board-runner.md)
+boundary explicit in the docs. An external [FULL_AUTO runner](history/retired-board/specs/2026-07-15-full-auto-board-runner.md)
 arrived in `d3f449a` (2026-07-16, PR #18), followed by
-[SDLC approval gates](superpowers/specs/2026-07-16-sdlc-mode.md) in `1b45fd6` (2026-07-17, PR #19).
+[SDLC approval gates](history/retired-board/specs/2026-07-16-sdlc-mode.md) in `1b45fd6` (2026-07-17, PR #19).
 The runner consumes REST state; task completion preserves a normal Handoff for the next session.
 These are implemented coordination mechanisms, not evidence of heavy queue adoption.
 
@@ -142,7 +144,7 @@ that an agent read a result or made a better decision. That remains the question
 
 **Task lifecycle needed its own log.** Queue transitions belong to a project-scoped task, while
 captured agent events belong to sessions. The
-[queue design](superpowers/specs/2026-06-28-agent-task-queue-design.md) put lifecycle facts in
+[queue design](history/retired-board/specs/2026-06-28-agent-task-queue-design.md) put lifecycle facts in
 `task_events`. Completion deliberately rejoins the two through a real Handoff, so coordination
 results remain available through ordinary recall rather than a second memory system.
 

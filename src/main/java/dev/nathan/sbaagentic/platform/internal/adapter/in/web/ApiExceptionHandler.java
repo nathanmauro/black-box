@@ -1,8 +1,7 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
+import dev.nathan.sbaagentic.lineage.LinkDomainException;
 import dev.nathan.sbaagentic.recording.CaptureIdConflictException;
-import dev.nathan.sbaagentic.workflow.LinkDomainException;
-import dev.nathan.sbaagentic.workflow.TaskDomainException;
 import java.util.Locale;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -71,20 +70,6 @@ public class ApiExceptionHandler {
         }
 
         return ResponseEntity.badRequest().body(ApiError.of(HttpStatus.BAD_REQUEST, "validation_failed", message));
-    }
-
-    @ExceptionHandler(TaskDomainException.class)
-    public ResponseEntity<ApiError> handleTaskDomain(TaskDomainException ex) {
-        HttpStatus status =
-                switch (ex.code()) {
-                    case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
-                    case SPEC_NOT_FOUND, TASK_NOT_FOUND -> HttpStatus.NOT_FOUND;
-                    case INVALID_TRANSITION, CLAIMANT_MISMATCH, CONCURRENT_MODIFICATION -> HttpStatus.CONFLICT;
-                    case HANDOFF_FAILED -> HttpStatus.BAD_GATEWAY;
-                };
-        String type = ex.code().name().toLowerCase(Locale.ROOT);
-
-        return ResponseEntity.status(status).body(ApiError.of(status, type, ex.getMessage()));
     }
 
     @ExceptionHandler(LinkDomainException.class)

@@ -52,7 +52,7 @@ for (const width of [320, 390, 768, 1440]) {
     // Tab order crosses every primary destination and the filter controls without hidden actions.
     const brand = header.getByRole("link", { name: "Black Box overview" });
     await brand.focus();
-    for (const name of ["Stream", "Browse", "Projects", "Board", "Recall", "Ideas"]) {
+    for (const name of ["Stream", "Browse", "Projects", "Recall", "Ideas"]) {
       await page.keyboard.press("Tab");
       await expect(header.getByRole("link", { name, exact: true })).toBeFocused();
     }

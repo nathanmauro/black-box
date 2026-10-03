@@ -6,9 +6,6 @@
     "CompactSearchResult.Coverage": {"status":"searched","candidates":0,"candidateLimitReached":false},
     "AgentEvent": {"id":"event-1","sessionId":"session-1","source":"codex","clientSessionId":"client-1","turnId":"turn-1","eventType":"Handoff","role":"assistant","text":"done","toolName":null,"toolInputJson":null,"toolOutputJson":null,"metadata":{},"observedAt":"2026-07-20T12:00:00Z","humanText":null},
     "AgentSession": {"id":"session-1","source":"codex","clientSessionId":"client-1","title":"Refactor","cwd":"/repo","summary":"summary","startedAt":"2026-07-20T11:00:00Z","lastSeenAt":"2026-07-20T12:00:00Z","eventCount":1,"spawnedBy":null,"firstHumanTurn":null},
-    "TaskController.AnnotationBody": {"actor":"worker","kind":"progress","text":"halfway","dataJson":{}},
-    "TaskController.CompleteTaskBody": {"actor":"worker","source":"codex","clientSessionId":"client-1","summary":"done","openLoops":[],"nextAction":"verify"},
-    "TaskController.TaskStatusBody": {"actor":"worker","status":"blocked","blockedReason":"waiting"},
     "AiHealth": {"enabled":false,"available":false,"model":"local","detail":"disabled"},
     "ApiError": {"error":{"status":400,"type":"invalid_argument","message":"bad input"}},
     "ApiError.ErrorBody": {"status":400,"type":"invalid_argument","message":"bad input"},
@@ -22,8 +19,7 @@
     "CaptureHandoffRequest": {"source":"codex","clientSessionId":"client-1","repo":"/repo","toAgent":"next","contextSummary":"phase complete","openLoops":[],"nextAction":"continue"},
     "CaptureProjectionRequest": {"source":"codex","clientSessionId":"client-1","repo":"/repo","basis":"head handoff","paths":[{"title":"Ship graph","description":"Capture futures","confidence":0.72}]},
     "CaptureIdeaRequest": {"source":"codex","clientSessionId":"client-1","repo":"/repo","title":"Lanes board","oneLiner":"One lane per project.","origin":"human-aside","quote":"a live board with lanes","sourceRef":"session-1","legs":8,"status":"untouched","connects":["Orbit (NAT-196)"],"resumeStep":"sketch lanes","link":"https://example.com/idea","notes":"Prior art","ideaKey":"repo-lanes-board"},
-    "ClaimTaskRequest": {"lane":"codex","agent":"worker"},
-    "CreateSessionLinkRequest": {"parentSessionId":"parent","childSessionId":"child","linkType":"spawned","taskId":"task-1"},
+    "CreateSessionLinkRequest": {"parentSessionId":"parent","childSessionId":"child","linkType":"spawned"},
     "DagEdge": {"from":"task-1","to":"session-1","type":"worker"},
     "DagNode": {"id":"task-1","type":"task","label":"Refactor","status":"open","ref":"task-1"},
     "DagResponse": {"nodes":[],"edges":[]},
@@ -63,9 +59,9 @@
     "RecallResult": {"scope":"/repo","withinHours":168,"kinds":["handoff"],"count":1,"items":[],"mode":"hybrid","truncated":false},
     "RecalledItem": {"eventId":"event-1","sessionId":"session-1","kind":"handoff","source":"codex","clientSessionId":"client-1","repo":"/repo","observedAt":"2026-07-20T12:00:00Z","headline":"done","rationale":null,"alternatives":[],"confidence":null,"openLoops":[],"nextAction":"verify","toAgent":"next","score":null,"supersedesEventId":"event-prior","supersededByEventId":"event-next"},
     "SearchResponse": {"query":"refactor","local":[],"elastic":[],"elasticHealth":{"enabled":false,"available":false,"indexName":"events","detail":"disabled"}},
-    "SessionLink": {"id":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","taskId":"task-1","createdAt":"2026-07-20T12:00:00Z"},
+    "SessionLink": {"id":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","createdAt":"2026-07-20T12:00:00Z"},
     "SessionLinksResponse": {"parents":[],"children":[]},
-    "SessionLinkView": {"linkId":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","taskId":"task-1","createdAt":"2026-07-20T12:00:00Z","session":{"id":"child","title":"Child","source":"codex"}},
+    "SessionLinkView": {"linkId":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","createdAt":"2026-07-20T12:00:00Z","session":{"id":"child","title":"Child","source":"codex"}},
     "SessionRef": {"id":"session-1","title":"Refactor","source":"codex"},
     "StorageStats": {"sessions":1,"events":1},
     "SummaryBackfillResult": {"requested":1,"summarized":1,"sessions":[]},
@@ -73,39 +69,15 @@
     "TrajectoryCapture": {"id":"event-1","kind":"projection","sessionId":"session-1","sessionTitle":"Refactor","clientSessionId":"client-1","source":"codex","headline":"Ship graph","text":"Projection text","rationale":"because","alternatives":["old timeline"],"openLoops":["wire UI"],"nextAction":"verify","toAgent":"frontend","confidence":0.8,"paths":[{"title":"Ship graph","description":"Render trajectory","confidence":0.72}],"observedAt":"2026-07-20T12:00:00Z"},
     "TrajectoryPath": {"title":"Ship graph","description":"Render trajectory","confidence":0.72},
     "TrajectoryTask": {"id":"task-1","title":"Refactor","status":"open","priority":1,"updatedAt":"2026-07-20T12:00:00Z"},
-    "ExportTarget": {"id":"obsidian","label":"Obsidian","type":"markdown-file"},
-    "Task": {"id":"task-1","specId":"spec-1","projectKey":"/repo","title":"Refactor","lane":"codex","status":"open","priority":1,"createdBy":"planner","claimedBy":null,"blockedReason":null,"resultHandoffId":null,"createdAt":"2026-07-20T11:00:00Z","updatedAt":"2026-07-20T11:00:00Z"},
-    "TaskAnnotation": {"id":"note-1","taskId":"task-1","kind":"progress","actor":"worker","text":"halfway","dataJson":{},"observedAt":"2026-07-20T12:00:00Z"},
-    "TaskChange": {"snapshot":{"task":{},"spec":{}},"event":{}},
-    "TaskEvent": {"id":"transition-1","taskId":"task-1","type":"task.created","actor":"planner","fromStatus":null,"toStatus":"open","detail":{},"observedAt":"2026-07-20T11:00:00Z"},
-    "TaskSnapshot": {"task":{},"spec":{}},
-    "TaskSpec": {"id":"spec-1","projectKey":"/repo","title":"Refactor","body":"Frozen body","specRef":{},"status":"active","createdBy":"planner","createdAt":"2026-07-20T11:00:00Z","updatedAt":"2026-07-20T11:00:00Z"}
+    "ExportTarget": {"id":"obsidian","label":"Obsidian","type":"markdown-file"}
   },
   "enums": {
-    "SpecStatus": ["active","done","archived"],
-    "TaskStatus": ["open","claimed","in_progress","blocked","done","cancelled"],
-    "TaskEventType": ["task.created","task.claimed","task.blocked","task.completed","task.note","task.reset","task.cancelled"],
-    "AnnotationKind": ["note","steer","progress","plan","review","approval","worker_session","engine"],
-    "TaskErrorCode": ["VALIDATION_FAILED","SPEC_NOT_FOUND","TASK_NOT_FOUND","INVALID_TRANSITION","CLAIMANT_MISMATCH","CONCURRENT_MODIFICATION","HANDOFF_FAILED"],
     "LinkType": ["spawned","steered","continued"],
     "LinkErrorCode": ["VALIDATION_FAILED","DUPLICATE_LINK"]
   },
   "sseFrames": {
     "event.appended": {"sessionId":"session-1","source":"codex","eventType":"Handoff","toolName":null,"title":"Refactor","observedAt":"2026-07-20T12:00:00Z","id":"event-1","cwd":"/repo","role":"assistant","textPreview":"Preview","parentSessionId":null},
     "session.updated": {"sessionId":"session-1","source":"codex","title":"Refactor","cwd":"/repo","eventCount":1,"lastSeenAt":"2026-07-20T12:00:00Z","spawnedBy":null,"linkTypes":[]},
-    "judgment.appended": {"eventIds":["event-1"],"sessionId":"session-1","beatId":"beat-1","phase":"building","salience":1.2,"novelty":0.4,"human":0.0,"kin":{"session-2":0.7},"judge":"jev","model":"jev-latest","version":"orbit-jev-v1","judgedAt":"2026-07-20T12:00:00Z"},
-    "task.created": {"task":{},"transitionId":"transition-1","transitionType":"task.created","observedAt":"2026-07-20T12:00:00Z"},
-    "task.claimed": {"task":{},"transitionId":"transition-1","transitionType":"task.claimed","observedAt":"2026-07-20T12:00:00Z"},
-    "task.blocked": {"task":{},"transitionId":"transition-1","transitionType":"task.blocked","observedAt":"2026-07-20T12:00:00Z"},
-    "task.completed": {"task":{},"transitionId":"transition-1","transitionType":"task.completed","observedAt":"2026-07-20T12:00:00Z"},
-    "task.reset": {"task":{},"transitionId":"transition-1","transitionType":"task.reset","observedAt":"2026-07-20T12:00:00Z"},
-    "task.cancelled": {"task":{},"transitionId":"transition-1","transitionType":"task.cancelled","observedAt":"2026-07-20T12:00:00Z"},
-    "task.note": {"task":{},"annotation":{},"observedAt":"2026-07-20T12:00:00Z"}
-  },
-  "runnerConfig": {
-    "concurrency": 1,
-    "engines": [{"id":"codex","model":"gpt-5","effort":"high","sandbox":"workspace-write","provider":"codex","enabled":true}],
-    "notify": "notify-send refactor-complete",
-    "repos": [{"path":"/repo","push":true,"auto_merge":true,"verify":"mvn test","danger":""}]
+    "judgment.appended": {"eventIds":["event-1"],"sessionId":"session-1","beatId":"beat-1","phase":"building","salience":1.2,"novelty":0.4,"human":0.0,"kin":{"session-2":0.7},"judge":"jev","model":"jev-latest","version":"orbit-jev-v1","judgedAt":"2026-07-20T12:00:00Z"}
   }
 }

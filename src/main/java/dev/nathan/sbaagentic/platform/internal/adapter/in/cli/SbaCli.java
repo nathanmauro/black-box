@@ -28,7 +28,6 @@ public class SbaCli implements ApplicationRunner {
     private final SummaryOperations summaryService;
     private final SummaryModelOperations localAiClient;
     private final ObjectMapper objectMapper;
-    private final RunnerCli runnerCli;
 
     public SbaCli(
             EventRecorder ingestService,
@@ -37,8 +36,7 @@ public class SbaCli implements ApplicationRunner {
             MemoryEmbeddingOperations memoryEmbeddingOperations,
             SummaryOperations summaryService,
             SummaryModelOperations localAiClient,
-            ObjectMapper objectMapper,
-            RunnerCli runnerCli) {
+            ObjectMapper objectMapper) {
         this.ingestService = ingestService;
         this.repository = repository;
         this.searchService = searchService;
@@ -46,7 +44,6 @@ public class SbaCli implements ApplicationRunner {
         this.summaryService = summaryService;
         this.localAiClient = localAiClient;
         this.objectMapper = objectMapper;
-        this.runnerCli = runnerCli;
     }
 
     @Override
@@ -65,7 +62,6 @@ public class SbaCli implements ApplicationRunner {
             case "embeddings-backfill" -> embeddingsBackfill(args);
             case "summarize" -> summarize(positional);
             case "summarize-missing" -> summarizeMissing(args);
-            case "runner" -> runnerCli.run(args);
             default -> usage();
         }
     }
@@ -139,7 +135,6 @@ public class SbaCli implements ApplicationRunner {
                   sba-agentic embeddings-backfill [--apply] [--batch-size=100] [--progress-every=250]
                   sba-agentic summarize <session-id>
                   sba-agentic summarize-missing [--limit=10]
-                  sba-agentic runner
                 """);
     }
 

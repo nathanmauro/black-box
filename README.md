@@ -24,9 +24,8 @@ human aside or an agent's suggestion). A later agent, from either vendor, recall
 structured intent by repo, topic, or event id before it touches code.
 
 The name is the flight recorder. What it records is declared intent, not traces: agents write what
-they decided and why, not every token they emitted. The server records, arbitrates ownership, and
-exposes state. It never launches a worker or executes a command; an optional, separate runner
-process exists for that.
+they decided and why, not every token they emitted. The server records and retrieves that evidence.
+Session lineage connects related agent sessions; selected execution belongs in Linear.
 
 ## The smallest useful loop
 
@@ -48,19 +47,18 @@ choice: a bounded packet an agent requested is worth more than a transcript it h
 <img src="docs/assets/trajectory.png" alt="Black Box trajectory graph: a spine of burst epochs behind a glowing head node, ranked future paths fanning ahead, ghost projections on a dashed shell, and rejected alternatives as dead stubs." width="100%">
 
 A project's trajectory keeps evidence and possibility visibly apart. The spine is what happened:
-bursts of recorded work ending at the latest Handoff. Ahead of the head are the next action, open
-tasks, and open loops, all taken from captured records. Dashed ghosts are Projections an agent wrote
+bursts of recorded work ending at the latest Handoff. Ahead of the head are the next action and
+open loops, all taken from captured records. Dashed ghosts are Projections an agent wrote
 before closing its session, shaded by the confidence it declared. Rejected alternatives hang below as
-dead stubs. Selecting a node shows the capture behind it, with links to its session, stream slice, or
-task where one exists. Ordering is deterministic, not learned, and a declared confidence is a claim,
+dead stubs. Selecting a node shows the capture behind it, with links to its session or stream slice.
+Ordering is deterministic, not learned, and a declared confidence is a claim,
 not a calibrated probability.
 
-| Coordination Board | Structured Recall |
-| --- | --- |
-| <img src="docs/assets/board.png" alt="Black Box Coordination Board with Open, In Progress, Blocked, and Done lanes." width="100%"> | <img src="docs/assets/recall.png" alt="Black Box Recall workspace showing a typed Handoff and Decision." width="100%"> |
-| Frozen intent, ownership, blockers, priorities, and the completion Handoff each task links to. | Decisions and Handoffs by repo, topic, event id, or semantic paraphrase, without reading raw transcripts. |
+<img src="docs/assets/recall.png" alt="Black Box Recall workspace showing a typed Handoff and Decision." width="100%">
 
-The Activity stream behind both is a keyset-paged feed over every recorded event with full-text
+Structured Recall finds Decisions and Handoffs by repo, topic, event id, or semantic paraphrase.
+
+The Activity stream behind these views is a keyset-paged feed over every recorded event with full-text
 search (SQLite FTS5), query-scoped facet counts, a small query grammar (`kind:Decision last:7d`),
 and saved views.
 
@@ -86,7 +84,6 @@ already have. Set `SBA_DEMO_PORT` if 8766 is busy.
 
 ```bash
 ./scripts/demo.sh                          # already built: decision → handoff → recall on a scratch DB
-./scripts/demo-agent-loop.sh --dry-run     # the coordination loop, without writing anything
 mvn spring-boot:run                        # run it directly
 ```
 
@@ -96,28 +93,23 @@ Black Box speaks MCP over Streamable HTTP at `http://localhost:8766/mcp`.
 
 For ChatGPT Work, use the [restricted MCP gateway and Secure MCP Tunnel setup](docs/chatgpt-mcp.md).
 It exposes search, full-record retrieval, bounded project context, and idempotent explicit captures
-without exposing the broader coordination tools or automatically syncing conversations.
+without automatically syncing conversations.
 
 ```bash
 codex mcp add sba-agentic --url http://localhost:8766/mcp
 claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
 ```
 
-Seventeen tools: ten for memory and status (`captureDecision`, `captureHandoff`, `captureObservation`,
-`captureProjection`, `captureIdea`, `recallContext`, `searchContext`, `searchSessions`, `recentSessions`, `localModelStatus`) and
-seven for coordination (`createSpec`, `enqueueTask`, `claimNextTask`, `updateTaskStatus`,
-`completeTask`, `listTasks`, `getSpec`). REST mirrors the seven coordination operations with the
-same field names on success and typed error envelopes on both surfaces. Opt-in hooks stream raw
-sessions in and can pull a bounded recall packet at session start. The full reference, including hook
-registration and the complete coordination example, is in
-[Agent integration](docs/agent-integration.md).
+MCP exposes memory capture, recall, search, recent sessions, and local model status. Opt-in hooks
+record sessions and can pull a bounded recall packet at session start. The current tool inventory,
+hook registration, and session-lineage contract are in [Agent integration](docs/agent-integration.md).
+After upgrading from a version with task tools, reload cached MCP clients to refresh the tool list.
 
 ## Why the implementation matters
 
-- **Finishing work and remembering it are one transaction.** Completing a claimed task validates the
-  claimant, captures a normal Handoff, stores its id on the task, and commits the transition together.
-  Claiming is a single `UPDATE … RETURNING` in priority-then-FIFO order, with `SKIP LOCKED` on
-  PostgreSQL. There is no separate result store to drift out of sync.
+- **Session lineage survives execution-tool changes.** A dedicated module owns parent/child links,
+  child counts, and session DAGs. Browse and Orbit use those relationships independently of any
+  task board. Historical completion Handoffs remain ordinary recallable events.
 - **Recall can say nothing.** Nearest neighbors are not necessarily relevant. Before building semantic
   recall, the raw-text design was measured on six hand-picked paraphrases: recall@1 was 0/6. Task
   prefixes and content distillation took it to 2/6 at recall@1 and 5/6 at recall@5. Rather than guess a
@@ -137,10 +129,6 @@ registration and the complete coordination example, is in
   fixtures before any code moved, so the move had to prove it changed nothing a client could see.
 - **One grammar, two runtimes, one fixture.** The stream query language is parsed by a pure Java
   module and a TypeScript port, and both are driven by the same 57-case JSON fixture.
-- **The optional runner fails closed.** A separate process, an ordinary REST client, with repository
-  allowlists, isolated worktrees, verification gates, and config-gated shipping (push, pull request,
-  and merge only where the repo config allows). An unknown repo, a red check, or a missing credential
-  produces waiting or blocked work, never a risky action.
 - **Verified on 2026-09-17 on this branch.** The Java suite runs 593 tests with 0 failures on both
   macOS and Linux (Temurin 21), skipping the handful gated on a platform or a live model; the
   frontend suite runs 607 tests across 49 files on both. A Playwright suite starts a packaged jar on
@@ -233,24 +221,12 @@ the recall question and records explicit decision replacements. Further candidat
 
 Each one, with the primitives it builds on and its stop criteria, is in [Futures](docs/futures.md).
 
-## Coordination, when you need it
+## Session continuity
 
-```mermaid
-flowchart LR
-    P[Planner] -->|createSpec| S[Frozen spec]
-    S -->|enqueueTask| Q[Lane queue]
-    Q -->|atomic claim| W[Worker]
-    W -->|completeTask| H[Recallable Handoff]
-    H -->|recallContext| N[Next agent]
-```
-
-A planner freezes the work definition and enqueues lane-specific tasks. A worker atomically claims
-the highest-priority, oldest task in its exact lane. Every transition is validated and recorded;
-stalled work can be blocked and explicitly reset. Completion creates a normal Handoff linked to the
-task, and a later agent recalls it directly. SSE frames are wake-up hints; `claimNextTask` and
-`listTasks` stay authoritative. Most of this repo's own use is capture and recall; the queue is there
-for when several agents share one board. The optional board-driven runner is described in
-[Runner](docs/runner.md).
+Browse nests subagents under their parent sessions and exposes their session DAG. The lineage
+module preserves these relationships independently of execution tracking. The dormant task board
+and runner have been removed; see [retirement and upgrade notes](docs/board-retirement.md) before
+upgrading an existing database. Local runner state is outside this repository cleanup.
 
 ## How it was built
 
@@ -285,9 +261,9 @@ Frontend lint and formatting conventions are described in
 
 Deeper reading:
 
-- [Agent integration](docs/agent-integration.md): tools, hooks, lineage, the full coordination example
+- [Agent integration](docs/agent-integration.md): tools, hooks, and session lineage
 - [Operations](docs/operations.md): services, Docker, configuration, secure file navigation
-- [Runner](docs/runner.md): FULL_AUTO and SDLC modes and their guardrails
+- [Board retirement](docs/board-retirement.md): removed surfaces, retained lineage, and upgrade boundaries
 - [Companion](docs/companion.md): the chrome-less `/companion` route and the macOS menubar shell
 - [Architecture](docs/architecture.md) and [package conventions](docs/architecture/package-conventions.md)
 - [Authentication](docs/authentication.md), [PostgreSQL backend](docs/postgres-backend.md),

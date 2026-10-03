@@ -1,13 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
-  claimNextTask,
-  completeTask,
   createSessionLink,
-  createSpec,
-  createTaskAnnotation,
   deleteProjectAlias,
-  enqueueTask,
   getEvent,
   getEventFacets,
   getEventFeed,
@@ -19,12 +14,7 @@ import {
   getSessionLinks,
   getSessionTranscript,
   getSessions,
-  getSpec,
-  getTaskDag,
-  getTaskEvents,
-  listTasks,
   mergeProjectAlias,
-  updateTaskStatus,
   getProjectSessions,
   getProjectTimeline,
   getRecall,
@@ -39,17 +29,11 @@ import {
   type AgentEvent,
   type AgentSession,
   type EventFacetCounts,
-  type TaskChange,
-  type CompleteTaskRequest,
-  type CreateAnnotationRequest,
   type CreateSessionLinkRequest,
   type DagResponse,
   type SessionLink,
   type SessionLinksResponse,
   type SessionTranscriptResponse,
-  type TaskAnnotation,
-  type TaskEvent,
-  type UpdateTaskStatusRequest,
 } from "./api";
 
 function stubJson<T>(payload: T) {
@@ -67,26 +51,29 @@ afterEach(() => {
 });
 
 describe("browser CSRF credentials", () => {
-  it("uses the current CSRF cookie for every mutation family, including task claims and alias deletion", async () => {
+  it("uses the current CSRF cookie for lineage creation and alias mutations", async () => {
     const fetchMock = stubJson({});
     document.cookie = "XSRF-TOKEN=first%20token; path=/";
-    await createSpec({ projectKey: "black-box", title: "Spec", body: "Frozen", actor: "planner" });
-    await mergeProjectAlias("alias", "canonical");
-    await updateTaskStatus("task", {
-      actor: "worker",
-      status: "blocked",
-      blockedReason: "dependency",
+    await createSessionLink({
+      parentSessionId: "parent",
+      childSessionId: "child",
+      linkType: "spawned",
     });
+    await mergeProjectAlias("alias", "canonical");
     await deleteProjectAlias("alias");
     for (const [, init] of fetchMock.mock.calls) {
       expect(init?.headers).toMatchObject({ "X-XSRF-TOKEN": "first token" });
     }
     document.cookie = "XSRF-TOKEN=rotated-token; path=/";
-    await claimNextTask({ lane: "codex", agent: "worker" });
+    await createSessionLink({
+      parentSessionId: "parent",
+      childSessionId: "next",
+      linkType: "continued",
+    });
     expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toMatchObject({
       "X-XSRF-TOKEN": "rotated-token",
     });
-    await getSpec("spec");
+    await getSessionLinks("parent");
     expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).not.toHaveProperty("X-XSRF-TOKEN");
   });
 });
@@ -394,77 +381,7 @@ describe("Phase 2 API helpers", () => {
   });
 });
 
-describe("task API helpers", () => {
-  const change: TaskChange = {
-    snapshot: {
-      task: {
-        id: "task-1",
-        specId: "spec-1",
-        projectKey: "black-box",
-        title: "Build the Board",
-        lane: "codex",
-        status: "open",
-        priority: 7,
-        createdBy: "planner",
-        claimedBy: null,
-        blockedReason: null,
-        resultHandoffId: null,
-        createdAt: "2026-07-10T00:00:00Z",
-        updatedAt: "2026-07-10T00:00:00Z",
-      },
-      spec: {
-        id: "spec-1",
-        projectKey: "black-box",
-        title: "Agent loop",
-        body: "Frozen contract",
-        specRef: null,
-        status: "active",
-        createdBy: "planner",
-        createdAt: "2026-07-10T00:00:00Z",
-        updatedAt: "2026-07-10T00:00:00Z",
-      },
-    },
-    event: {
-      id: "event-1",
-      taskId: "task-1",
-      type: "task.created",
-      actor: "planner",
-      fromStatus: null,
-      toStatus: "open",
-      detail: null,
-      observedAt: "2026-07-10T00:00:00Z",
-    },
-  };
-
-  it("encodes each present list filter once and omits absent values", async () => {
-    const fetchMock = stubJson([change.snapshot]);
-
-    await listTasks({ projectKey: "black box", lane: "codex", status: "open", limit: 40 });
-
-    const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "http://blackbox.test");
-    expect(url.pathname).toBe("/api/tasks");
-    expect(url.searchParams.getAll("projectKey")).toEqual(["black box"]);
-    expect(url.searchParams.getAll("lane")).toEqual(["codex"]);
-    expect(url.searchParams.getAll("status")).toEqual(["open"]);
-    expect(url.searchParams.getAll("limit")).toEqual(["40"]);
-    expect(url.search).not.toContain("undefined");
-
-    await listTasks({
-      projectKey: undefined,
-      lane: undefined,
-      status: undefined,
-      limit: undefined,
-    });
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe("/api/tasks");
-  });
-
-  it("maps an empty 204 claim to null without reading JSON", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(claimNextTask({ lane: "codex", agent: "worker-1" })).resolves.toBeNull();
-  });
-
+describe("session lineage API helpers", () => {
   it("surfaces typed API error messages and HTTP status", async () => {
     vi.stubGlobal(
       "fetch",
@@ -474,8 +391,8 @@ describe("task API helpers", () => {
             JSON.stringify({
               error: {
                 status: 409,
-                type: "claimant_mismatch",
-                message: "Task is owned by another agent",
+                type: "duplicate_link",
+                message: "Session link already exists",
               },
             }),
             {
@@ -487,123 +404,18 @@ describe("task API helpers", () => {
       ),
     );
 
-    const error = await updateTaskStatus("task/1", {
-      actor: "intruder",
-      status: "blocked",
-      blockedReason: "waiting",
+    const error = await createSessionLink({
+      parentSessionId: "parent",
+      childSessionId: "child",
+      linkType: "spawned",
     }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({
-      message: "Task is owned by another agent",
+      message: "Session link already exists",
       status: 409,
-      type: "claimant_mismatch",
+      type: "duplicate_link",
     });
-  });
-
-  it("uses the seven REST task contract routes and typed bodies", async () => {
-    const fetchMock = stubJson(change);
-
-    await createSpec({
-      projectKey: "black-box",
-      title: "Spec",
-      body: "Frozen",
-      specRef: null,
-      actor: "planner",
-    });
-    await getSpec("spec/1");
-    await enqueueTask({
-      specId: "spec-1",
-      title: "Task",
-      lane: "codex",
-      priority: 7,
-      actor: "planner",
-    });
-    await claimNextTask({ lane: "codex", agent: "worker" });
-    await updateTaskStatus("task/1", {
-      actor: "worker",
-      status: "blocked",
-      blockedReason: "dependency",
-    });
-    await completeTask("task/1", {
-      actor: "worker",
-      source: "codex",
-      clientSessionId: "session-1",
-      summary: "Done",
-      openLoops: [],
-      nextAction: "Review",
-    });
-
-    expect(fetchMock.mock.calls.map(([path]) => String(path))).toEqual([
-      "/api/specs",
-      "/api/specs/spec%2F1",
-      "/api/tasks",
-      "/api/tasks/claim",
-      "/api/tasks/task%2F1",
-      "/api/tasks/task%2F1/complete",
-    ]);
-    expect(fetchMock.mock.calls.map(([, init]) => init?.method)).toEqual([
-      "POST",
-      undefined,
-      "POST",
-      "POST",
-      "PATCH",
-      "POST",
-    ]);
-  });
-
-  it("narrows manual updates and requires a completion next action", () => {
-    expectTypeOf<UpdateTaskStatusRequest["status"]>().toEqualTypeOf<
-      "blocked" | "open" | "cancelled"
-    >();
-    expectTypeOf<CompleteTaskRequest>().toMatchTypeOf<{ nextAction: string }>();
-  });
-
-  it("posts task annotations to the encoded task route", async () => {
-    const request: CreateAnnotationRequest = {
-      actor: "worker-1",
-      kind: "progress",
-      text: "Queue wiring is complete",
-      dataJson: { tests: 12 },
-    };
-    const payload: TaskAnnotation = {
-      id: "annotation-1",
-      taskId: "task/1",
-      ...request,
-      observedAt: "2026-07-15T18:00:00Z",
-    };
-    const fetchMock = stubJson(payload);
-
-    await expect(createTaskAnnotation("task/1", request)).resolves.toEqual(payload);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks/task%2F1/annotations",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify(request),
-      }),
-    );
-  });
-
-  it("gets the full event timeline from the encoded task route", async () => {
-    const payload: TaskEvent[] = [
-      {
-        id: "event-1",
-        taskId: "task/1",
-        type: "task.note",
-        actor: "worker-1",
-        fromStatus: null,
-        toStatus: null,
-        detail: { kind: "note", text: "Checking in", dataJson: null },
-        observedAt: "2026-07-15T18:00:00Z",
-      },
-    ];
-    const fetchMock = stubJson(payload);
-
-    await expect(getTaskEvents("task/1")).resolves.toEqual(payload);
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/tasks/task%2F1/events");
-    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
   });
 
   it("posts session links with the typed request body", async () => {
@@ -611,7 +423,6 @@ describe("task API helpers", () => {
       parentSessionId: "session-parent",
       childSessionId: "session-child",
       linkType: "spawned",
-      taskId: "task-1",
     };
     const payload: SessionLink = {
       linkId: "link-1",
@@ -639,21 +450,6 @@ describe("task API helpers", () => {
     await expect(getSessionLinks("session/1")).resolves.toEqual(payload);
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/sessions/session%2F1/links");
-    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
-  });
-
-  it("gets a task DAG from the encoded task route", async () => {
-    const payload: DagResponse = {
-      nodes: [
-        { id: "task:task/1", type: "task", label: "Build Board", status: "open", ref: "task/1" },
-      ],
-      edges: [],
-    };
-    const fetchMock = stubJson(payload);
-
-    await expect(getTaskDag("task/1")).resolves.toEqual(payload);
-
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/tasks/task%2F1/dag");
     expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
   });
 

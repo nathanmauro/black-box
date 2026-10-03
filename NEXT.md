@@ -1,5 +1,7 @@
 # Handoff — 2026-09-19 (verified local recovery and capture)
 
+> NAT-243 update (2026-10-02): session lineage now has its own module; the task board and runner described in the September checkpoint below are retired. See [retirement and upgrade notes](docs/board-retirement.md). Historical verification counts below apply to that dated checkpoint.
+
 Current reviewed implementation is on local branch `codex/2026-09-19-blackbox-improvements`,
 through `15ff1c5`, based on `6045d70`. The server candidate was deployed to the existing local
 installation and verified through HTTP and the browser. The changes are ready for pull-request
@@ -15,7 +17,7 @@ and [docs/evolution.md](docs/evolution.md).
   implementation dereference. [Acceptance and evidence](docs/superpowers/plans/2026-09-19-structured-capture-validation.md).
 - Runner failure/restart cleanup preserves dirty files, untracked and ignored files, unique
   commits, uncertain ownership, and live or uncertain workers. Recovery pointers survive API
-  failure. [Runner behavior and limits](docs/runner.md).
+  failure. [Historical recovery plan](docs/history/retired-board/plans/2026-09-19-preserve-failed-runner-work.md).
 - `POST /api/events/idempotent` binds an immutable capture identity to the recognized request;
   matching retries return the original event and session without a duplicate event or counter
   update. [Protocol and compatibility](docs/idempotent-capture.md).

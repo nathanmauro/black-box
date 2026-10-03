@@ -6,9 +6,9 @@ Read `AGENTS.md` first — it defines the working rules for this repo (methodica
 event discipline, docs routing, commit style). This file adds commands and architecture only.
 
 Black Box is the product name; the repo directory and Maven artifact are still `sba-agentic`. It is a
-local-first memory bus and coordination ledger for coding agents: agents commit structured
+local-first memory bus for coding agents: agents commit structured
 Decisions/Handoffs/Observations and recall them later via MCP, REST, CLI, or the local web UI. The
-server never launches workers or executes task commands — it records intent and arbitrates ownership.
+server records intent and session relationships; selected execution belongs in Linear.
 
 ## Commands
 
@@ -57,12 +57,10 @@ scripts/test-agent-hook.sh                # hook bridge smoke test
 ./scripts/quickstart.sh                   # build + isolated demo DB + seeded story + UI
 ```
 
-Local service caution: the launchd service (`com.nathan.sba-agentic`, deployed via
-`scripts/deploy-local.sh`) runs the jar from `target/`. Any `mvn package` (including the E2E suite's
-packaging step) overwrites that jar and degrades the live service until it is restarted —
-`launchctl kickstart -k gui/$UID/com.nathan.sba-agentic` after builds. `scripts/deploy-runner-local.sh`
-deploys the board runner service; starting it launches autonomous orchestration per
-`~/.blackbox/runner.json`, so do not start it casually.
+Local service caution: never package over a JAR used by a running service. Build in an isolated
+checkout and use the verified prebuilt deployment path in `docs/operations.md`. The retired runner
+CLI and deployment scripts are absent; leave any machine-local runner state untouched unless a
+separate operator request authorizes recovery or cleanup.
 
 ## Architecture
 
@@ -75,13 +73,12 @@ Modules (first package segment = owning capability):
 
 - `recording` — canonical session/event capture, redaction, and the relational write boundary
 - `memory` — recall, search/facets, memory embeddings, optional Elasticsearch projection
-- `workflow` — spec/task coordination: frozen specs, exact-lane queues, atomic claims, lifecycle,
-  completion Handoffs
+- `lineage` — session links, hook-derived subagent relationships, child counts, and session DAGs
 - `project` — logical project identity, aliases, catalog, timelines, secure open-in-editor
 - `summary` — session finalization and summary backends (external Codex wrapper by default;
   `SBA_SUMMARY_BACKEND=local` for an OpenAI-compatible local server)
-- `ask`, `platform` (SSE hub, CLI, MCP wiring), `runner` (external board-runner process,
-  `java -jar sba-agentic.jar runner` — an ordinary REST client, config-gated, fails closed)
+- `judgment` — optional cortex beat folding and typed Orbit judgments
+- `ask`, `query`, `platform` (SSE hub, CLI, MCP wiring)
 
 Each module keeps a hexagonal internal layout: `internal/domain`, `internal/application` (+`port`),
 `internal/adapter/in/{web,mcp,cli}`, `internal/adapter/out/{sqlite,http,process,...}`. Key rules:
@@ -90,20 +87,17 @@ Each module keeps a hexagonal internal layout: `internal/domain`, `internal/appl
   describe an optional `spi/` layout; no `spi/` package exists in the current tree.)
 - Controllers call application use cases or a module facade, never repositories; application code
   never depends on web/MCP/JDBC/process implementations directly.
-- Standalone captures commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast,
-  discovery, summaries); inside task completion the listeners run within the outer task transaction
-  (see the transaction note in `docs/architecture.md`). SQLite is the local default; the optional PostgreSQL profile owns a separate
+- Captures commit **before** optional fan-out (Elasticsearch indexing, SSE broadcast, discovery,
+  summaries). SQLite is the local default; the optional PostgreSQL profile owns a separate
   shared database. Optional indexes are rebuildable. Do not infer history synchronization or safe
   multiple API replicas from PostgreSQL support; see `docs/postgres-backend.md`.
 - No global `controller`/`service`/`util`/`common` buckets; tests mirror production packages.
 
-Wire surfaces: MCP over Streamable HTTP at `/mcp` (spring-ai MCP server; historical server id
-`sba-agentic`), a REST API that mirrors the seven coordination operations (REST task listing additionally accepts
-`offset` and `excludeStatus`; shared field names,
-ISO-8601 timestamps, typed error envelopes), SSE at `/api/stream` as a best-effort wake hint (never
-a queue — `claimNextTask`/`listTasks` stay authoritative), and opt-in capture/recall hooks under
-`scripts/hooks/`. The `/companion` route (see `docs/companion.md`) is a chrome-less ambient view over
-the same stream and query surfaces.
+Wire surfaces: MCP over Streamable HTTP at `/mcp` (historical server id `sba-agentic`), REST for
+capture/recall/search/projects and session lineage, and SSE at `/api/stream` as a best-effort
+refresh hint. Task/spec endpoints and task tools are retired; cached MCP clients must reload their
+tool inventory. Opt-in capture/recall hooks live under `scripts/hooks/`. The `/companion` route
+(see `docs/companion.md`) is a chrome-less ambient view over the same stream and query surfaces.
 
 Configuration defaults live in `src/main/resources/application.yml`, overridden by `SBA_*` env vars
 (see `docs/operations.md`). Server binds to `127.0.0.1:8766`; optional authentication is disabled by

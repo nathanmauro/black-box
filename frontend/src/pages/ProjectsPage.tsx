@@ -489,7 +489,6 @@ function ProjectHeader(props: { project: ProjectSummary }) {
       </div>
       <div class="project-header-actions" aria-label="Project actions">
         <A href={activityHref(props.project, "browse")}>Activity Browse</A>
-        <A href={boardHref(props.project)}>Board</A>
         <A href={recallHref(props.project)}>Resume this project</A>
       </div>
       <div class="project-stat-strip">
@@ -553,9 +552,9 @@ function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: Proje
 
         <Show when={props.node.task}>
           {(task) => (
-            <A class="trajectory-detail-link" href={`/board?task=${encodeURIComponent(task().id)}`}>
+            <span class="trajectory-detail-source">
               Task {task().status}: {task().title}
-            </A>
+            </span>
           )}
         </Show>
 
@@ -1009,11 +1008,6 @@ function sessionHref(project: ProjectSummary, sessionId: string): string {
     session: sessionId,
   });
   return `/?${query.toString()}`;
-}
-
-function boardHref(project: ProjectSummary): string {
-  const query = new URLSearchParams({ project: primaryProjectScope(project).canonicalKey });
-  return `/board?${query.toString()}`;
 }
 
 function recallHref(project: ProjectSummary): string {

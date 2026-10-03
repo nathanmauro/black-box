@@ -1,4 +1,6 @@
 > Historical record, written 2026-05-28 for the first public showcase pass and kept as-is.
+
+> Historical showcase plan. NAT-243 retired the Board screenshot, task board, and runner in October 2026. The implementation list below records earlier work; see [retirement notes](../board-retirement.md).
 > Class names, counts, and "not yet" items reflect that date; see the README and
 > [Evolution](../evolution.md) for the current state.
 
@@ -65,7 +67,7 @@ The signature moment: an agent calls `recallContext` and a structured `Decision`
 - Search filter suggestion dismissal — the Search page closes the suggestion popover after selection, supports Escape/click-away dismissal, keeps applied filters removable, and has Playwright coverage in `frontend/tests/e2e/smoke.spec.ts`.
 - Activity Find result selection — embedded Activity Find results now open the selected session in the Browse reader without bouncing to standalone `/sessions/:id`; standalone Search links still deep-link normally.
 - Local deploy safety — `scripts/deploy-local.sh` unloads the launchd service before rebuilding the executable jar and restarts it before status polling, with `scripts/test-deploy-local.sh` covering command order.
-- FULL_AUTO board-driven runner — server annotations, `session_links`, DAG read model, and `task.note` SSE; runner CLI/daemon with a test-used `fake` engine; and the Board's New Story form, card tendril, and DAG view have landed. See [`docs/superpowers/specs/2026-07-15-full-auto-board-runner.md`](docs/superpowers/specs/2026-07-15-full-auto-board-runner.md).
+- FULL_AUTO board-driven runner — server annotations, `session_links`, DAG read model, and `task.note` SSE; runner CLI/daemon with a test-used `fake` engine; and the Board's New Story form, card tendril, and DAG view have landed. See [`docs/history/retired-board/specs/2026-07-15-full-auto-board-runner.md`](retired-board/specs/2026-07-15-full-auto-board-runner.md).
 - Read half wired — the SessionStart recall hook ships with working defaults (720h / 3 items / 4000 chars), a best-effort fire log at `~/.blackbox/recall.log`, and Codex-compatible plain-text output; `recallContext` gained a bounded `maxChars` (default 24000) with visible truncation so results survive Claude Code's tool-result cap.
 - Complete searchable session transcripts — session pages render the full event transcript (read safely with bounds, duplicate hook payloads trimmed, tool-heavy sessions kept responsive) and frontend packaging is pinned to a supported Node.
 
