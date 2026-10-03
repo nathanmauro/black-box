@@ -84,3 +84,31 @@ Chromium suite passed: 37 journeys, including native TCP reconnect, exact fixtur
 Recall replacements, Browse and editor behavior. Fixture directories and port 8799 were cleaned;
 the existing local service PID stayed unchanged. Backend production/test sources are unchanged
 from the worker's 597-test run with all PostgreSQL gates enabled. No live deployment was performed.
+
+
+## Activity Stream review follow-up
+
+A fresh source review found that Activity Stream did not subscribe to reset/reconnect, so its
+cached rows and outstanding HTTP reads could survive a canonical database reset. Regression-first
+component checks reproduced both stale rows after reset and missing backdated captures after
+reconnect. A separate check reproduced the 50-notification buffer stopping future wake-ups and the
+observed-time head request excluding a backdated capture received while continuously connected.
+
+Activity Stream now reuses its full scoped feed/count reload on reset and reconnect, invalidating
+prior snapshot, pagination, head, and facet requests and cancelling scheduled refreshes. Newest
+notification identity drives wake-ups after the buffer fills. Backdated/tied captures or an empty
+feed request a coalesced canonical refresh; a later current capture in the burst cannot erase that
+requirement. Ordinary newer arrivals retain pending-row behavior. Query, project, human-turn and
+density settings remain selected; full recovery replaces loaded pages. Explicit past-until live
+pause remains in effect for ordinary notifications, while reset/reconnect still reconciles it.
+
+Verification: all 81 StreamPage tests and the full 660-test frontend suite passed. Frontend check
+passed with zero lint errors and the existing 70 warnings. Six packaged Chromium journeys passed (five recovery paths plus a separate buffer-cap run):
+Browse reconnect, Stream reconnect, a real backend replay.reset triggered by a legacy cursor,
+continuously connected backdated capture, empty-feed catch-up, and continued refresh after 51
+real notifications followed by a later capture. The buffer test waits for native frame delivery and
+visible rows, without fixed sleeps. The packaged run regenerated
+static assets and used only owned temporary SQLite storage with model providers disabled. Its
+proxy, project fixture and database directory were cleaned; the protected service listener was
+unchanged. No backend code, Git, live database, provider or deployment change was made by this
+follow-up. Root owns review, commit, publication and final PR60 acceptance.

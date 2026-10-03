@@ -25,8 +25,16 @@ network failure and reconcile against canonical HTTP responses when they need a 
 
 Legacy `<observedAt>|<id>` cursors, invalid cursors, another database's generation and restored-away
 anchors produce `replay.reset` with a fresh checkpoint, then close. Refresh the canonical snapshot;
-do not interpret this as a complete historical replay. The browser refreshes the companion and
-open session reader on reset/reconnect, and replayed events wake transcript refreshes. The existing
+do not interpret this as a complete historical replay. The browser refreshes Activity Stream, the companion and
+open session reader on reset/reconnect, and replayed events wake transcript refreshes. Activity
+Stream replaces its loaded pages, pending rows and counts with a fresh snapshot under the current
+query, project and human-turn filters; older HTTP responses and scheduled head refreshes cannot
+restore discarded rows. This also applies to historical queries and empty feeds. Normal reconnect
+uses the same full reload so backdated captures are not excluded by the old head timestamp.
+While connected, an empty feed or a backdated/tied notification requests that same canonical reload;
+a mixed burst keeps that requirement until the coalesced refresh. Ordinary newer notifications keep
+the existing pending-row behavior and continue after the 50-notification buffer fills. An explicit
+past `until:` filter continues to pause ordinary live updates; reset/reconnect still reconciles it. The existing
 `session.updated` and `judgment.appended` frames remain transient and have no durable event cursor.
 
 `since=<ISO-8601>` is an optional inclusive observed-time filter, applied to both replay and live
