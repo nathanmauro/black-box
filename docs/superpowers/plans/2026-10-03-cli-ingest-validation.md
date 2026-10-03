@@ -59,3 +59,11 @@ not a configuration-free or database-free invocation. No live database, provider
 configuration, Git history or publication was changed by the worker. All owned fixture processes
 were reaped and temporary storage was removed. Source is ready for coordinator review, commit and
 integration; no deployment is included.
+
+## Coordinator integration
+
+Integrated the merged Evidence feature from current main without source conflicts. All 98 CLI
+unit/process checks passed again on the combined source, with zero failures/errors/skips. The
+selection also ran 36 adjacent client tests (one optional Elasticsearch check skipped). The
+new guard remains confined to ingest argument validation; hosted CI runs the complete backend,
+PostgreSQL, frontend and packaged-browser gates before merge. No deployment is included.
