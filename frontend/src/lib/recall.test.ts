@@ -12,6 +12,39 @@ const base: RecalledItem = {
 };
 const options = { project: "/repos/alpha", withinHours: 8760, origin: "https://blackbox.example" };
 describe("continuity evidence export", () => {
+  it("retains separate Projection basis before a body that exhausts the copy budget", () => {
+    const rationale = "Only consider a server after demonstrated demand.";
+    const text = buildRecallBriefing(
+      [
+        {
+          ...base,
+          kind: "projection",
+          body: "Possible path. ".repeat(1500) + "[truncated]",
+          rationale,
+        },
+      ],
+      options,
+    );
+    expect(text).toContain(`Recorded basis: ${rationale}`);
+    expect(text).toContain("[Capture truncated; open the evidence link for full text.]");
+    expect(text.length).toBeLessThanOrEqual(BRIEFING_MAX_CHARS);
+  });
+
+  it("copies projection alternatives as possibilities and discloses legacy missing bodies", () => {
+    const body = "Local first (0.8)\nA shared server (0.2) only after verified demand.";
+    const text = buildRecallBriefing(
+      [{ ...base, kind: "projection", body, confidence: 0.8 }],
+      options,
+    );
+    expect(text).toContain(body);
+    expect(text).toContain("Recorded possibilities; no selected outcome is implied.");
+    expect(text).not.toContain("Full path evidence is unavailable");
+    expect(text).toContain("event=e1&project=");
+    const legacy = buildRecallBriefing([{ ...base, kind: "projection", confidence: 0.8 }], options);
+    expect(legacy).toContain("Full path evidence is unavailable in this response");
+    expect(legacy).toContain(base.headline!);
+  });
+
   it("preserves timestamps, source links and explicit replacement relations", () => {
     const text = buildRecallBriefing(
       [
