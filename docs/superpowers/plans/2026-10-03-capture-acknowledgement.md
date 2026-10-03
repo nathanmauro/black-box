@@ -47,3 +47,8 @@ left uncommitted for the coordinator's Git review and publication. Disposable ap
 and HTTP client closed; temporary test databases cleaned up. No live database, service or provider
 was used or changed. Legacy captures remain append-only after a genuinely lost network response;
 there is no downstream retry queue or guarantee that every optional listener completed.
+
+Coordinator integration: merged main through PR60 and ran the actual acknowledgement HTTP/MCP
+fixture plus EventStreamTest and StreamReplayOrderingTest together: 22 tests passed with no skips.
+Fresh review caught and corrected the fixture's judge-disable property; the corrected fixture
+passed with an ambient enabled value, as recorded above. No live deployment.
