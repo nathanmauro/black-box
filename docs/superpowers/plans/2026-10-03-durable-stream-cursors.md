@@ -112,3 +112,13 @@ static assets and used only owned temporary SQLite storage with model providers 
 proxy, project fixture and database directory were cleaned; the protected service listener was
 unchanged. No backend code, Git, live database, provider or deployment change was made by this
 follow-up. Root owns review, commit, publication and final PR60 acceptance.
+
+## Final combined acceptance
+
+Integrated main through PR62, including export safety and project alias/attribution fixes, then
+regenerated the static bundle. All 663 frontend tests, check/build and 44 packaged Chromium
+journeys passed. The combined backend run reported 612 tests, zero failures/errors and 27 optional
+skips with the disposable PostgreSQL server stopped; the earlier PostgreSQL acceptance above
+remains applicable, and CI runs the integrated PostgreSQL contracts. An attempted browser run
+on port 8801 was correctly refused by the seed allowlist before mutation; the successful full run
+used port 8799 after its prior fixture owner released it. Fixture cleanup completed.
