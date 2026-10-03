@@ -142,6 +142,13 @@ def identity(value, optional=False):
     return value
 
 
+def valid_transcript_locator(value):
+    # This optional top-level metadata field locates evidence; losing it must not lose the capture.
+    # Bound first, then reject redaction-changing values instead of persisting a rewritten path.
+    return (isinstance(value, str) and bool(value.strip()) and len(value) <= 4096
+            and "\x00" not in value and redact_text(value) == value)
+
+
 def sanitize_event(event):
     if not isinstance(event, dict):
         raise OutboxError("invalid_capture")
@@ -193,7 +200,9 @@ def sanitize_event(event):
     metadata = event.get("metadata")
     if metadata is not None and not isinstance(metadata, dict):
         raise OutboxError("invalid_capture")
-    sanitized["metadata"] = walk(metadata or {})
+    metadata = {key: value for key, value in (metadata or {}).items()
+                if key not in ("transcript_path", "transcriptPath") or valid_transcript_locator(value)}
+    sanitized["metadata"] = walk(metadata)
     observed = event.get("observedAt")
     if observed is None:
         observed = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")

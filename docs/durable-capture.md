@@ -134,6 +134,32 @@ forget command. Rejected rows remain available for a separately reviewed recover
 hook invocation retries eligible rows, and explicit `drain` supports recovery when no hooks arrive.
 Neither mechanism guarantees delivery while the client remains idle.
 
+## Transcript provenance
+
+Both hook modes project an explicit locator into `metadata.transcript_path`. For ordinary sessions,
+the hook chooses the first nonblank string from `transcript_path`, then `transcriptPath`. When
+`SubagentStart` or `SubagentStop` actually derives a child session ID from its agent ID, it instead
+chooses from `agent_transcript_path`, then `agentTranscriptPath`. A parent's general transcript
+path is never projected as the child's locator. Without a derived child identity, ordinary-session
+selection still applies.
+
+The selected string is preserved exactly, including surrounding whitespace. A selected path
+longer than 4,096 characters or containing NUL is omitted; the hook does not try a lower-priority
+field after that rejection. Missing, blank and nonstring fields add no locator. In durable mode,
+the sanitizer also omits a top-level `metadata.transcript_path` or `metadata.transcriptPath` if
+redaction would change it. This optional omission keeps the useful capture and lineage rather than
+rejecting the event or storing a rewritten filesystem path. Length is checked before redaction.
+Nested tool and metadata fields retain their existing sanitization rules.
+
+The hook does not read the referenced file or establish its ownership. Existing server-side
+transcript loading still checks allowed roots, file type/size and session identity. For a Claude
+child it checks the parent session, agent identity and subagent file location. The legacy mode
+retains its original `metadata.rawHook`, including any parent path, and continues using server-side
+redaction. The reader rejects a mismatched parent candidate and can try the explicit child path;
+an unavailable transcript does not discard recorded events. Durable mode continues excluding
+`rawHook` entirely. This projection does not install client hooks, make a remote file local or
+prove live transcript completeness.
+
 ## Privacy and limits
 
 Raw hook input stays in process memory and pipes through Bash/jq normalization. The durable path
@@ -142,7 +168,8 @@ does not use raw-payload here-strings, which some Bash versions spill to tempora
 covers supported provider-token patterns, bearer tokens, complete and unterminated private-key
 blocks, secret assignments, and explicit secret JSON keys recursively, including secret-bearing
 member names. Recognized suspicious identity or path fields are rejected instead of silently
-changing session identity or routing.
+changing session identity or routing, except for the optional top-level transcript locator omitted
+as described above.
 
 Credential assignments containing `[REDACTED]` markers are still scanned through any attached
 suffix, including repeated markers; markers cannot exempt the rest of a value. This applies before new queue writes.
@@ -178,7 +205,10 @@ durable tests. Durable tests use temporary directories, real local HTTP servers,
 processes, process interruption, SQLite storage inspection, and synthetic sanitizer fixtures.
 They cover outage recovery, lost acknowledgements, stable retry bytes, origin separation, malformed
 acknowledgements, quotas, unsafe files, corruption, partial responses, held-open input, and the shared
-hook deadline. HTTPS checks use local TLS servers, a test-scoped trust context and mocked Keychain
+hook deadline. Held-sender and fake-curl fixtures also verify transcript locator precedence, child
+isolation, exact accepted strings and omission without capture loss. An existing HTTP controller
+test covers mixed legacy parent and explicit child transcript candidates. HTTPS checks use local
+TLS servers, a test-scoped trust context and mocked Keychain
 responses: opt-in, credentials, certificate/hostname rejection, redirects and immutable retries.
 They do not read the real Keychain, change system trust, activate installed client hooks or write
 to a running Black Box database.

@@ -31,11 +31,13 @@ import org.springframework.test.web.servlet.MockMvc;
             // memory throws SQLITE_LOCKED on writer collisions, ignoring busy_timeout.
             "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-agentic-controller-test-${random.uuid}.db",
             "sba.local-ai.enabled=false",
+            "sba.judge.enabled=false",
             "sba.summary.backend=local",
             "sba.elasticsearch.enabled=false",
             "sba.ask.embedding-enabled=false",
             "sba.memory.embedding.enabled=false",
             "sba.transcript.codex-roots[0]=${java.io.tmpdir}",
+            "sba.transcript.claude-roots[0]=${java.io.tmpdir}",
             "sba.exports.targets[0].id=obsidian",
             "sba.exports.targets[0].label=Obsidian",
             "sba.exports.targets[0].type=markdown-file",
@@ -206,6 +208,82 @@ class AgenticControllerTest {
                     .andExpect(jsonPath("$.events[0].text").value("Transcript only answer"));
         } finally {
             Files.deleteIfExists(transcript);
+        }
+    }
+
+    @Test
+    void childTranscriptProjectionRejectsLegacyParentCandidateWithoutLosingRecordedCapture() throws Exception {
+        String parent = "hook-parent-" + UUID.randomUUID();
+        String agent = "hook-child";
+        Path root = Files.createTempDirectory("hook-transcript-provenance-");
+        Path parentTranscript = root.resolve(parent + ".jsonl");
+        Path children = Files.createDirectories(root.resolve(parent).resolve("subagents"));
+        Path childTranscript = children.resolve("agent-" + agent + ".jsonl");
+        try {
+            Files.writeString(parentTranscript, """
+                    {"type":"assistant","sessionId":"%s","uuid":"parent-answer","timestamp":"2026-10-03T12:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Parent transcript answer"}]}}
+                    """.formatted(parent));
+            Files.writeString(childTranscript, """
+                    {"type":"assistant","sessionId":"%s","agentId":"%s","uuid":"child-answer","timestamp":"2026-10-03T12:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"Child transcript answer"}]}}
+                    """.formatted(parent, agent));
+            Map<String, Object> lineage = Map.of(
+                    "agentId",
+                    agent,
+                    "agentType",
+                    "Explore",
+                    "parentClientSessionId",
+                    parent,
+                    "rawHook",
+                    Map.of("transcript_path", parentTranscript.toString()));
+            String first = mockMvc.perform(post("/api/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "source", "claude",
+                                    "clientSessionId", parent + ":" + agent,
+                                    "eventType", "SubagentStart",
+                                    "text", "Recorded child capture remains useful",
+                                    "metadata", lineage,
+                                    "observedAt", "2026-10-03T12:00:00Z"))))
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            String sessionId = objectMapper.readTree(first).path("sessionId").asText();
+            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(false))
+                    .andExpect(jsonPath("$.reason").value("identity-mismatch"))
+                    .andExpect(jsonPath("$.events[?(@.text == 'Recorded child capture remains useful')]")
+                            .isNotEmpty())
+                    .andExpect(jsonPath("$.events[?(@.text == 'Parent transcript answer')]")
+                            .isEmpty());
+            Map<String, Object> withLocator = new java.util.LinkedHashMap<>(lineage);
+            withLocator.put("transcript_path", childTranscript.toString());
+            mockMvc.perform(post("/api/events")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "source", "claude",
+                                    "clientSessionId", parent + ":" + agent,
+                                    "eventType", "SubagentStop",
+                                    "text", "Recorded child finished",
+                                    "metadata", withLocator,
+                                    "observedAt", "2026-10-03T12:00:02Z"))))
+                    .andExpect(status().isOk());
+            mockMvc.perform(get("/api/sessions/{sessionId}/transcript", sessionId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.available").value(true))
+                    .andExpect(jsonPath("$.events[?(@.text == 'Child transcript answer')].role")
+                            .value(hasItem("assistant")))
+                    .andExpect(jsonPath("$.events[?(@.text == 'Parent transcript answer')]")
+                            .isEmpty())
+                    .andExpect(jsonPath("$.events[?(@.text == 'Recorded child capture remains useful')]")
+                            .isNotEmpty());
+        } finally {
+            Files.deleteIfExists(childTranscript);
+            Files.deleteIfExists(parentTranscript);
+            Files.deleteIfExists(children);
+            Files.deleteIfExists(root.resolve(parent));
+            Files.deleteIfExists(root);
         }
     }
 

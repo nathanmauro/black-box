@@ -92,7 +92,7 @@ esac
 # Subagent hooks fire in the PARENT session: the payload's session_id is the parent's id and
 # agent_id is unique per spawn. Derive the child session key "<parent>:<agent_id>" and carry the
 # lineage in metadata (SubagentStart keeps the default agent role above). Non-subagent events
-# never enter this branch, so their output stays byte-identical.
+# never enter this branch, so their session identity stays unchanged.
 SUBAGENT_METADATA="null"
 if [[ "$EVENT_KEY" == "subagentstart" || "$EVENT_KEY" == "subagentstop" ]] && [[ -n "$AGENT_ID" ]]; then
   PARENT_SESSION_ID="$SESSION_ID"
@@ -103,6 +103,20 @@ if [[ "$EVENT_KEY" == "subagentstart" || "$EVENT_KEY" == "subagentstop" ]] && [[
     --arg parentClientSessionId "$PARENT_SESSION_ID" \
     '{agentId: $agentId, agentType: $agentType, parentClientSessionId: $parentClientSessionId}')"
 fi
+
+# Optional transcript provenance follows the session we actually derived. A child's general
+# transcript_path belongs to the parent, so only its explicit agent locator may be projected.
+# Keep this shared jq program on both normalization paths; raw path text stays in the stdin pipe
+# in durable mode. Selection precedes validation: an invalid preferred locator is omitted.
+TRANSCRIPT_FILTER='
+def transcript_metadata($child):
+  (if $child then [.agent_transcript_path, .agentTranscriptPath]
+   else [.transcript_path, .transcriptPath] end
+   | map(select(type == "string") | select(test("\\S"))) | .[0]) as $path |
+  if $path == null then {}
+  elif ($path | length) > 4096 or ($path | index("\u0000")) != null then {}
+  else {transcript_path: $path} end;
+'
 
 if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -117,7 +131,7 @@ if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
     --arg cwd "$CWD" \
     --arg toolName "$TOOL_NAME" \
     --argjson subagent "$SUBAGENT_METADATA" \
-    '
+    "${TRANSCRIPT_FILTER}"'
     def stringify: if type == "string" then . else tojson end;
     ((.prompt // .last_assistant_message // .lastAssistantMessage // .message // .tool_response // .toolResponse // .tool_output // .toolOutput // "") | stringify | sub("\n+$"; "")) as $text |
     {
@@ -128,7 +142,7 @@ if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
       toolName: (if $toolName | length > 0 then $toolName else null end),
       toolInput: (.tool_input // .toolInput // null),
       toolOutput: (.tool_response // .toolResponse // .tool_output // .toolOutput // null),
-      metadata: ($subagent // {}), observedAt: now | todateiso8601
+      metadata: (($subagent // {}) + transcript_metadata($subagent != null)), observedAt: now | todateiso8601
     }' 2>/dev/null |
     python3 "$SCRIPT_DIR/capture_outbox.py" enqueue --url "$SBA_AGENTIC_URL" ||
     echo "Black Box outbox: normalization_failed." >&2
@@ -148,7 +162,7 @@ jq -n \
   --argjson toolOutput "$TOOL_OUTPUT" \
   --argjson raw "$PAYLOAD" \
   --argjson subagent "$SUBAGENT_METADATA" \
-  '{
+  "${TRANSCRIPT_FILTER}"'{
     source: $source,
     clientSessionId: $clientSessionId,
     turnId: (if $turnId | length > 0 then $turnId else null end),
@@ -159,7 +173,7 @@ jq -n \
     toolName: (if $toolName | length > 0 then $toolName else null end),
     toolInput: $toolInput,
     toolOutput: $toolOutput,
-    metadata: ({ rawHook: $raw } + ($subagent // {})),
+    metadata: ({ rawHook: $raw } + ($subagent // {}) + ($raw | transcript_metadata($subagent != null))),
     observedAt: now | todateiso8601
   }' |
 curl -fsS --max-time 3 \

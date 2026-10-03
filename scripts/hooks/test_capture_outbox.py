@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Disposable filesystem/process/HTTP verification; never uses the real queue or service."""
 import contextlib
+import fcntl
 import importlib.util
 import io
 import json
@@ -1373,6 +1374,115 @@ class OutboxTest(unittest.TestCase):
         self.cli("drain", origin=server.origin)
         self.assertEqual(self.rows(), [])
         self.assertEqual(len(server.committed), 1)
+
+    @contextlib.contextmanager
+    def held_sender(self):
+        queue = outbox.Queue(self.directory)
+        queue.close()
+        descriptor = os.open(self.directory / outbox.LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            os.close(descriptor)
+
+    def test_actual_hook_projects_transcript_path_with_explicit_precedence(self):
+        cases = (
+            ({"transcript_path": "/fixture/snake.jsonl", "transcriptPath": "/fixture/camel.jsonl"}, "/fixture/snake.jsonl"),
+            ({"transcriptPath": "/fixture/camel.jsonl"}, "/fixture/camel.jsonl"),
+            ({"transcript_path": " \t", "transcriptPath": "/fixture/camel.jsonl"}, "/fixture/camel.jsonl"),
+            ({"transcript_path": 7, "transcriptPath": "/fixture/camel.jsonl"}, "/fixture/camel.jsonl"),
+            ({"transcript_path": " /fixture/space name.jsonl "}, " /fixture/space name.jsonl "),
+            ({"transcript_path": "x" * 4096}, "x" * 4096),
+            ({"transcript_path": "x" * 4097, "transcriptPath": "/fixture/camel.jsonl"}, None),
+            ({"transcript_path": "/fixture/nu\x00l.jsonl", "transcriptPath": "/fixture/camel.jsonl"}, None),
+            ({"transcript_path": None, "transcriptPath": ["not a path"]}, None),
+            ({"agent_transcript_path": "/fixture/child.jsonl"}, None),
+            ({}, None),
+        )
+        with self.held_sender():
+            for fields, expected in cases:
+                with self.subTest(fields=fields):
+                    previous_count = len(self.rows())
+                    result = self.hook({"session_id": "main", "hook_event_name": "Stop", "last_assistant_message": "Useful answer", **fields}, source="claude")
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(result.stderr, "")
+                    rows = self.rows()
+                    self.assertEqual(len(rows), previous_count + 1, "each hook must retain a new capture")
+                    row = rows[-1]
+                    stored = json.loads(row["event_bytes"])
+                    self.assertEqual(row["attempts"], 0)
+                    self.assertEqual(stored["metadata"], {} if expected is None else {"transcript_path": expected})
+                    self.assertEqual(stored["text"], "Useful answer")
+                    self.assertEqual(stored["clientSessionId"], "main")
+
+    def test_actual_child_hook_uses_only_child_locator_and_keeps_lineage(self):
+        with self.held_sender():
+            for event_type in ("SubagentStart", "subagent_stop"):
+                for fields, expected in (
+                    ({}, None),
+                    ({"agent_transcript_path": "/fixture/child.jsonl", "agentTranscriptPath": "/fixture/other.jsonl"}, "/fixture/child.jsonl"),
+                    ({"agent_transcript_path": "", "agentTranscriptPath": "/fixture/camel-child.jsonl"}, "/fixture/camel-child.jsonl"),
+                    ({"agent_transcript_path": False, "agentTranscriptPath": "/fixture/camel-child.jsonl"}, "/fixture/camel-child.jsonl"),
+                ):
+                    with self.subTest(event_type=event_type, fields=fields):
+                        previous_count = len(self.rows())
+                        result = self.hook({"session_id": "parent", "hook_event_name": event_type, "agent_id": "child", "agent_type": "Explore", "last_assistant_message": "Useful answer", "transcript_path": "/fixture/parent.jsonl", **fields}, source="claude")
+                        self.assertEqual(result.returncode, 0)
+                        self.assertEqual(result.stderr, "")
+                        rows = self.rows()
+                        self.assertEqual(len(rows), previous_count + 1, "each child hook must retain a new capture")
+                        row = rows[-1]
+                        stored = json.loads(row["event_bytes"])
+                        metadata = {"agentId": "child", "agentType": "Explore", "parentClientSessionId": "parent"}
+                        if expected is not None:
+                            metadata["transcript_path"] = expected
+                        self.assertEqual(stored["metadata"], metadata)
+                        self.assertEqual(stored["clientSessionId"], "parent:child")
+                        self.assertEqual(row["attempts"], 0)
+            self.hook({"session_id": "parent", "hook_event_name": "SubagentStop", "transcript_path": "/fixture/parent.jsonl", "agent_transcript_path": "/fixture/child.jsonl"})
+            stored = json.loads(self.rows()[-1]["event_bytes"])
+            self.assertEqual(stored["clientSessionId"], "parent")
+            self.assertEqual(stored["metadata"], {"transcript_path": "/fixture/parent.jsonl"})
+
+    def test_actual_hook_omits_secret_locator_without_losing_capture_or_leaking_to_queue(self):
+        secret = "sk-" + "x" * 24
+        with self.held_sender():
+            self.hook({"session_id": "parent", "hook_event_name": "SubagentStop", "agent_id": "child", "last_assistant_message": "Keep this answer", "agent_transcript_path": "/fixture/" + secret + "/child.jsonl", "agentTranscriptPath": "/fixture/lower-priority.jsonl"})
+        row = self.rows()[0]
+        stored = json.loads(row["event_bytes"])
+        self.assertEqual(stored["text"], "Keep this answer")
+        self.assertEqual(stored["clientSessionId"], "parent:child")
+        self.assertEqual(stored["metadata"], {"agentId": "child", "agentType": "", "parentClientSessionId": "parent"})
+        self.assertNotIn(secret.encode(), b"".join(path.read_bytes() for path in self.directory.iterdir()))
+
+    def test_optional_top_level_transcript_locator_is_omitted_not_rewritten_or_rejected(self):
+        secret_path = "/fixture/sk-" + "x" * 24 + "/session.jsonl"
+        for key in ("transcript_path", "transcriptPath"):
+            for value in (None, False, 7, [], {}, "", " \t", "x" * 4097, "nu\x00l", secret_path, "/fixture/password=fake-sentinel/session.jsonl"):
+                with self.subTest(key=key, value=value):
+                    payload = event()
+                    payload["metadata"] = {key: value, "parentClientSessionId": "parent", "note": "keep"}
+                    stored = json.loads(outbox.sanitize_event(payload))
+                    self.assertEqual(stored["metadata"], {"parentClientSessionId": "parent", "note": "keep"})
+                    self.assertEqual(stored["text"], payload["text"])
+        payload = event()
+        payload["metadata"] = {"transcript_path": " /fixture/space name.jsonl "}
+        self.assertEqual(json.loads(outbox.sanitize_event(payload))["metadata"], payload["metadata"])
+
+    def test_transcript_locator_exception_does_not_change_nested_tool_or_identity_rules(self):
+        secret_path = "/fixture/sk-" + "x" * 24 + "/session.jsonl"
+        payload = event()
+        payload["metadata"] = {"nested": {"transcript_path": secret_path}}
+        payload["toolInput"] = {"transcript_path": secret_path}
+        payload["toolOutput"] = {"transcriptPath": 7}
+        stored = json.loads(outbox.sanitize_event(payload))
+        self.assertEqual(stored["metadata"]["nested"]["transcript_path"], "/fixture/[REDACTED]/session.jsonl")
+        self.assertEqual(stored["toolInput"]["transcript_path"], "/fixture/[REDACTED]/session.jsonl")
+        self.assertEqual(stored["toolOutput"], {"transcriptPath": 7})
+        payload["toolInput"] = {"path": secret_path}
+        with self.assertRaisesRegex(outbox.OutboxError, "unsafe_identity"):
+            outbox.sanitize_event(payload)
 
     def test_actual_hook_normalizes_non_json_and_large_text_without_raw_payload(self):
         result = self.hook("password=supersecret123 " + "x" * 70000)
