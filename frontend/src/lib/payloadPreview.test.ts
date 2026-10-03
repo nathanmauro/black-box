@@ -82,6 +82,14 @@ describe("compactPayloadMedia", () => {
 });
 
 describe("readerTextPreview", () => {
+  it("uses the smaller first-turn limits without changing the original", () => {
+    const text = "One\r\nTwo\r\nThree\r\nFour\r\nFull tail";
+    expect(readerTextPreview(text, { chars: 280, nonemptyLines: 4 })).toEqual({
+      text: "One\r\nTwo\r\nThree\r\nFour…",
+      truncated: true,
+    });
+    expect(readerTextPreview(text).text).toBe(text);
+  });
   it("preserves short whitespace exactly", () => {
     const text = "  Two lines.\r\nA small message.  ";
     expect(readerTextPreview(text)).toEqual({ text, truncated: false });

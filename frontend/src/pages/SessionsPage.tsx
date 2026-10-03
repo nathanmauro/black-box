@@ -4,6 +4,7 @@ import {
   createMemo,
   createResource,
   createSignal,
+  createUniqueId,
   For,
   onCleanup,
   Show,
@@ -35,6 +36,7 @@ import { sourceColor, sourceLabel, timeAgo, truncatePath } from "../lib/format";
 import { distinctTitle, humanOnly, leadLine, withHumanText } from "../lib/humanOnly";
 import { projectMatchesSession } from "../lib/projects";
 import { parseQuery } from "../lib/query";
+import { readerTextPreview } from "../lib/payloadPreview";
 import {
   filterSessionTranscriptTurns,
   isSessionMemoryEvent as isMemoryEvent,
@@ -888,28 +890,28 @@ function SessionChildRows(props: { parentId: string; onSelect: (id: string) => v
   );
 }
 
-const FIRST_TURN_CLAMP_CHARS = 280;
-
 function FirstTurnLead(props: { text: string }) {
   const [expanded, setExpanded] = createSignal(false);
-  const long = () =>
-    props.text.length > FIRST_TURN_CLAMP_CHARS || props.text.split(/\r?\n/).length > 4;
+  const textId = createUniqueId();
+  const preview = createMemo(() => readerTextPreview(props.text, { chars: 280, nonemptyLines: 4 }));
   return (
     <blockquote class="detail-first-turn">
       <span class="detail-first-turn-label">First turn</span>
       <p
+        id={textId}
         classList={{
           "detail-first-turn-text": true,
-          "detail-first-turn-text--clamped": long() && !expanded(),
+          "detail-first-turn-text--clamped": preview().truncated && !expanded(),
         }}
       >
-        {props.text}
+        {expanded() ? props.text : preview().text}
       </p>
-      <Show when={long()}>
+      <Show when={preview().truncated}>
         <button
           type="button"
           class="detail-first-turn-toggle"
           aria-expanded={expanded()}
+          aria-controls={textId}
           onClick={() => setExpanded((open) => !open)}
         >
           {expanded() ? "Show less" : "Show all"}

@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { readerTextPreview } from "./payloadPreview";
 
 const KEY = "bb.humanOnly";
 
@@ -31,10 +32,15 @@ export function toggleHumanOnly(): void {
   setHumanOnly(!humanOnlySignal());
 }
 
-/** First non-empty line of a human turn, for one-line list rows. */
-export function leadLine(text: string | null | undefined): string | null {
+function firstLine(text: string | null | undefined): string | null {
   const line = text?.split(/\r?\n/).find((part) => part.trim());
   return line ? line.trim() : null;
+}
+
+/** A bounded first-line label; search and the full reader retain the original human turn. */
+export function leadLine(text: string | null | undefined): string | null {
+  const line = firstLine(text);
+  return line ? readerTextPreview(line, { chars: 160, nonemptyLines: 1 }).text : null;
 }
 
 /**
@@ -48,7 +54,7 @@ export function distinctTitle(
 ): string | null {
   const shown = title?.trim();
   if (!shown) return null;
-  const lead = leadLine(firstHumanTurn);
+  const lead = firstLine(firstHumanTurn);
   if (!lead) return shown;
   const collapse = (value: string) => value.replace(/\s+/g, " ").trim();
   const stem = collapse(shown.replace(/\.\.\.$/, ""));

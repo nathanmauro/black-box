@@ -49,6 +49,14 @@ describe("human text helpers", () => {
     expect(leadLine(null)).toBeNull();
   });
 
+  it("bounds first-turn labels without splitting Unicode or changing title comparison", async () => {
+    const { leadLine, distinctTitle } = await freshStore();
+    const turn = "x".repeat(159) + "🧭" + " hidden tail";
+    expect(leadLine(turn)).toBe("x".repeat(159) + "…");
+    expect(distinctTitle(turn, turn)).toBeNull();
+    expect(leadLine("x".repeat(160))).toBe("x".repeat(160));
+  });
+
   it("swaps in humanText only in human mode", async () => {
     const { withHumanText } = await freshStore();
     const item = { text: "raw", humanText: "clean" };
