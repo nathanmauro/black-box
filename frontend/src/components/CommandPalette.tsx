@@ -48,15 +48,18 @@ export default function CommandPalette(props: CommandPaletteProps) {
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
   const [sessions] = createResource(
-    () => (props.open ? "open" : ""),
-    async (key) => (key ? getSessions(120) : []),
+    () => (props.open ? { human: humanOnly() } : undefined),
+    async ({ human }) => getSessions(120, false, human),
     {
       initialValue: [] as AgentSession[],
     },
   );
   const [fallback] = createResource(
-    () => (props.open && query().trim().length >= 2 ? query().trim() : ""),
-    async (q) => (q ? search(q, 8) : null),
+    () => ({
+      q: props.open && query().trim().length >= 2 ? query().trim() : "",
+      human: humanOnly(),
+    }),
+    async ({ q, human }) => (q ? search(q, 8, human) : null),
   );
 
   const items = createMemo<CommandItem[]>(() => {
@@ -87,16 +90,23 @@ export default function CommandPalette(props: CommandPaletteProps) {
       (item) => !q || normalize(`${item.label} ${item.meta} human turns my turns`).includes(q),
     );
     const matchedSessions = sessions()
-      .filter((session) => !q || fuzzy(session, q))
+      .filter(
+        (session) =>
+          (!humanOnly() || Boolean(session.firstHumanTurn?.trim())) && (!q || fuzzy(session, q)),
+      )
       .slice(0, 7)
       .map((session) => sessionItem(session, navigate, close));
     const remoteEvents =
       fallback()
-        ?.local?.slice(0, 5)
+        ?.local?.filter((event) => !humanOnly() || Boolean(event.humanText?.trim()))
+        .slice(0, 5)
         .map((event) => ({
           id: `event-${event.id}`,
-          label:
-            event.text && event.text.length < 120 ? event.text : event.toolName || event.eventType,
+          label: humanOnly()
+            ? leadLine(event.humanText) || event.eventType
+            : event.text && event.text.length < 120
+              ? event.text
+              : event.toolName || event.eventType,
           meta: `${sourceLabel(event.source)} · ${timeAgo(event.observedAt)}`,
           kind: "event" as const,
           eventKind: event.eventType,

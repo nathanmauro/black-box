@@ -232,3 +232,22 @@ This avoids stacking controls into the entire landscape viewport without changin
 larger desktop layouts. The same packaged journey checks 667×375 and 844×390, full exact-source
 visibility, keyboard turn-rail scrolling, project scope and non-overlapping utility actions.
 See the [landscape verification plan](superpowers/plans/2026-10-03-browse-landscape-reader.md).
+
+## Human-only session pickers
+
+The sticky **My turns** setting applies to ordinary Browse session lists, including project scopes,
+and command-palette session picks and event search. Requests include `humanOnly=true`; the server
+filters before applying the result limit, so recent machine-only sessions cannot displace older
+human sessions. The project sessions endpoint accepts this optional parameter (default `false`)
+and returns the existing `firstHumanTurn` field for both filtered and ordinary lists.
+
+Switching the setting refreshes lists and immediately hides stale nonhuman rows. If a known ordinary
+selected session in the active project/source scope has no human turn, Browse selects a matching human session and updates its link.
+Unknown direct session IDs retain the unselected state; they do not silently open another session.
+Existing visual fallbacks for source/project mismatches do not rewrite the requested session URL.
+An explicit event link can still reveal a nonhuman event and its owning session while **My turns**
+is enabled. This exception continues to respect the selected project and source filters.
+
+The [picker journey](../frontend/tests/e2e/human-session-pickers.spec.ts) exercises actual HTTP
+capture, global/project selection, off/on/reload, palette picks, source filtering and exact evidence.
+See the [verification plan](superpowers/plans/2026-10-03-human-only-session-pickers.md).
