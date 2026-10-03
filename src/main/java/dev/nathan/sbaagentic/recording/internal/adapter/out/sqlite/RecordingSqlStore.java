@@ -75,6 +75,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     private final Clock clock;
     private final EventFtsIndex ftsIndex;
     private final boolean postgres;
+    private final SqlInstant observedTime;
 
     public RecordingSqlStore(
             JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, Clock clock, EventFtsIndex ftsIndex) {
@@ -89,6 +90,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             EventFtsIndex ftsIndex,
             @Value("${sba.storage.backend:sqlite}") String backend) {
         this.postgres = "postgres".equals(backend);
+        this.observedTime = SqlInstant.column("e.observed_at", postgres);
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -106,9 +108,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public void ensureSchema() {
         StreamPositionStore.initialize(jdbcTemplate);
         ensureSessionTimeIndex();
-        if (postgres)
+        if (postgres) {
+            ensureTimeIndexes();
 
             return;
+        }
         // WAL lets concurrent agents (a Claude hook and a Codex hook firing at once) read while one
         // writes, instead of serializing behind a global lock. It is a persistent property of the
         // database file, so setting it once per boot is enough; busy_timeout (set per connection in
@@ -153,6 +157,20 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 CREATE INDEX IF NOT EXISTS idx_agent_events_human
                     ON agent_events (observed_at DESC, id DESC) WHERE human_text IS NOT NULL
                 """);
+        ensureTimeIndexes();
+    }
+
+    private void ensureTimeIndexes() {
+        String columns = SqlInstant.column("observed_at", postgres).indexColumns();
+        // Additive derived indexes: canonical timestamps and the existing raw-time indexes stay
+        // intact. SQLite requires index expressions to match the querying expressions exactly.
+        jdbcTemplate.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_events_chronology_v1 ON agent_events (" + columns + ")");
+        jdbcTemplate.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_events_session_chronology_v1 ON agent_events (session_id, "
+                        + columns + ")");
+        jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_agent_events_human_chronology_v1 ON agent_events ("
+                + columns + ") WHERE human_text IS NOT NULL");
     }
 
     /**
@@ -497,10 +515,15 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                        tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
                   FROM agent_events
                  WHERE session_id = ?
-                """ + (humanOnly ? "   AND human_text IS NOT NULL\n" : "") + """
-                 ORDER BY observed_at DESC
+                """ + (humanOnly ? "   AND human_text IS NOT NULL\n" : "")
+                        + """
+                 ORDER BY %s
                  LIMIT ?
-                """, this::mapEvent, sessionId, limit);
+                """.formatted(SqlInstant.column("observed_at", postgres)
+                                .descending("id")),
+                this::mapEvent,
+                sessionId,
+                limit);
     }
 
     @Override
@@ -512,7 +535,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     @Override
     public List<String> transcriptPathsForSession(String sessionId) {
-        List<String> metadataRows = jdbcTemplate.queryForList("""
+        List<String> metadataRows = jdbcTemplate.queryForList(
+                """
                 SELECT metadata_json
                   FROM agent_events
                  WHERE session_id = ?
@@ -522,10 +546,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                             WHEN lower(replace(replace(event_type, '_', ''), '-', '')) = 'sessionstart' THEN 0
                             ELSE 1
                           END,
-                          observed_at DESC,
-                          id DESC
-                 LIMIT 100
-                """, String.class, sessionId);
+                """ + SqlInstant.column("observed_at", postgres).descending("id") + " LIMIT 100",
+                String.class,
+                sessionId);
         java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
         for (String json : metadataRows) {
             Map<String, Object> metadata = fromJsonMap(json);
@@ -563,8 +586,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                             'agentmessage', 'agentresponse', 'finalresponse'
                         )
                    )
-                 ORDER BY observed_at DESC, id DESC
-                """,
+                 ORDER BY %s
+                """.formatted(SqlInstant.column("observed_at", postgres).descending("id")),
                 (rs, rowNum) -> new AgentEvent(
                         rs.getString("id"),
                         rs.getString("session_id"),
@@ -623,16 +646,21 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         boolean usedFts = appendQueryPredicates(
                 sql, args, facets, meaningfulOnly, humanOnly, projectScopes, null, hardSessionId == null);
         if (sinceInstant != null) {
-            sql.append("   AND e.observed_at >= ?\n");
-            args.add(sinceInstant.toString());
+            sql.append("   AND ").append(observedTime.expression()).append(" >= ?\n");
+            SqlInstant.bind(args, sinceInstant);
         }
         if (beforeCursor != null) {
-            sql.append("   AND (e.observed_at < ? OR (e.observed_at = ? AND e.id < ?))\n");
-            args.add(beforeCursor.observedAt());
-            args.add(beforeCursor.observedAt());
+            // The scalar bound lets SQLite seek into its expression index; the tuple preserves ID ties.
+            sql.append("   AND ")
+                    .append(observedTime.expression())
+                    .append(" <= ? AND ")
+                    .append(observedTime.cursorTuple("e.id"))
+                    .append(" < (?, ?)\n");
+            SqlInstant.bind(args, beforeCursor.observedAt());
+            SqlInstant.bind(args, beforeCursor.observedAt());
             args.add(beforeCursor.id());
         }
-        sql.append(" ORDER BY e.observed_at DESC, e.id DESC\n").append(" LIMIT ?");
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append("\n LIMIT ?");
         args.add(limit + 1);
 
         List<EventFeedItem> fetched;
@@ -972,12 +1000,12 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             sql.append("   AND e.human_text IS NOT NULL\n");
         }
         facets.sinceSpec().ifPresent(spec -> {
-            sql.append("   AND e.observed_at >= ?\n");
-            args.add(spec.resolve(clock).toString());
+            sql.append("   AND ").append(observedTime.expression()).append(" >= ?\n");
+            SqlInstant.bind(args, spec.resolve(clock));
         });
         facets.untilSpec().ifPresent(spec -> {
-            sql.append(spec.exclusiveEnd() ? "   AND e.observed_at < ?\n" : "   AND e.observed_at <= ?\n");
-            args.add(spec.resolve(clock).toString());
+            sql.append("   AND ").append(observedTime.expression()).append(spec.exclusiveEnd() ? " < ?\n" : " <= ?\n");
+            SqlInstant.bind(args, spec.resolve(clock));
         });
 
         return usedFts;
@@ -1188,7 +1216,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         try {
 
-            return new FeedCursor(Instant.parse(parts[0]).toString(), parts[1]);
+            return new FeedCursor(Instant.parse(parts[0]), parts[1]);
         } catch (DateTimeParseException ex) {
             throw new IllegalArgumentException("Invalid before cursor. Expected '<observedAt>|<id>'.", ex);
         }
@@ -1212,7 +1240,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         return item.observedAt() + "|" + item.id();
     }
 
-    private record FeedCursor(String observedAt, String id) {}
+    private record FeedCursor(Instant observedAt, String id) {}
 
     private String toJson(Object value) {
         if (value == null) {

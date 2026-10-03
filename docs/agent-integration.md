@@ -70,8 +70,11 @@ already end in `[truncated]` while its event metadata retains fuller `paths` and
 reports recall presentation limits, not whether ingest previously capped the text. The source
 `eventId`, `sessionId`, and `observedAt` remain available when MCP clips a body.
 
-Projections remain lexical-only and excluded from default Decisions/Handoffs recall. This API
-support does not add a Projection kind filter to the Recall page.
+Projections remain lexical-only and excluded from default Decisions/Handoffs recall. Select
+**Projection** in the Recall page to inspect recorded paths, or open a link with
+`kinds=projection&run=1`. The reader and copied context label them as possibilities. The card does
+not show the legacy first-path confidence as an overall score; each path's declared confidence
+remains in the body. Older responses without a body link to the source capture for full evidence.
 
 ### Ideas
 
@@ -165,8 +168,10 @@ Supported query operators include `source:`, `kind:`, `tool:`, `project:`, `sess
 clock timezone. All recognized filters use canonical storage only until equivalent index filtering
 exists. Legacy raw search retains its older behavior, including fuzzy index treatment of some
 positive facets. `until:2026-08-18` includes all of that day in the server timezone; strictly before
-that date uses `until:2026-08-17`. An exact `until:` timestamp is inclusive. Compact comparisons
-normalize fractional precision. `before:` and malformed/negated time operators are diagnosed
+that date uses `until:2026-08-17`. An exact `until:` timestamp is inclusive. Canonical feed, session transcript pagination, local
+legacy/compact search and recall compare UTC timestamps at nanosecond precision, including whole-second
+and fractional values. Event timestamps remain unchanged in storage and responses; pagination retains
+the existing timestamp-plus-event-ID cursor and event IDs break exact timestamp ties. `before:` and malformed/negated time operators are diagnosed
 before searching. Quote the entire token, such as `"before:2026-08-18"`, to search it literally.
 URLs and ordinary colon-containing text remain searchable.
 

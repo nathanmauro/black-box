@@ -55,8 +55,20 @@ export function buildRecallBriefing(
       .filter(Boolean)
       .join("\n");
     const detail = [
+      item.kind.toLowerCase() === "projection"
+        ? "Recorded possibilities; no selected outcome is implied. Confidence belongs to each recorded path."
+        : "",
+      item.kind.toLowerCase() === "projection" && !item.body
+        ? "Full path evidence is unavailable in this response; open the evidence link for all paths and their confidence."
+        : "",
+      // Ingest can cap rendered paths before their trailing basis; preserve the separate field first.
+      item.kind.toLowerCase() === "projection" && item.rationale
+        ? `Recorded basis: ${item.rationale}`
+        : "",
       item.body || item.headline || "(No headline)",
-      item.rationale ? `Rationale: ${item.rationale}` : "",
+      item.rationale && item.kind.toLowerCase() !== "projection"
+        ? `Rationale: ${item.rationale}`
+        : "",
       item.alternatives?.length ? `Recorded alternatives: ${item.alternatives.join("; ")}` : "",
       item.openLoops?.length ? `Recorded open questions: ${item.openLoops.join("; ")}` : "",
       item.nextAction ? `Recorded next action: ${item.nextAction}` : "",

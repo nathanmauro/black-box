@@ -433,7 +433,9 @@ class ProjectTimelineQueryPlanTest {
 
     private static void assertUsesSessionEventIndex(List<String> plan) {
         assertThat(plan)
-                .anyMatch(detail -> detail.contains("SEARCH e USING INDEX idx_agent_events_session_observed"))
+                .anyMatch(detail -> (detail.contains("SEARCH e USING INDEX idx_agent_events_session_observed")
+                                || detail.contains("SEARCH e USING INDEX idx_agent_events_session_chronology_v1"))
+                        && detail.contains("session_id=?"))
                 .noneMatch(detail -> detail.startsWith("SCAN e"));
     }
 
