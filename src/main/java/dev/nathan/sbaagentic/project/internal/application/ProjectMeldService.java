@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -121,7 +122,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
         String promptVersion = firstNonBlank(request.promptVersion(), PROMPT_VERSION);
         String executionMode = executionMode(request.executionMode());
         boolean savedFromPreview = request.savedFromPreview() == null || request.savedFromPreview();
-        Map<String, Object> metadata = request.metadata() == null ? Map.of() : Map.copyOf(request.metadata());
+        Map<String, Object> metadata = request.metadata() == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(request.metadata()));
         Instant createdAt = Instant.now();
 
         repository.insertSavedMeld(

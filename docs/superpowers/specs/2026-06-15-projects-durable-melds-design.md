@@ -164,7 +164,10 @@ session_meld_inputs (
 
 The metadata JSON can store selected event IDs, evidence pointers, bundle character counts,
 degradation notes, and source prompt/bundle hashes. The schema should avoid storing full
-duplicate raw session transcripts in metadata.
+duplicate raw session transcripts in metadata. `POST /api/melds` accepts a metadata JSON object
+with null values at any depth and preserves its values through the project meld listing. Omitted
+metadata or a null metadata object returns `{}`; its existing empty SQL representation remains
+unchanged. Saving still requires a nonblank body and sessions belonging to the selected project.
 
 Initial endpoints:
 
