@@ -40,6 +40,11 @@ context** exports visible retrieved captures with timestamps and exact source li
 24,000 characters and with explicit truncation/omission counts. It is bounded evidence, not a
 generated assessment or a complete project history. Source/client filters affect what is copied.
 
+Projects evidence links use `?focus=capture:<eventId>`. A link through a registered project alias
+resolves to the canonical project while retaining its evidence selection, query parameters and
+fragment. Canonicalization replaces the current history entry, so Back returns to the preceding
+page rather than revisiting the alias redirect.
+
 Use **Replace decision** on a current decision and enter the new choice plus the reason. This writes
 only when **Record replacement** is pressed. **Include replaced decisions** requests historical
 results; the earlier/replacement links resolve their own sessions even across different clients.
