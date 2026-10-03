@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import secrets
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,7 +17,15 @@ class CloudEntrypointTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="blackbox-cloud-entrypoint-")
         self.addCleanup(self.temp.cleanup)
         self.fake_java = Path(self.temp.name) / "java"
-        self.fake_java.write_text('#!/bin/sh\nprintf "JAVA_STARTED:%s\\n" "$$"\nprintf "%s\\n" "$@"\nexit "${FAKE_JAVA_EXIT:-0}"\n')
+        # A second shell could silently remove invalid environment names and hide a guard leak.
+        # Inspect the actual exec environment directly; never print any environment values.
+        self.fake_java.write_text(
+            f'#!{sys.executable}\nimport os, sys\n'
+            'print(f"JAVA_STARTED:{os.getpid()}")\n'
+            'for arg in sys.argv[1:]: print(arg)\n'
+            'probe = os.environ.get("FAKE_JAVA_PROBE")\n'
+            'if probe: print("OVERRIDE_PRESENT" if probe in os.environ else "OVERRIDE_ABSENT")\n'
+            'sys.exit(int(os.environ.get("FAKE_JAVA_EXIT", "0")))\n')
         self.fake_java.chmod(0o755)
         self.env = {
             "PATH": self.temp.name + ":/usr/bin:/bin",
@@ -73,7 +82,7 @@ class CloudEntrypointTest(unittest.TestCase):
                     self.assert_denied(dict(self.env, **{name: secret}))
         self.assert_denied(dict(self.env, SBA_AUTH_API_TOKEN=self.env["SBA_AUTH_PASSWORD"]))
 
-    def test_configuration_override_channels_are_rejected(self):
+    def test_configuration_override_channels_never_reach_java(self):
         names = ("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "SPRING_APPLICATION_JSON",
                  "SPRING_PROFILES_INCLUDE", "SPRING_PROFILES_DEFAULT", "SPRING_CONFIG_LOCATION",
                  "SPRING_CONFIG_ADDITIONAL_LOCATION", "SPRING_CONFIG_IMPORT", "SPRING_CONFIG_NAME",
@@ -90,8 +99,25 @@ class CloudEntrypointTest(unittest.TestCase):
         for name in names:
             with self.subTest(name=name):
                 marker = "private-override-" + secrets.token_hex(12)
-                stderr = self.assert_denied(dict(self.env, **{name: marker}))
-                self.assertNotIn(marker, stderr)
+                env = dict(self.env, **{name: marker})
+                if name.isidentifier():
+                    stderr = self.assert_denied(env)
+                    self.assertNotIn(marker, stderr)
+                else:
+                    # dash drops non-shell environment names before executing the script;
+                    # other POSIX shells preserve them, and the guard must reject those.
+                    env["FAKE_JAVA_PROBE"] = name
+                    code, stdout, stderr, _ = self.run_guard(env)
+                    if code == 64:
+                        self.assertNotIn("JAVA_STARTED", stdout)
+                        self.assertIn("Black Box cloud startup refused:", stderr)
+                    else:
+                        self.assertEqual(code, 0)
+                        self.assertIn("JAVA_STARTED", stdout)
+                        self.assertIn("OVERRIDE_ABSENT", stdout)
+                        self.assertNotIn("OVERRIDE_PRESENT", stdout)
+                        self.assertEqual(stderr, "")
+                    self.assertNotIn(marker, stdout + stderr)
 
     def test_command_arguments_cannot_override_auth_or_replace_the_process(self):
         for args in (("--SBA_AUTH_ENABLED=false",), ("sh", "-c", "echo secret")):

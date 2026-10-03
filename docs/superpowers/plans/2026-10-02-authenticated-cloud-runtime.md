@@ -73,6 +73,10 @@ an operator who replaces the container entrypoint/image still controls the proce
   four unrelated skips. Both PostgreSQL classes ran without skips: 16 backend contracts and four
   authenticated-runtime/configuration tests. The clean build removed obsolete board test classes.
   All 52 cloud Python tests also passed on this integrated source.
+- Ubuntu CI exposed a portability assumption: `dash` removes dotted/hyphenated environment names
+  before running the guard. The fixture now inspects the exec environment with a Python fake Java,
+  requiring explicit denial for ordinary names and either denial or verified removal for names
+  the platform shell may discard. A second shell probe could otherwise hide a leaked setting.
 
 The fixture creates and drops only its own randomly named schema and closes both application
 contexts. The coordinator-owned disposable PostgreSQL server remains running. No production database,

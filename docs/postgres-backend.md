@@ -41,10 +41,10 @@ default) or `true`; the cloud image rejects `false` and empty values. The applic
 credential quality before serving requests.
 
 Inject secrets through the deployment's protected environment. Do not pass command arguments to
-this image: its entrypoint accepts none. It rejects Java option environment overrides, alternate
+this image: its entrypoint accepts none. It prevents Java option environment overrides, alternate
 Spring configuration/profile inputs and JSON configuration (including relaxed case/dot/underscore
 spellings), the entire competing `SPRING_DATASOURCE_*`
-namespace (including pool connection and JNDI settings, and relaxed spelling variants) and `SBA_STORAGE_BACKEND`. Use the documented `SBA_DATASOURCE_*` settings;
+namespace (including pool connection and JNDI settings, and relaxed spelling variants) and `SBA_STORAGE_BACKEND` from reaching Java. Unsupported settings are rejected; dotted or hyphenated environment names may instead be removed by the platform shell before the guard runs. Use the documented `SBA_DATASOURCE_*` settings;
 the PostgreSQL profile selects the backend. Startup loads only the packaged `application.yml` and
 its PostgreSQL profile; mounted working-directory configuration files are excluded.
 The guard prints setting names, never secret values,
