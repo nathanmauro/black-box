@@ -14,7 +14,8 @@ export default function CompanionPage() {
 
   onMount(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") store.stepDown();
+      // A control that handles Escape itself (the recall field) prevents the default.
+      if (event.key === "Escape" && !event.defaultPrevented) store.stepDown();
     };
     window.addEventListener("keydown", handler);
     onCleanup(() => window.removeEventListener("keydown", handler));
@@ -78,6 +79,7 @@ export default function CompanionPage() {
             onBack={() => store.setMode("compact")}
             onToggleView={store.toggleExpandedView}
             onCollapse={() => store.setMode("mini")}
+            recallProject={store.recallProject()}
             focusRef={(el) => (expandedRef = el)}
           />
         </Match>

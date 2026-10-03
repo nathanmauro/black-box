@@ -17,7 +17,15 @@ the screen without becoming a notification feed.
   completion. A session or item whose working directory is not in the project catalog appears
   under one `Unassigned` row; its links open the event without a project scope.
 
-Escape steps down one level. Mode and seen-state persist in the browser's `localStorage`.
+The expanded level also has a recall field. Submitting a question of at least two characters
+(Enter or the `Recall` button) opens the existing Recall page in a new browsing context at
+`/recall?project=<canonical key>&query=<question>&run=1`, where `project` is the open project's
+primary canonical key; the river and `Unassigned` omit `project` and recall across projects. The
+Recall page runs that one recall itself. The companion fetches no suggestions while you type.
+
+Escape steps down one level. Inside the recall field, Escape first clears the text and then moves
+focus to the Back button, without stepping down. Mode and seen-state persist in the browser's
+`localStorage`; the recall text does not.
 
 Only `Decision`, `Handoff`, and `Observation` events become rows. Tool-call activity only drives
 the pulse. The route reads the existing stream and `/api/events` query
@@ -40,10 +48,14 @@ swift test
 
 `--click-through <dir>` runs the real shell (same panel, bridge handler, and delegates) and drives
 it from inside the app, never through your mouse or keyboard: it clicks the chip, the first
-project, and the first row with `element.click()`, sends Escape twice as in-process key events,
-and asserts the bridge resizes the panel to each level, the row link reaches the shell as a
-`/?view=browse&session=…&event=…` URL on the Black Box origin (recorded, not opened), and the
-menubar title tracks the page's pulse and unseen count. It writes `mini.png`, `compact.png`, and
+project, and the first row with `element.click()`, types a question into the recall field and
+presses Return as in-process key events, sends Escape twice inside the field and twice more
+outside it, and asserts the bridge resizes the panel to each level, the row link reaches the shell
+as a `/?view=browse&session=…&event=…` URL on the Black Box origin, the recall form reaches it as
+the exact `/recall?project=…&query=…&run=1` URL for that project's canonical key (both recorded,
+not opened, with the panel still on `/companion`), Escape in the field clears it and then focuses
+Back without leaving the expanded level, and the menubar title tracks the page's pulse and unseen
+count. It writes `mini.png`, `compact.png`, and
 `expanded.png` to `<dir>`, prints one line per step, and exits 0, or 1 at the first failed step
 (hard timeout 60s). The panel and menubar item show briefly while it runs. It uses a throwaway web data store and in-memory size memory, so it never
 touches the real shell's saved position, sizes, or seen-state. Point it at an isolated Black Box
@@ -61,7 +73,8 @@ as a failure.
 The menubar menu offers Show/Hide Companion, Open Black Box, Reload, and Quit. The panel resizes as the
 page changes level and remembers its position; a manual resize of the expanded panel is remembered
 per mode and preferred over the page's own default size the next time that mode is entered. Links
-open in the default browser. With `?embedded=1` the page paints no background, so only the chip or
+and recall questions open in the default browser through the same new-window handler, which
+accepts only http and https URLs. With `?embedded=1` the page paints no background, so only the chip or
 card shows in the clear panel.
 
 The shell assumes Black Box authentication is disabled on `127.0.0.1` (the default; see

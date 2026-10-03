@@ -53,4 +53,26 @@ final class ClickThroughChecksTests: XCTestCase {
         let state = ClickThroughChecks.chipState(className: "companion-chip companion-chip--live", countText: "2")!
         XCTAssertEqual(ClickThroughChecks.expectedStatusTitle(state), StatusTitle.render(pulse: .live, unseen: 2))
     }
+
+    func testExpectedRecallURLMatchesURLSearchParamsSerialization() {
+        // new URLSearchParams({project: "/repo/a b", query: "C++ & #recall café ✓", run: "1"}).toString()
+        let url = ClickThroughChecks.expectedRecallURL(companion: companion, project: "/repo/a b", query: "  C++ & #recall café ✓ ")
+        XCTAssertEqual(url?.absoluteString,
+                       "http://127.0.0.1:8797/recall?project=%2Frepo%2Fa+b&query=C%2B%2B+%26+%23recall+caf%C3%A9+%E2%9C%93&run=1")
+    }
+
+    func testExpectedRecallURLOmitsAMissingProject() {
+        XCTAssertEqual(ClickThroughChecks.expectedRecallURL(companion: companion, project: nil, query: "bridge")?.absoluteString,
+                       "http://127.0.0.1:8797/recall?query=bridge&run=1")
+        XCTAssertEqual(ClickThroughChecks.expectedRecallURL(companion: companion, project: "", query: "bridge")?.absoluteString,
+                       "http://127.0.0.1:8797/recall?query=bridge&run=1")
+    }
+
+    func testRecallLinkProblemRequiresAnExactMatch() {
+        let expected = ClickThroughChecks.expectedRecallURL(companion: companion, project: "/repo/a", query: "why")
+        XCTAssertNil(ClickThroughChecks.recallLinkProblem(URL(string: "http://127.0.0.1:8797/recall?project=%2Frepo%2Fa&query=why&run=1"), expected: expected))
+        XCTAssertNotNil(ClickThroughChecks.recallLinkProblem(nil, expected: expected))
+        XCTAssertNotNil(ClickThroughChecks.recallLinkProblem(URL(string: "http://127.0.0.1:8797/recall?query=why&run=1"), expected: expected))
+        XCTAssertNotNil(ClickThroughChecks.recallLinkProblem(URL(string: "http://127.0.0.1:8766/recall?project=%2Frepo%2Fa&query=why&run=1"), expected: expected))
+    }
 }

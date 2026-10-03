@@ -183,6 +183,44 @@ body:has(.companion--embedded) {
   font-size: 12px;
   border-bottom: 1px solid var(--border, #2a2a2a);
 }
+.companion-recall {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.companion-recall-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: 6px;
+  background: var(--bg, #101010);
+  color: inherit;
+  font: inherit;
+}
+.companion-recall-input::placeholder {
+  color: var(--text-faint, #8a8a8a);
+}
+.companion-recall-button {
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim, #a0a0a0);
+  cursor: pointer;
+  font: inherit;
+}
+.companion-recall-button:hover:not(:disabled) {
+  color: var(--text, #e6e6e6);
+  background: var(--bg-hover, #222);
+}
+.companion-recall-button:disabled {
+  color: var(--text-faint, #8a8a8a);
+  cursor: default;
+}
 .companion-item {
   display: flex;
   flex-direction: column;

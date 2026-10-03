@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library";
-import { describe, expect, it, vi } from "vitest";
-import type { CompanionModel, MeaningfulItem } from "../../lib/companion/model";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CompanionModel, ExpandedViewState, MeaningfulItem } from "../../lib/companion/model";
 import ExpandedView from "./ExpandedView";
 
 const handoff: MeaningfulItem = {
@@ -134,5 +134,97 @@ describe("ExpandedView", () => {
     expect(screen.getByText("b")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "By project" }));
     expect(onToggleView).toHaveBeenCalledTimes(1);
+  });
+
+  describe("recall form", () => {
+    function renderForm(view: ExpandedViewState, recallProject: string | null) {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      render(() => (
+        <ExpandedView
+          model={model}
+          view={view}
+          recallProject={recallProject}
+          onBack={() => {}}
+          onToggleView={() => {}}
+          onCollapse={() => {}}
+        />
+      ));
+      const field = screen.getByRole("textbox", { name: /^Recall/ });
+      const button = screen.getByRole("button", { name: "Recall" });
+      return { open, field: field as HTMLInputElement, button: button as HTMLButtonElement };
+    }
+    const projectView: ExpandedViewState = {
+      kind: "project",
+      projectKey: "keyA",
+      projectName: "a",
+    };
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("is a labelled search form whose submit opens Recall for the project in a new context", () => {
+      const { open, field, button } = renderForm(projectView, "/repo/a");
+      expect(screen.getByRole("search")).toContainElement(field);
+      expect(field).toHaveAccessibleName("Recall in a");
+      expect(button).toHaveAttribute("type", "submit");
+      expect(field.form).toBe(button.form);
+      fireEvent.input(field, { target: { value: "  C++ & #42 café  " } });
+      fireEvent.submit(field.form!);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledWith(
+        "/recall?project=%2Frepo%2Fa&query=C%2B%2B+%26+%2342+caf%C3%A9&run=1",
+        "_blank",
+        "noopener,noreferrer",
+      );
+    });
+
+    it("searches all projects from the river", () => {
+      const { open, field } = renderForm({ kind: "river" }, null);
+      expect(field).toHaveAccessibleName("Recall across projects");
+      fireEvent.input(field, { target: { value: "bridge" } });
+      fireEvent.submit(field.form!);
+      expect(open).toHaveBeenCalledWith(
+        "/recall?query=bridge&run=1",
+        "_blank",
+        "noopener,noreferrer",
+      );
+    });
+
+    it("does not submit blank or one-character questions", () => {
+      const { open, field, button } = renderForm(projectView, "/repo/a");
+      expect(button).toBeDisabled();
+      for (const value of ["", "   ", " x "]) {
+        fireEvent.input(field, { target: { value } });
+        expect(button).toBeDisabled();
+        const submit = new Event("submit", { bubbles: true, cancelable: true });
+        field.form!.dispatchEvent(submit);
+        expect(submit.defaultPrevented).toBe(true);
+      }
+      expect(open).not.toHaveBeenCalled();
+      fireEvent.input(field, { target: { value: " xy " } });
+      expect(button).toBeEnabled();
+    });
+
+    it("handles Escape itself: clears the text, then moves focus to Back", () => {
+      const { field } = renderForm(projectView, "/repo/a");
+      field.focus();
+      fireEvent.input(field, { target: { value: "half a thought" } });
+      const first = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      });
+      field.dispatchEvent(first);
+      expect(first.defaultPrevented).toBe(true);
+      expect(field).toHaveValue("");
+      expect(field).toHaveFocus();
+      const second = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      });
+      field.dispatchEvent(second);
+      expect(second.defaultPrevented).toBe(true);
+      expect(screen.getByRole("button", { name: "Back to projects" })).toHaveFocus();
+    });
   });
 });

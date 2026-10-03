@@ -25,6 +25,46 @@ enum ClickThroughChecks {
         return nil
     }
 
+    /// The Recall launcher URL the companion's recall form should hand the shell: `/recall` on the
+    /// companion's origin with `project` (omitted when nil), the trimmed `query`, and `run=1`,
+    /// serialized as application/x-www-form-urlencoded exactly as the page's URLSearchParams does.
+    static func expectedRecallURL(companion: URL, project: String?, query: String) -> URL? {
+        guard var components = URLComponents(url: companion, resolvingAgainstBaseURL: false) else { return nil }
+        var pairs: [(String, String)] = []
+        if let project, !project.isEmpty { pairs.append(("project", project)) }
+        pairs.append(("query", query.trimmingCharacters(in: .whitespaces)))
+        pairs.append(("run", "1"))
+        components.percentEncodedPath = "/recall"
+        components.percentEncodedQuery = pairs.map { "\(formEncoded($0.0))=\(formEncoded($0.1))" }.joined(separator: "&")
+        components.fragment = nil
+        return components.url
+    }
+
+    /// Nil when `url` is exactly `expected`; otherwise a short description of the mismatch.
+    static func recallLinkProblem(_ url: URL?, expected: URL?) -> String? {
+        guard let url else { return "no URL reached the shell's link handler" }
+        guard let expected else { return "could not build the expected recall URL" }
+        return url.absoluteString == expected.absoluteString ? nil : "got \(url.absoluteString), expected \(expected.absoluteString)"
+    }
+
+    /// WHATWG application/x-www-form-urlencoded byte serializer: ASCII alphanumerics and `*-._`
+    /// pass through, space becomes `+`, every other UTF-8 byte is percent-encoded in uppercase hex.
+    static func formEncoded(_ text: String) -> String {
+        var out = ""
+        for byte in text.utf8 {
+            switch byte {
+            case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"), UInt8(ascii: "0")...UInt8(ascii: "9"),
+                 UInt8(ascii: "*"), UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"):
+                out.append(Character(UnicodeScalar(byte)))
+            case UInt8(ascii: " "):
+                out.append("+")
+            default:
+                out.append(String(format: "%%%02X", byte))
+            }
+        }
+        return out
+    }
+
     /// Frames are integral in practice; allow a point of rounding either way.
     static func sizeMatches(_ actual: CGSize, _ expected: CGSize, tolerance: CGFloat = 1) -> Bool {
         abs(actual.width - expected.width) <= tolerance && abs(actual.height - expected.height) <= tolerance
