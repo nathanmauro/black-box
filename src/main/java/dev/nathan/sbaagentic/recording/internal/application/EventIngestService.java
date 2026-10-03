@@ -238,7 +238,14 @@ public class EventIngestService implements EventRecorder {
             return value;
         }
 
-        return value.substring(0, max) + "\n[truncated]";
+        int keep = max;
+        if (keep > 0
+                && Character.isHighSurrogate(value.charAt(keep - 1))
+                && Character.isLowSurrogate(value.charAt(keep))) {
+            keep--;
+        }
+
+        return value.substring(0, keep) + "\n[truncated]";
     }
 
     private record TitleCandidate(String value, int rank) {}
