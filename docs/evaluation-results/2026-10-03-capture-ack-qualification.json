@@ -1,0 +1,42 @@
+{
+  "accepted_actions": 0,
+  "baseline": "5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8",
+  "baseline_archive_sha256": "5f770e2a9fe8bbd2fbd0e7a66ad90d1d9d863d4ce565d5d3ebc3d4a68f8514d6",
+  "evidence": "infrastructure_only",
+  "fixture": "capture-ack-development",
+  "model_runs": 0,
+  "qualification": "passed",
+  "reference": "596ccf62a99416f14acf0ca24f91a928bc08ed40",
+  "results": {
+    "baseline": {
+      "failed": [
+        "bothTerminalFailuresAcknowledgeAfterBothAttempts",
+        "optionalRecordedFailureAcknowledgesCommittedCapture",
+        "terminalStopFailureAcknowledgesCommittedCapture",
+        "terminalStopIsAttemptedAfterRecordedFailure"
+      ],
+      "passed": 4,
+      "seconds": 5.898,
+      "tests": 8
+    },
+    "reference": {
+      "failed": [],
+      "passed": 8,
+      "seconds": 5.89,
+      "tests": 8
+    }
+  },
+  "schema_version": 1,
+  "usefulness_gate": {
+    "acceptance": "must be observed; not established by grading",
+    "accepted_actions_missed_by_comparator_required": 3,
+    "existing_development_gate": "1\u20134 passes among five bare continuations; unchanged and not evaluated",
+    "historical_candidates_required": 20,
+    "minimum_useful_supported_suggestions_percent": 70,
+    "ordinary_latest_handoff_search_comparator": "same model, budget and source window; not evaluated",
+    "resumed_tasks_required": 5,
+    "stale_or_duplicate_suggestions_percent_must_be_below": 10,
+    "status": "not_cleared"
+  },
+  "worker_input_sha256": "fd4442df6ed29767c1a009deb600a1a30cdf20cb4388327c4e35e891e06a2375"
+}

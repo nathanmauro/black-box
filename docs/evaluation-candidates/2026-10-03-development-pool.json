@@ -5,7 +5,7 @@
   "candidate_count": 17,
   "distinct_clusters": 12,
   "model_runs": 0,
-  "newly_qualified_candidates": 2,
+  "newly_qualified_candidates": 3,
   "human_accepted_actions": 0,
   "usefulness_gate": "not_cleared",
   "candidates": [
@@ -110,11 +110,12 @@
       "fix_committed_at": "2026-10-03T00:22:30-04:00",
       "evidence_path": "src/test/java/dev/nathan/sbaagentic/recording/CaptureAcknowledgementHttpMcpTest.java",
       "proposed_acceptance": "A throwing optional listener must not turn committed REST/MCP capture into failure; invalid or failed writes must still reject.",
-      "qualification_limits": "Potential ceiling control because an optional-publication helper already exists; lost-response idempotency is separate.",
+      "qualification_limits": "Potentially easy control: an optional-publication helper already existed on baseline, so this is not evidence of hard recovery or recall benefit. Eight identical service-boundary checks compile and execute on both pinned snapshots: baseline has four named acknowledgement failures and four preservation passes; reference passes all eight. The real ingestion service and private SQLite store run behind the store's own Spring transaction interceptor; only optional publication is a fixture. The REST/MCP acknowledgement claim, PostgreSQL and lost-response idempotency are not qualified by this grader.",
       "exposure": "familiar_development",
-      "qualification": "not_run",
+      "qualification": "offline_fixture_contract_passed",
       "historical_corpus": "not_staged",
-      "human_acceptance": "not_observed"
+      "human_acceptance": "not_observed",
+      "qualification_report": "docs/evaluation-results/2026-10-03-capture-ack-qualification.json"
     },
     {
       "id": "cli-help",

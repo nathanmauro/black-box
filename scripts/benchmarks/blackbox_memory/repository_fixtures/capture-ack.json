@@ -1,0 +1,43 @@
+{
+  "baseline": "5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8",
+  "baseline_failures": [
+    "bothTerminalFailuresAcknowledgeAfterBothAttempts",
+    "optionalRecordedFailureAcknowledgesCommittedCapture",
+    "terminalStopFailureAcknowledgesCommittedCapture",
+    "terminalStopIsAttemptedAfterRecordedFailure"
+  ],
+  "development_only": true,
+  "public_repository": "https://github.com/nathanmauro/black-box",
+  "reference": "596ccf62a99416f14acf0ca24f91a928bc08ed40",
+  "schema_version": 1,
+  "tests": [
+    "optionalRecordedFailureAcknowledgesCommittedCapture",
+    "terminalStopIsAttemptedAfterRecordedFailure",
+    "terminalStopFailureAcknowledgesCommittedCapture",
+    "bothTerminalFailuresAcknowledgeAfterBothAttempts",
+    "ordinaryCaptureAcknowledgementShapeAndAppendOnlyRetryRemain",
+    "ordinaryTerminalCapturePublishesRecordedThenStopped",
+    "rejectedPayloadRollsBackSessionAndPublishesNothing",
+    "failedDatabaseWriteRollsBackSessionAndPublishesNothing"
+  ],
+  "tracked_hashes": {
+    "596ccf62a99416f14acf0ca24f91a928bc08ed40": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java": "2559300e4dd76d35d18e9370b49896cccb6c45b6cdd4d5973de686052a30a78c",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java": "1a836b861bc9d9bcbd65fd9434f6166b4a76f4e5dffede6fa0a5f0fa1463c9da",
+      "src/main/resources/application.yml": "88d1f51e7576c7e2fe6f53d7663bbe95c1a13ea426edd387a6d44d8e572d2744",
+      "src/main/resources/schema.sql": "b4b211b98fd1cd873ef5048294065eed0cbab602cbc9fdb107374cdee8e1b1ef"
+    },
+    "5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java": "2559300e4dd76d35d18e9370b49896cccb6c45b6cdd4d5973de686052a30a78c",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java": "0f9b67ccd1c17205513fc27628334c7f9e32898c5d68aca695717326581fecb6",
+      "src/main/resources/application.yml": "88d1f51e7576c7e2fe6f53d7663bbe95c1a13ea426edd387a6d44d8e572d2744",
+      "src/main/resources/schema.sql": "b4b211b98fd1cd873ef5048294065eed0cbab602cbc9fdb107374cdee8e1b1ef"
+    }
+  },
+  "trusted_files": {
+    "CAPTURE_ACK_TASK.md": "17cfbfc43d2dbc7bb38cdc6378d43d4b9e2014ef43b47c0a1d3eae3ecf73a988",
+    "CaptureAcknowledgementFixtureContractTest.java": "41ade99d13eeee6d7a0a44cb7f18f348ea5ea94738addb4efef57f9977f48d60"
+  }
+}

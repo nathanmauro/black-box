@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify one of three fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
+"""Qualify one of four fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
 
 import argparse
 import hashlib
@@ -85,6 +85,23 @@ FIXTURE_SPECS = {
         )),
         'task_file': 'CHRONOLOGY_TASK.md',
         'grader_file': 'ChronologyFixtureContractTest.java',
+    },
+    'capture-ack': {
+        'baseline': '5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8',
+        'reference': '596ccf62a99416f14acf0ca24f91a928bc08ed40',
+        'source': 'src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java',
+        'grader': 'src/test/java/dev/nathan/sbaagentic/recording/internal/application/CaptureAcknowledgementFixtureContractTest.java',
+        'class': 'dev.nathan.sbaagentic.recording.internal.application.CaptureAcknowledgementFixtureContractTest',
+        'manifest': 'capture-ack.json',
+        'manifest_sha256': 'a24f22a02cf71b1218aba74a442c4363abff0363c3c5cac0c8060051a02dc07e',
+        'changed_paths': frozenset((
+            'docs/agent-integration.md',
+            'docs/superpowers/plans/2026-10-03-capture-acknowledgement.md',
+            'src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java',
+            'src/test/java/dev/nathan/sbaagentic/recording/CaptureAcknowledgementHttpMcpTest.java',
+        )),
+        'task_file': 'CAPTURE_ACK_TASK.md',
+        'grader_file': 'CaptureAcknowledgementFixtureContractTest.java',
     },
 }
 GATE = {
