@@ -21,7 +21,7 @@
 - **Perf budget (§9):** no first-paint regression vs. today's collapsed baseline; expand-all toggle under 100ms at 500 rows; measured before and after, numbers recorded.
 - **Never `git add -A`** — stage exact paths. Exception: `git add -A src/main/resources/static` after a bundle rebuild (built assets are committed).
 - **Commits show Nathan as sole author** — no co-author or generated-by attribution lines, ever. Match repo message style: Title Case sentence (e.g. `Tighten Phase 1 After Adversarial Review`).
-- **Jar-swap gotcha:** any `mvn package` (including the Playwright webServer) overwrites the jar the live `:8766` launchd service runs from → run `scripts/deploy-local.sh` at the end; `launchctl kickstart -k` if 500s persist.
+- **Build isolation:** package and run Playwright in an isolated checkout whose JAR is not used by the live service. Tests do not require a live restart or deployment; separately authorized deployment follows [Operations](../../operations.md#run-as-a-service).
 - **Playwright waits on `domcontentloaded`, never `networkidle`** — the SSE connection never idles.
 - **Never point a second application at the live DB** (`sba-agentic.db`, ~3.2GB); read via `sqlite3 "file:sba-agentic.db?mode=ro"` and `.backup` snapshots only.
 - Frontend layering: **`frontend/src/lib/**` must never import from `frontend/src/components/**`** (presenters are pure; components consume presenters, never the reverse).
@@ -46,13 +46,14 @@ Deliberate, reviewed refinements — later slices should follow these, not §4.1
 - Create (NOT committed — deleted in Task 16): `frontend/measure-stream.mjs` — it must live inside `frontend/` because Node ESM resolves the bare `@playwright/test` specifier from the script file's own location, not the cwd
 
 **Interfaces:**
-- Consumes: the live app at `http://127.0.0.1:8766` (read-only page loads; browsing does not mutate).
+- Consumes: an isolated seeded app at `http://127.0.0.1:8799`; use the same fixture data for baseline and after measurements.
 - Produces: baseline numbers that Task 16 compares against. Nothing imports this.
 
-- [ ] **Step 1: Confirm the live service is healthy**
+- [ ] **Step 1: Confirm the isolated fixture is healthy**
 
-Run: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8766/api/health || curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8766/`
-Expected: `200`. If 500, run `launchctl kickstart -k gui/501/$(launchctl list | grep -o 'sba[^ ]*' | head -1)` per `NEXT.md` and re-check.
+Use the guarded packaged test fixture described in [Frontend standards](../../frontend-standards.md), with a representative seeded dataset.
+Run: `curl -fsS http://127.0.0.1:8799/api/status`.
+Expected: `200`. If unhealthy, inspect the owned test process and logs. Never guess a launchd target or restart the installed service to repair a fixture.
 
 - [ ] **Step 2: Write the measurement script** at `frontend/measure-stream.mjs` (it uses the frontend's own Playwright install; no new dependency; never staged for commit):
 
@@ -61,7 +62,7 @@ Expected: `200`. If 500, run `launchctl kickstart -k gui/501/$(launchctl list | 
 // Lives inside frontend/ so the bare @playwright/test import resolves from this file's path.
 import { chromium } from "@playwright/test";
 
-const BASE = process.env.BB_URL || "http://127.0.0.1:8766";
+const BASE = process.env.BB_URL || "http://127.0.0.1:8799";
 const browser = await chromium.launch();
 const page = await browser.newPage();
 
@@ -96,7 +97,7 @@ await browser.close();
 ```markdown
 # Stream perf notes — slice 1 (spec §9 budget)
 
-Method: Playwright chromium against the live :8766 service, `domcontentloaded` +
+Method: Playwright chromium against the isolated :8799 fixture, `domcontentloaded` +
 first `.stream-row` visible; feed grown to MAX_ROWS via Load more; median of 3 runs.
 
 ## Baseline (before presenters/expand-toggle), 2026-07-28
@@ -2403,7 +2404,7 @@ git commit -m "Add The Persisted Density Toggle With Exception-Set Expand Semant
 
 ### Task 15: E2E coverage
 
-Real-browser proof of the two headline behaviors (§8): the expand-all toggle and a rendered diff. Uses the isolated e2e server (temp DB) — the Playwright `webServer` runs `mvn -q -Pfrontend -DskipTests package`, which is why Task 16 must redeploy the live service afterward.
+Real-browser proof of the two headline behaviors (§8): the expand-all toggle and a rendered diff. Uses the isolated E2E server and disposable DB. Run from an isolated checkout: its packaging step does not affect the installed service.
 
 **Files:**
 - Modify: `frontend/tests/e2e/stream.spec.ts` (append two tests)
@@ -2464,7 +2465,7 @@ test("an edit event renders a readable diff behind a lazy details block", async 
 - [ ] **Step 2: Run the e2e suite**
 
 Run: `cd frontend && npm run e2e`
-Expected: PASS (all specs, including the two smoke tests edited in Task 2). Note this rebuilds the jar — the live service is now running stale-or-swapped bits until Task 16 redeploys.
+Expected: PASS (all specs, including the two smoke tests edited in Task 2). This rebuilds the isolated checkout’s JAR; the installed service does not need a restart.
 
 - [ ] **Step 3: Commit**
 
@@ -2475,7 +2476,7 @@ git commit -m "Cover The Density Toggle And Diff Rendering End To End"
 
 ---
 
-### Task 16: Full gate, perf after-numbers, bundle, deploy, breadcrumb
+### Task 16: Full gate, perf after-numbers, bundle, breadcrumb
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-28-stream-perf-notes.md` (after-numbers)
@@ -2501,12 +2502,13 @@ git commit -m "Rebuild The Frontend Bundle For Stream Presenters"
 
 (Skip the commit if `git status` shows no static changes — but it will, the bundle content changed.)
 
-- [ ] **Step 3: Deploy locally and verify the live service**
+- [ ] **Step 3: Verify the isolated build**
 
-Run: `scripts/deploy-local.sh`
-Then: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8766/` → expect `200`. If 500s: `launchctl kickstart -k` the service per `NEXT.md`, re-check.
+Run the packaged E2E gate against its disposable database and stop only its test server afterward.
+A live deployment is optional and requires separate authorization; use the reviewed prebuilt
+artifact and installation checks in [Operations](../../operations.md#run-as-a-service). Do not restart the installed service to finish tests.
 
-- [ ] **Step 4: Measure the after-numbers** — re-run the Task 1 script (`cd frontend && node measure-stream.mjs`, same method, same medians), plus expand-all:
+- [ ] **Step 4: Measure the after-numbers** — start the candidate in the same owned isolated fixture setup with the same representative dataset as Task 1. Keep that fixture running through Step 5, then stop only its owned process. Re-run the Task 1 script (`cd frontend && node measure-stream.mjs`, same method, same medians), plus expand-all:
 
 Append to the Task 1 script before `browser.close()` and re-run:
 
@@ -2521,7 +2523,7 @@ console.log(JSON.stringify({ expandAllMs }, null, 2));
 
 Fill in the "After slice 1" section of `2026-07-28-stream-perf-notes.md`. **Budget check (§9):** first-row time not worse than baseline; expand-all < 100ms. If expand-all misses the budget, the sanctioned fallback is a lower `MAX_ROWS` in expanded mode (spec §9) — raise this as a finding rather than silently shipping. When the numbers are recorded, delete the throwaway tool: `rm frontend/measure-stream.mjs`.
 
-- [ ] **Step 5: Verify acceptance criteria against the live app** (spec §14, the slice-1 subset): open `http://127.0.0.1:8766/` and confirm by use — (1) Collapsed/Expanded toggle persists across reload and per-row toggling overrides it; (2) Bash/Edit/Write/Read/apply_patch render structured with tones, unknown tools render as before; (3) Edit and apply_patch show readable diffs.
+- [ ] **Step 5: Verify acceptance criteria against the isolated app** (spec §14, the slice-1 subset): open `http://127.0.0.1:8799/` and confirm by use — (1) Collapsed/Expanded toggle persists across reload and per-row toggling overrides it; (2) Bash/Edit/Write/Read/apply_patch render structured with tones, unknown tools render as before; (3) Edit and apply_patch show readable diffs.
 
 - [ ] **Step 6: Update `NEXT.md`** — record slice 1 shipped, perf numbers, and that slices 2 (recall links) and 3 (file links) are next per the spec's §13 ordering.
 

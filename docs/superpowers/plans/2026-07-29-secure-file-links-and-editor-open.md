@@ -297,8 +297,9 @@ Document the transport-neutral `CodeReference`, code-scope projection, fail-clos
 configuration, browser behavior, and typed failures. Keep public copy machine-neutral except for
 clearly labelled macOS/Cursor defaults.
 
-### 7. Verification and live closeout
+### 7. Verification and optional deployment
 
+Run these checks in an isolated checkout whose JAR is not used by a live service.
 Run the smallest focused backend and frontend tests first, then:
 
 ```sh
@@ -309,15 +310,12 @@ mvn -q -Pfrontend -DskipTests package
 git diff --check
 ```
 
-Because packaging overwrites the jar used by launchd, finish with:
+Test completion does not authorize deployment or restarting the installed service.
+For a separately authorized deployment, use the reviewed prebuilt candidate and the identity,
+backup, stop, and readiness checks in [Operations](../../operations.md#run-as-a-service).
 
-```sh
-./scripts/deploy-local.sh
-curl -fsS http://127.0.0.1:8766/api/status | jq
-launchctl print gui/$(id -u)/com.nathan.sba-agentic
-```
-
-Live negative proof:
+Exercise the following negative cases against the isolated fixture; repeat live read-only
+checks only as part of an authorized deployment:
 
 - `/api/projects/code-scopes` includes verified repo/worktree scopes but excludes `/`, the user
   home, no-project, stale, and non-Git scopes;

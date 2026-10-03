@@ -19,7 +19,7 @@
 - Wire-contract fixtures (`wire-fixtures.json`, `rest-contract-matrix.json`, `rest-mappings.txt`) change in the SAME commit as the record/endpoint they describe.
 - Commits: Nathan sole author, imperative Title Case subject, NO Co-Authored-By / Generated-with lines.
 - Lineage depth truth: single-level is guaranteed; a subagent spawning a subagent attaches to the TOP-LEVEL session (hook payloads carry the root session_id) — do not build UI assumptions about grandchildren under intermediate children.
-- Verify bar: `mvn -q test` green incl. ratchets; `cd frontend && npx vitest run` green; no `mvn package` needed — if packaging happens anyway, run `scripts/deploy-local.sh` (live :8766 service).
+- Verify bar: `mvn -q test` green incl. ratchets; `cd frontend && npx vitest run` green. If packaging is needed, use an isolated checkout whose JAR is not used by the installed service. Testing does not require deployment or a live restart.
 
 ---
 
@@ -557,7 +557,7 @@ public record AgentSession(
 ```
 
 - [ ] Run: `mvn -q test -Dtest=RecordingLifecyclePublicationTest` — expect PASS.
-- [ ] Full recording-area verification sweep: `mvn -q test` — expect BUILD SUCCESS: architecture/module ratchet tests, `WireContractFixtureTest`, `RestContractSnapshotTest`, `McpContractSnapshotTest`, and all recording/project/web suites green. (Do not run `mvn package` — per repo ops notes a packaging build overwrites the jar the live :8766 launchd service runs from.)
+- [ ] Full recording-area verification sweep: `mvn -q test` — expect BUILD SUCCESS: architecture/module ratchet tests, `WireContractFixtureTest`, `RestContractSnapshotTest`, `McpContractSnapshotTest`, and all recording/project/web suites green. (If packaging is needed, use an isolated checkout whose JAR is not used by the live service.)
 - [ ] Commit: `git add src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java src/test/java/dev/nathan/sbaagentic/recording/internal/application/RecordingLifecyclePublicationTest.java && git commit -m "Treat Subagent Stop As A Session Final Event"`
 
 ---
@@ -1104,7 +1104,7 @@ Expected: PASS. `applicationMappingsMatchTheFrozenSnapshot` sees the new mapping
 - [ ] **Step 7: Run the full suite including module ratchets**
 
 Run: `mvn -q test`
-Expected: PASS, including `PackageArchitectureTest`, `ApplicationModuleStructureTest`, and all `*ApplicationModuleTest` ratchets. Do NOT run `mvn package` (a rebuilt jar degrades the live :8766 service; if packaging ever happens, restart via `launchctl kickstart -k` per repo memory).
+Expected: PASS, including `PackageArchitectureTest`, `ApplicationModuleStructureTest`, and all `*ApplicationModuleTest` ratchets. Package only in an isolated checkout whose JAR is not used by the live service. A test build does not require a live restart; separately authorized deployment follows [Operations](../../operations.md#run-as-a-service).
 
 - [ ] **Step 8: Commit**
 
@@ -2029,4 +2029,4 @@ In the selected-session detail JSX, insert between the `.detail-header` closing 
 
 - [ ] Commit the regenerated bundle: `git add -A src/main/resources/static && git commit -m "Rebuild Static Frontend For Subagent Lineage"`
 
-- [ ] Note for the operator (no action unless directed): the live `:8766` launchd service serves the packaged jar, so a static-only rebuild does not change the running UI. If a local deploy is wanted, run `scripts/deploy-local.sh` — and remember any `mvn package` overwrites the served jar, so restart with `launchctl kickstart -k` afterward.
+- [ ] Note for the operator (no action unless directed): the live service serves its installed JAR, so rebuilding static assets in an isolated checkout does not update it. For a separately authorized deployment, use the reviewed prebuilt artifact and installation checks in [Operations](../../operations.md#run-as-a-service); do not replace its JAR or restart it as part of ordinary testing.

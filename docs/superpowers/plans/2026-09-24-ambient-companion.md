@@ -14,7 +14,7 @@
 
 - Work only inside the dedicated worktree and branch `companion-first-slice`. Sibling sessions are editing this repo in other worktrees; touch only the files listed in this plan.
 - Never point anything at port 8766 or the production database for tests. Playwright runs the isolated jar on `http://127.0.0.1:8799`.
-- Any `mvn package` (including `npm run e2e`) overwrites the jar the live service runs from. Immediately after: `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`.
+- Package and run E2E only in an isolated checkout whose JAR is not used by the live service. Stop only owned test processes afterward. Separately authorized deployment follows [Operations](../../operations.md#run-as-a-service); tests do not require a live restart.
 - `npm run build` emits into `src/main/resources/static/`, which is committed; rebuild and commit it once at the end of the frontend work (Task 9).
 - Meaningful event types are exactly `Decision`, `Handoff`, `Observation`. Task-board transitions are out of scope (the board is being retired in parallel).
 - Backfill query string is exactly `kind:decision,handoff,observation last:24h` (corrected post-ship: the parser treats a facet as a comma IN-list, so the originally planned `OR` form here parses as a required free-text term and matches nothing; verified against the live API on 2026-09-24).
@@ -1972,11 +1972,10 @@ test("companion discloses mini, projects and items with Black Box links, and rec
 Run: `cd frontend && npm run e2e -- tests/e2e/companion.spec.ts`
 Expected: PASS; screenshots under `frontend/test-results/shots/companion-*.png`. Look at `companion-expanded.png` and confirm the row, badge, and next-action line render as intended.
 
-- [ ] **Step 3: Restart the live service** (the e2e run repackaged the jar):
+- [ ] **Step 3: Confirm isolated test cleanup**
 
-```bash
-launchctl kickstart -k gui/$UID/com.nathan.sba-agentic && sleep 3 && curl -fsS http://localhost:8766/api/status | head -c 200
-```
+Confirm the E2E runner stopped its owned server and cleaned its disposable database.
+The installed service is independent of this build and must not be restarted as test cleanup.
 
 - [ ] **Step 4: Commit**
 
@@ -1997,7 +1996,7 @@ git commit -m "Cover The Companion Route End To End"
 Run: `cd frontend && npm run build`
 Expected: `tsc` clean, Vite writes into `../src/main/resources/static`.
 
-- [ ] **Step 2: Smoke the built route on the isolated port** (never 8766): `mvn -q -DskipTests package && SBA_PORT=8798 SBA_DATASOURCE_URL=jdbc:sqlite:/tmp/companion-smoke.db SBA_ELASTICSEARCH_ENABLED=false SBA_LOCAL_AI_ENABLED=false java -jar target/sba-agentic-0.2.0.jar &` then `curl -fsS http://127.0.0.1:8798/companion | grep -c '<div id="root"'` should print `1`; stop the background jar; then `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`.
+- [ ] **Step 2: Smoke the built route on the isolated port** (never 8766): `mvn -q -DskipTests package && SBA_PORT=8798 SBA_DATASOURCE_URL=jdbc:sqlite:/tmp/companion-smoke.db SBA_ELASTICSEARCH_ENABLED=false SBA_LOCAL_AI_ENABLED=false java -jar target/sba-agentic-0.2.0.jar &` then `curl -fsS http://127.0.0.1:8798/companion | grep -c '<div id="root"'` should print `1`; stop only this owned background test process afterward. Do not restart the installed service.
 
 - [ ] **Step 3: Commit**
 
@@ -2482,7 +2481,7 @@ Start the isolated jar (never 8766): `mvn -q -DskipTests package && SBA_PORT=879
 cd companion/macos && swift run BlackBoxCompanion --self-test /tmp/companion-shell.png --url http://127.0.0.1:8798/companion?embedded=1
 ```
 
-Expected: prints `self-test: ok mode=mini png=/tmp/companion-shell.png` and exits 0. Open the PNG and confirm the chip renders. Stop the background jar, then `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`.
+Expected: prints `self-test: ok mode=mini png=/tmp/companion-shell.png` and exits 0. Open the PNG and confirm the chip renders. Stop only the owned background test process. Do not restart the installed service.
 
 - [ ] **Step 8: Manual check against the live service** (read-only, Nathan's real data): `swift run BlackBoxCompanion` for 30 seconds. Confirm the menubar glyph appears, the floating chip shows a count, clicking it expands to the project list, clicking a project resizes the panel, and a row opens the browser at a `?view=browse&session=…&event=…` URL. Quit from the menubar. Record what you saw in the final handoff.
 

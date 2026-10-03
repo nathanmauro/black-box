@@ -129,8 +129,9 @@ being retired in parallel work), Windows/Linux shells.
   utility bar, and a live handoff arriving over SSE with its next action rendered.
 - `swift test` for the shell's pure pieces and `swift run BlackBoxCompanion --self-test` against
   the e2e server for the real load path.
-- After any `mvn package` (including the e2e run) restart the live service:
-  `launchctl kickstart -k gui/$UID/com.nathan.sba-agentic`.
+- Build and run E2E in an isolated checkout; never overwrite a JAR used by a running service.
+  Stop only the disposable test server afterward. Deployment is a separate operator action;
+  follow [Operations](../../operations.md#run-as-a-service) for a reviewed prebuilt candidate.
 
 ## 7. Open loops carried into the plan
 

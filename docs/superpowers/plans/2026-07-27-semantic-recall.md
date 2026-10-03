@@ -3,9 +3,10 @@
 Spec: [`docs/superpowers/specs/2026-07-27-semantic-recall-design.md`](../specs/2026-07-27-semantic-recall-design.md)
 Branch: `semantic-recall` (from `main` @ `07f4f3a`)
 
-Each task is independently verifiable and leaves the suite green. Run `mvn test` after
-every task. Never run `mvn package` casually — it overwrites the jar the live launchd
-service runs from; `scripts/deploy-local.sh` must follow any packaging.
+Each task is independently verifiable and leaves the suite green. Run the relevant tests
+after each change. Package and run E2E in an isolated checkout whose JAR is not used by a live
+service. Tests do not require deployment or a live restart; separately authorized deployment
+follows [Operations](../../operations.md#run-as-a-service).
 
 ---
 
@@ -185,17 +186,17 @@ event corpus is not:
 - `docs/architecture.md` — `memory` module responsibilities, new table
 - `NEXT.md` — refreshed handoff
 
-## Task 10 — Live verification
+## Task 10 — Isolated verification and optional live rollout
 
-1. `mvn test` (full), `cd frontend && npm test -- --run`
-2. `mvn -q -DskipTests package` then **`scripts/deploy-local.sh`** (mandatory — packaging
-   overwrites the live jar), then `launchctl kickstart -k` if needed
-3. `curl -fsS http://localhost:8766/api/status | jq`
-4. Backfill dry-run, inspect counts, then apply
-5. MCP `recallContext` with a paraphrase query — confirm a semantically-matched decision
-   comes back with a score and `mode=hybrid`
-6. Playwright e2e (`domcontentloaded`, never `networkidle`), then `deploy-local.sh` again
-   because the Playwright webServer repackages the jar
+1. In an isolated checkout, run `mvn test` (full), `cd frontend && npm test -- --run`.
+2. Run the packaged Playwright gate (`domcontentloaded`, never `networkidle`); its server
+   uses the guarded test port and disposable database. Do not reuse the installed JAR or DB.
+3. Against a disposable fixture, inspect backfill dry-run counts before applying there.
+4. If a model-backed fixture is explicitly configured and authorized, query MCP `recallContext`
+   with a paraphrase and check the returned match and mode. Do not infer semantic acceptance
+   from ordinary lexical tests.
+5. Stop only owned test processes. A live rollout and live backfill are separate actions; use
+   [Operations](../../operations.md#run-as-a-service) and the documented dry-run/apply gates when authorized.
 
 ---
 
