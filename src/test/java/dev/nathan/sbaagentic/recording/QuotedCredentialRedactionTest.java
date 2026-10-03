@@ -43,7 +43,10 @@ class QuotedCredentialRedactionTest {
                 Arguments.of(
                         "password='FAKE\nMULTILINE CREDENTIAL' next=readable", "password='[REDACTED]' next=readable"),
                 Arguments.of("password=, token=F4KE7 after", "password=, token=[REDACTED] after"),
-                Arguments.of("password=[REDACTED]F4KE7 after", "password=[REDACTED] after"));
+                Arguments.of("password=[REDACTED]F4KE7 after", "password=[REDACTED] after"),
+                Arguments.of("token=[REDACTED].[REDACTED].F4KE7 after", "token=[REDACTED] after"),
+                Arguments.of("token=prefix[REDACTED]F4KE7,next=readable", "token=[REDACTED],next=readable"),
+                Arguments.of("token=[REDACTED][REDACTED]F4KE7]next", "token=[REDACTED]]next"));
     }
 
     @ParameterizedTest

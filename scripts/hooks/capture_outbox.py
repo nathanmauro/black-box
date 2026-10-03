@@ -96,8 +96,6 @@ def redact_text(value):
         if match.start() < cursor or not secret_key(match.group(2)):
             continue
         start = match.end()
-        if text[start:start + len(REDACTED)] == REDACTED:
-            continue
         end = start
         quote = text[start:start + 1]
         if quote in ("'", '"'):
@@ -116,8 +114,15 @@ def redact_text(value):
                 end += 1
             replacement = "Bearer " + REDACTED
         else:
-            while end < len(text) and not text[end].isspace() and text[end] not in ',}]':
-                end += 1
+            # Every marker is an atomic span, including ones introduced by provider
+            # redaction inside this value. Its bracket must not expose an attached suffix.
+            while end < len(text) and not text[end].isspace():
+                if text.startswith(REDACTED, end):
+                    end += len(REDACTED)
+                elif text[end] in ',}]':
+                    break
+                else:
+                    end += 1
             replacement = REDACTED
         if end > start:
             pieces.append(text[cursor:start])

@@ -122,6 +122,11 @@ blocks, secret assignments, and explicit secret JSON keys recursively, including
 member names. Recognized suspicious identity or path fields are rejected instead of silently
 changing session identity or routing.
 
+Credential assignments containing `[REDACTED]` markers are still scanned through any attached
+suffix, including repeated markers; markers cannot exempt the rest of a value. This applies before new queue writes.
+Previously queued captures retain their original bytes and capture IDs for idempotent delivery;
+updating the hook does not resanitize or scrub existing rows.
+
 This is lossy, best-effort sanitization. Strings are scanned up to 50,000 characters, the remaining
 tail is dropped, and truncation is marked. Deep or excessively complex structures are rejected.
 Unknown secrets may remain, benign text may be redacted, and redacted JSON key collisions can lose
