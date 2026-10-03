@@ -49,9 +49,11 @@ Its project fixture and database were removed and the port was released. The pro
 listener stayed unchanged; production database identity and synthetic-row checks were unavailable
 and are not claimed. No live app/configuration, provider, Linear or Git mutation occurred.
 
-## Handoff
+## Integrated verification
 
-Source-only changes are ready for coordinator review and Git finishing. Scope is the IdeasPage
-link, its focused/packaged tests, this plan, the narrow continuity note and normally generated
-assets. No backend behavior changed; the full backend and full browser suite were not rerun for
-this UI-only slice. Coordinator owns fresh integration acceptance, commits and publication.
+The coordinator integrated Evidence from current main, preserved both continuity descriptions,
+and regenerated assets normally. The combined frontend checks and all 707 unit tests passed.
+Nine packaged Ideas, Evidence, human-only picker, and human-turn journeys passed together with
+zero retries. The production change remains the existing exact-source helper import and link.
+No backend behavior changed; hosted CI runs the full backend and browser suites before merge.
+The source is ready for the authorized PR and exact-head CI gate. No live deployment was made.
