@@ -187,6 +187,9 @@ def instant_epoch(value):
     if zone != 'Z' and (int(zone[1:3]) > 23 or int(zone[4:6]) > 59):
         raise EvalError('invalid_recall_timestamp')
     try:
+        # Validate calendar/clock fields explicitly: Python 3.14 fromisoformat accepts
+        # hour 24 as next-day midnight; keep this evaluator's existing 00-23-hour contract.
+        datetime(*(int(clock[a:b]) for a, b in ((0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19))))
         parsed = datetime.fromisoformat(normalized + ('+00:00' if zone == 'Z' else zone))
         elapsed = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
     except (ValueError, OverflowError):

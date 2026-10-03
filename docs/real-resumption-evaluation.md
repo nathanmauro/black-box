@@ -86,7 +86,9 @@ one through nine fractional digits are supported on Python 3.9+, including Java 
 nanoseconds. Parsing normalizes the datetime input to microseconds while retaining the remaining
 nanoseconds for the historical cutoff check; a timestamp just after the cutoff is still refused.
 The original timestamp remains in private evidence and prompts. Missing timezone, malformed date,
-time, fraction, or offset fails preflight before inference. This does not change the lookback,
+time, fraction, or offset fails preflight before inference. Calendar and clock fields are checked
+explicitly before parsing, so hour `24` is refused on every supported Python, including 3.14 whose
+`fromisoformat` would otherwise read it as next-day midnight. This does not change the lookback,
 known-event selection, study scoring, or usefulness gate.
 
 ## Run and verify
