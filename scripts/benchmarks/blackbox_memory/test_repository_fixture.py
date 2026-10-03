@@ -76,7 +76,8 @@ class RepositoryFixtureTests(unittest.TestCase):
         self.assertEqual(self.data['reference'], self.spec['reference'])
         self.assertTrue(self.data['development_only'])
         self.assertEqual(self.data['public_repository'], 'https://github.com/nathanmauro/black-box')
-        self.assertEqual(len(self.data['tests']), 6 if self.fixture_name == 'structured-redaction' else 7)
+        expected = {'structured-redaction': 6, 'capture-ack': 8}.get(self.fixture_name, 7)
+        self.assertEqual(len(self.data['tests']), expected)
 
     def test_changed_manifest_and_grader_fail_closed(self):
         copy_root = self.root / 'fixtures'
@@ -340,8 +341,9 @@ sys.exit(1 if failed else 0)
         self.assertEqual(target.read_text(), 'preserved')
 
 
-    def test_only_three_known_selectors_and_original_default_are_allowed(self):
-        self.assertEqual(set(r.FIXTURE_SPECS), {'structured-redaction', 'summary-export', 'event-chronology'})
+    def test_only_four_known_selectors_and_original_default_are_allowed(self):
+        self.assertEqual(set(r.FIXTURE_SPECS),
+                         {'structured-redaction', 'summary-export', 'event-chronology', 'capture-ack'})
         with patch.object(r, 'verify_pins'), patch.object(r, 'qualify') as build:
             with contextlib.redirect_stdout(io.StringIO()) as printed:
                 self.assertEqual(r.main(['plan']), 0)
@@ -450,6 +452,77 @@ class ChronologyRepositoryFixtureTests(RepositoryFixtureTests):
                          'd462253622dedcdae6dece623db4574d850a0c7a569db1fbd14ebcf9e8c8084d')
         for name in ('structured-redaction', 'summary-export'):
             self.assertEqual(r.overlay_sources(r.specification(name)), (r.specification(name)['source'],))
+            r.fixture(name)
+
+
+class CaptureAckRepositoryFixtureTests(RepositoryFixtureTests):
+    fixture_name = 'capture-ack'
+    SERVICE = 'src/main/java/dev/nathan/sbaagentic/recording/internal/application/EventIngestService.java'
+    STORE = 'src/main/java/dev/nathan/sbaagentic/recording/internal/adapter/out/sqlite/RecordingSqlStore.java'
+
+    def test_single_service_overlay_and_exact_reference_delta_are_pinned(self):
+        self.assertEqual(r.overlay_sources(self.spec), (self.SERVICE,))
+        self.assertNotIn('added_sources', self.spec)
+        self.assertEqual(self.spec['changed_paths'], frozenset((
+            'docs/agent-integration.md',
+            'docs/superpowers/plans/2026-10-03-capture-acknowledgement.md',
+            self.SERVICE,
+            'src/test/java/dev/nathan/sbaagentic/recording/CaptureAcknowledgementHttpMcpTest.java')))
+        baseline = self.data['tracked_hashes'][self.spec['baseline']]
+        reference = self.data['tracked_hashes'][self.spec['reference']]
+        self.assertNotEqual(baseline[self.SERVICE], reference[self.SERVICE])
+        # The real store and its transaction annotations are shared, so the grader sees one boundary.
+        for path in ('pom.xml', 'src/main/resources/schema.sql', 'src/main/resources/application.yml', self.STORE):
+            self.assertEqual(baseline[path], reference[path])
+        self.assertEqual(set(baseline), set(reference))
+
+    def test_reference_test_and_docs_are_never_overlaid(self):
+        data = copy.deepcopy(self.data)
+        snapshot = self.fake_snapshot(data)
+        shown = []
+        def git(*args):
+            if args[0] == 'archive': return snapshot
+            shown.append(args[1].split(':', 1)[1])
+            return b'reference'
+        def stage(root, data, *args):
+            if root.name == 'grading-reference':
+                self.assertFalse((root / 'src/test/java/dev/nathan/sbaagentic/recording/'
+                                  'CaptureAcknowledgementHttpMcpTest.java').exists())
+                self.assertFalse((root / 'docs').exists())
+                self.assertEqual((root / self.SERVICE).read_bytes(), b'reference')
+                return {'tests': 8, 'passed': 8, 'failed': []}
+            return {'tests': 8, 'passed': 4, 'failed': sorted(data['baseline_failures'])}
+        with patch.object(r, 'git', side_effect=git), patch.object(r, 'run_stage', side_effect=stage), \
+                patch.object(r, 'command', return_value=(0, b'Java version: 21.0.12', b'')):
+            self.assertEqual(r.qualify(data, self.root, 1)['qualification'], 'passed')
+        self.assertEqual(shown, [self.SERVICE])
+
+    def test_baseline_must_fail_exactly_the_four_named_acknowledgement_checks(self):
+        self.assertEqual(sorted(self.data['baseline_failures']), sorted((
+            'optionalRecordedFailureAcknowledgesCommittedCapture',
+            'terminalStopIsAttemptedAfterRecordedFailure',
+            'terminalStopFailureAcknowledgesCommittedCapture',
+            'bothTerminalFailuresAcknowledgeAfterBothAttempts')))
+        self.assertEqual(len(set(self.data['tests']) - set(self.data['baseline_failures'])), 4)
+        data = copy.deepcopy(self.data)
+        snapshot = self.fake_snapshot(data)
+        for failed in (self.data['baseline_failures'][:3], self.data['tests']):
+            with self.subTest(failed=len(failed)):
+                def stage(root, data, *args, failed=failed):
+                    return {'tests': 8, 'passed': 8 - len(failed), 'failed': sorted(failed)}
+                with patch.object(r, 'git', side_effect=lambda *a: snapshot if a[0] == 'archive' else b'reference'), \
+                        patch.object(r, 'run_stage', side_effect=stage), \
+                        patch.object(r, 'command', return_value=(0, b'Java version: 21.0.12', b'')), \
+                        self.assertRaisesRegex(r.FixtureError, 'baseline_not_reproduced'):
+                    r.qualify(data, self.root, 1)
+
+    def test_prior_fixture_manifests_remain_pinned(self):
+        for name, digest in (
+                ('structured-redaction.json', '96f045b76bda691480286c532d4048ffa5cb13e03da106081f73c8629f081b2a'),
+                ('summary-export.json', 'd462253622dedcdae6dece623db4574d850a0c7a569db1fbd14ebcf9e8c8084d'),
+                ('event-chronology.json', '11dc2100b2d7ab9cf2e998dc8a73ba57148994e6cc1a9ea6b5297709a9cc79aa')):
+            self.assertEqual(r.sha((r.FIXTURES / name).read_bytes()), digest)
+        for name in ('structured-redaction', 'summary-export', 'event-chronology'):
             r.fixture(name)
 
 

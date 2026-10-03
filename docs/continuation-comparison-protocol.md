@@ -56,7 +56,7 @@ variants of the same failure.
    disqualify that registration. Corrected fixtures need a new version and fresh qualification;
    never silently repair a case after seeing arm outcomes.
 
-Two inventory candidates now pass scoped offline contracts. The summary-export fixture reproduces
+Three inventory candidates now pass scoped offline contracts. The summary-export fixture reproduces
 three named baseline failures, preserves four other behaviors, and passes all seven checks on the
 reference. Its [qualification report](evaluation-results/2026-10-03-summary-export-qualification.json)
 records the immutable snapshots and worker-input hash. The checks cover linked destinations, hard-link
@@ -67,8 +67,16 @@ first-page order, complete bounded pagination and inclusive nanosecond windows f
 four preservation checks pass, and all seven checks pass on the reference. Its
 [qualification report](evaluation-results/2026-10-03-event-chronology-qualification.json) records
 fixed inputs and outcomes. Its scope excludes PostgreSQL and broader recall/search behavior.
+The capture-ack fixture is a potentially easy control, not evidence of hard recovery or recall
+benefit: an optional-publication helper already existed on the baseline. Against the real ingestion
+service and transactional SQLite store, four named post-commit acknowledgement and independent
+terminal-notification checks fail on the baseline; four preservation checks (acknowledgement shape,
+append-only retry, publication order, rollback without publication) pass, and all eight pass on the
+reference. Its [qualification report](evaluation-results/2026-10-03-capture-ack-qualification.json)
+records fixed inputs and outcomes. It qualifies the service commit boundary only, not the REST/MCP
+acknowledgement claim.
 The existing structured-redaction fixture, outside this inventory, was also rerun successfully with
-its original inputs. All three are familiar development fixtures; qualification establishes neither
+its original inputs. All four are familiar development fixtures; qualification establishes neither
 task difficulty nor recall benefit. The inventory remains below the twenty-candidate gate.
 
 ## Freeze the evidence corpus
@@ -294,7 +302,8 @@ Make denominators and missing outcomes explicit. Make no efficacy claim from thi
 
 Next: qualify a small number of different clusters offline. Qualify a Black Box backend against
 the same corpus contract and delivery envelope once the read-only search prerequisite above exists.
-Summary export and precise chronology are qualified; runtime-dependent cases remain conditional.
+Summary export, precise chronology and the capture-acknowledgement easy control are qualified;
+runtime-dependent cases remain conditional.
 Collect prospective held-out cases separately. No model spend, deployment, transcript export or
 threshold change is part of
 this protocol and qualification slice.

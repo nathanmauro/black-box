@@ -263,14 +263,16 @@ conditions using authored reference code. The ordinary local service was not dep
 ## Offline Java repository-fixture qualification
 
 Before adding real Java repository continuations, qualify their staging and behavioral grader
-without running an agent. The separate development qualifier supports exactly **three fixed public
+without running an agent. The separate development qualifier supports exactly **four fixed public
 repairs**. The default
 `structured-redaction` fixture uses baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
 `d833fa96942a558cc7bc453b504656a2df41148f`. The `summary-export` fixture uses baseline
 `9933ade549c37af5d784edff650f74705d55fa83` and reference
 `16ce9f343706d1818f0b73e67043e6e84a1104e0`. The `event-chronology` fixture uses baseline
 `a2f969585dc5b780b3dc4b0611a4084ec7efd0aa` and reference
-`aac7a30230687e795f844a971c72ebd5fd393e5c`. The selected commit objects must already exist locally.
+`aac7a30230687e795f844a971c72ebd5fd393e5c`. The `capture-ack` fixture uses baseline
+`5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8` and reference
+`596ccf62a99416f14acf0ca24f91a928bc08ed40`. The selected commit objects must already exist locally.
 The qualifier does not fetch history, accept arbitrary revisions/candidates, change existing benchmark
 runs, or provision Docker. These familiar published bugs are development fixtures, not held-out
 difficulty cases.
@@ -293,6 +295,10 @@ python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execut
 # Select the third reviewed fixture; all seven canonical SQLite feed checks are mandatory.
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture event-chronology
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture event-chronology
+
+# Select the fourth reviewed fixture; all eight capture-acknowledgement checks are mandatory.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture capture-ack
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture capture-ack
 ```
 
 `--maven-repo` selects an existing local artifact cache; the default is `~/.m2/repository`.
@@ -378,12 +384,31 @@ settings; an empty cache failed explicitly. The original two worker-input hashes
 The [chronology report](evaluation-results/2026-10-03-event-chronology-qualification.json) records
 these infrastructure outcomes, with zero model runs and accepted actions.
 
+The capture-ack fixture is a **potentially easy control**: the baseline already had a guarded
+optional-publication helper, and the reference reuses it for ordinary capture. It requires eight
+named checks against the real ingestion service and a private SQLite `RecordingSqlStore` reached
+through the store's own Spring transaction interceptor; only optional publication is a fixture. The
+baseline must fail four acknowledgement checks: a committed capture is acknowledged after its
+`EventRecorded` publication throws, and terminal captures attempt `SessionStopped` independently
+when either or both publications throw. An independent SQLite connection must see the committed
+event, with no active transaction, before each publication. Both snapshots must preserve the
+acknowledgement shape, append-only ordinary retries, terminal publication order, and rejection with
+session/event rollback and no publication for an unserializable payload or a failed database write.
+Only `EventIngestService` is overlaid. The grader qualifies the service commit boundary only; the
+REST/MCP acknowledgement claim, PostgreSQL and lost-response idempotency remain unverified by it.
+
+Actual offline replay reproduced the four expected baseline failures and four preservation passes,
+then eight reference passes. The three earlier fixtures were replayed with unchanged worker-input
+hashes. The [capture-ack report](evaluation-results/2026-10-03-capture-ack-qualification.json)
+records these infrastructure outcomes, with zero model runs and accepted actions.
+
 ## Next comparison preparation
 
 The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
 17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
-paths. Summary-export and event-chronology now have the seven-check offline qualifications
-described above, making two qualified inventory members. Structured-redaction is outside that inventory.
+paths. Summary-export and event-chronology have the seven-check offline qualifications described
+above, and capture-ack the eight-check easy-control qualification, making three qualified inventory
+members in three distinct clusters. Structured-redaction is outside that inventory.
 No model trials or human accepted actions were established. The existing usefulness and difficulty
 gates stay unchanged.
 
