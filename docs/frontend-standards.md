@@ -131,3 +131,12 @@ git diff --check
 To prove the checks still bite, drop a file with an unused variable and an unformatted expression
 into `frontend/src/`, watch `npm run lint` and `npm run format:check` fail, then delete it. Do not
 commit such probes.
+
+## Responsive utility header
+
+At widths up to 700px, the utility header places navigation and display controls on separate rows.
+All destinations, source filters, My turns, connection status, and the command palette remain
+available; navigation must not shrink underneath adjacent controls. Keep the header height variable
+in sync so sticky panels and viewport-sized pages clear both rows. The source panel stays inside
+the viewport. `tests/e2e/mobile-header.spec.ts` verifies non-overlapping controls, viewport bounds,
+keyboard navigation, source-menu access, My turns, and command access at 320, 390, 768, and 1440px.

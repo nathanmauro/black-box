@@ -74,3 +74,20 @@ changes. This does not authorize or execute the optional live schema retirement.
 - Re-run combined backend/PostgreSQL, frontend and browser verification. Prior branch results above
   are historical evidence, not proof of the combined source. No existing local service or database
   is changed by integration checks.
+
+### Combined Verification Results
+
+- 581 backend tests passed with zero failures/errors and four conditional/platform skips; all
+  16 remaining PostgreSQL contracts ran against a disposable PostgreSQL 16 database. Retired
+  workflow tests account for the reduced count; project continuity and replacement tests remain.
+- All 618 frontend unit tests passed. Lint, formatting, types and the regenerated production
+  bundle passed. The mobile header has the retained navigation order after removing Board.
+- All 35 packaged-application Playwright journeys passed, including project-scoped recall,
+  replacement/history, clipboard export, lineage and keyboard navigation at narrow and desktop
+  widths. Final mobile recall and desktop lineage screenshots were inspected.
+- The packaged `runner` command exited nonzero before starting Spring and created zero files in
+  an empty temporary working directory. No retired command silently starts a server.
+- Fresh read-only review found no actionable issue in the conflict resolutions. The existing
+  port-8766 listener remained unchanged; the browser harness removed its disposable database.
+  Production database identity/counts were unavailable, and physical-phone use was not tested.
+- No live schema retirement, deployment, runner configuration change or production restart ran.

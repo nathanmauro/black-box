@@ -107,50 +107,56 @@ export default function App(props: AppProps) {
                   </For>
                 </nav>
 
-                <div class="sources-menu">
+                <div class="utility-controls" role="group" aria-label="Display controls">
+                  <div class="sources-menu">
+                    <button
+                      type="button"
+                      class="utility-icon-button sources-menu-trigger"
+                      aria-label="Filter sources"
+                      aria-expanded={sourcesOpen()}
+                      aria-controls="source-filter-panel"
+                      title="Filter sources"
+                      onClick={() => setSourcesOpen((open) => !open)}
+                    >
+                      <UtilityIcon kind="sources" />
+                    </button>
+                    <div
+                      id="source-filter-panel"
+                      class="sources-menu-panel"
+                      hidden={!sourcesOpen()}
+                    >
+                      <span class="sources-menu-title">Sources</span>
+                      <SourceChips />
+                    </div>
+                  </div>
+
                   <button
                     type="button"
-                    class="utility-icon-button sources-menu-trigger"
-                    aria-label="Filter sources"
-                    aria-expanded={sourcesOpen()}
-                    aria-controls="source-filter-panel"
-                    title="Filter sources"
-                    onClick={() => setSourcesOpen((open) => !open)}
+                    class="human-toggle"
+                    aria-pressed={humanOnly()}
+                    title="Show only human turns (H)"
+                    onClick={() => toggleHumanOnly()}
                   >
-                    <UtilityIcon kind="sources" />
+                    <UtilityIcon kind="human" />
+                    <span>My turns</span>
                   </button>
-                  <div id="source-filter-panel" class="sources-menu-panel" hidden={!sourcesOpen()}>
-                    <span class="sources-menu-title">Sources</span>
-                    <SourceChips />
-                  </div>
+
+                  <span
+                    class={`live-pill utility-status live-pill--${live.status()}`}
+                    aria-label={`Connection status ${live.status()}`}
+                  >
+                    <span class="live-dot" />
+                    {live.status()}
+                  </span>
+                  <button
+                    type="button"
+                    class="command-button utility-command-button"
+                    aria-label="Open command palette"
+                    onClick={() => setPaletteOpen(true)}
+                  >
+                    <span>⌘K</span>
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  class="human-toggle"
-                  aria-pressed={humanOnly()}
-                  title="Show only human turns (H)"
-                  onClick={() => toggleHumanOnly()}
-                >
-                  <UtilityIcon kind="human" />
-                  <span>My turns</span>
-                </button>
-
-                <span
-                  class={`live-pill utility-status live-pill--${live.status()}`}
-                  aria-label={`Connection status ${live.status()}`}
-                >
-                  <span class="live-dot" />
-                  {live.status()}
-                </span>
-                <button
-                  type="button"
-                  class="command-button utility-command-button"
-                  aria-label="Open command palette"
-                  onClick={() => setPaletteOpen(true)}
-                >
-                  <span>⌘K</span>
-                </button>
               </div>
             </header>
           </Show>
