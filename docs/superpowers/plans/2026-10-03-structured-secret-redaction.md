@@ -48,3 +48,8 @@ use a temporary database and random loopback port, and close their application c
 No UI change is needed: consumers receive the sanitized stored event through the existing API.
 Existing captures are not rewritten. The conservative policy can hide benign secret-word fields;
 custom patterns and disabling redaction intentionally retain their documented behavior.
+
+Coordinator acceptance: fresh source/test review found no remaining issues. Integrated main
+through PR65, including Unicode-safe scalar clipping and capture acknowledgements. All 57
+combined structured-redaction, scalar-boundary, acknowledgement and structured-capture tests
+passed with no skips. No live deployment.
