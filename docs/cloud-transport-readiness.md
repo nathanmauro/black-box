@@ -29,7 +29,7 @@ records the startup reproduction, verification and limits.
 
 ## Cloud release prerequisites
 
-The September 29 design remains a draft. Its later consumer-trace amendments are on the separately recorded `cloud-spec-consumer-trace` branch; they should be reconciled before planning a migration. Relevant changes include retaining bounded tool input and compatible event response shapes, preserving `agentId` and capture digests, using the existing outbox, capturing Claude assistant turns, and removing the retired coordination board while preserving session lineage.
+The [personal-cloud design](superpowers/specs/2026-09-29-personal-cloud-black-box-design.md) is a reconciled proposal, including the later consumer-trace amendments. It preserves the recorded AWS `us-east-2` direction and event-backed transcript decision while separating implemented behavior from remaining work. Migration must preserve bounded tool input, compatible full event responses, `agentId`, capture receipts/digests, project aliases, Decision replacements and provenance. Claude assistant-turn capture and actual consumer acceptance still require verification; the board/runner is retired and independent session lineage remains.
 
 The existing single-server PostgreSQL profile can already be hosted behind authenticated HTTPS;
 see [PostgreSQL backend](postgres-backend.md). That deployment does not require S3, connector OAuth
