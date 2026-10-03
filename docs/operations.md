@@ -147,13 +147,30 @@ These tables cover the application variables; hook and wrapper variables are sep
 | `SBA_AUTH_PASSWORD` | Empty | Independently generated browser secret; required when authentication is enabled |
 | `SBA_AUTH_API_TOKEN` | Empty | Separate independently generated agent bearer secret; required when authentication is enabled |
 | `SBA_AUTH_SECURE_COOKIES` | `true` | Secure browser cookies; disable only in trusted loopback HTTP fixtures |
-| `SBA_REDACT_ENABLED` | `true` | Redact secret-looking text before persistence |
+| `SBA_REDACT_ENABLED` | `true` | Redact secret-looking text and structured secret fields before persistence |
 | `SBA_EDITOR_ENABLED` | `true` | Enable catalog-bound open-in-editor actions |
 | `SBA_EDITOR_COMMAND` | Cursor application CLI on macOS | Absolute Cursor/VS Code-compatible executable |
 | `SBA_EDITOR_ALLOWLIST` | Fixed Cursor and VS Code CLI locations | Comma-separated absolute executable allowlist; not automatic discovery of installed editors |
 | `SBA_EDITOR_TIMEOUT` | `5s` | Maximum editor/Finder handoff time |
 | `SBA_EXPORT_OBSIDIAN_DIR` | Empty | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI |
 | `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
+
+Ingestion redaction applies before storage to event text, tool input/output, and metadata. With
+its default patterns, nested JSON member names are matched case-insensitively after removing
+non-alphanumeric separators. Names containing `apikey`, `secret`, `token`, `passwd`, `password`,
+`authorization`, `credential`, or `privatekey` replace the **entire value** with `[REDACTED]`,
+including short strings, numbers, nulls, lists, and objects. This conservative policy matches the
+[durable hook](durable-capture.md#privacy-and-limits); it may also hide benign values such as
+`tokenCount`. Ordinary identity and metadata fields keep their structure.
+
+String member names are also scanned with the active text-redaction patterns. If redacting a name
+would collide with another member, the changed name gains a ` (redacted key N)` suffix so that the
+other field is preserved. Custom `sba.ingestion.redact-patterns` replace the default text patterns
+**and disable the default secret-key classification**; those custom patterns still scan string
+values and member names. Disabling ingestion redaction leaves those inputs unchanged. This is
+best-effort sanitization, not a guarantee that arbitrary secrets are recognized, and does not
+retroactively scrub existing captures. Scalar truncation limits still apply. Summary/model export
+has a separate redaction boundary; configuring ingestion does not replace it.
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
