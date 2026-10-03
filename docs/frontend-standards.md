@@ -164,6 +164,7 @@ local macOS success alone does not establish Linux compatibility.
 ## Responsive utility header
 
 At widths up to 700px, the utility header places navigation and display controls on separate rows.
+Browse at compact landscape sizes uses the single-row exception described below.
 All destinations, source filters, My turns, connection status, and the command palette remain
 available; navigation must not shrink underneath adjacent controls. Keep the header height variable
 in sync so sticky panels and viewport-sized pages clear both rows. The source panel stays inside
@@ -222,3 +223,12 @@ reader, with scrolling owned by its inner panes. The packaged [reader journey](.
 checks this without test-side scrolling at 390×900 and 390×700, plus desktop, selection/search,
 keyboard disclosures, memory, pagination and responsive transitions. See the
 [verification plan](superpowers/plans/2026-10-03-mobile-browse-reader.md) for measured reader space.
+
+At 600–880px wide and no more than 500px tall, Browse puts its two disclosure buttons beside the
+reader, uses a vertical scrollable turn rail, and places the search label beside its input.
+The Activity and session headers reduce spacing; project/source/title, memory, search and status
+remain available. The utility bar uses one row only while Browse is present at these dimensions.
+This avoids stacking controls into the entire landscape viewport without changing portrait or
+larger desktop layouts. The same packaged journey checks 667×375 and 844×390, full exact-source
+visibility, keyboard turn-rail scrolling, project scope and non-overlapping utility actions.
+See the [landscape verification plan](superpowers/plans/2026-10-03-browse-landscape-reader.md).
