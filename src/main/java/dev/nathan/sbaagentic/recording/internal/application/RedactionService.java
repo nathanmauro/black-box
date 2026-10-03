@@ -20,11 +20,12 @@ public class RedactionService implements ExportRedactor {
     // keyword-dense inputs (measured seconds of CPU per event), this shape stays linear.
     private static final String SECRET_KEY =
             "(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,40}?(?:api[_-]?key|secret[_-]?access[_-]?key|secret|token|passwd|password|client[_-]?secret|access[_-]?token|authorization)[A-Za-z0-9_-]*+";
-    // Hard ceiling on what the regex engine ever sees: a single oversized scalar (huge tool
-    // output, pasted log) must not pin a request thread. Anything past the cap is dropped
-    // rather than stored unscanned.
+    // Clip oversized unredacted input before applying any rules. Anything past this
+    // scan budget is dropped rather than stored unscanned; replacements may expand it.
     private static final int MAX_SCAN_CHARS = 50_000;
     private static final String CLIP_MARKER = " …[truncated]";
+    // Bare or matching quoted keys, using the existing default assignment-name policy.
+    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)([\"']?)(" + SECRET_KEY + ")\\1(\\s*[=:]\\s*)");
 
     private final List<RedactionRule> exportRules = exportRules();
 
@@ -44,10 +45,7 @@ public class RedactionService implements ExportRedactor {
 
             return null;
 
-        String result = clipScalar(text);
-        for (RedactionRule rule : exportRules) result = rule.redact(result);
-
-        return result;
+        return redactDefaults(text, exportRules);
     }
 
     // Match the durable hook's conservative, separator-insensitive secret-key policy.
@@ -70,12 +68,29 @@ public class RedactionService implements ExportRedactor {
 
             return text;
         }
+        if (defaultRules) {
+
+            return redactDefaults(text, rules);
+        }
         String redacted = clipScalar(text);
         for (RedactionRule rule : rules) {
             redacted = rule.redact(redacted);
         }
 
         return redacted;
+    }
+
+    private static String redactDefaults(String text, List<RedactionRule> rules) {
+        String clipped = clipScalar(text);
+        boolean truncated = text.length() > MAX_SCAN_CHARS;
+        // The marker is not part of the value. An unclosed quoted credential at the scan
+        // boundary must consume the retained value without swallowing that marker.
+        String result = truncated ? clipped.substring(0, clipped.length() - CLIP_MARKER.length()) : clipped;
+        for (RedactionRule rule : rules) {
+            result = rule.redact(result);
+        }
+
+        return result + (truncated ? CLIP_MARKER : "");
     }
 
     private static String clipScalar(String text) {
@@ -155,11 +170,8 @@ public class RedactionService implements ExportRedactor {
                         "-----BEGIN [^-\\r\\n]*PRIVATE KEY-----.*?-----END [^-\\r\\n]*PRIVATE KEY-----",
                         Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
                 literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
-                new RedactionRule(
-                        Pattern.compile(
-                                "(?i)(" + SECRET_KEY + ")(\\s*[=:]\\s*)(\"[^\"\\s]{8,}\"|'[^'\\s]{8,}'|[^\\s\"']{8,})"),
-                        RedactionService::redactAssignment),
-                new RedactionRule(
+                RedactionService::redactAssignments,
+                new RegexRule(
                         Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"), matcher -> "Bearer " + REDACTED),
                 literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
                 literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", 0),
@@ -177,23 +189,86 @@ public class RedactionService implements ExportRedactor {
 
     private static RedactionRule literal(String pattern, int flags) {
 
-        return new RedactionRule(Pattern.compile(pattern, flags), matcher -> REDACTED);
+        return new RegexRule(Pattern.compile(pattern, flags), matcher -> REDACTED);
     }
 
-    private static String redactAssignment(Matcher matcher) {
-        String value = matcher.group(3);
-        if (value.startsWith("\"") || value.startsWith("'")) {
-            String quote = value.substring(0, 1);
-
-            return matcher.group(1) + matcher.group(2) + quote + REDACTED + quote;
+    private static String redactAssignments(String text) {
+        Matcher matcher = ASSIGNMENT.matcher(text);
+        StringBuilder redacted = new StringBuilder();
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        // Advance beyond each selected value before looking for another key. Quoted
+        // values may contain spaces, escaped quotes or text that resembles another key.
+        while (matcher.find(searchFrom)) {
+            int valueStart = matcher.end();
+            if (valueStart == text.length()) {
+                break;
+            }
+            AssignmentValue value = assignmentValue(text, valueStart);
+            searchFrom = value.end();
+            if (searchFrom == valueStart) {
+                continue;
+            }
+            redacted.append(text, copiedThrough, valueStart).append(value.replacement());
+            copiedThrough = searchFrom;
         }
 
-        return matcher.group(1) + matcher.group(2) + REDACTED;
+        return redacted.append(text, copiedThrough, text.length()).toString();
     }
 
-    private record RedactionRule(Pattern pattern, Replacement replacement) {
+    private static AssignmentValue assignmentValue(String text, int start) {
+        char quote = text.charAt(start);
+        if (quote == '"' || quote == '\'') {
+            int end = start + 1;
+            boolean closed = false;
+            while (end < text.length()) {
+                char current = text.charAt(end++);
+                if (current == '\\' && end < text.length()) {
+                    end++;
+                } else if (current == quote) {
+                    closed = true;
+                    break;
+                }
+            }
 
-        String redact(String value) {
+            // A missing closing quote consumes the remainder of the scanned scalar.
+            return new AssignmentValue(end, quote + REDACTED + (closed ? Character.toString(quote) : ""));
+        }
+        String prefix = "";
+        if (text.regionMatches(true, start, "Bearer", 0, 6)
+                && start + 6 < text.length()
+                && Character.isWhitespace(text.charAt(start + 6))) {
+            int tokenStart = start + 6;
+            while (tokenStart < text.length() && Character.isWhitespace(text.charAt(tokenStart))) {
+                tokenStart++;
+            }
+            if (tokenStart < text.length()) {
+                prefix = "Bearer ";
+                start = tokenStart;
+            }
+        }
+        // Treat our marker as one token despite its closing bracket. Continue through
+        // any attached suffix so a credential cannot escape by starting with the marker.
+        int end = text.startsWith(REDACTED, start) ? start + REDACTED.length() : start;
+        while (end < text.length()
+                && !Character.isWhitespace(text.charAt(end))
+                && ",}]".indexOf(text.charAt(end)) < 0) {
+            end++;
+        }
+
+        return new AssignmentValue(end, prefix + REDACTED);
+    }
+
+    private record AssignmentValue(int end, String replacement) {}
+
+    private interface RedactionRule {
+        String redact(String value);
+    }
+
+    private record RegexRule(Pattern pattern, Replacement replacement) implements RedactionRule {
+
+        @Override
+        public String redact(String value) {
             Matcher matcher = pattern.matcher(value);
             StringBuilder redacted = new StringBuilder();
             while (matcher.find()) {

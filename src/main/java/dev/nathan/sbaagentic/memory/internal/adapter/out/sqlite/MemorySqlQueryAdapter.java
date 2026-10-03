@@ -9,6 +9,7 @@ import dev.nathan.sbaagentic.memory.internal.application.port.CompactEventReader
 import dev.nathan.sbaagentic.memory.internal.application.port.IdeaEventReader;
 import dev.nathan.sbaagentic.query.EventQuery;
 import dev.nathan.sbaagentic.query.EventQuery.Field;
+import dev.nathan.sbaagentic.query.SqlInstant;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import java.time.Clock;
 import java.time.Instant;
@@ -34,19 +35,11 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             END
             """;
 
-    // Canonical timestamps are UTC ISO strings with variable fractional precision. Padding avoids
-    // ordering a later fractional instant before its whole-second boundary ('.' sorts before 'Z').
-    private static final String COMPACT_TIME_SQL = "(substr(e.observed_at,1,19) || '.' || CASE "
-            + "WHEN substr(e.observed_at,20,1) = '.' THEN "
-            + "substr(substr(e.observed_at,21,length(e.observed_at)-21) || '000000000',1,9) "
-            + "ELSE '000000000' END || 'Z')";
-    private static final java.time.format.DateTimeFormatter COMPACT_TIME =
-            new java.time.format.DateTimeFormatterBuilder().appendInstant(9).toFormatter();
-
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final boolean postgres;
+    private final SqlInstant observedTime;
 
     public MemorySqlQueryAdapter(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, Clock clock) {
         this(jdbcTemplate, objectMapper, clock, "sqlite");
@@ -59,6 +52,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             Clock clock,
             @org.springframework.beans.factory.annotation.Value("${sba.storage.backend:sqlite}") String backend) {
         this.postgres = "postgres".equals(backend);
+        this.observedTime = SqlInstant.column("e.observed_at", postgres);
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -147,10 +141,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                 }
             }
             appendExcludedSession(sql, args, excludeSession);
-            sql.append(
-                    compact
-                            ? " ORDER BY " + COMPACT_TIME_SQL + " DESC, e.id DESC\n LIMIT ?"
-                            : " ORDER BY observed_at DESC\n LIMIT ?");
+            sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append("\n LIMIT ?");
             args.add(limit);
 
             return jdbcTemplate.query(sql.toString(), mapper, args.toArray());
@@ -216,22 +207,12 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             args.add(ref);
         });
         facets.sinceSpec().ifPresent(spec -> {
-            sql.append("   AND ")
-                    .append(compact ? COMPACT_TIME_SQL : "e.observed_at")
-                    .append(" >= ?\n");
-            args.add(
-                    compact
-                            ? COMPACT_TIME.format(spec.resolve(requestClock))
-                            : spec.resolve(requestClock).toString());
+            sql.append("   AND ").append(observedTime.expression()).append(" >= ?\n");
+            SqlInstant.bind(args, spec.resolve(requestClock));
         });
         facets.untilSpec().ifPresent(spec -> {
-            sql.append("   AND ")
-                    .append(compact ? COMPACT_TIME_SQL : "e.observed_at")
-                    .append(spec.exclusiveEnd() ? " < ?\n" : " <= ?\n");
-            args.add(
-                    compact
-                            ? COMPACT_TIME.format(spec.resolve(requestClock))
-                            : spec.resolve(requestClock).toString());
+            sql.append("   AND ").append(observedTime.expression()).append(spec.exclusiveEnd() ? " < ?\n" : " <= ?\n");
+            SqlInstant.bind(args, spec.resolve(requestClock));
         });
         // is:all is deliberately a no-op here: search has no meaningful filter to disable.
         for (String term : facets.freeTerms()) {
@@ -244,10 +225,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             args.add(like);
         }
         appendExcludedSession(sql, args, excludeSession);
-        sql.append(
-                compact
-                        ? " ORDER BY " + COMPACT_TIME_SQL + " DESC, e.id DESC\n LIMIT ?"
-                        : " ORDER BY e.observed_at DESC\n LIMIT ?");
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append("\n LIMIT ?");
         args.add(limit);
 
         return jdbcTemplate.query(sql.toString(), mapper, args.toArray());
@@ -309,7 +287,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             return List.of();
         }
         List<Object> args = new ArrayList<>(eventTypes);
-        args.add(since.toString());
+        SqlInstant.bind(args, since);
         StringBuilder sql = recallSql(eventTypes);
         appendRecallFilters(sql, args, projectScopes, includeSuperseded);
         if (scopeLike != null) {
@@ -325,7 +303,7 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                 args.add(scopeLike);
             }
         }
-        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC LIMIT ?");
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append(" LIMIT ?");
         args.add(limit);
 
         return jdbcTemplate.query(sql.toString(), this::mapEvent, args.toArray());
@@ -345,10 +323,10 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             return List.of();
         }
         List<Object> args = new ArrayList<>(eventTypes);
-        args.add(since.toString());
+        SqlInstant.bind(args, since);
         StringBuilder sql = recallSql(eventTypes);
         appendRecallFilters(sql, args, projectScopes, includeSuperseded);
-        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC");
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id"));
 
         return jdbcTemplate.query(
                 sql.toString(),
@@ -356,15 +334,16 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
                 args.toArray());
     }
 
-    private static StringBuilder recallSql(List<String> eventTypes) {
+    private StringBuilder recallSql(List<String> eventTypes) {
 
         return new StringBuilder("""
                 SELECT e.id, e.session_id, e.source, e.client_session_id, e.turn_id, e.event_type,
                        e.role, e.text, e.tool_name, e.tool_input_json, e.tool_output_json, e.metadata_json,
                        e.observed_at, s.cwd AS recall_cwd
                   FROM agent_events e JOIN agent_sessions s ON e.session_id = s.id
-                 WHERE e.event_type IN (%s) AND e.observed_at >= ?
-                """.formatted(String.join(", ", Collections.nCopies(eventTypes.size(), "?"))));
+                 WHERE e.event_type IN (%s) AND %s >= ?
+                """.formatted(
+                        String.join(", ", Collections.nCopies(eventTypes.size(), "?")), observedTime.expression()));
     }
 
     private void appendRecallFilters(
@@ -447,19 +426,17 @@ public class MemorySqlQueryAdapter implements MemoryEventReader, CompactEventRea
             args.add(textPrefix);
         }
         if (before != null && before.observedAt() != null && before.id() != null) {
-            // Keyset on the padded instant: raw ISO strings with variable fractional precision do
-            // not sort chronologically, and a page boundary must not skip or repeat a row.
-            String position = COMPACT_TIME.format(before.observedAt());
-            sql.append("   AND (")
-                    .append(COMPACT_TIME_SQL)
-                    .append(" < ? OR (")
-                    .append(COMPACT_TIME_SQL)
-                    .append(" = ? AND e.id < ?))\n");
-            args.add(position);
-            args.add(position);
+            // The scalar bound lets SQLite seek into its expression index; the tuple preserves ID ties.
+            sql.append("   AND ")
+                    .append(observedTime.expression())
+                    .append(" <= ? AND ")
+                    .append(observedTime.cursorTuple("e.id"))
+                    .append(" < (?, ?)\n");
+            SqlInstant.bind(args, before.observedAt());
+            SqlInstant.bind(args, before.observedAt());
             args.add(before.id());
         }
-        sql.append(" ORDER BY ").append(COMPACT_TIME_SQL).append(" DESC, e.id DESC\n LIMIT ?");
+        sql.append(" ORDER BY ").append(observedTime.descending("e.id")).append("\n LIMIT ?");
         args.add(limit);
 
         return jdbcTemplate.query(

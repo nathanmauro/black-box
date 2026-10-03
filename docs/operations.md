@@ -163,6 +163,19 @@ including short strings, numbers, nulls, lists, and objects. This conservative p
 [durable hook](durable-capture.md#privacy-and-limits); it may also hide benign values such as
 `tokenCount`. Ordinary identity and metadata fields keep their structure.
 
+Default text rules also scan named assignments inside string leaves, including JSON text returned
+by tools. Existing secret-name spellings (such as `password`, `api_key`, `client_secret` and
+`access_token`, including their existing prefixes/suffixes) accept `=` or `:`, bare or matching
+single/double quoted keys, and values of any length. Quoted values can contain whitespace and
+backslash-escaped quotes; bare values end at whitespace or a JSON comma/closing bracket/brace.
+Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned
+scalar. Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping
+and the existing truncation marker; replacement markers can expand short values. This is a small
+assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled
+secrets. Model export also applies these default
+assignment rules independently of ingestion settings and retains its conservative fallback for
+escaped quoted credential keys, which may remove the rest of a text leaf.
+
 String member names are also scanned with the active text-redaction patterns. If redacting a name
 would collide with another member, the changed name gains a ` (redacted key N)` suffix so that the
 other field is preserved. Custom `sba.ingestion.redact-patterns` replace the default text patterns
@@ -364,3 +377,25 @@ matching. See [Architecture](architecture.md#local-first-and-model-boundaries).
 [Local writes and Elasticsearch](local-writes-and-elasticsearch.md) covers the optional local index.
 The cloud work is a single-owner managed AWS prototype, documented in
 [docs/lightsail-prototype.md](lightsail-prototype.md); it is not a public service.
+
+## Canonical event chronology indexes
+
+Startup adds three derived expression indexes for global event chronology, session event chronology,
+and the human-turn subset. They normalize the stored UTC timestamp only inside index/query keys, with
+nine fractional digits and an ordered signed-year encoding; canonical event bytes and existing indexes
+remain unchanged. Repeated startup reuses the indexes. The first startup after this upgrade builds them
+against existing history, which adds a one-time startup/disk cost and ordinary index maintenance on
+subsequent writes. SQLite remains the default.
+
+Feed and session transcript cursors retain their existing wire format. They compare normalized time
+and event ID together, so whole-second, fractional and nanosecond events do not disappear when pages
+are merged with transcript-file events. A later-arriving older event can appear in a remaining page;
+this is keyset navigation, not a frozen database snapshot. Newer arrivals above an already-consumed
+cursor require a head refresh, as before.
+
+A disposable 50,000-event SQLite fixture (1% intent, 99% hook events) built all three indexes in
+98 ms, adding about 6.0 MiB; repeat initialization took 9 ms. The first page used the ordered index
+(80 microseconds); global, session and human deep-page queries used indexed range seeks with no
+temporary sort (73–89 microseconds). Retrieving 100 recent intent events through the real recall
+adapter took 2.9 ms. These are measured warmed fixture results, not production latency guarantees.
+Deployment time, index space and filtered-query cost depend on database size, storage and workload.

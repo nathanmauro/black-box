@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.CaptureRow;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectGraphStore.TaskRow;
 import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
+import dev.nathan.sbaagentic.query.SqlInstant;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -129,16 +130,29 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     public List<ProjectSummary> summaries() {
         ProjectAliasSnapshot aliases = aliasService.snapshot();
         Map<String, MutableSummary> grouped = new LinkedHashMap<>();
+        // Rank by comparison keys, then select the original timestamp from each winning row.
+        // Aggregating variable-precision timestamp text directly reverses whole/fractional seconds.
         List<RawSessionSummary> sessions = jdbcTemplate.query(
                 """
-                SELECT %s AS scope_key,
+                WITH ranked_sessions AS (
+                    SELECT %1$s AS scope_key, event_count, started_at, last_seen_at,
+                           ROW_NUMBER() OVER (PARTITION BY %1$s ORDER BY %2$s ASC, id ASC) AS first_rank,
+                           ROW_NUMBER() OVER (PARTITION BY %1$s ORDER BY %3$s DESC, id DESC) AS last_rank
+                      FROM agent_sessions s
+                )
+                SELECT scope_key,
                        COUNT(*) AS session_count,
                        COALESCE(SUM(event_count), 0) AS event_count,
-                       MIN(started_at) AS first_seen_at,
-                       MAX(last_seen_at) AS last_seen_at
-                  FROM agent_sessions s
+                       MIN(CASE WHEN first_rank = 1 THEN started_at END) AS first_seen_at,
+                       MAX(CASE WHEN last_rank = 1 THEN last_seen_at END) AS last_seen_at
+                  FROM ranked_sessions
                  GROUP BY scope_key
-                """.formatted(SESSION_CANONICAL_KEY_SQL),
+                """.formatted(
+                                SESSION_CANONICAL_KEY_SQL,
+                                SqlInstant.column("started_at", dialect == ProjectSqlDialect.POSTGRES)
+                                        .expression(),
+                                SqlInstant.column("last_seen_at", dialect == ProjectSqlDialect.POSTGRES)
+                                        .expression()),
                 (rs, rowNum) -> new RawSessionSummary(
                         rs.getString("scope_key"),
                         rs.getLong("session_count"),
@@ -152,13 +166,20 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
 
         List<RawMeldSummary> melds = jdbcTemplate.query(
                 """
+                WITH ranked_melds AS (
+                    SELECT project_key, created_at,
+                           ROW_NUMBER() OVER (PARTITION BY project_key ORDER BY %1$s ASC, id ASC) AS first_rank,
+                           ROW_NUMBER() OVER (PARTITION BY project_key ORDER BY %1$s DESC, id DESC) AS last_rank
+                      FROM session_melds
+                )
                 SELECT project_key AS scope_key,
                        COUNT(*) AS saved_meld_count,
-                       MIN(created_at) AS first_seen_at,
-                       MAX(created_at) AS last_seen_at
-                  FROM session_melds
+                       MIN(CASE WHEN first_rank = 1 THEN created_at END) AS first_seen_at,
+                       MAX(CASE WHEN last_rank = 1 THEN created_at END) AS last_seen_at
+                  FROM ranked_melds
                  GROUP BY project_key
-                """,
+                """.formatted(SqlInstant.column("created_at", dialect == ProjectSqlDialect.POSTGRES)
+                        .expression()),
                 (rs, rowNum) -> new RawMeldSummary(
                         ProjectKeyCodec.canonicalize(rs.getString("scope_key")),
                         rs.getLong("saved_meld_count"),
@@ -187,9 +208,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                        s.started_at, s.last_seen_at, s.event_count, s.spawned_by
                   FROM agent_sessions s
                  WHERE %s IN (%s)
-                 ORDER BY s.last_seen_at DESC
+                 ORDER BY %s
                  LIMIT ?
-                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size())),
+                """.formatted(
+                                SESSION_CANONICAL_KEY_SQL,
+                                placeholders(scopes.size()),
+                                SqlInstant.column("s.last_seen_at", dialect == ProjectSqlDialect.POSTGRES)
+                                        .descending("s.id")),
                 this::mapSession,
                 args.toArray());
     }
@@ -211,8 +236,13 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                   FROM agent_sessions s
                  WHERE %s IN (%s)
                    AND s.id IN (%s)
-                 ORDER BY s.last_seen_at DESC
-                """.formatted(SESSION_CANONICAL_KEY_SQL, placeholders(scopes.size()), sessionPlaceholders),
+                 ORDER BY %s
+                """.formatted(
+                                SESSION_CANONICAL_KEY_SQL,
+                                placeholders(scopes.size()),
+                                sessionPlaceholders,
+                                SqlInstant.column("s.last_seen_at", dialect == ProjectSqlDialect.POSTGRES)
+                                        .descending("s.id")),
                 this::mapSession,
                 args.toArray());
     }

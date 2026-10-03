@@ -168,8 +168,10 @@ Supported query operators include `source:`, `kind:`, `tool:`, `project:`, `sess
 clock timezone. All recognized filters use canonical storage only until equivalent index filtering
 exists. Legacy raw search retains its older behavior, including fuzzy index treatment of some
 positive facets. `until:2026-08-18` includes all of that day in the server timezone; strictly before
-that date uses `until:2026-08-17`. An exact `until:` timestamp is inclusive. Compact comparisons
-normalize fractional precision. `before:` and malformed/negated time operators are diagnosed
+that date uses `until:2026-08-17`. An exact `until:` timestamp is inclusive. Canonical feed, session transcript pagination, local
+legacy/compact search and recall compare UTC timestamps at nanosecond precision, including whole-second
+and fractional values. Event timestamps remain unchanged in storage and responses; pagination retains
+the existing timestamp-plus-event-ID cursor and event IDs break exact timestamp ties. `before:` and malformed/negated time operators are diagnosed
 before searching. Quote the entire token, such as `"before:2026-08-18"`, to search it literally.
 URLs and ordinary colon-containing text remain searchable.
 

@@ -12,11 +12,15 @@ import dev.nathan.sbaagentic.memory.internal.application.port.EmbeddingStore;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogStore;
+import dev.nathan.sbaagentic.recording.CanonicalTimeHttpContract;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.SessionStopped;
+import dev.nathan.sbaagentic.recording.TranscriptProperties;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -32,6 +36,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
@@ -54,6 +59,9 @@ class PostgresBackendContractTest {
     private ServletWebServerApplicationContext app;
     private JdbcTemplate jdbc;
     private String base;
+
+    @TempDir
+    Path chronologyDirectory;
 
     @BeforeAll
     void startIsolatedSchema() throws Exception {
@@ -102,6 +110,37 @@ class PostgresBackendContractTest {
         try (Connection connection = connection()) {
             connection.createStatement().execute("DROP SCHEMA " + schema + " CASCADE");
         }
+    }
+
+    @Test
+    void recallWindowsAndTypedEventCursorsPreserveNanoseconds() {
+        new CanonicalTimeHttpContract(http, base)
+                .exactRecallWindows(
+                        app.getBean(
+                                dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite.MemorySqlQueryAdapter.class),
+                        app.getBean(RecordingCatalog.class));
+    }
+
+    @Test
+    void nativeTimestampKeysAgreeWithJavaAcrossTheEntireInstantRange() {
+        dev.nathan.sbaagentic.query.SqlInstantAssertions.assertDialect(jdbc, true);
+    }
+
+    @Test
+    void mixedRecordedAndTranscriptPagesPreserveCanonicalChronology() throws Exception {
+        new CanonicalTimeHttpContract(http, base)
+                .mixedTranscriptPages(app.getBean(TranscriptProperties.class), chronologyDirectory);
+    }
+
+    @Test
+    void preciseWindowsAndLegacySearchUseCanonicalChronology() {
+        new CanonicalTimeHttpContract(http, base)
+                .exactWindowsAndOrdering(app.getBean(Clock.class).getZone());
+    }
+
+    @Test
+    void tiedPagesAndBackdatedArrivalsStayComplete() {
+        new CanonicalTimeHttpContract(http, base).tiedPagesAndBackdatedArrival();
     }
 
     @Test
