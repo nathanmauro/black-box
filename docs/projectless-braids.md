@@ -25,8 +25,22 @@ project-owned melds continue to accept 1–8 sessions.
 The existing saved-meld response has `projectKey: null` and `canonicalKey: null` for an unassigned
 braid. Its `sessions` retain input order. GET `/api/melds/{id}` returns that saved artifact, or 404.
 There is no automatic project attachment; project counts, timelines and graphs exclude unassigned
-artifacts. The supplied metadata is opaque JSON, including null values. `members` and `evidenceIds`
-are caller assertions, not verified canonical event references.
+artifacts. Metadata accepts JSON values, including ordinary nulls, and `members` and `evidenceIds`
+are caller assertions, not verified canonical event references. New saves apply configured ingestion
+redaction to title, body, provider, model, prompt version and metadata before persistence and the
+response. Accepted sanitized metadata retains ordinary types, nulls and member order; default
+secret-named members have their entire value replaced by the string `"[REDACTED]"`. Numeric
+`tokenCount` or `inputTokens` therefore change type as well as value (for example, `1234` becomes
+`"[REDACTED]"`); the default secret-key word list is documented in the linked redaction policy.
+Enabled redaction, with either default or custom patterns, clips each string scalar before scanning
+at 50,000 UTF-16 code units without splitting a surrogate pair, with a truncation marker.
+Custom patterns replace the defaults;
+disabling redaction also disables its scan clipping. See [redaction policy](operations.md#configuration).
+
+Artifact kind and ownership are validated before metadata sanitization. Custom rules may change the
+returned `metadata.kind` while the validated, persisted artifact remains a braid. Canonical ownership,
+ordered input IDs and server-derived input provenance are not sanitized. Existing saved rows are
+unchanged; this is not a historical scrub.
 
 GET `/api/melds?kind=braid&scope=unassigned&limit=50` returns `{items,count,nextBefore}`. Both filters
 are required exactly as shown; unknown, duplicate or unsupported parameters return 400. `count`

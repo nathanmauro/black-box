@@ -152,7 +152,9 @@ After upgrading from a version with task tools, reload cached MCP clients to ref
 - Session summaries default to an external vendor wrapper (the bundled Codex script; a Claude script is
   included), so transcript text can leave the machine in that mode. `SBA_SUMMARY_BACKEND=local` keeps
   it on a local OpenAI-compatible model.
-- Secret-looking text is redacted before persistence by default.
+- Event content and newly saved meld/braid free text and metadata use configurable ingestion
+  redaction before persistence by default. This is best-effort sanitization; existing rows are
+  unchanged. See [redaction policy and limits](docs/operations.md#configuration).
 
 ## How it evolved
 
