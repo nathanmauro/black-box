@@ -54,8 +54,9 @@ timestamps remain last. See the [Browse ordering verification](superpowers/plans
 In the web interface, choose a project in **Recall**, then enter a separate question. Suggestions
 come from recorded captures under the selected project, time and kind filters. Keyboard arrows and
 Enter select evidence; its source link opens the owning session at the exact event. Suggestions
-require no additional generation model. Legacy `scope` links and the menu-bar launcher's `run=1`
-flag remain supported.
+require no additional generation model. Selecting another suggestion refreshes the retained card's
+alternatives and open loops, including showing or hiding each section as the recorded lists change.
+Legacy `scope` links and the menu-bar launcher's `run=1` flag remain supported.
 
 **Resume this project** on Projects opens a one-year project recall. The briefing labels the latest
 recorded handoff and recorded open questions without asserting that they remain current. **Copy

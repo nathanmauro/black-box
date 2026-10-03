@@ -809,14 +809,15 @@ function RecallCard(props: {
 }
 
 function RecallList(props: { title: string; items: string[] }) {
-  if (!props.items.length) return null;
   return (
-    <div class="metadata-list recall-list">
-      <span>{props.title}</span>
-      <ul>
-        <For each={props.items}>{(item) => <li>{item}</li>}</For>
-      </ul>
-    </div>
+    <Show when={props.items.length}>
+      <div class="metadata-list recall-list">
+        <span>{props.title}</span>
+        <ul>
+          <For each={props.items}>{(item) => <li>{item}</li>}</For>
+        </ul>
+      </div>
+    </Show>
   );
 }
 
