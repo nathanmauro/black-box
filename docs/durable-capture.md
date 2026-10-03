@@ -83,6 +83,12 @@ synchronization. Each accepted row keeps one capture UUID, sanitized event byte 
 observation timestamp. Retry does not re-sanitize, re-normalize, mint a new identity, or advance the
 timestamp. The sanitizer version is stored separately from the event.
 
+SQLite busy/locked contention during queue setup, acceptance or bookkeeping is retried within
+that same invocation deadline, with short waits and private-file checks before each retry. A busy
+commit keeps the original transaction and capture ID. Other database errors and unsafe files
+fail immediately; an exhausted deadline rolls back unaccepted work. Waiting never extends the
+hook supervisor's three-second budget, and a lock that outlasts it can still prevent acceptance.
+
 A nonblocking file lock permits one sender per queue directory. Enqueuers use short database
 transactions and can commit while another process waits for HTTP. The sender posts only to
 `/api/events/idempotent`. It deletes a row only after HTTP 200 with its matching capture UUID,
