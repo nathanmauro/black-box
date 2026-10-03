@@ -39,7 +39,50 @@ public record RecalledItem(
         String supersedesEventId,
 
         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-        String supersededByEventId) {
+        String supersededByEventId,
+
+        /** Full captured Observation text; absent for other kinds and legacy projections. */
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        String body) {
+    public RecalledItem(
+            String eventId,
+            String sessionId,
+            String kind,
+            String source,
+            String clientSessionId,
+            String repo,
+            Instant observedAt,
+            String headline,
+            String rationale,
+            List<String> alternatives,
+            Double confidence,
+            List<String> openLoops,
+            String nextAction,
+            String toAgent,
+            Double score,
+            String supersedesEventId,
+            String supersededByEventId) {
+        this(
+                eventId,
+                sessionId,
+                kind,
+                source,
+                clientSessionId,
+                repo,
+                observedAt,
+                headline,
+                rationale,
+                alternatives,
+                confidence,
+                openLoops,
+                nextAction,
+                toAgent,
+                score,
+                supersedesEventId,
+                supersededByEventId,
+                null);
+    }
+
     public RecalledItem(
             String eventId,
             String sessionId,

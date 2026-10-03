@@ -55,7 +55,7 @@ export function buildRecallBriefing(
       .filter(Boolean)
       .join("\n");
     const detail = [
-      item.headline || "(No headline)",
+      item.body || item.headline || "(No headline)",
       item.rationale ? `Rationale: ${item.rationale}` : "",
       item.alternatives?.length ? `Recorded alternatives: ${item.alternatives.join("; ")}` : "",
       item.openLoops?.length ? `Recorded open questions: ${item.openLoops.join("; ")}` : "",
@@ -70,9 +70,16 @@ export function buildRecallBriefing(
     }
     const budget = Math.min(6000, remaining);
     const truncated = detail.length > budget;
-    const text = truncated
-      ? `${detail.slice(0, budget - 55)}\n[Capture truncated; open the evidence link for full text.]`
-      : detail;
+    const suffix = "\n[Capture truncated; open the evidence link for full text.]";
+    let keep = budget - suffix.length;
+    // A character budget uses UTF-16 units; keep a supplementary character intact at the edge.
+    if (
+      keep > 0 &&
+      /[\uD800-\uDBFF]/u.test(detail[keep - 1]) &&
+      /[\uDC00-\uDFFF]/u.test(detail[keep])
+    )
+      keep -= 1;
+    const text = truncated ? `${detail.slice(0, keep)}${suffix}` : detail;
     if (truncated) shortened += 1;
     output += `${provenance}\n${text}`;
   }
