@@ -193,7 +193,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
         metadata.put("origin", origin);
         metadata.put("status", status);
         putIfPresent(metadata, "legs", legs);
-        putIfPresent(metadata, "quote", stripOrNull(request.quote()));
+        putIfPresent(metadata, "quote", notBlank(request.quote()) ? request.quote() : null);
         putIfPresent(metadata, "sourceRef", stripOrNull(request.sourceRef()));
         putIfPresent(metadata, "connects", connects);
         putIfPresent(metadata, "resumeStep", stripOrNull(request.resumeStep()));
@@ -406,7 +406,7 @@ public class StructuredCaptureService implements RecordingCaptureOperations {
             appendLine(body, "Legs", legs + "/" + Ideas.MAX_LEGS);
         }
         if (notBlank(request.quote())) {
-            appendLine(body, "Quote", "\"" + request.quote().strip() + "\"");
+            appendLine(body, "Quote", "\"" + request.quote() + "\"");
         }
         appendLine(body, "Source", request.sourceRef());
         if (connects != null) {
