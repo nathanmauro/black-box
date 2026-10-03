@@ -1,5 +1,9 @@
 # Durable hook capture (opt-in)
 
+> **Status:** shipped and off by default. Requires Python 3 on macOS or Linux; HTTPS delivery to a
+> remote server is macOS-only because the bearer is read from Keychain. See
+> [platform support](installation.md#platform-support).
+
 Set `SBA_CAPTURE_DURABLE=1` on the existing capture hook to queue sanitized events locally before
 sending them to the [idempotent capture endpoint](idempotent-capture.md). Without that setting, the
 hook keeps its existing direct `/api/events` behavior. Installing or updating these files does not

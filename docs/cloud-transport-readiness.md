@@ -1,8 +1,12 @@
 # Cloud transport readiness
 
+> **Audience and status:** maintainer planning note. The HTTPS outbox transport described first is
+> shipped and opt-in (macOS only, because it reads its bearer from Keychain). Black Box has no hosted
+> service; the cloud prerequisites below are not implemented.
+
 The durable capture outbox can deliver to an explicitly selected HTTPS origin with a destination-bound macOS Keychain bearer. The default remains numeric-loopback HTTP. See [durable capture](durable-capture.md) for configuration, acknowledgement and recovery semantics.
 
-This is the D14 prerequisite from the later personal-cloud consumer trace. Local acceptance happens before credential lookup; the existing sanitized queue, immutable capture identity, origin partition and acknowledgement protocol are unchanged. HTTPS adds normal certificate and hostname verification and fixed credential-failure diagnostics. The hook still has a shared foreground deadline; this change does not establish zero added agent-turn latency.
+This is a prerequisite for a possible future personal cloud deployment. Local acceptance happens before credential lookup; the existing sanitized queue, immutable capture identity, origin partition and acknowledgement protocol are unchanged. HTTPS adds normal certificate and hostname verification and fixed credential-failure diagnostics. The hook still has a shared foreground deadline; this change does not establish zero added agent-turn latency.
 
 ## Local acceptance
 
@@ -15,7 +19,12 @@ browser/bearer authentication; secure cookies remain required. Local SQLite star
 See the [cloud image startup contract](postgres-backend.md#cloud-image-startup-contract) for its
 supported environment settings.
 
-CI supplies a disposable PostgreSQL 16 service and requires both database contract classes to run.
+CI supplies a disposable PostgreSQL 16 service and fails unless the PostgreSQL contract suites run
+without skips: `PostgresBackendContractTest`, `AuthenticatedPostgresConsumerContractTest`,
+`DatabaseRestoreContractTest`, `StreamPositionPostgresTest`, `EvidencePostgresHttpMcpTest`, and the
+project suites `ProjectlessBraidPostgresHttpTest`, `MeldSchemaPostgresMigrationTest`,
+`ProjectMeldRedactionPostgresHttpTest`, and `BraidDiscoveryPostgresHttpMcpTest` (see
+[`ci.yml`](../.github/workflows/ci.yml)).
 The authenticated consumer contract exercises real HTTP and streamable MCP calls, full event
 retrieval, idempotent replay, project isolation, Decision replacement/history, bearer SSE event and
 heartbeat delivery, and restart persistence in a randomly named test schema. Its MCP tool checks
@@ -29,7 +38,7 @@ records the startup reproduction, verification and limits.
 
 ## Cloud release prerequisites
 
-The [personal-cloud design](superpowers/specs/2026-09-29-personal-cloud-black-box-design.md) is a reconciled proposal, including the later consumer-trace amendments. It preserves the recorded AWS `us-east-2` direction and event-backed transcript decision while separating implemented behavior from remaining work. Migration must preserve bounded tool input, compatible full event responses, `agentId`, capture receipts/digests, project aliases, Decision replacements and provenance. Claude assistant-turn capture and actual consumer acceptance still require verification; the board/runner is retired and independent session lineage remains.
+The [personal-cloud design](superpowers/specs/2026-09-29-personal-cloud-black-box-design.md) is a reconciled proposal, including the later consumer-trace amendments. It preserves the earlier hosting and event-backed transcript decisions while separating implemented behavior from remaining work. Migration must preserve bounded tool input, compatible full event responses, `agentId`, capture receipts/digests, project aliases, Decision replacements and provenance. Claude assistant-turn capture and actual consumer acceptance still require verification; the board/runner is retired and independent session lineage remains.
 
 The existing single-server PostgreSQL profile can already be hosted behind authenticated HTTPS;
 see [PostgreSQL backend](postgres-backend.md). That deployment does not require S3, connector OAuth

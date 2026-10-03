@@ -1,5 +1,8 @@
 # Activity Project Context Design
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 Date: 2026-07-08
 Status: Implemented on `feat/agent-task-queue`; Ask project scoping remains a follow-up
 Owner: Nathan

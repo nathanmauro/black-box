@@ -1,5 +1,8 @@
 # Recall observability
 
+> **Audience:** operators and contributors. This describes shipped logging and metrics; nothing here
+> needs to be configured to use recall.
+
 Black Box emits one privacy-limited `blackbox.recall.completed` JSON log record for each
 `ContextService.recall` invocation. Micrometer records bounded process-local counters and timers.
 These signals begin when this version is activated; stored session/event totals cannot reconstruct
@@ -173,5 +176,5 @@ No alert delivery is implied by collecting data or creating a saved view.
 
 Deploy through `scripts/deploy-local.sh`; never replace the executable JAR under a running JVM.
 Verify the live status, representative recall, emitted completion, and the matching sanitized row
-in the existing collector UI after activation. Deployment-specific endpoints and view links belong
-in the operator's private handoff, not this portable repo document.
+in the existing collector UI after activation. Keep deployment-specific endpoints and view links in your own
+operator notes.

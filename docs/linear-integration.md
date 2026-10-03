@@ -1,5 +1,9 @@
 # Evidence to Linear prototype
 
+> **Audience and status:** optional, experimental prototype for people who track work in Linear.
+> Black Box does not require Linear or any task tracker. Publishing needs your own Linear API key and
+> sends the selected issue text to your Linear workspace.
+
 Black Box captures why an action was considered. Linear owns the work item after it is selected.
 This prototype turns explicit `nextAction` and `openLoops` statements from structured recall into
 reviewable issue candidates. It does not infer a backlog from transcripts, claim old work is still

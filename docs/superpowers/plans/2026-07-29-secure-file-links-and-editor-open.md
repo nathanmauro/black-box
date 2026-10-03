@@ -1,5 +1,8 @@
 # Secure File Links + Open In Editor (Phase 1, Slice 3)
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 **Goal:** Turn Slice 1's raw `FileRef` presenter output into safe, useful file actions: open a
 catalogued project file in Cursor at the recorded line, copy its path, and reveal it in Finder,
 while failing closed for every path that is not inside a filesystem-verified project root.

@@ -1,5 +1,8 @@
 # FULL_AUTO board-driven runner — design spec
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../../README.md) for setup.
+
 > Historical archive — the task board and runner were retired by NAT-243 on 2026-10-02. This document preserves the earlier design and verification record; its commands, APIs, paths, and implementation instructions are no longer current. See [retirement and upgrade notes](../../../board-retirement.md).
 
 Date: 2026-07-15

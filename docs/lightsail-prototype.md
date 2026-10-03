@@ -1,9 +1,15 @@
 # Shared managed-container prototype
 
-This deployment design runs Black Box as one shared HTTPS application in Lightsail Containers, with canonical data in
+> **Status: retired historical prototype.** This AWS deployment was deleted in September 2026. It is
+> not a running or public service, and Black Box offers no hosted option. This page records the
+> design, costs, and safety checks for anyone evaluating a future shared deployment; following it
+> would provision new, billable AWS resources in your own account. For the supported shared-server
+> option, see [PostgreSQL backend](postgres-backend.md).
+
+This deployment design ran Black Box as one shared HTTPS application in Lightsail Containers, with canonical data in
 managed PostgreSQL. Local and cloud agents call the same authenticated HTTP/MCP endpoint; they do
 not copy SQLite files or receive database credentials. SQLite remains available for local-only use.
-This replaces the temporary EC2 installation as the prototype target.
+It replaced an earlier temporary EC2 installation as the prototype target.
 
 The first deployment is one owner and one node. It establishes a shared service, not tenant
 isolation or a finished commercial authentication product. Cloud coding agents should run as
@@ -11,12 +17,12 @@ separate bounded jobs and call this service; the web container is not a coding w
 
 ## Deployment status: retired
 
-On 2026-09-15 the owner explicitly authorized permanent disposal of the temporary cloud prototype,
+On 2026-09-15 the maintainer authorized permanent disposal of the temporary cloud prototype,
 including its cloud-only data, without creating a backup. The CloudFormation stack reached
 `DELETE_COMPLETE`; the container and database are absent from the live Lightsail APIs. Its three
 dedicated credentials are marked for deletion with a seven-day, no-charge recovery window. No
 manual database snapshot remains. The database deletion operation reached terminal `Succeeded`;
-operator notes record the exact receipts.
+the exact deletion receipts are kept privately and not published.
 
 This supersedes the earlier offline pause. There is no remaining database to automatically restart
 after seven days. Local source, local Black Box data/service, networking, and dependent local client
@@ -293,7 +299,10 @@ SBA_AUTH_SECURE_COOKIES=true
 
 Lightsail terminates HTTPS and forwards HTTP to container port 8766. Authentication redirects are
 relative and cookies are explicitly secure; the deployment does not enable blanket trust in
-forwarded headers. Only `GET /actuator/health` is the minimal anonymous health endpoint.
+forwarded headers. When the prototype was accepted (September 2026), `GET /actuator/health` was its
+only anonymous health endpoint. Current source also allows anonymous GET
+`/actuator/health/liveness` and `/actuator/health/readiness`; see
+[authentication](authentication.md) for the current public list.
 
 ## Acceptance and ongoing use
 

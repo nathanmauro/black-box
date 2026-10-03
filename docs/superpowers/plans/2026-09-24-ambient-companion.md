@@ -1,5 +1,8 @@
 # Ambient Companion Implementation Plan
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the first slice of the Black Box ambient companion: a chrome-less `/companion` route (mini chip, compact project list, expanded project/river view with deep links) plus a thin macOS menubar-and-floating-panel shell that hosts it.

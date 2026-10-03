@@ -1,5 +1,8 @@
 # Activity Project Context Implementation Plan
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Activity project-aware by adding a shared project picker, hidden project scoping for Stream and Find, a flat project-scoped Browse rail, negative facet filters, and Find-result target highlighting.

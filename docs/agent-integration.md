@@ -190,8 +190,8 @@ An `Idea` records something someone proposed that nobody is acting on now: the h
 agent's suggestion that would otherwise vanish into a transcript. Capture it with `captureIdea` or
 `POST /api/ideas`.
 
-- `origin` is `human-aside`, `agent-proposed`, or `joint`; the legacy `nathan-aside` is stored as
-  `human-aside`. `status` is `untouched` (default), `partially-built`, `built-unused`,
+- `origin` is `human-aside`, `agent-proposed`, or `joint`; a legacy historical value, `nathan-aside`, is
+  still accepted and stored as `human-aside`. `status` is `untouched` (default), `partially-built`, `built-unused`,
   `superseded`, or `tracked`. `legs` (how much the idea has going for it) is an integer 0–10. Any
   other value is rejected with a message listing the allowed ones.
 - A nonblank `quote` preserves indentation, surrounding spaces and trailing newlines in stored
@@ -460,13 +460,14 @@ independent choices: registering a write hook does not enable SessionStart recal
   `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
   the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
   can nest subagents under their parent. Set `SBA_CAPTURE_DURABLE=1` for an opt-in sanitized local
-  queue with idempotent retries; see [durable capture](durable-capture.md) for requirements,
+  queue with idempotent retries (it accepts numeric loopback URLs such as `http://127.0.0.1:8766`,
+  not `localhost`, if you override `SBA_AGENTIC_URL`); see [durable capture](durable-capture.md) for requirements,
   destination restrictions, recovery commands, and privacy limits.
 - `scripts/hooks/sba-recall-hook.sh` recalls recent Decisions and Handoffs for a Claude Code or
   Codex `SessionStart` and prints a bounded context block. The bridge emits plain stdout for the
   host to inject as session context. Check that the installed client supports the configured hook
   event. Defaults are 30 days, 3 items, and 4000 chars. The hook skips compaction re-fires and spawned
-  subagents, and appends a fire log to `recall.log` in the user's Black Box state directory with TSV
+  subagents, and appends a fire log to `~/.blackbox/recall.log` (override with `SBA_RECALL_LOG`) with TSV
   columns `ts`,
   `client`, `outcome`, `cwd`, `session_id`, `items`, and `chars`.
 
@@ -548,7 +549,9 @@ entries, passing `claude` as the source argument:
 
 ### Hook smoke tests
 
-These fixture tests use a fake HTTP client and do not write to a running recorder:
+These fixture tests do not write to a running recorder. They substitute a fake `curl` on `PATH`,
+use an unreachable loopback port for the never-fail check, and run the durable-outbox tests against
+disposable in-process loopback HTTP and TLS servers with test certificates:
 
 ```bash
 scripts/test-agent-hook.sh

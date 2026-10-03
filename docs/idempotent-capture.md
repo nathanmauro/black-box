@@ -94,8 +94,9 @@ Older servers reject this dedicated route before writing; depending on their rou
 can return 404 or 405. A client must not silently retry such a request through legacy `/api/events`
 and then assume it has an idempotent acknowledgement.
 
-This server capability is the prerequisite for a durable hook queue. It does not install such a
-queue, change hooks or MCP capture, or make existing fire-and-forget delivery reliable.
+The opt-in [durable hook outbox](durable-capture.md) uses this endpoint. MCP capture and the
+default fire-and-forget hook path do not, so enabling this endpoint alone does not make them
+reliable.
 Distinct events may arrive out of chronological order. Their original `observedAt` values are
 preserved, and each newly persisted event keeps `lastSeenAt` at the greater of its existing stored
 checkpoint and the incoming observed instant, including nanosecond precision. This prevents new

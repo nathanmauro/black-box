@@ -1,5 +1,8 @@
 # Database snapshots and recovery rehearsals
 
+> **Audience and status:** operators. The backup CLI is shipped; the rehearsal described here was
+> verified only with disposable fixtures, not against an installed service.
+
 Black Box's selected relational database is canonical. SQLite remains the local default;
 PostgreSQL is a separate optional deployment. A snapshot preserves that database's recorded state;
 it does not synchronize deployments or prove that every external transcript was captured.

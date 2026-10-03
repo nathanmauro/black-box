@@ -132,10 +132,10 @@ need compatible wiring before using an authenticated server.
 
 **What exists today.** The tracked [CloudFormation template](../infra/aws/lightsail.json),
 [`Dockerfile.cloud`](../Dockerfile.cloud), and [deployment scripts](../scripts/cloud/) document a
-single-owner managed AWS prototype, documented in [docs/lightsail-prototype.md](lightsail-prototype.md);
-it is not a public service. The committed
+single-owner managed AWS prototype, documented in [docs/lightsail-prototype.md](lightsail-prototype.md).
+That prototype is retired and is not a running or public service. The committed
 [2026-09-08 acceptance record](superpowers/plans/2026-09-08-cloud-prototype.md) describes the
-experiment's deployment and its checks. Deletion receipts stay in private operator notes, so this
+experiment's deployment and its checks. Deletion receipts are not published, so this
 page asserts no current live-resource or billing state.
 
 The template records a historical base estimate of USD 31.20/month, one managed container,
@@ -156,7 +156,7 @@ prototype code. This page makes no retirement-date or live-resource assertion.
 **Success criteria.** A reviewer can reconstruct what was tested, why a shared service was
 considered, what it cost at the time, and why that exact approach was set aside. An isolated replay
 can verify capture, authenticated recall, restart persistence, and its own explicit cleanup scope
-without private deployment IDs or the owner's transcript corpus.
+without private deployment IDs or a private transcript corpus.
 
 **Stop criteria.** Do not republish private operational exports to fill evidence gaps. Stop a replay
 before provisioning if cost, teardown ownership, or retained resources are unclear. Stop the

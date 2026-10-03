@@ -1,5 +1,8 @@
 # Subagent Lineage Implementation Plan
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 > NAT-243 update (2026-10-02): session lineage now belongs to `dev.nathan.sbaagentic.lineage`; the board, task/spec APIs, and runner are retired. Earlier workflow/runner package names and task tables in this dated design are historical, not current implementation instructions. See [retirement notes](../../board-retirement.md).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -25,7 +25,7 @@ command arguments, checked-in files, URLs, logs, or agent memory.
 The browser session cookie is `HttpOnly`, `SameSite=Lax`, `Secure` by default, and expires after
 30 minutes of inactivity. Session identifiers are cookie-only; URL rewriting is disabled. The
 application emits fixed relative authentication redirects and does not enable forwarded-header
-trust. A managed HTTPS proxy such as Lightsail can terminate TLS and forward HTTP internally while
+trust. A managed HTTPS proxy or load balancer can terminate TLS and forward HTTP internally while
 `SBA_AUTH_SECURE_COOKIES=true` protects the external browser cookie. Keep the internal listener
 unreachable directly from the public network. Proxy access control and TLS remain deployment duties.
 

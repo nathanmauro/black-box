@@ -5,6 +5,15 @@ PostgreSQL through the same capture, recall, project, and session-lineage APIs. 
 authoritative server for shared clients; this profile does not synchronize a local SQLite database
 with a cloud PostgreSQL database.
 
+In short:
+
+- **Separate canonical store.** A PostgreSQL deployment starts its own history. Nothing is copied
+  from, merged with, or synchronized to a SQLite database.
+- **One API instance.** Run exactly one Black Box server against a given PostgreSQL database; multiple
+  API replicas are not supported (see [behavior and limits](#behavior-and-limits) below).
+- **Network exposure needs authentication.** Enable [authentication](authentication.md) and HTTPS
+  before clients reach the server over a network.
+
 ## Configuration
 
 Set these variables in the service's secret/configuration system before starting the existing JAR

@@ -3,7 +3,9 @@
 Black Box runs as one Spring Boot process, with SQLite as the default canonical store. Capture,
 session lineage, and lexical recall need neither a model nor Elasticsearch. An optional PostgreSQL
 profile owns a separate database for shared clients; it does not synchronize local history.
-Commands below assume the repository root unless a path is explicit.
+Commands below assume the repository root unless a path is explicit. To download or build Black
+Box for the first time, start with [Install Black Box](installation.md), which also lists what each
+platform supports.
 
 ## Command-line help
 
@@ -71,7 +73,11 @@ bootstrap the service, and verify `/api/status`. For subsequent updates, use:
 ./scripts/deploy-local.sh
 ```
 
-The script requires Python 3.9+, an existing healthy installation, and an installed plist with an
+The script supports only an **unauthenticated loopback** installation: its readiness check is an
+unauthenticated `GET /api/status` on `127.0.0.1`, `localhost`, or `::1`, and enabling
+[authentication](authentication.md) protects that route. An already authenticated installation
+fails the initial health preflight before any service replacement; a new candidate that fails
+readiness triggers rollback. It requires Python 3.9+, an existing healthy installation, and an installed plist with an
 absolute `WorkingDirectory` and an explicit `java -jar /absolute/path/to/application.jar` command.
 `/usr/bin/env KEY=value ... java -jar ...` is also supported. Other wrappers, JVM/application
 arguments, path aliases, and hard-linked JARs are rejected. Add `WorkingDirectory` when installing
@@ -91,9 +97,11 @@ JAR in this checkout, which must exactly match the installed `WorkingDirectory` 
 Tests are skipped unless `--with-tests` is passed. Build and review a candidate separately when the
 installed checkout has unrelated dirty work.
 
-`SBA_LAUNCHD_PLIST` selects an existing plist (default
-`~/Library/LaunchAgents/com.nathan.sba-agentic.plist`); `SBA_LAUNCHD_LABEL`, when supplied, must
-match its label. Only the current user's `gui/<uid>` domain is supported. `SBA_JAR_PATH` and
+Choose your own reverse-DNS label when installing the template, for example
+`com.example.black-box`, and point the script at it. `SBA_LAUNCHD_LABEL` selects
+`~/Library/LaunchAgents/<label>.plist` and must match that plist's `Label`; `SBA_LAUNCHD_PLIST`
+selects a plist at any path. Without either, the script falls back to the maintainer's historical
+label, `com.nathan.sba-agentic`, which may not match your installation. Only the current user's `gui/<uid>` domain is supported. `SBA_JAR_PATH` and
 `SBA_PORT` are optional assertions and must agree with the plist. `SBA_STATUS_URL` must address
 `/api/status` on that installed local port, with no credentials or redirects. The default is
 `http://127.0.0.1:<installed-port>/api/status`. The readiness port must belong to the exact new
@@ -291,12 +299,17 @@ database, not the service database. See [PostgreSQL](postgres-backend.md).
 | `SBA_LOCAL_AI_API_KEY` | `lm-studio` | Local-compatible API credential; replace when the selected server requires it |
 | `SBA_LOCAL_AI_MAX_INPUT_CHARS` | `8000` | Per-request input window; larger transcripts are map-reduced |
 
-Default external summarization can send transcript text through the selected vendor. Both
+Summaries are scheduled automatically in the background when a session records a terminal
+event (`SessionEnd`, `Stop`, or `SubagentStop`) and has no summary yet; `summarize` and
+`summarize-missing` run them explicitly. Default external summarization can send transcript text
+through the selected vendor. Both
 [`summarize-with-codex.sh`](../scripts/summarize-with-codex.sh) and
 [`summarize-with-claude.sh`](../scripts/summarize-with-claude.sh) are supplied. Select the latter
 with `SBA_SUMMARY_EXTERNAL_COMMAND=/path/to/black-box/scripts/summarize-with-claude.sh`.
-`SBA_SUMMARY_BACKEND=local` chooses LM Studio or another local OpenAI-compatible server; it falls
-back to compacted transcript text if local summarization cannot run. This configured summary
+`SBA_SUMMARY_BACKEND=local` chooses LM Studio or another OpenAI-compatible server at
+`SBA_LOCAL_AI_BASE_URL`. "Local" names the backend, not a network restriction: the URL defaults to
+loopback, but a remote URL receives the transcript text. It falls back to compacted transcript text
+if local summarization cannot run or `SBA_LOCAL_AI_ENABLED=false`. This configured summary
 subprocess does not execute queued work or launch worker agents.
 
 The wrappers have their own environment settings:
@@ -454,8 +467,8 @@ matching. See [Architecture](architecture.md#local-first-and-model-boundaries).
 [Authentication](authentication.md) covers browser sessions, bearer requests, and HTTPS deployment.
 [PostgreSQL](postgres-backend.md) covers shared storage and its single-server limits.
 [Local writes and Elasticsearch](local-writes-and-elasticsearch.md) covers the optional local index.
-The cloud work is a single-owner managed AWS prototype, documented in
-[docs/lightsail-prototype.md](lightsail-prototype.md); it is not a public service.
+The former managed AWS prototype has been retired and is not a running or public service; its
+historical design is in [docs/lightsail-prototype.md](lightsail-prototype.md).
 
 ## Canonical event chronology indexes
 

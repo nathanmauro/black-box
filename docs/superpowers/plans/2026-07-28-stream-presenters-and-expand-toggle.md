@@ -1,5 +1,8 @@
 # Stream Presenters + Expand Toggle (Phase 1, Slice 1) Implementation Plan
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the Black Box stream typed, tool-aware rendering (bash, edit, write, read, apply_patch), client-side diffs, and a persisted Collapsed/Expanded toggle — plus the free deletions of `/stats` and `/overview`.

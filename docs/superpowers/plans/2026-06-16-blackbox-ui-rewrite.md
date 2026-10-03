@@ -1,5 +1,8 @@
 # Black Box UI Rewrite — Implementation Plan
 
+> **Historical development paths:** workstation paths in this record describe the original
+> development context. Use your own checkout and the [current documentation](../../README.md) for setup.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace Black Box's vanilla-JS UI with an agent-observatory-style SolidJS app focused on searching/finding sessions, backed by a new SSE live channel and a facet-aware search path.
