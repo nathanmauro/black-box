@@ -214,6 +214,92 @@ class EvaluationTests(unittest.TestCase):
             with self.subTest(observed=observed), self.assertRaises(e.EvalError):
                 self.recalled_timestamp(observed)
 
+    def test_hour_24_rejected_on_every_python_including_submicrosecond_offset_and_month_end(self):
+        # Python 3.14 fromisoformat reads hour 24 as next-day midnight; fractions below one
+        # microsecond normalize to zero, so they used to slip past as well.
+        invalid = ('2026-01-01T24:00:00Z', '2026-01-01T24:00:00.000Z',
+                   '2026-01-01T24:00:00.000000000Z', '2026-01-01T24:00:00.000000001Z',
+                   '2026-01-01T24:00:00.000000999Z', '2026-01-01T24:00:00.000001Z',
+                   '2026-01-01T24:00:00+05:30', '2026-01-01T24:00:00.000000500-04:00',
+                   '2026-01-31T24:00:00-04:00', '2026-02-28T24:00:00Z',
+                   '2028-02-29T24:00:00.000000001+00:00', '2026-12-31T24:00:00.000000999Z')
+        for observed in invalid:
+            with self.subTest(observed=observed):
+                with self.assertRaisesRegex(e.EvalError, '^invalid_recall_timestamp$'):
+                    e.instant_epoch(observed)
+                with self.assertRaisesRegex(e.EvalError, '^invalid_recall_timestamp$'):
+                    self.recalled_timestamp(observed)
+        valid = (('2026-01-01T23:59:59.999999999Z', '1767311999.999999999'),
+                 ('2026-01-31T23:59:59.000000001-04:00', '1769918399.000000001'),
+                 ('2028-02-29T23:59:59.999999999+05:30', '1835461799.999999999'),
+                 ('2026-12-31T23:59:59.000000999Z', '1798761599.000000999'))
+        for observed, epoch in valid:
+            with self.subTest(observed=observed):
+                self.assertEqual(e.instant_epoch(observed), e.Decimal(epoch))
+                self.assertEqual(self.recalled_timestamp(observed)['observedAt'], observed)
+
+    def test_cli_refuses_hour_24_before_any_model_request_and_keeps_valid_controls(self):
+        class HourServer(Server):
+            calls = []
+            recalls = []
+            observed = None
+
+            def do_GET(self):
+                from urllib.parse import parse_qs, urlsplit
+                event = parse_qs(urlsplit(self.path).query)['scope'][0]
+                self.recalls.append(event)
+                self.respond({'mode': 'lexical', 'truncated': False, 'items': [{
+                    'eventId': event, 'kind': 'handoff', 'observedAt': self.observed,
+                    'headline': 'PRIVATE synthetic handoff'}]})
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), HourServer)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        origin = f'http://127.0.0.1:{server.server_port}'
+        # Scrubbed environment: no provider keys, proxies, or Black Box settings reach the CLI.
+        env = {'PATH': os.environ.get('PATH', ''), 'PYTHONDONTWRITEBYTECODE': '1'}
+        cases = [('hour24-zero', '2026-01-01T24:00:00Z', 'invalid_recall_timestamp'),
+                 ('hour24-nano', '2026-01-01T24:00:00.000000001Z', 'invalid_recall_timestamp'),
+                 ('hour24-subus', '2026-01-01T24:00:00.000000999+05:30', 'invalid_recall_timestamp'),
+                 ('hour24-month-end', '2026-01-31T24:00:00-04:00', 'invalid_recall_timestamp'),
+                 ('valid-nano', '2026-01-01T23:59:59.999999999Z', None),
+                 ('valid-offset', '2026-01-31T23:59:59.000000001-04:00', None)]
+        try:
+            for name, observed, error in cases:
+                with self.subTest(case=name):
+                    HourServer.calls, HourServer.recalls, HourServer.observed = [], [], observed
+                    manifest = self.root / (name + '.json')
+                    e.save(manifest, self.data)
+                    output = self.root / name
+                    completed = subprocess.run([
+                        sys.executable, str(Path(e.__file__).resolve()), str(manifest),
+                        '--output', str(output), '--model-origin', origin, '--recall-origin', origin,
+                        '--model', 'local-model'], capture_output=True, text=True, timeout=15, env=env)
+                    report = json.loads((output / 'report.json').read_text())
+                    self.assertEqual(report['usefulness_gate']['status'], 'not_cleared')
+                    self.assertNotIn('PRIVATE', completed.stdout + completed.stderr)
+                    self.assertGreaterEqual(len(HourServer.recalls), 1)
+                    if error:
+                        self.assertEqual(completed.returncode, 2)
+                        self.assertEqual(HourServer.calls, [])
+                        self.assertFalse((output / 'recalled.json').exists())
+                        self.assertEqual(sum(a['not_attempted'] for a in report['arms'].values()), 10)
+                        self.assertEqual(json.loads((output / 'preflight-error.json').read_text()),
+                                         {'error_category': error})
+                    else:
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertEqual(len(HourServer.calls), 10)
+                        recalled = json.loads((output / 'recalled.json').read_text())
+                        self.assertTrue(all(row['handoff']['observedAt'] == observed
+                                            for row in recalled.values()))
+                        prompts = [json.loads(p.read_text()) for p in sorted(output.glob('*-prompt.json'))]
+                        handoffs = [json.loads(m[1]['content']).get('historical_handoff') for m in prompts]
+                        self.assertEqual([h['observedAt'] for h in handoffs if h], [observed] * 5)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_documented_cli_accepts_nanoseconds_and_refuses_invalid_future_or_stale_evidence(self):
         class TimestampServer(Server):
             calls = []
