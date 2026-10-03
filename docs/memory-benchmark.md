@@ -412,3 +412,8 @@ hold the one session and prevent restart or alternate history access. It is not 
 `benchmark.py`, `continuation.py` or any model loop, changes no arm, budget or gate, and is
 infrastructure evidence only. The Black Box backend for the same envelope, an authentic corpus
 builder, registration/adjudication and the difficulty and accepted-action studies remain outstanding.
+
+The session now delivers through a small backend seam. A golden trace pins literal delivery bytes
+to the pre-seam code. A compact-search backend over `/api/search/compact` was assessed and not
+built. Complete match traversal, exact totals beyond the candidate ceiling, deterministic replay
+ties and arbitrary literal `"`, `%` and `_` terms are unavailable from that endpoint. See the [blocker](continuation-comparison-protocol.md#backend-seam-and-the-compact-search-blocker).
