@@ -324,3 +324,10 @@ comparator, at least 70% useful supported suggestions, below 10% stale/duplicate
 three observed useful accepted actions that comparator missed. The existing five-task development
 screen (continue only at 1–4 bare passes) is unchanged. This qualifier supplies none of those missing
 outcomes and makes no efficacy claim.
+
+## Next comparison preparation
+
+The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
+17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
+paths. Its ordinary handoff/search adapter is not implemented; no new fixtures, model trials or
+human accepted actions were established. The existing usefulness and difficulty gates stay unchanged.
