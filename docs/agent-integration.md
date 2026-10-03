@@ -144,6 +144,12 @@ agent's suggestion that would otherwise vanish into a transcript. Capture it wit
   `human-aside`. `status` is `untouched` (default), `partially-built`, `built-unused`,
   `superseded`, or `tracked`. `legs` (how much the idea has going for it) is an integer 0–10. Any
   other value is rejected with a message listing the allowed ones.
+- A nonblank `quote` preserves indentation, surrounding spaces and trailing newlines in stored
+  metadata and its rendered quotation, subject to the existing redaction and capture-length limits.
+  Omitted, null, empty and whitespace-only quotes are absent on the new event; the collapsed
+  listing and Idea detail inherit the newest earlier nonblank quote. A new nonblank quote replaces
+  that view's value without changing older events. Previously stripped whitespace is not recoverable
+  from stored records.
 - Captures are append-only. To change an idea's status, capture it again with the same `ideaKey`.
   The default key is a slug of the repo's last path segment plus the title (for example
   `sba-agentic-evidence-capture-kind`). Clones that share a directory name key the same way. A

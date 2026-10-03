@@ -308,17 +308,30 @@ def open_private_directory(path):
         raise
 
 
-def private_file(directory_fd, name, create=False, writable=False):
+def private_file(directory_fd, name, create=False, writable=False, deadline=None):
     flags = (os.O_RDWR if writable else os.O_RDONLY) | os.O_NOFOLLOW | os.O_NONBLOCK
     if create:
         flags |= os.O_CREAT
-    descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
-    info = os.fstat(descriptor)
-    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+    deadline = deadline if deadline is not None else time.monotonic() + 0.2
+    while True:
+        descriptor = os.open(name, flags, 0o600, dir_fd=directory_fd)
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) != 0o600):
+                raise OutboxError("unsafe_file")
+            if info.st_nlink == 1:
+                return descriptor
+            if name != DB_NAME + "-journal" or create or writable or info.st_nlink != 0:
+                raise OutboxError("unsafe_file")
+        except BaseException:
+            os.close(descriptor)
+            raise
+        # A concurrent SQLite COMMIT can unlink a safe journal after open. Close it
+        # and validate the current entry; never reuse it or accept an unchecked replacement.
         os.close(descriptor)
-        raise OutboxError("unsafe_file")
-    return descriptor
+        if time.monotonic() >= deadline:
+            raise OutboxError("deadline")
 
 
 def sqlite_contention(error):
@@ -398,7 +411,7 @@ class Queue:
     def check_files(self):
         for name in (DB_NAME, DB_NAME + "-journal", LOCK_NAME):
             try:
-                descriptor = private_file(self.directory_fd, name)
+                descriptor = private_file(self.directory_fd, name, deadline=self.deadline)
             except FileNotFoundError:
                 continue
             os.close(descriptor)
