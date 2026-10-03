@@ -51,7 +51,7 @@ find_jar() {
 jar_is_fresh_enough() {
   local jar="$1"
   [[ -f "$jar" ]] || return 1
-  unzip -l "$jar" 2>/dev/null | grep -q "CaptureDecisionRequest" || return 1
+  unzip -l "$jar" 2>/dev/null | grep "CaptureDecisionRequest" >/dev/null || return 1
   [[ -z "$(find "${PROJECT_DIR}/src" "${PROJECT_DIR}/pom.xml" -newer "$jar" -print -quit 2>/dev/null)" ]]
 }
 
@@ -84,11 +84,10 @@ trap cleanup_demo EXIT
 step "Recording demo cast"
 cd "$PROJECT_DIR"
 rm -f "$CAST_FILE"
-# demo.sh has no no-open flag. It exits after printing the recall loop, then
-# leaves the recorder running; this wrapper records the real demo and kills the
-# printed PID from the cast after recording.
+# The demo leaves the recorder running; this wrapper suppresses browser opening,
+# records the real recall loop, and stops the printed PID after recording.
 asciinema rec --overwrite --quiet --cols 100 --rows 30 \
-  -c './scripts/demo.sh' \
+  -c 'SBA_DEMO_NO_OPEN=1 ./scripts/demo.sh' \
   "$CAST_FILE"
 
 cleanup_demo
