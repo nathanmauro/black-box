@@ -15,16 +15,26 @@ import dev.nathan.sbaagentic.summary.SummaryExportProperties;
 import dev.nathan.sbaagentic.summary.SummaryExportProperties.Target;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
@@ -95,19 +105,18 @@ public class SummaryExportService implements SummaryExportOperations {
                 .resolve(render(firstNonBlank(target.getSubdirectoryTemplate(), ""), model))
                 .resolve(render(firstNonBlank(target.getFilenameTemplate(), "{{date}}-{{slug}}-{{shortId}}.md"), model))
                 .normalize();
-        if (!notePath.startsWith(exportRoot.normalize())) {
+        if (!notePath.startsWith(exportRoot) || notePath.equals(exportRoot)) {
             throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "Unable to resolve export path");
         }
 
         try {
-            Files.createDirectories(notePath.getParent());
-            Files.writeString(
-                    notePath,
-                    render(loadTemplate(target), model),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
+            // Render before creating directories or staging data, so template failures change nothing.
+            String markdown = render(loadTemplate(target), model);
+            Path relative = exportRoot.relativize(notePath);
+            // A configured root alias is intentional. Descendant links are not export destinations.
+            exportRoot = Files.createDirectories(exportRoot).toRealPath();
+            notePath = exportRoot.resolve(relative);
+            writeAtomically(exportRoot, notePath, markdown);
         } catch (IOException ex) {
             throw new ResponseStatusException(INTERNAL_SERVER_ERROR, "Unable to export summary", ex);
         }
@@ -119,6 +128,112 @@ public class SummaryExportService implements SummaryExportOperations {
                 firstNonBlank(target.getType(), MARKDOWN_FILE),
                 notePath.toString(),
                 exportRoot.relativize(notePath).toString());
+    }
+
+    private record DirectoryIdentity(Path path, Object key) {}
+
+    private void writeAtomically(Path root, Path note, String markdown) throws IOException {
+        // Portable NIO has no descriptor-relative mkdir/rename on every supported provider (macOS
+        // does not expose SecureDirectoryStream). Require caller-controlled, stable directories;
+        // these checks reject existing links and detected swaps, not adversarial rename races.
+        List<DirectoryIdentity> parents = new ArrayList<>();
+        parents.add(directoryIdentity(root));
+        Path parent = root;
+        for (Path component : root.relativize(note.getParent())) {
+            if (component.toString().isEmpty()) continue;
+            verifyDirectories(parents);
+            parent = parent.resolve(component);
+            try {
+                Files.createDirectory(parent);
+            } catch (FileAlreadyExistsException ignored) {
+                // Read without following links below, including dangling links.
+            }
+            parents.add(directoryIdentity(parent));
+        }
+        verifyDirectories(parents);
+        Object previous = regularFileKey(note);
+        Path staged = null;
+        Object stagedKey = null;
+        try {
+            staged = Files.createTempFile(parent, ".blackbox-export-", ".tmp");
+            stagedKey = regularFileKey(staged);
+            writeStaged(staged, markdown);
+            verifyDirectories(parents);
+            verifyFiles(note, previous, staged, stagedKey);
+            // Preserve existing POSIX permissions while avoiding an in-place write to hard links.
+            if (previous != null
+                    && Files.getFileAttributeView(note, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+                            != null) {
+                Files.getFileAttributeView(staged, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+                        .setPermissions(Files.getPosixFilePermissions(note, LinkOption.NOFOLLOW_LINKS));
+            }
+            verifyDirectories(parents);
+            verifyFiles(note, previous, staged, stagedKey);
+            publish(staged, note);
+        } finally {
+            if (staged != null) {
+                try {
+                    // A displaced directory can retain its staged file. Never follow its replacement
+                    // path for cleanup, or delete a different file that appeared at the staged name.
+                    verifyDirectories(parents);
+                    if (Objects.equals(stagedKey, regularFileKey(staged))) Files.deleteIfExists(staged);
+                } catch (IOException ignored) {
+                    // Do not mask the original failure or traverse changed directories for cleanup.
+                }
+            }
+        }
+    }
+
+    void writeStaged(Path staged, String markdown) throws IOException {
+        try (var channel = FileChannel.open(staged, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
+            ByteBuffer bytes = StandardCharsets.UTF_8.encode(markdown);
+            while (bytes.hasRemaining()) channel.write(bytes);
+            channel.force(true);
+        }
+    }
+
+    void publish(Path staged, Path note) throws IOException {
+        // No non-atomic fallback: an unsupported move must leave the previous note untouched.
+        Files.move(staged, note, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static DirectoryIdentity directoryIdentity(Path path) throws IOException {
+        BasicFileAttributes attributes =
+                Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isDirectory() || attributes.fileKey() == null) {
+            throw new IOException("Export directory is linked, invalid or lacks a stable identity");
+        }
+
+        return new DirectoryIdentity(path, attributes.fileKey());
+    }
+
+    private static void verifyDirectories(List<DirectoryIdentity> directories) throws IOException {
+        for (DirectoryIdentity directory : directories) {
+            if (!directory.key().equals(directoryIdentity(directory.path()).key())) {
+                throw new IOException("Export directory identity changed");
+            }
+        }
+    }
+
+    private static void verifyFiles(Path note, Object previous, Path staged, Object stagedKey) throws IOException {
+        if (!Objects.equals(previous, regularFileKey(note)) || !Objects.equals(stagedKey, regularFileKey(staged))) {
+            throw new IOException("Export file identity changed");
+        }
+    }
+
+    private static Object regularFileKey(Path file) throws IOException {
+        try {
+            BasicFileAttributes attributes =
+                    Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile() || attributes.fileKey() == null) {
+                throw new IOException("Export destination is linked, invalid or lacks a stable identity");
+            }
+
+            return attributes.fileKey();
+        } catch (NoSuchFileException missing) {
+
+            return null;
+        }
     }
 
     private Path exportRoot(Target target) {

@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { A, useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import {
   createEffect,
   createMemo,
@@ -56,6 +56,7 @@ type ProjectStoryView = "trajectory" | "timeline";
 
 export default function ProjectsPage() {
   const params = useParams<{ projectKey?: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams<{ focus?: string }>();
   const [mergeTargetKey, setMergeTargetKey] = createSignal<string>();
@@ -130,7 +131,8 @@ export default function ProjectsPage() {
   createEffect(() => {
     const project = routeProject();
     if (!params.projectKey || !project || params.projectKey === project.projectKey) return;
-    navigate(projectHref(project), { replace: true });
+    // Resolving an alias changes only the project path, not the selected evidence or URL state.
+    navigate(`${projectHref(project)}${location.search}${location.hash}`, { replace: true });
   });
 
   createEffect(
