@@ -80,7 +80,7 @@ implementation.
 
 ## Verification
 
-The ordinary `mvn test` suite exercises SQLite and skips both opt-in PostgreSQL contract classes
+The ordinary `mvn test` suite exercises SQLite and skips opt-in PostgreSQL contract checks
 when `SBA_POSTGRES_TEST_URL` is absent. CI supplies a disposable PostgreSQL 16 service and rejects
 a skipped PostgreSQL contract class.
 To exercise PostgreSQL, first start a disposable PostgreSQL instance, then set:
@@ -92,8 +92,21 @@ export SBA_POSTGRES_TEST_USERNAME='blackbox_test'
 mvn -Dtest=PostgresBackendContractTest,AuthenticatedPostgresConsumerContractTest test
 ```
 
-Each contract class creates its own randomly named `bb_contract_...` or `bb_auth_contract_...`
-schema, uses it for a real HTTP server, closes the server, and drops only that schema. Its database role needs CREATE SCHEMA permission.
+The two classes above create randomly named `bb_contract_...` or `bb_auth_contract_...` schemas,
+use them for real HTTP servers, close the servers, and drop only those schemas. The database role
+needs CREATE SCHEMA permission. The full suite also runs `EvidencePostgresHttpMcpTest`, which uses
+its own random `bb_evidence_...` schema and verifies Evidence capture, recall and Idea links.
+
+For that Evidence fixture, set an explicit port in the JDBC URL (1–65535), using `127.0.0.1` or
+`localhost`, database `blackbox_test` and username `blackbox_test`. Port 5432 is an example;
+another explicitly provisioned disposable server port is supported equally inside and outside CI.
+URL query parameters, user information and fragments are rejected. Before creating or deleting
+its schema, the fixture checks the observed database, user and server port against those settings.
+Port forwarding that changes the observed server port is not supported. Optionally set
+`SBA_POSTGRES_TEST_EXPECTED_DATA_DIRECTORY` to the disposable server's exact `data_directory`;
+a mismatch also stops the fixture before schema changes. These checks do not make a live database
+a safe test target: provision a disposable instance first.
+
 Use a disposable database. Checks cover restart persistence, capture/recall, redaction, project
 queries, nanosecond ordering, aliases, saved synthesis, session lineage, and canonical embeddings
 without native extensions. The opt-in retirement migration also applies to PostgreSQL: see
