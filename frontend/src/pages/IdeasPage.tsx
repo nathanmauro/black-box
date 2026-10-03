@@ -19,6 +19,7 @@ import {
   parseOriginParam,
   parseStatusParam,
 } from "../lib/ideas";
+import { recalledItemHref } from "../lib/recall";
 import { sourceFilter } from "../lib/stores";
 
 // The list endpoint caps at 500; ask for all of it so the unanswered section is not truncated by
@@ -363,7 +364,7 @@ function IdeaRow(props: { idea: IdeaView }) {
           <span>from {idea().sourceRef}</span>
         </Show>
         <IdeaLink link={idea().link} />
-        <A class="idea-session-link" href={`/sessions/${encodeURIComponent(idea().sessionId)}`}>
+        <A class="idea-session-link" href={recalledItemHref(idea())}>
           Capturing session <span aria-hidden="true">→</span>
         </A>
       </div>

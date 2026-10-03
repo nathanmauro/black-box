@@ -139,7 +139,7 @@ describe("IdeasPage", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(within(row).getByRole("link", { name: /Capturing session/ })).toHaveAttribute(
       "href",
-      "/sessions/ses-agent",
+      "/?view=browse&session=ses-agent&event=evt-agent&project=",
     );
 
     const human = screen.getByRole("article", { name: "Evidence kind" });
