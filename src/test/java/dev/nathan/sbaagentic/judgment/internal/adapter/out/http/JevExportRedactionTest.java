@@ -9,19 +9,28 @@ import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.ClassPathResource;
 
 class JevExportRedactionTest {
-    @Test
-    void quotedSecretsAreRemovedFromBothWireAndTelemetryEvenWhenIngestRedactionIsOff() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void quotedSecretsAreRemovedFromWireAndTelemetryDespiteDisabledOrCustomIngest(boolean custom) throws Exception {
         var properties = new IngestionProperties();
-        properties.setRedactEnabled(false);
+        if (custom) properties.setRedactPatterns(List.of("INTERNAL-[0-9]{4}"));
+        else properties.setRedactEnabled(false);
         var redactor = new RedactionService(properties);
         var mapper = new ObjectMapper();
         for (String secret : new String[] {
             "api_key=FAKE_SENTINEL_123",
+            "password=\"FAKE_SENTINEL_123 with spaces\"",
+            "password='FAKE_SENTINEL_123 with \\'quotes\\''",
+            "password=F4KE7",
+            "{\"token\":\"F4KE7\"}",
+            "{\"api_key\":\"FAKE_SENTINEL_123 with \\\"quotes\\\"\"}",
             "{\"token\":\"FAKE_SENTINEL_123\"}",
             "tool({\\\"api_key\\\":\\\"FAKE_SENTINEL_123\\\"})",
             "Bearer abcdefghijklmnopqrstuvwxyz"
@@ -41,7 +50,7 @@ class JevExportRedactionTest {
                     Duration.ofSeconds(1),
                     mapper,
                     (url, key, body, timeout) -> {
-                        assertThat(body).doesNotContain("FAKE_SENTINEL_123", "abcdefghijklmnopqrstuvwxyz");
+                        assertThat(body).doesNotContain("FAKE_SENTINEL_123", "abcdefghijklmnopqrstuvwxyz", "F4KE7");
                         assertThat(rows.get(0).get("request_body")).isEqualTo(body);
 
                         return JevTelemetryTest.RESPONSE.replace("jev-test", "token=FAKE_SENTINEL_123");
@@ -54,7 +63,7 @@ class JevExportRedactionTest {
             assertThat(rows.get(0)).containsEntry("source", "other");
             assertThat(rows.get(1)).containsEntry("model", "unknown");
             assertThat(mapper.writeValueAsString(rows))
-                    .doesNotContain("FAKE_SENTINEL_123", "abcdefghijklmnopqrstuvwxyz");
+                    .doesNotContain("FAKE_SENTINEL_123", "abcdefghijklmnopqrstuvwxyz", "F4KE7");
         }
     }
 }

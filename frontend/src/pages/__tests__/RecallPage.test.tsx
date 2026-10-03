@@ -108,6 +108,35 @@ async function chooseProject(name: string) {
 }
 
 describe("RecallPage", () => {
+  it("links the latest handoff by full timestamp when recall returns relevance order", async () => {
+    const older = {
+      ...item,
+      kind: "handoff",
+      eventId: "older-handoff",
+      headline: "Older handoff",
+      observedAt: "2026-10-03T12:00:00.123456788Z",
+    };
+    const newer = {
+      ...item,
+      kind: "handoff",
+      eventId: "newer-handoff",
+      headline: "Newer handoff",
+      observedAt: "2026-10-03T12:00:00.123456789Z",
+    };
+    vi.mocked(getRecall).mockResolvedValue(result([older, newer]));
+    render(() => <RecallPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Run recall" }));
+    const label = await screen.findByText("Latest retrieved handoff:");
+    const briefing = label.parentElement!;
+    expect(within(briefing).getByRole("link")).toHaveTextContent("Newer handoff");
+    expect(within(briefing).getByRole("link")).toHaveAttribute(
+      "href",
+      expect.stringContaining("event=newer-handoff"),
+    );
+    expect(briefing).toHaveTextContent(newer.observedAt);
+    expect(screen.getByRole("article", { name: "Older handoff" })).toBeInTheDocument();
+  });
+
   it("keeps separate Projection basis visible when ingest capped the rendered body", async () => {
     const rationale = "Only consider a server after demonstrated demand.";
     vi.mocked(getRecall).mockResolvedValue(

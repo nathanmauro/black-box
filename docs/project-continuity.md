@@ -26,6 +26,23 @@ structured intent with eligible vectors; neither session summaries nor the full 
 recall results. No new generation model is involved. `RecallResult.scope` echoes the question for
 new calls, or the legacy scope for old calls; callers retain their selected project separately.
 
+## Session and project chronology
+
+Session lists (`GET /api/sessions` and project session lists) sort by the actual last-seen instant,
+including nanosecond fractions, with session ID descending for equal times. This also applies to
+missing-summary selection and selected project sessions. Parent/child and human-turn filters are
+unchanged. The stored timestamp values are returned without rewriting them into comparison keys.
+
+A session's start remains its first captured event time; a later-arriving older event does not move
+that origin. Its last-seen time tracks the latest recorded event time. Project first/last activity
+selects the earliest/latest session endpoints and saved-meld creation times across its registered
+scopes. These are recorded activity timestamps, not a claim that captured work is still current.
+
+Startup adds an idempotent comparison-key index for session recency on SQLite and PostgreSQL,
+retaining the previous index and canonical timestamp columns. Existing databases pay a one-time
+index build and storage cost; no event or session timestamp migration is required. See the
+[session chronology verification](superpowers/plans/2026-10-03-session-project-chronology.md).
+
 ## Record a changed decision
 
 In the web interface, choose a project in **Recall**, then enter a separate question. Suggestions
@@ -39,6 +56,11 @@ recorded handoff and recorded open questions without asserting that they remain 
 context** exports visible retrieved captures with timestamps and exact source links, capped at
 24,000 characters and with explicit truncation/omission counts. It is bounded evidence, not a
 generated assessment or a complete project history. Source/client filters affect what is copied.
+
+**Latest retrieved handoff** compares complete stored UTC timestamps, including nanoseconds,
+independently of retrieval relevance order. Exact timestamp ties use event ID descending. If a legacy missing/invalid timestamp falls back
+to the same effective time as a canonical capture, the canonical capture takes precedence. It remains
+a statement about retrieved evidence, not the current state of the project.
 
 Projects evidence links use `?focus=capture:<eventId>`. A link through a registered project alias
 resolves to the canonical project while retaining its evidence selection, query parameters and
