@@ -3,12 +3,16 @@ name: ci
 # Runs on pull requests and on pushes to main, plus on demand. A push to a branch with no open pull
 # request runs nothing, so work in progress does not spend Actions minutes; opening the pull request
 # starts CI, and every later push to that branch re-runs it. The macOS matrix was dropped to keep
-# minutes down; the same checks run locally via ./scripts/verify.sh, optionally as a pre-push hook.
+# minutes down; the same checks, including the packaged browser suite, run locally via
+# ./scripts/verify.sh --e2e.
 on:
   workflow_dispatch:
   pull_request:
   push:
     branches: [main]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -81,8 +85,10 @@ jobs:
           PYTEST
 
   frontend:
-    timeout-minutes: 10
+    timeout-minutes: 20
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_HTML_OPEN: never
     defaults:
       run:
         working-directory: frontend
@@ -93,8 +99,36 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
       - run: npx tsc --noEmit
       - run: npm test
+      - name: Browser fixture safety tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends python3 lsof sqlite3
+          command -v python3 lsof sqlite3
+      - name: Install Chromium and Linux dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Package the current application before the browser startup deadline
+        working-directory: .
+        run: mvn -B -Pfrontend -DskipTests package
+      - name: Packaged Chromium journeys (isolated SQLite, providers disabled)
+        run: npm run e2e -- --workers=1 --retries=0 --forbid-only --trace=retain-on-failure --reporter=list,html
+      - name: Upload fixture browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-chromium-${{ github.run_attempt }}
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          if-no-files-found: warn
+          retention-days: 7
+          include-hidden-files: false
