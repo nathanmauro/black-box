@@ -1,0 +1,34 @@
+{
+  "baseline": "5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8",
+  "baseline_failures": [
+    "secretValuesAreReplaced",
+    "secretMemberNamesCannotLeak",
+    "redactedMemberNamesDoNotCollide"
+  ],
+  "development_only": true,
+  "public_repository": "https://github.com/nathanmauro/black-box",
+  "reference": "d833fa96942a558cc7bc453b504656a2df41148f",
+  "schema_version": 1,
+  "tests": [
+    "secretValuesAreReplaced",
+    "secretMemberNamesCannotLeak",
+    "redactedMemberNamesDoNotCollide",
+    "ordinaryEvidenceIsPreserved",
+    "customPolicyStillOverridesDefaults",
+    "disabledPolicyPreservesOriginal"
+  ],
+  "tracked_hashes": {
+    "5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/application/RedactionService.java": "396b55feaa7597ee79de99e9d7467275cc8ae741a284c71e888081f58bcbc91f"
+    },
+    "d833fa96942a558cc7bc453b504656a2df41148f": {
+      "pom.xml": "5cef7d3b039f35ffe90e276b04514bfdb05abadd6d2d76fbdb47e64be6a2cebc",
+      "src/main/java/dev/nathan/sbaagentic/recording/internal/application/RedactionService.java": "f063e56c8014688b99e38e033aa363b9231bc8a095712be4eef9af4ebc6ed8ca"
+    }
+  },
+  "trusted_files": {
+    "RepositoryFixtureContractTest.java": "402d4a19b3c1275ca3f5ba521e2e0017d4904afecb40265745c26a3b81858d5e",
+    "TASK.md": "6eeefff82dc21119dfcca619d3783f5edec7ff2b2ea0e8bf55e2147cc1c56e63"
+  }
+}
