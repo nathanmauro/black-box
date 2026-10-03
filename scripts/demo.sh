@@ -19,6 +19,10 @@
 #   4. Calls /api/recall and pretty-prints the structured result — the proof.
 #   5. Opens the UI and tells you how to explore, then how to stop the demo.
 #
+# Set SBA_DEMO_PACE (a multiplier such as 1 or 1.5) to hold on the important
+# output for readers; scripts/record-demo.sh uses it for the README GIF. The
+# default of 0 runs at full speed.
+#
 # The recorder is LEFT RUNNING on normal exit so you can explore the UI. The PID
 # is printed; you stop it yourself. The background app is only killed if startup
 # fails or you Ctrl-C before the demo finishes.
@@ -38,6 +42,7 @@ DEMO_DIR=""
 DEMO_DB=""
 LOG_FILE=""
 STARTUP_TIMEOUT_SECONDS=90
+PACE="${SBA_DEMO_PACE:-0}"
 
 # Story constants — the two agents and the repo they share.
 REPO="/tmp/acme-auth"
@@ -65,6 +70,12 @@ step()  { printf '\n%s==>%s %s%s%s\n' "$CYAN" "$RESET" "$BOLD" "$*" "$RESET"; }
 ok()    { printf '%s  ✓%s %s\n' "$GREEN" "$RESET" "$*"; }
 warn()  { printf '%s  !%s %s\n' "$YELLOW" "$RESET" "$*"; }
 die()   { printf '%s  ✗ %s%s\n' "$RED" "$*" "$RESET" >&2; exit 1; }
+
+# Hold on important output when pacing is enabled (seconds scaled by SBA_DEMO_PACE).
+hold() {
+  [[ "$PACE" == "0" ]] && return 0
+  sleep "$(awk -v s="$1" -v p="$PACE" 'BEGIN { printf "%.2f", s * p }')"
+}
 
 # Local requests must not inherit a user's HTTP proxy or wait indefinitely.
 curl() { command curl -q --noproxy '*' --connect-timeout 2 --max-time 30 "$@"; }
@@ -136,6 +147,9 @@ command -v lsof >/dev/null 2>&1 || die "lsof is required to verify ownership of 
   || die "SBA_DEMO_PORT must be an integer from 1 to 65535."
 PORT=$((10#$PORT))
 BASE_URL="http://127.0.0.1:${PORT}"
+[[ "$PACE" =~ ^[0-9]+(\.[0-9]+)?$ ]] && awk -v p="$PACE" 'BEGIN { exit !(p <= 10) }' \
+  || die "SBA_DEMO_PACE must be a number from 0 to 10."
+[[ "$PACE" =~ ^0+(\.0+)?$ ]] && PACE=0
 ok "curl, jq, and lsof present; demo port is valid."
 
 # The demo OWNS the server it starts — it must not attach to, talk to, or kill a
@@ -216,7 +230,7 @@ build_jar() {
 # missing the demo's endpoints / is older than the source.
 JAR="$(find_jar)"
 if [[ -n "$JAR" ]] && jar_is_fresh_enough "$JAR"; then
-  ok "Using existing jar: ${JAR}"
+  ok "Using existing jar: ${JAR#"${PROJECT_DIR}"/}"
 elif [[ -n "$JAR" ]]; then
   warn "Existing jar is stale or missing the decision/recall endpoints — rebuilding."
   build_jar
@@ -227,7 +241,7 @@ else
   JAR="$(find_jar)"
 fi
 [[ -n "$JAR" && -f "$JAR" ]] || die "No runnable jar available in target/ after build."
-ok "Jar: ${JAR}"
+ok "Jar: ${JAR#"${PROJECT_DIR}"/}"
 
 step "Starting the recorder on the demo database (local AI OFF, Elasticsearch OFF)"
 # Launch in the background on the dedicated DB. Local AI and Elasticsearch are
@@ -248,7 +262,8 @@ runtime_env=("PATH=$PATH" "HOME=$HOME" "LANG=${LANG:-C}"
     --spring.config.location=classpath:/application.yml --spring.profiles.active=default
 ) >"${LOG_FILE}" 2>&1 &
 APP_PID=$!
-ok "Recorder launched (PID ${APP_PID}); logs at ${LOG_FILE}."
+ok "Recorder launched (PID ${APP_PID})."
+say "${DIM}   log: ${LOG_FILE}${RESET}"
 
 # --------------------------------------------------------------------------- #
 # Poll /api/status until the recorder is healthy
@@ -281,7 +296,8 @@ ok "Recorder is healthy at ${BASE_URL}"
 # the port while our JVM was starting. The background subshell execs Java in place.
 [[ "$(port_listener_pids)" == "$APP_PID" ]] \
   || die "The healthy listener does not belong exclusively to this demo; refusing to seed."
-printf '%s' "$status_json" | jq '{storage, localAi: {enabled: .localAi.enabled, available: .localAi.available}, elasticsearch: {enabled: .elasticsearch.enabled}}'
+ok "$(printf '%s' "$status_json" | jq -r '"Empty demo DB: \(.storage.sessions) sessions · local AI \(if .localAi.enabled then "on" else "off" end) · Elasticsearch \(if .elasticsearch.enabled then "on" else "off" end)"')"
+hold 1
 
 # --------------------------------------------------------------------------- #
 # 3. Seed the cross-agent story
@@ -342,6 +358,7 @@ post_json /api/handoffs "$(jq -n \
     openLoops:["revoke-on-logout not wired"],
     nextAction:"Wire revoke-on-logout against the rotation table"}')" >/dev/null
 ok "Handoff committed for the next session."
+hold 1.5
 
 step "Seeding the story — Day 2: a FRESH Claude session arrives at the same repo"
 # 3e. A brand-new Claude session, with no memory of Codex, opens the same repo.
@@ -360,6 +377,7 @@ post_json /api/events "$(jq -n \
     cwd:"/tmp/acme-auth",
     metadata:{kind:"observation", topic:"black-box-demo"}}')" >/dev/null
 ok "Manual observation recorded."
+hold 1
 
 # --------------------------------------------------------------------------- #
 # Best-effort: summarize the Codex session so the UI summary panel has content.
@@ -374,7 +392,7 @@ CODEX_SESSION_ID="$(curl -sS "${BASE_URL}/api/sessions?limit=40" 2>/dev/null \
 
 if [[ -n "${CODEX_SESSION_ID:-}" ]]; then
   if curl -fsS -X POST "${BASE_URL}/api/sessions/${CODEX_SESSION_ID}/summarize" >/dev/null 2>&1; then
-    ok "Summarized Codex session ${CODEX_SESSION_ID} (compacted-transcript fallback, AI off)."
+    ok "Summarized Codex session ${CODEX_SESSION_ID:0:8}… (compacted transcript, AI off)."
   else
     warn "Summarize call failed — continuing (the summary panel is optional)."
   fi
@@ -401,33 +419,26 @@ printf '%s' "$RECALL_JSON" | jq -e \
 banner \
   "BLACK BOX — the loop just closed." \
   "" \
-  "A FRESH Claude session just recalled what Codex decided yesterday —" \
-  "including the open loop 'revoke-on-logout' — with zero cloud and zero" \
-  "file reads. Two agents shared a thought through a third thing that" \
-  "remembers for both."
+  "In this simulated agent story, a fresh Claude session picks up" \
+  "Codex's decision and the open loop 'revoke-on-logout'." \
+  "The capture and recall above are real API calls via curl." \
+  "No agent or model was launched; all records are synthetic."
+hold 2.5
 
-# Pretty-print the structured recall: the decision, its rationale, the
-# alternatives that were weighed, the confidence, the open loops, and the
-# handoff's next action. This is the read side of the write+query loop.
-printf '%s' "$RECALL_JSON" | jq '{
-  scope,
-  withinHours,
-  kinds,
-  count,
-  items: [ .items[] | {
-    kind,
-    source,
-    repo,
-    headline,
-    rationale,
-    alternatives,
-    confidence,
-    openLoops,
-    nextAction,
-    toAgent,
-    observedAt
-  } ]
-}'
+# Render the structured recall for a human reader: the decision, its rationale,
+# the alternatives that were weighed, the confidence, the open loops, and the
+# handoff's next action. This is the read side of the write+query loop. The raw
+# JSON is one curl away (printed below).
+printf '%s' "$RECALL_JSON" | jq -r --arg b "$BOLD" --arg d "$DIM" --arg r "$RESET" '
+  .items[] |
+  "\($b)\(.kind | ascii_upcase)\($r)  \(.headline)",
+  "  \($d)from\($r) \(.source) · \(.repo // "no repo")",
+  (if .rationale then "  \($d)why\($r)  \(.rationale)" else empty end),
+  (if .confidence then "  \($d)confidence\($r) \((.confidence * 100) | floor)%" else empty end),
+  (.alternatives // [] | if length > 0 then "  \($d)weighed\($r) \(join(" · "))" else empty end),
+  ((.openLoops // [])[] | "  \($d)open loop\($r) \(.)"),
+  (if .nextAction then "  \($d)next\($r) \(.nextAction)" else empty end),
+  ""'
 
 # A tight, human-readable callout of the load-bearing detail.
 RECALLED_LOOP="$(printf '%s' "$RECALL_JSON" \
@@ -435,18 +446,24 @@ RECALLED_LOOP="$(printf '%s' "$RECALL_JSON" \
 if [[ -n "$RECALLED_LOOP" ]]; then
   ok "Recall surfaced the open loop verbatim: \"${RECALLED_LOOP}\""
 fi
+say "${DIM}   Same query as raw JSON:${RESET}"
+say "${DIM}   curl -s '${BASE_URL}/api/recall?scope=${REPO}&kinds=decision,handoff' | jq${RESET}"
+hold 5
 
 # --------------------------------------------------------------------------- #
 # 5. Open the UI and print explore/stop instructions
 # --------------------------------------------------------------------------- #
 step "Opening the Black Box UI"
+# The direct link preselects the project and question; the banner below explains
+# the same steps through the project picker.
+RECALL_URL="${BASE_URL}/recall?project=$(jq -rn --arg v "$REPO" '$v | @uri')&query=revoke-on-logout&run=1"
 if [[ "${SBA_DEMO_NO_OPEN:-0}" == "1" ]]; then
-  ok "Browser opening disabled; visit ${BASE_URL} to explore."
+  ok "Browser opening disabled; visit ${BASE_URL}/recall to explore."
 elif [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
-  open "${BASE_URL}" || warn "Could not auto-open the browser; visit ${BASE_URL} manually."
-  ok "Opened ${BASE_URL} in your default browser."
+  open "${RECALL_URL}" || warn "Could not auto-open the browser; visit ${BASE_URL}/recall manually."
+  ok "Opened Recall for ${REPO} in your default browser."
 else
-  warn "Not macOS (or 'open' unavailable) — visit ${BASE_URL} manually."
+  warn "Not macOS (or 'open' unavailable) — visit ${BASE_URL}/recall manually."
 fi
 
 # The demo is complete: from here on the recorder should stay alive so the user
@@ -456,19 +473,20 @@ DEMO_SUCCEEDED=1
 banner \
   "Black Box is running and seeded." \
   "" \
-  "Try the recall yourself in the UI:" \
-  "  • Find the recall / context panel and enter the scope:  ${REPO}" \
-  "  • You'll get back the Codex decision + handoff above —" \
-  "    the same structured intent, queried live." \
+  "Try the recall yourself in the UI:  ${BASE_URL}/recall" \
+  "  • Project picker: choose  ${REPO}" \
+  "  • Question:       revoke-on-logout   → Run recall" \
+  "  • Open a result in Browse to see the exact source event." \
+  "  Or open it directly:" \
+  "  ${RECALL_URL}" \
   "" \
   "When you're done exploring:" \
-  "  • Stop the recorder:   kill ${APP_PID}" \
-  "  • Demo database:       ${DEMO_DB}  (safe to delete)" \
-  "  • Recorder log:        ${LOG_FILE}" \
-  "  • Remove this run's directory after stopping: ${DEMO_DIR}"
+  "  • Stop the recorder:  kill ${APP_PID}" \
+  "  • Then remove this run's directory: ${DEMO_DIR}"
 
 say ""
 ok "Recorder PID ${APP_PID} is LEFT RUNNING for you to explore — it was NOT killed."
 say "${DIM}   (Re-running demo.sh creates a separate demo directory.)${RESET}"
+hold 4
 
 exit 0

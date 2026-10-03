@@ -4,7 +4,7 @@
 
 # Black Box Frontend Handoff
 
-**Last updated:** 2026-07-15 · **Status:** SolidJS frontend, logical Projects, and coordination Board implemented
+**Last updated:** 2026-07-15 · **Status:** Historical (July 2026). SolidJS frontend and logical Projects remain; the Board described here has since been retired
 
 Black Box now uses the SolidJS + Vite + TypeScript frontend under `frontend/`.
 The retired vanilla-JS overhaul notes in this file are no longer current. The built UI is emitted

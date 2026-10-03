@@ -104,6 +104,15 @@ class DemoIsolationTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.record.exists())
 
+    def test_invalid_pace_fails_before_launch(self):
+        for pace in ("-1", "fast", "1;touch x", "11"):
+            with self.subTest(pace=pace):
+                self.env["SBA_DEMO_PACE"] = pace
+                result = self.run_demo()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("SBA_DEMO_PACE", result.stdout + result.stderr)
+                self.assertFalse(self.record.exists())
+
     def test_busy_port_fails_before_launch(self):
         self.executable("lsof", "#!/bin/sh\nprintf '999999\\n'\n")
         result = self.run_demo()

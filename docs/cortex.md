@@ -1,5 +1,11 @@
 # Cortex Stage
 
+> **Audience and status:** experimental, off by default, and built for the maintainer's own
+> live-session tooling. When enabled it sends event excerpts to an external provider (see
+> [Outbound Data](#outbound-data)). "Jev" is that provider's judgment service, and "Constellate"
+> and "orbit" are the maintainer's separate session-visualization prototype; neither is part of
+> Black Box or needed to use it.
+
 Black Box's cortex stage is an optional ingest-time judgment pass for orbit-style live session
 views. It folds freshly recorded events into short per-session beats, asks the versioned Jev
 question set, persists the typed answers, and emits a lightweight SSE update. It is advisory
@@ -30,7 +36,8 @@ These normalized event types always close the open beat and stand alone:
 `subagentstop`, `sessionstart`, `sessionend`, `stop`, `manualcapture`, `quicknote`.
 A scheduled tick flushes quiet open beats after the gap.
 
-Each event contributes one readable line. Prompts are rendered as `Nathan: <text>`. Tool calls are
+Each event contributes one readable line. Prompts are rendered as `Nathan: <text>`; the speaker name is currently hardcoded to the
+maintainer's in `BeatFolder`, whoever runs the server. Tool calls are
 rendered as `<tool>(<command|file_path|pattern|...>) → <first output line>`.
 
 ## Question Set
@@ -64,7 +71,7 @@ The state includes prompt text (up to 400 characters), selected tool arguments (
 output line (120), other event text (300), source, repository, and session title (120). Context
 includes the last five processed beat titles (72 characters each), and normally up to eight other
 sessions active within 30 minutes with their source, repository, title, and last three beat titles.
-Event/session IDs and timestamps are not request-state fields. The question set names Nathan.
+Event/session IDs and timestamps are not request-state fields. The question set also names the maintainer.
 
 Only an initial `/Users/<name>/` in repository fields is shortened to `~/`; embedded paths and
 private project, code, or relationship content can remain. Mandatory export credential

@@ -1,7 +1,8 @@
 # Task board and runner retirement
 
-NAT-243 retires Black Box's dormant task board and runner. Selected execution belongs in Linear;
-Black Box continues to capture and recall agent evidence. The change first extracts session
+Black Box's dormant task board and runner were removed from `main` in October 2026 (internal
+tracker issue NAT-243), after the v0.2.0 release. The maintainer now tracks selected work in Linear;
+you can use any tracker, and Black Box does not require one. Black Box continues to capture and recall agent evidence. The change first extracts session
 lineage from `workflow` into the dedicated `lineage` module, then removes the task/spec and runner
 implementation.
 

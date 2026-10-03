@@ -1,5 +1,8 @@
 # Continuation comparison: evidence and proposed protocol
 
+> **Audience and status:** maintainer evaluation design, not user documentation. Nothing here is a
+> shipped feature. `NAT-` identifiers are the maintainer's internal tracker references.
+
 Protocol preparation and offline qualification, 2026-10-03. No new model comparison has run.
 The [development inventory](evaluation-candidates/2026-10-03-development-pool.json) records
 17 real fixes in 12 proposed clusters. All are familiar development examples with published

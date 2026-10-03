@@ -1,6 +1,6 @@
 # Local writes and Elasticsearch
 
-This project accepts captured agent events through HTTP, CLI, hooks, and MCP. The selected relational database is canonical (SQLite by default, or a separate PostgreSQL profile). When Elasticsearch is enabled, the ingest path also attempts to index each new event into Elasticsearch. Standalone capture commits before indexing; completion-Handoff listeners run inside the outer task transaction, as described in the [architecture transaction note](architecture.md#java-module-graph).
+This project accepts captured agent events through HTTP, CLI, hooks, and MCP. The selected relational database is canonical (SQLite by default, or a separate PostgreSQL profile). When Elasticsearch is enabled, the ingest path also attempts to index each new event into Elasticsearch. Capture commits to the canonical database before indexing, so an Elasticsearch failure never rolls back or blocks a recorded event.
 
 ## Runtime setup
 
@@ -27,7 +27,9 @@ url = "http://localhost:8766/mcp"
 ```
 
 These examples assume the default loopback deployment. Shared deployments require
-[authentication](authentication.md); the bundled hook bridge does not send a bearer header.
+[authentication](authentication.md). The default direct hook path and the SessionStart recall hook do
+not send a bearer header. Only the opt-in [durable outbox](durable-capture.md) authenticates, and only
+to an explicitly selected HTTPS origin, using a bearer it reads from macOS Keychain.
 Service configuration, summary privacy boundaries, and schema evolution are in [Run it](operations.md).
 
 The service uses:

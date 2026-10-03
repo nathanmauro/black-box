@@ -1,5 +1,8 @@
 # Durable stream recovery
 
+> **Audience:** contributors and client authors who consume `/api/stream`. This describes the shipped
+> replay contract; ordinary users do not need it.
+
 `GET /api/stream` delivers `event.appended` in database append order. The event JSON envelope and
 original `observedAt` are unchanged. A delayed hook, migrated Idea, or two captures with the same
 timestamp can therefore replay after a disconnect. Business time is not a continuation cursor.

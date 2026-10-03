@@ -94,8 +94,9 @@ Each module keeps a hexagonal internal layout: `internal/domain`, `internal/appl
 - No global `controller`/`service`/`util`/`common` buckets; tests mirror production packages.
 
 Wire surfaces: MCP over Streamable HTTP at `/mcp` (historical server id `sba-agentic`), REST for
-capture/recall/search/projects and session lineage, and SSE at `/api/stream` as a best-effort
-refresh hint. Task/spec endpoints and task tools are retired; cached MCP clients must reload their
+capture/recall/search/projects and session lineage. SSE at `/api/stream` replays durable
+`event.appended` notifications; other event types remain transient refresh hints (see
+`docs/durable-stream-recovery.md`). Task/spec endpoints and task tools are retired; cached MCP clients must reload their
 tool inventory. Opt-in capture/recall hooks live under `scripts/hooks/`. The `/companion` route
 (see `docs/companion.md`) is a chrome-less ambient view over the same stream and query surfaces.
 

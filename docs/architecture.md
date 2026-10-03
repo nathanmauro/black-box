@@ -6,13 +6,18 @@ feature ownership, internal layering, and permitted cross-feature dependencies e
 build while the wire and SQLite contracts described here remain stable.
 
 Black Box is a local-first memory bus for coding agents. Its core loop is to capture structured
-intent, preserve session relationships, and recall that evidence later. Selected work is tracked
-in Linear; Black Box no longer owns a task queue or worker runner.
+intent, preserve session relationships, and recall that evidence later. Black Box no longer owns a
+task queue or worker runner; track work in whatever tool you already use (the maintainer uses
+Linear).
 
-The core loop requires only the Spring Boot process and SQLite. SSE is a best-effort refresh hint,
-not a durability boundary. Configured session summarization is a separate explicit path and may
-invoke a Codex or Claude CLI command through `/bin/sh -c`, with the transcript privacy boundary
-described below.
+The core loop requires only the Spring Boot process and SQLite. SSE is not a durability boundary:
+`event.appended` frames carry a durable, replayable append cursor, while `session.updated` and
+`judgment.appended` are transient hints (see [SSE and lineage hints](#sse-and-lineage-hints)).
+Session summarization runs after canonical capture, in the background. A terminal capture
+(`SessionEnd`, `Stop`, or `SubagentStop`) automatically schedules a summary for a session that has
+none, and the `summarize` commands run it explicitly. With the default `external` backend that
+invokes a Codex CLI wrapper through `/bin/sh -c`, so transcript text can leave the machine; see the
+privacy boundary below.
 
 ## System shape
 
@@ -141,7 +146,7 @@ The hook bridge continues deriving Claude subagent session identities from the p
 and agent ID. `SubagentLinkListener` turns recorded subagent events into `spawned` links; the
 recording module remains independent of lineage.
 
-NAT-243 removes task/spec REST endpoints, workflow MCP tools, task-specific DAG reads, and the
+The board retirement (internal tracker issue NAT-243) removed task/spec REST endpoints, workflow MCP tools, task-specific DAG reads, and the
 runner. Historical Handoff events remain ordinary recallable captures. See
 [retirement and upgrade notes](board-retirement.md) for schema and client migration boundaries.
 
@@ -153,10 +158,13 @@ and `parentSessionId`; `session.updated` includes `spawnedBy` and `linkTypes`. T
 continues supplying those hints to the broadcaster and Orbit continues using the same session
 relationships.
 
-`GET /api/stream?since=<ISO-8601>` replays up to 2000 `event.appended` frames oldest-first before
-following live, and `Last-Event-ID` resumes from the exclusive cursor `<observedAt>|<id>`.
-The retired `task.*` lifecycle and annotation frames are no longer emitted. Stream delivery remains
-best effort; clients refresh the canonical REST state after a gap.
+`event.appended` frames are delivered in database append order with an opaque, versioned cursor.
+A client that reconnects with `Last-Event-ID` replays missed captures in pages of up to 2,000
+positions; an unknown, legacy (`<observedAt>|<id>`), or other-database cursor produces
+`replay.reset`, and the client must reload canonical REST state. `since=<ISO-8601>` is an optional
+observed-time filter, not a cursor. `session.updated` and `judgment.appended` remain transient,
+best-effort hints with no replay. The retired `task.*` lifecycle and annotation frames are no longer
+emitted. The full contract is in [durable stream recovery](durable-stream-recovery.md).
 
 ## Logical project identity
 
@@ -246,8 +254,9 @@ Session summarization has a separate privacy and process boundary. The `external
 the configured `SBA_SUMMARY_EXTERNAL_COMMAND` to `/bin/sh -c`; the default command is the bundled
 Codex CLI wrapper, and the bundled Claude wrapper is an optional alternative. Transcript text can
 therefore leave the machine for the selected vendor. Set `SBA_SUMMARY_BACKEND=local` to explicitly
-choose LM Studio or another OpenAI-compatible local server; local failures degrade to compacted
-transcript output. Neither summary path launches workers or participates in structured recall.
+choose LM Studio or another OpenAI-compatible server at `SBA_LOCAL_AI_BASE_URL`. That URL defaults to
+loopback but is not confined to it: a remote URL receives the transcript text. Local failures, or
+`SBA_LOCAL_AI_ENABLED=false`, degrade to compacted transcript output. Neither summary path launches workers or participates in structured recall.
 
 ## Product boundaries
 

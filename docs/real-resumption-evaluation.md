@@ -1,5 +1,8 @@
 # Local evaluation of real-work resumptions
 
+> **Audience and status:** maintainer evaluation tool, not a setup step. A pilot ran against private
+> local history; its results are not a general claim about recall quality or productivity.
+
 `scripts/evaluation/resumption_eval.py` compares five historical project checkpoints with and
 without recalled handoffs. It uses a local OpenAI-compatible inference endpoint and Black Box's
 real `/api/recall` endpoint. Python 3.9+ and the standard library are sufficient for the controller.

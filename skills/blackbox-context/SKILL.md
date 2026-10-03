@@ -40,32 +40,29 @@ a passing mention is not ownership. If it is conversation-wide or projectless vo
 omit `project` and declare `origin`: `codex_voice`, `chatgpt_voice`, or `chatgpt_work_voice` when
 the surface is known. Use `voice_unknown` only when it is known to be voice but the surface cannot
 be verified. The gateway routes these to its operator-configured canonical Black Box voice project
-(`configure-voice-project`, e.g. `~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat`) while retaining
+(`configure-voice-project`, using the operator's verified absolute path) while retaining
 origin metadata; if none is configured the capture fails closed and you must supply a project.
 Do not infer the surface from the gateway's fixed `chatgpt-work` source label, which identifies the
 integration. If neither project nor voice intent is known, ask for the destination. Supply the
 real conversation/session ID, original working directory through `original_cwd` when known, and
 event reference as provenance. Preserve a voice session reference for repo-owned captures so the
-conversation and project remain connected. Never use a bare topic such as `constellate` in place
+conversation and project remain connected. Never use a bare topic such as `my-project` in place
 of a verified repo path.
 
 Routing for this integration:
 
-- Tasks belong in Linear, using the calling agent's Linear connector or existing local Linear
-  tooling. Todoist is retired. Do not turn a task request into a Black Box capture.
-- Agents running on the Mac write notes and ideas to the Obsidian vault at `~/Notes/obsidian`.
-- Agents executing from a cloud server (including OpenAI cloud) use the Google Drive connector to write Markdown into the verified
-  Drive folder that syncs this same Obsidian vault. Preserve its folder structure; Drive is the
-  cloud access path to the vault, not a separate notes collection. Verify folder identity and
-  Markdown-write support before writing. Do not invent folder IDs or substitute a Google Doc.
-  Report a missing connector/capability instead of redirecting the note into Black Box. A Drive
-  write alone does not prove the Mac or phone has finished syncing.
+- Preserve task and note destinations selected by the user or governing project instructions.
+  Use the caller's authorized tools for those systems; do not turn a task or ordinary note
+  request into a Black Box capture.
+- Verify destination identity and write support before using those tools. If required access is
+  unavailable, report the blocker without selecting another destination or substituting a
+  Black Box capture. Do not invent destination identifiers or claim synchronization without evidence.
 - Explicit Black Box captures and selected session context belong in Black Box.
 
 Connecting MCP does not automatically synchronize entire ChatGPT or Codex conversation histories.
 These instructions guide the calling agent wherever it runs. The Black Box MCP executes on the
 Mac through the tunnel, but writes only Black Box events; it does not route notes or tasks to
-Linear, Obsidian, or Drive. Those operations need their own tools and verified access.
+other applications. Those operations need their own tools and verified access.
 No deletion, task management, shell execution, or filesystem tools are exposed by this connection.
 This skill itself does not install or connect an MCP server. In ChatGPT, enable the direct MCP app;
 the server also supplies these essential routing instructions without requiring a plugin package.

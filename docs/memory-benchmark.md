@@ -1,5 +1,10 @@
 # Testing whether Black Box memory helps
 
+> **Audience and status:** maintainer evaluation harness, not a product feature or setup step. It
+> needs Docker and a signed-in Codex CLI, and real runs send the synthetic task prompts and supplied
+> history to the Codex model provider. Results are synthetic and are not a general productivity
+> claim. `NAT-` identifiers below are the maintainer's internal tracker references.
+
 The Docker benchmark compares a fixed Codex agent on the same synthetic coding tasks with three
 different context conditions. It evaluates existing capture and recall. It does not implement
 Dream-RSI, train a model, optimize a policy, or establish general productivity gains.

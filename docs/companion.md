@@ -1,5 +1,8 @@
 # Ambient Companion
 
+> **Status:** shipped and optional. The `/companion` route works in any browser; the menubar panel is
+> macOS-only and is built from source with Swift.
+
 A chrome-less Black Box route plus a thin macOS shell that keeps agent activity in the corner of
 the screen without becoming a notification feed.
 
