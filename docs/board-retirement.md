@@ -37,6 +37,9 @@ drop `session_links.task_id`, then drop `task_events`, `tasks`, and `specs`. The
 idempotent and retains session relationships and recorded agent events, including Handoffs from
 old task completions. This schema retirement is not reversed by deploying an older JAR.
 An old binary must not be pointed at the migrated database as a rollback strategy.
+The [database recovery guide](database-recovery.md) provides an explicit snapshot command and
+disposable restore checks that retain legacy tables; running those checks does not authorize
+retiring a live database.
 
 Repository cleanup does not stop or restart services, unregister launchd jobs, prune worktrees,
 or remove local runner files. Existing local runner configuration, registries, logs, caches, and

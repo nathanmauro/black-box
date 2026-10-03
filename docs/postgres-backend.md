@@ -110,6 +110,10 @@ Run the cloud startup guard without a JVM or database:
 python3 -B -m unittest discover -s scripts/cloud -p 'cloud_entrypoint_test.py'
 ```
 
+The [database recovery guide](database-recovery.md) covers explicit schema snapshots and a
+disposable restore contract. That contract also needs compatible `pg_dump` and `pg_restore`
+executables on `PATH`; CI installs PostgreSQL 16 clients and requires the restore checks to run.
+
 `./scripts/verify.sh` includes that offline guard. Export the PostgreSQL fixture variables above
 before running it to include the same database contracts required by CI. The cloud image's Docker
 build context admits only built `target/*.jar` files and the one required entrypoint script.

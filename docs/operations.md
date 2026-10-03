@@ -75,6 +75,8 @@ Binary rollback does **not** reverse database migrations or writes made by the c
 only backward-compatible schema changes when relying on binary rollback, and maintain a separate
 verified database backup/recovery procedure. Additive capture-receipt tables, for example, remain
 in the database after restoring an older binary. The script does not back up or restore databases.
+Use the separate [database snapshot and restore rehearsal](database-recovery.md) to verify recovery
+before relying on a backup or performing an irreversible schema change.
 
 Do not replace the executable JAR underneath a running JVM. An ordinary `mvn package`, including
 packaging performed for E2E tests, can overwrite `target/` while a service is using it. Use the
