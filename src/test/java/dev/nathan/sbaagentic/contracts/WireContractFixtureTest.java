@@ -37,6 +37,7 @@ import dev.nathan.sbaagentic.memory.internal.application.IdeaMigrationResult;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaView;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.sse.StreamEvents;
 import dev.nathan.sbaagentic.platform.internal.adapter.in.web.ApiExceptionHandler;
+import dev.nathan.sbaagentic.project.BraidDiscoveryResult;
 import dev.nathan.sbaagentic.project.CodeNavigationResult;
 import dev.nathan.sbaagentic.project.CodeProjectScope;
 import dev.nathan.sbaagentic.project.CodeReference;
@@ -207,6 +208,42 @@ class WireContractFixtureTest {
                 java.time.Instant.parse("2026-10-03T12:00:00.000000001Z"),
                 java.util.List.of());
         updates.put("ProjectMeldListResponse", new ProjectMeldListResponse(java.util.List.of(braid), 1, null));
+        var braidSource = new BraidDiscoveryResult.Source(
+                "session-1", "manual", "client-1", "/repo", "save_snapshot", false, false);
+        var braidHit = new BraidDiscoveryResult.Hit(
+                "braid-1",
+                "braid",
+                "saved_meld",
+                "2026-10-03T12:00:00.000000001Z",
+                "unassigned",
+                null,
+                null,
+                "Saved braid",
+                "Supporting text",
+                "local",
+                "context-bundle",
+                "caller_declared",
+                java.util.List.of(braidSource),
+                "/api/melds/braid-1",
+                false,
+                false,
+                false,
+                false,
+                false,
+                true);
+        updates.put("BraidDiscoverySource", braidSource);
+        updates.put("BraidDiscoveryHit", braidHit);
+        updates.put(
+                "BraidDiscoveryResult",
+                new BraidDiscoveryResult(
+                        "ok",
+                        "saved_braids_all_ownership",
+                        1,
+                        java.util.List.of(braidHit),
+                        null,
+                        false,
+                        24000,
+                        java.util.List.of()));
         for (var update : updates.entrySet()) {
             String serialized = objectMapper
                     .copy()
@@ -302,6 +339,9 @@ class WireContractFixtureTest {
                 entry("ProjectMeldSessionRef", ProjectMeldSessionRef.class),
                 entry("ProjectSavedMeld", ProjectSavedMeld.class),
                 entry("ProjectMeldListResponse", ProjectMeldListResponse.class),
+                entry("BraidDiscoveryResult", BraidDiscoveryResult.class),
+                entry("BraidDiscoveryHit", BraidDiscoveryResult.Hit.class),
+                entry("BraidDiscoverySource", BraidDiscoveryResult.Source.class),
                 entry("ProjectScope", ProjectScope.class),
                 entry("ProjectSummary", ProjectSummary.class),
                 entry("ProjectTimelineBlock", ProjectTimelineBlock.class),
