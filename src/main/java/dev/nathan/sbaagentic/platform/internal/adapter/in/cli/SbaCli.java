@@ -11,6 +11,8 @@ import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SbaCli implements ApplicationRunner {
+
+    static final int MAX_STDIN_BYTES = 1024 * 1024;
 
     private final EventRecorder ingestService;
     private final RecordingCatalog repository;
@@ -96,10 +100,7 @@ public class SbaCli implements ApplicationRunner {
     }
 
     private void ingest(ApplicationArguments args) throws IOException {
-        String text = option(args, "text", null);
-        if ((text == null || text.isBlank()) && System.in.available() > 0) {
-            text = new String(System.in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+        String text = ingestText(args, System.in, System.console() != null);
         EventIngestRequest request = new EventIngestRequest(
                 option(args, "source", "manual"),
                 option(args, "session", "manual-" + Instant.now()),
@@ -114,6 +115,32 @@ public class SbaCli implements ApplicationRunner {
                 Map.of("title", option(args, "title", "Manual capture")),
                 Instant.now());
         writeJson(ingestService.ingest(request));
+    }
+
+    static String ingestText(ApplicationArguments args, InputStream input, boolean consoleAttached) throws IOException {
+        if (args.containsOption("text")) {
+            List<String> values = args.getOptionValues("text");
+            if (values == null || values.isEmpty()) {
+                throw new IllegalArgumentException("--text requires a value; use --text= for an empty capture");
+            }
+
+            return values.getFirst();
+        }
+        if (consoleAttached) {
+
+            return null;
+        }
+        // A quiet open pipe is not EOF. Bound allocation while waiting for the producer to finish.
+        byte[] bytes = input.readNBytes(MAX_STDIN_BYTES + 1);
+        if (bytes.length > MAX_STDIN_BYTES) {
+            throw new IllegalArgumentException("stdin exceeds the 1048576-byte limit");
+        }
+
+        // The decoder reports malformed UTF-8 instead of silently replacing captured text.
+        return StandardCharsets.UTF_8
+                .newDecoder()
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
     }
 
     private void summarize(List<String> positional) throws IOException {
