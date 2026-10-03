@@ -67,7 +67,8 @@ a restore rehearsal or proof of capture completeness.
 
 Failures exit nonzero and print only `{"status":"failed","error":"<stable_code>"}`. The tool does
 not echo arguments, exception details, tool stderr, passfile paths, or credentials on failure.
-Common codes include `output_exists`, `unsafe_or_missing_output_parent`, `invalid_sqlite_source`,
+Common codes include `output_exists`, `unsafe_or_missing_output_parent`, `sqlite_sidecar_destination`,
+`invalid_sqlite_source`,
 `sqlite_backup_failed`, `postgres_tools_missing`, `postgres_dump_failed`, and
 `postgres_archive_invalid`. The operation and offline PostgreSQL archive validation each have a
 five-minute limit; large deployments need a separately reviewed backup approach.
@@ -78,6 +79,18 @@ The source is opened with SQLite URI `mode=ro`; the backup API reads committed W
 never uses `immutable=1`, writes source data, or asks the source to checkpoint. SQLite can still
 update shared-memory reader bookkeeping while reading a WAL database. A source symlink, missing
 file, zero-byte file, or corrupt database fails closed.
+
+Never use the source database's `-journal`, `-wal`, or `-shm` path as a snapshot
+destination, even when the sidecar does not exist. SQLite owns those names: a later
+source write can delete or overwrite an apparently completed artifact. The CLI
+reserves case variants and canonically equivalent Unicode spellings too, even on
+filesystems that distinguish them. This uses canonical normalization and casefold,
+not compatibility normalization. It rejects
+obvious reserved names while planning, without filesystem access. Execution
+also checks parent directory identities before staging or opening SQLite, so a source
+parent symlink cannot bypass the check. This does not follow source leaf symlinks or
+validate a plan's source availability. Keep source and destination directory paths
+stable during execution.
 
 Only the destination is placed in rollback-journal mode so the artifact is a standalone database
 file. Physical `quick_check` must pass; application-defined CHECK expressions are disabled for this
@@ -170,7 +183,8 @@ python3 -m unittest discover -s scripts/storage -p 'test_*.py' -v
 
 It covers WAL commits, stable source DB/WAL bytes, rowids, FTS, legacy/unknown objects, an unavailable
 virtual-module schema with retained shadow pages, private permissions, dry runs, missing/corrupt
-sources, output symlinks/collisions including publication races, connection-override rejection,
+sources, reserved SQLite sidecar destinations (including source-parent aliases), snapshots that
+remain unchanged after later source commits, output symlinks/collisions including publication races, connection-override rejection,
 credential-safe errors, and truncated archive rejection. The fake PostgreSQL tools check subprocess
 boundaries; native PostgreSQL restore evidence is a separate integration check.
 

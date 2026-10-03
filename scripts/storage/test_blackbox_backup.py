@@ -2,6 +2,7 @@
 """Actual CLI checks; every database, executable, and credential is a disposable fixture."""
 
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -11,9 +12,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unicodedata
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("blackbox_backup.py").resolve()
+SPEC = importlib.util.spec_from_file_location("blackbox_backup", SCRIPT)
+BACKUP = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(BACKUP)
 
 
 class BackupCliTest(unittest.TestCase):
@@ -255,6 +261,180 @@ if os.environ.get('FAKE_MODE') == 'truncated':
     def test_source_cannot_equal_output(self):
         self.output = self.source
         self.assertEqual(self.sqlite(success=False)["error"], "source_is_output")
+
+    def test_sidecar_plans_reject_normalized_names_without_filesystem_or_tool_io(self):
+        source = self.root / "missing" / "source.db"
+        with mock.patch.object(BACKUP.os, "open") as opened, \
+                mock.patch.object(BACKUP.Path, "stat") as stated, \
+                mock.patch.object(BACKUP.Path, "lstat") as lstated, \
+                mock.patch.object(BACKUP.sqlite3, "connect") as connected, \
+                mock.patch.object(BACKUP.tempfile, "mkdtemp") as staged, \
+                mock.patch.object(BACKUP.subprocess, "run") as invoked:
+            for suffix in ("-journal", "-wal", "-shm"):
+                with self.subTest(suffix=suffix):
+                    output = source.parent / "unused" / ".." / (source.name + suffix)
+                    args = BACKUP.parse_args(["sqlite", "--source", str(source),
+                                              "--output", str(output)])
+                    with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_sidecar_destination$"):
+                        BACKUP.make_plan(args)
+            for action in (opened, stated, lstated, connected, staged, invoked):
+                action.assert_not_called()
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_actual_cli_rejects_missing_and_existing_sidecars_including_parent_alias(self):
+        for alias in (False, True):
+            for suffix in ("-journal", "-wal", "-shm"):
+                for exists in (False, True):
+                    with self.subTest(alias=alias, suffix=suffix, exists=exists):
+                        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+                            root = Path(temp)
+                            real = root / "real"
+                            real.mkdir()
+                            source = real / "source.db"
+                            with sqlite3.connect(source) as db:
+                                db.execute("CREATE TABLE fixture(id)")
+                                db.execute("INSERT INTO fixture VALUES (1)")
+                            db.close()
+                            supplied = source
+                            if alias:
+                                link = root / "alias"
+                                link.symlink_to(real, target_is_directory=True)
+                                supplied = link / source.name
+                            output = real / (source.name + suffix)
+                            before = source.read_bytes()
+                            if exists:
+                                output.write_bytes(b"existing sidecar sentinel")
+                            result = self.cli("sqlite", "--source", supplied,
+                                              "--output", output, "--execute", success=False)
+                            self.assertEqual(result["error"], "sqlite_sidecar_destination")
+                            self.assertEqual(source.read_bytes(), before)
+                            self.assertEqual(output.exists(), exists)
+                            if exists:
+                                self.assertEqual(output.read_bytes(), b"existing sidecar sentinel")
+                            self.assertEqual(list(real.glob(".blackbox-backup-*")), [])
+
+    def test_actual_cli_reserves_sidecar_case_variants(self):
+        self.seed().close()
+        for suffix in ("-JOURNAL", "-WAL", "-SHM"):
+            with self.subTest(suffix=suffix):
+                self.output = self.root / (self.source.name.upper() + suffix)
+                self.assertEqual(self.sqlite(success=False)["error"], "sqlite_sidecar_destination")
+                self.assertFalse(self.output.exists())
+
+    def test_actual_cli_rejects_canonically_equivalent_sidecar_names_and_parent_aliases(self):
+        for source_form, output_form in (("NFC", "NFD"), ("NFD", "NFC")):
+            for alias in (False, True):
+                for suffix in ("-JOURNAL", "-WAL", "-SHM"):
+                    with self.subTest(source_form=source_form, alias=alias, suffix=suffix):
+                        with tempfile.TemporaryDirectory(dir=self.root) as temp:
+                            root = Path(temp)
+                            real = root / "real"
+                            real.mkdir()
+                            source = real / unicodedata.normalize(source_form, "café.db")
+                            with sqlite3.connect(source) as db:
+                                db.execute("CREATE TABLE fixture(id)")
+                                db.execute("INSERT INTO fixture VALUES (1)")
+                            db.close()
+                            supplied = source
+                            if alias:
+                                link = root / "alias"
+                                link.symlink_to(real, target_is_directory=True)
+                                supplied = link / source.name
+                            output = real / (unicodedata.normalize(output_form, "CAFÉ.DB") + suffix)
+                            before = source.read_bytes()
+                            result = self.cli("sqlite", "--source", supplied,
+                                              "--output", output, "--execute", success=False)
+                            self.assertEqual(result["error"], "sqlite_sidecar_destination")
+                            self.assertEqual(source.read_bytes(), before)
+                            self.assertFalse(output.exists())
+                            self.assertEqual(list(real.glob(".blackbox-backup-*")), [])
+
+    def test_unicode_sidecar_planning_is_pure_and_uses_canonical_not_compatibility_normalization(self):
+        with mock.patch.object(BACKUP.os, "open") as opened, \
+                mock.patch.object(BACKUP.Path, "stat") as stated, \
+                mock.patch.object(BACKUP.Path, "lstat") as lstated, \
+                mock.patch.object(BACKUP.sqlite3, "connect") as connected, \
+                mock.patch.object(BACKUP.tempfile, "mkdtemp") as staged, \
+                mock.patch.object(BACKUP.subprocess, "run") as invoked:
+            for source_form, output_form in (("NFC", "NFD"), ("NFD", "NFC")):
+                for suffix in ("-JOURNAL", "-WAL", "-SHM"):
+                    with self.subTest(source_form=source_form, suffix=suffix):
+                        source = self.root / unicodedata.normalize(source_form, "café.db")
+                        output = self.root / (unicodedata.normalize(output_form, "CAFÉ.DB") + suffix)
+                        args = BACKUP.parse_args(["sqlite", "--source", str(source),
+                                                  "--output", str(output)])
+                        with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_sidecar_destination$"):
+                            BACKUP.make_plan(args)
+            args = BACKUP.parse_args(["sqlite", "--source", str(self.root / "①.db"),
+                                      "--output", str(self.root / "1.db-journal")])
+            self.assertEqual(BACKUP.make_plan(args)["status"], "planned")
+            for action in (opened, stated, lstated, connected, staged, invoked):
+                action.assert_not_called()
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_actual_cli_rejects_normalized_sidecar_plan(self):
+        self.source = self.root / "missing" / ".." / "source.db"
+        self.output = self.root / "source.db-wal"
+        self.assertEqual(self.sqlite(success=False)["error"], "sqlite_sidecar_destination")
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_parent_alias_plan_stays_argument_only_but_execution_checks_before_staging(self):
+        real = self.root / "real"
+        real.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(real, target_is_directory=True)
+        # No source file exists: the directory identity alone suffices to refuse.
+        self.source = alias / "source.db"
+        self.output = real / "source.db-journal"
+        plan = self.sqlite()
+        self.assertEqual(plan["status"], "planned")
+        with mock.patch.object(BACKUP, "snapshot_sqlite") as snapshot, \
+                mock.patch.object(BACKUP.Path, "lstat") as leaf_stat, \
+                mock.patch.object(BACKUP.tempfile, "mkdtemp") as staged, \
+                mock.patch.object(BACKUP.subprocess, "run") as invoked, \
+                mock.patch.object(BACKUP.os, "close", wraps=os.close) as closed:
+            with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_sidecar_destination$"):
+                BACKUP.execute(plan)
+            for action in (snapshot, leaf_stat, staged, invoked):
+                action.assert_not_called()
+            # The final output-directory descriptor is closed on guard failure.
+            with self.assertRaises(OSError):
+                os.fstat(closed.call_args.args[0])
+        self.assertEqual(list(real.iterdir()), [])
+
+    def snapshot_survives_source_writes(self, wal=False, alias=False):
+        db = self.seed(wal=wal)
+        self.addCleanup(db.close)
+        original = self.source
+        if alias:
+            linked = self.root / "alias"
+            linked.symlink_to(self.root, target_is_directory=True)
+            self.source = linked / original.name
+        report = self.sqlite("--execute")
+        self.assert_artifact(report)
+        captured = self.output.read_bytes()
+        db.execute("INSERT INTO agent_events VALUES ('evt-2', X'012345')")
+        db.commit()
+        self.assertEqual(db.execute("SELECT count(*) FROM agent_events").fetchone(), (2,))
+        self.assertEqual(self.output.read_bytes(), captured)
+        self.assertEqual(hashlib.sha256(captured).hexdigest(), report["sha256"])
+        with sqlite3.connect(self.output) as restored:
+            self.assertEqual(restored.execute("SELECT rowid,event_id,hex(payload) FROM agent_events").fetchall(),
+                             [(73, "evt-1", "00FF8000")])
+        restored.close()
+        self.assertEqual(list(self.root.glob(".blackbox-backup-*")), [])
+
+    def test_ordinary_snapshot_survives_later_delete_journal_source_commit(self):
+        self.snapshot_survives_source_writes()
+
+    def test_ordinary_snapshot_survives_later_wal_source_commit_with_parent_alias(self):
+        self.snapshot_survives_source_writes(wal=True, alias=True)
+
+    def test_sidecar_named_snapshot_in_different_directory_is_valid(self):
+        other = self.root / "backups"
+        other.mkdir()
+        self.output = other / "source.db-journal"
+        self.snapshot_survives_source_writes()
 
     def test_postgres_exact_scope_credentials_and_offline_archive_validation(self):
         env = self.fake_postgres()
