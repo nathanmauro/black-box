@@ -11,6 +11,7 @@ import {
   type JSX,
 } from "solid-js";
 import KindBadge from "../components/KindBadge";
+import SavedBraidsReader from "../components/SavedBraidsReader";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
 import TrajectoryView from "../components/TrajectoryView";
@@ -55,6 +56,26 @@ const STORY_VIEW_KEY = "bb.projectStoryView";
 type ProjectStoryView = "trajectory" | "timeline";
 
 export default function ProjectsPage() {
+  const [searchParams] = useSearchParams<{ view?: string; meld?: string }>();
+  const braidsView = () => searchParams.view === "braids";
+  return (
+    <div class="projects-shell">
+      <nav class="projects-workspace-nav" aria-label="Project workspaces">
+        <a href="/projects" aria-current={!braidsView() ? "page" : undefined}>
+          Projects
+        </a>
+        <a href="/projects?view=braids" aria-current={braidsView() ? "page" : undefined}>
+          Saved braids
+        </a>
+      </nav>
+      <Show when={braidsView()} fallback={<ProjectCatalog />}>
+        <SavedBraidsReader selectedId={searchParams.meld} />
+      </Show>
+    </div>
+  );
+}
+
+function ProjectCatalog() {
   const params = useParams<{ projectKey?: string }>();
   const location = useLocation();
   const navigate = useNavigate();

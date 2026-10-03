@@ -19,7 +19,7 @@ import type {
   SessionTranscriptParams,
   SessionTranscriptResponse,
 } from "../../lib/api";
-import { setHumanOnly } from "../../lib/humanOnly";
+import { humanOnly, setHumanOnly } from "../../lib/humanOnly";
 import { createSessionsResource, sourceFilter } from "../../lib/stores";
 import SessionsPage from "../SessionsPage";
 import {
@@ -30,6 +30,9 @@ import {
 } from "../../lib/sse";
 
 const navigate = vi.fn();
+let routeReveal: string | undefined;
+let routeSessionId: () => string;
+let setRouteSessionId: (id: string) => void;
 
 const sessions: AgentSession[] = [
   {
@@ -153,7 +156,19 @@ vi.mock("@solidjs/router", async (importOriginal) => {
   return {
     ...actual,
     useNavigate: () => navigate,
-    useParams: () => ({ sessionId: "session-1" }),
+    useParams: () => ({
+      get sessionId() {
+        return routeSessionId();
+      },
+    }),
+    useSearchParams: () => [
+      {
+        get reveal() {
+          return routeReveal;
+        },
+      },
+      vi.fn(),
+    ],
   };
 });
 
@@ -185,6 +200,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
 
 beforeEach(() => {
   localStorage.clear();
+  routeReveal = undefined;
+  [routeSessionId, setRouteSessionId] = createSignal("session-1");
   setHumanOnly(false);
   navigate.mockReset();
   vi.mocked(createSessionsResource).mockClear();
@@ -218,6 +235,108 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("reveals an explicitly linked direct session despite incompatible saved Browse filters", async () => {
+    routeReveal = "session";
+    setHumanOnly(true);
+    const human = { ...sessions[1], firstHumanTurn: "An unrelated human aside" };
+    vi.mocked(getSessions).mockResolvedValue([human]);
+    vi.mocked(sourceFilter.key).mockReturnValue("claude");
+    vi.mocked(sourceFilter.matches).mockImplementation(<T extends { source: string }>(items: T[]) =>
+      items.filter((item) => item.source === "claude"),
+    );
+    vi.mocked(getSessionTranscript).mockResolvedValue(transcriptResponse([events[3]]));
+    render(() => <SessionsPage />);
+    await screen.findByRole("heading", { name: "Focused session" });
+    expect(await screen.findByText("I made the reading view calmer.")).toBeInTheDocument();
+    expect(getSessionTranscript).toHaveBeenLastCalledWith("session-1", {
+      limit: 50,
+      q: undefined,
+      humanOnly: undefined,
+    });
+    expect(
+      screen.getByText("Showing this linked session in full. Saved Browse filters are unchanged."),
+    ).toBeInTheDocument();
+    expect(humanOnly()).toBe(true);
+    expect(sourceFilter.key()).toBe("claude");
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /An unrelated human aside/ }));
+    expect(navigate).toHaveBeenLastCalledWith("/sessions/session-2");
+  });
+
+  it("does not show linked session A while requested session B is still loading", async () => {
+    routeReveal = "session";
+    setHumanOnly(true);
+    let resolveSecond!: (value: AgentSession) => void;
+    const second = new Promise<AgentSession>((resolve) => {
+      resolveSecond = resolve;
+    });
+    vi.mocked(getSession).mockImplementation((id) =>
+      id === "session-2" ? second : Promise.resolve(sessions[0]),
+    );
+    vi.mocked(getSessionTranscript).mockImplementation(async (id) =>
+      transcriptResponse([{ ...events[3], sessionId: id, text: `Reader for ${id}` }], {
+        sessionId: id,
+      }),
+    );
+    render(() => <SessionsPage />);
+    await screen.findByText("Reader for session-1");
+    setRouteSessionId("session-2");
+    await screen.findByRole("heading", { name: "Loading linked session…" });
+    expect(screen.queryByText("Reader for session-1")).not.toBeInTheDocument();
+    resolveSecond(sessions[1]);
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    await screen.findByText("Reader for session-2");
+    expect(humanOnly()).toBe(true);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("uses full-reader styling for a revealed prompt while My turns remains on", async () => {
+    routeReveal = "session";
+    setHumanOnly(true);
+    vi.mocked(getSessionTranscript).mockResolvedValue(
+      transcriptResponse([{ ...events[4], humanText: "Clean aside" }]),
+    );
+    render(() => <SessionsPage />);
+    await screen.findByText("Focus the session reader.");
+    expect(document.querySelector(".conversation-message .human-verbatim")).toBeNull();
+    expect(humanOnly()).toBe(true);
+  });
+
+  it("does not fall back from a missing explicit source session and permits retry", async () => {
+    routeReveal = "session";
+    setHumanOnly(true);
+    vi.mocked(getSession)
+      .mockRejectedValueOnce(new Error("Not found"))
+      .mockResolvedValueOnce(sessions[0]);
+    vi.mocked(getSessions).mockResolvedValue([
+      { ...sessions[1], firstHumanTurn: "Unrelated human" },
+    ]);
+    render(() => <SessionsPage />);
+    await screen.findByRole("heading", { name: "Linked session unavailable" });
+    expect(getSessionTranscript).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry linked session" }));
+    await screen.findByRole("heading", { name: "Focused session" });
+    expect(humanOnly()).toBe(true);
+  });
+
+  it("does not apply a reveal query flag to ordinary embedded Activity selection", async () => {
+    routeReveal = "session";
+    setHumanOnly(true);
+    vi.mocked(getSessions).mockResolvedValue([{ ...sessions[1], firstHumanTurn: "A human aside" }]);
+    const selected = vi.fn();
+    render(() => (
+      <SessionsPage selectedSessionId="session-1" defaultToFirst onSelectSession={selected} />
+    ));
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    expect(selected).toHaveBeenCalledWith("session-2");
+    expect(
+      screen.queryByText(
+        "Showing this linked session in full. Saved Browse filters are unchanged.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it.each(["source", "project"])(
     "does not rewrite a nonhuman request excluded by %s scope",
     async (scope) => {
