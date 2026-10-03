@@ -260,11 +260,11 @@ implementations, external grades, schedule and gate result. Infrastructure verif
 passed: 27 Python tests and a Docker smoke covering five histories, five screens and 20 evaluation
 conditions using authored reference code. The ordinary local service was not deployed or restarted.
 
-## Offline Java repository-fixture qualification
+## Offline repository-fixture qualification
 
 Before adding real Java repository continuations, qualify their staging and behavioral grader
-without running an agent. The separate development qualifier supports exactly **four fixed public
-repairs**. The default
+without running an agent. The separate development qualifier supports exactly **five fixed public
+repairs** (four Java, one Python). The default
 `structured-redaction` fixture uses baseline `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8`, reference
 `d833fa96942a558cc7bc453b504656a2df41148f`. The `summary-export` fixture uses baseline
 `9933ade549c37af5d784edff650f74705d55fa83` and reference
@@ -272,7 +272,9 @@ repairs**. The default
 `a2f969585dc5b780b3dc4b0611a4084ec7efd0aa` and reference
 `aac7a30230687e795f844a971c72ebd5fd393e5c`. The `capture-ack` fixture uses baseline
 `5d76086eeb0d423207e0f5560b3ae1aa1f9bebc8` and reference
-`596ccf62a99416f14acf0ca24f91a928bc08ed40`. The selected commit objects must already exist locally.
+`596ccf62a99416f14acf0ca24f91a928bc08ed40`. The Python `journal-race` fixture uses baseline
+`4bde822853d8e4b829626faf6e9a2238762f5263` and reference
+`855e932f7464f872476d25308f1b81e0bfce06da`. The selected commit objects must already exist locally.
 The qualifier does not fetch history, accept arbitrary revisions/candidates, change existing benchmark
 runs, or provision Docker. These familiar published bugs are development fixtures, not held-out
 difficulty cases.
@@ -299,6 +301,11 @@ python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execut
 # Select the fourth reviewed fixture; all eight capture-acknowledgement checks are mandatory.
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture capture-ack
 python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture capture-ack
+
+# Select the fifth (Python) fixture; all seven journal-race checks are mandatory. No Maven or Java.
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py plan --fixture journal-race
+python3 scripts/benchmarks/blackbox_memory/repository_fixture.py verify --execute --fixture journal-race \
+  --python "$(command -v python3)"
 ```
 
 `--maven-repo` selects an existing local artifact cache; the default is `~/.m2/repository`.
@@ -402,13 +409,36 @@ then eight reference passes. The three earlier fixtures were replayed with uncha
 hashes. The [capture-ack report](evaluation-results/2026-10-03-capture-ack-qualification.json)
 records these infrastructure outcomes, with zero model runs and accepted actions.
 
+The journal-race fixture is a familiar development concurrency qualification and uses a fixed
+Python recipe instead of Maven. `--python` must name an absolute Python 3.9+ interpreter (default: the
+qualifier's own). It runs as `python -I -S -B` with a scrubbed environment and a private home/temp.
+The worker export is exactly `capture_outbox.py`, its existing test module, `sba-agent-hook.sh`, the
+`capture-redaction-v1.json` test fixture, README and LICENSE. Only the controller-owned grader runs,
+never the broad hook suite, `drain` or the hook entry point. The grader imports the outbox by path
+and uses the baseline queue APIs. A real second SQLite connection holds `BEGIN IMMEDIATE`, and the
+grader commits it between the outbox's journal `os.open` and `fstat`. It proves that the opened inode
+moved from one link to zero. Failure to establish that is the infrastructure error
+`race_not_established`, never a behavioral result.
+
+The baseline must fail three checks: enqueue during the race, `Queue` construction during the race,
+and a genuine replacement journal being reopened and checked rather than the stale descriptor reused.
+Four controls must pass on both snapshots: ordinary enqueue; unsafe hard-link/mode replacement
+rejection with an outside sentinel and rows unchanged; an unlinked database or sender lock still
+rejected; and repeated journal disappearance ending within the shared deadline with every descriptor
+closed. Actual replay reproduced the three named baseline failures and four passes, then seven
+reference passes, on Python 3.9.6/SQLite 3.54.0 and on Python 3.12–3.14/SQLite 3.53.4. Each run
+produced the same worker-input hash. The
+[journal-race report](evaluation-results/2026-10-03-journal-race-qualification.json) records these
+infrastructure outcomes and the runtime versions, with zero model runs and accepted actions. Only
+macOS/APFS was exercised.
+
 ## Next comparison preparation
 
 The [proposed continuation comparison protocol](continuation-comparison-protocol.md) records a
 17-candidate familiar development inventory with exact pre-fix/reference commits and evidence
 paths. Summary-export and event-chronology have the seven-check offline qualifications described
-above, and capture-ack the eight-check easy-control qualification, making three qualified inventory
-members in three distinct clusters. Structured-redaction is outside that inventory.
+above, capture-ack the eight-check easy-control qualification, and journal-race the seven-check
+concurrency qualification, making four qualified inventory members in four distinct clusters. Structured-redaction is outside that inventory.
 No model trials or human accepted actions were established. The existing usefulness and difficulty
 gates stay unchanged.
 

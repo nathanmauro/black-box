@@ -1,0 +1,46 @@
+{
+  "accepted_actions": 0,
+  "baseline": "4bde822853d8e4b829626faf6e9a2238762f5263",
+  "baseline_archive_sha256": "22a3de41ee091bdf5ad86cdd0a3148b300443c1f1112de45a1d885e7e199887a",
+  "evidence": "infrastructure_only",
+  "fixture": "journal-race-development",
+  "model_runs": 0,
+  "qualification": "passed",
+  "reference": "855e932f7464f872476d25308f1b81e0bfce06da",
+  "results": {
+    "baseline": {
+      "failed": [
+        "test_commit_between_journal_open_and_check_keeps_capture",
+        "test_queue_open_during_concurrent_commit",
+        "test_safe_replacement_journal_is_rechecked_not_reused"
+      ],
+      "passed": 4,
+      "seconds": 0.266,
+      "tests": 7
+    },
+    "reference": {
+      "failed": [],
+      "passed": 7,
+      "seconds": 1.329,
+      "tests": 7
+    }
+  },
+  "runtime": {
+    "platform": "Darwin-arm64",
+    "python": "3.9.6",
+    "sqlite": "3.54.0"
+  },
+  "schema_version": 1,
+  "usefulness_gate": {
+    "acceptance": "must be observed; not established by grading",
+    "accepted_actions_missed_by_comparator_required": 3,
+    "existing_development_gate": "1\u20134 passes among five bare continuations; unchanged and not evaluated",
+    "historical_candidates_required": 20,
+    "minimum_useful_supported_suggestions_percent": 70,
+    "ordinary_latest_handoff_search_comparator": "same model, budget and source window; not evaluated",
+    "resumed_tasks_required": 5,
+    "stale_or_duplicate_suggestions_percent_must_be_below": 10,
+    "status": "not_cleared"
+  },
+  "worker_input_sha256": "124c56ce54a10c7e0cfcc018239b31d46e733e30c063e7b77a3ccb06a6c9fd8e"
+}

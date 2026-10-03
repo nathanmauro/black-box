@@ -1,0 +1,38 @@
+{
+  "baseline": "4bde822853d8e4b829626faf6e9a2238762f5263",
+  "baseline_failures": [
+    "test_commit_between_journal_open_and_check_keeps_capture",
+    "test_queue_open_during_concurrent_commit",
+    "test_safe_replacement_journal_is_rechecked_not_reused"
+  ],
+  "development_only": true,
+  "public_repository": "https://github.com/nathanmauro/black-box",
+  "reference": "855e932f7464f872476d25308f1b81e0bfce06da",
+  "schema_version": 1,
+  "tests": [
+    "test_commit_between_journal_open_and_check_keeps_capture",
+    "test_queue_open_during_concurrent_commit",
+    "test_safe_replacement_journal_is_rechecked_not_reused",
+    "test_ordinary_enqueue_preserved",
+    "test_unsafe_journal_replacement_rejected",
+    "test_unlinked_database_and_sender_lock_still_rejected",
+    "test_repeated_journal_disappearance_is_bounded_and_closes_descriptors"
+  ],
+  "tracked_hashes": {
+    "4bde822853d8e4b829626faf6e9a2238762f5263": {
+      "scripts/hooks/capture_outbox.py": "ca442496709f2caa5592206114262ba3a6969fc55a518e09c1ffb77cb741f709",
+      "scripts/hooks/fixtures/capture-redaction-v1.json": "2e4dd1f4c84339e93d26ccae1e45d8f23e66bcd6ae722a58537b16963ad058ff",
+      "scripts/hooks/sba-agent-hook.sh": "3bc44720b5bb0b1c132ae90f8a1230c04d6dacf74cc72008aaf0ecc1c9c7d614",
+      "scripts/hooks/test_capture_outbox.py": "9a4380aaae2a764b46ae045cb270f474feec4f2f0d4654665ec7303e439165f8"
+    },
+    "855e932f7464f872476d25308f1b81e0bfce06da": {
+      "scripts/hooks/capture_outbox.py": "ddbcfc9ce3ba3e70f4a6c5cd857396dab64dc60eaa065d8fcefbbce6ce9f9e89",
+      "scripts/hooks/fixtures/capture-redaction-v1.json": "2e4dd1f4c84339e93d26ccae1e45d8f23e66bcd6ae722a58537b16963ad058ff",
+      "scripts/hooks/sba-agent-hook.sh": "3bc44720b5bb0b1c132ae90f8a1230c04d6dacf74cc72008aaf0ecc1c9c7d614"
+    }
+  },
+  "trusted_files": {
+    "JOURNAL_RACE_TASK.md": "28717fb904ebf1c918ab03eb6b00f19d50940b2b338afd236668807f092f87a9",
+    "journal_race_contract.py": "ffa9cfded9f8540de7b907a2bfd1b5b15887fbc307d4a29e0a6beebab9c1ce6b"
+  }
+}

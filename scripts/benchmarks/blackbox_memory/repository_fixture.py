@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify one of four fixed reviewed Java fixtures offline; never execute arbitrary candidate code."""
+"""Qualify one of five fixed reviewed Java/Python fixtures offline; never execute arbitrary candidate code."""
 
 import argparse
 import hashlib
@@ -103,7 +103,39 @@ FIXTURE_SPECS = {
         'task_file': 'CAPTURE_ACK_TASK.md',
         'grader_file': 'CaptureAcknowledgementFixtureContractTest.java',
     },
+    'journal-race': {
+        # The only Python fixture: a fixed isolated interpreter recipe, never Maven.
+        'runtime': 'python',
+        'baseline': '4bde822853d8e4b829626faf6e9a2238762f5263',
+        'reference': '855e932f7464f872476d25308f1b81e0bfce06da',
+        'source': 'scripts/hooks/capture_outbox.py',
+        'grader': 'grader/journal_race_contract.py',
+        'class': 'JournalRaceContract',
+        'manifest': 'journal-race.json',
+        'manifest_sha256': '4e827dfdbd6c0a67a4ee68834c97499d20db70197cc54c5553449194bef501a5',
+        'export_paths': (
+            'LICENSE',
+            'README.md',
+            'scripts/hooks/capture_outbox.py',
+            'scripts/hooks/fixtures/capture-redaction-v1.json',
+            'scripts/hooks/sba-agent-hook.sh',
+            'scripts/hooks/test_capture_outbox.py',
+        ),
+        'changed_paths': frozenset((
+            'docs/durable-capture.md',
+            'docs/superpowers/plans/2026-10-03-outbox-journal-race.md',
+            'scripts/hooks/capture_outbox.py',
+            'scripts/hooks/test_capture_outbox.py',
+        )),
+        'task_file': 'JOURNAL_RACE_TASK.md',
+        'grader_file': 'journal_race_contract.py',
+    },
 }
+PYTHON_MINIMUM = (3, 9)
+PYTHON_REPORT = 'target/grader-report.json'
+PYTHON_PROBE = ('import json,platform,sqlite3,sys;print(json.dumps({"python":".".join(map(str,sys.version_info[:3])),'
+                '"sqlite":sqlite3.sqlite_version,"platform":platform.system()+"-"+platform.machine()}))')
+PYTHON_FAILURE_TYPES = frozenset(('AssertionError', 'UnboundedRetry'))
 GATE = {
     'status': 'not_cleared', 'historical_candidates_required': 20, 'resumed_tasks_required': 5,
     'ordinary_latest_handoff_search_comparator': 'same model, budget and source window; not evaluated',
@@ -219,13 +251,13 @@ def verify_pins(data):
                 raise FixtureError('tracked_source_or_build_changed')
 
 
-def allowed_export(name):
+def allowed_export(name, paths=EXPORT_PATHS):
     path = PurePosixPath(name)
     return (not path.is_absolute() and '..' not in path.parts
-            and any(name == p or name.startswith(p + '/') for p in EXPORT_PATHS))
+            and any(name == p or name.startswith(p + '/') for p in paths))
 
 
-def extract_snapshot(archive, destination):
+def extract_snapshot(archive, destination, paths=EXPORT_PATHS):
     """Do not use tar.extract: tracked links and special files are refused, never followed."""
     total = 0
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
@@ -233,7 +265,7 @@ def extract_snapshot(archive, destination):
             name = member.name.rstrip('/')
             if member.isdir():
                 continue
-            if not member.isfile() or not allowed_export(name) or member.size > 10_000_000:
+            if not member.isfile() or not allowed_export(name, paths) or member.size > 10_000_000:
                 raise FixtureError('unsafe_snapshot_entry')
             total += member.size
             if total > 100_000_000:
@@ -338,8 +370,136 @@ def run_stage(root, data, settings, cache, home, timeout, expected):
     return result
 
 
-def qualify(data, cache, timeout):
+def python_environment(home):
+    # Isolated mode also ignores PYTHON* variables; nothing else is inherited from the caller.
+    return {'PATH': os.defpath, 'HOME': str(home), 'TMPDIR': str(home), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
+
+
+def python_interpreter(value):
+    path = Path(value or sys.executable)
+    if not path.is_absolute():
+        raise FixtureError('absolute_python_required')
+    path = path.resolve()
+    if not path.is_file() or not os.access(str(path), os.X_OK):
+        raise FixtureError('tool_unavailable')
+    return path
+
+
+def python_runtime(interpreter, home):
+    code, out, _ = command([str(interpreter), '-I', '-S', '-B', '-c', PYTHON_PROBE], cwd=home,
+                           env=python_environment(home))
+    try:
+        runtime = json.loads(out)
+        version = tuple(int(part) for part in runtime['python'].split('.')[:2])
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise FixtureError('python39_required') from None
+    if code or version < PYTHON_MINIMUM or set(runtime) != {'python', 'sqlite', 'platform'}:
+        raise FixtureError('python39_required')
+    return runtime
+
+
+def python_recipe(interpreter, root, spec):
+    # Fixed argv only: isolated, no site, no bytecode; the grader imports the source by path.
+    return [str(interpreter), '-I', '-S', '-B', str(root / spec['grader']), str(root / spec['source']),
+            str(root / PYTHON_REPORT)]
+
+
+def classify_python_report(root, data, exit_code, runtime):
     spec = specification(data['_fixture'])
+    path = root / PYTHON_REPORT
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 1_000_000:
+        raise FixtureError('missing_or_unexpected_test_report')
+    try:
+        report = json.loads(path.read_bytes())
+    except ValueError:
+        raise FixtureError('invalid_test_report') from None
+    if (not isinstance(report, dict) or set(report) != {'suite', 'runtime', 'cases'}
+            or not isinstance(report['cases'], list)
+            or any(not isinstance(case, dict) or set(case) != {'name', 'outcome', 'type'} for case in report['cases'])):
+        raise FixtureError('invalid_test_report')
+    if report['runtime'] != runtime:
+        raise FixtureError('python_runtime_changed')
+    cases = report['cases']
+    if any(case['outcome'] == 'error' and case['type'] == 'RaceNotEstablished' for case in cases):
+        raise FixtureError('race_not_established')
+    names = [case['name'] for case in cases]
+    expected = data['tests']
+    if report['suite'] != spec['class'] or len(names) != len(expected) or set(names) != set(expected):
+        raise FixtureError('test_inventory_mismatch')
+    if any(case['outcome'] == 'skipped' for case in cases):
+        raise FixtureError('skipped_tests')
+    if any(case['outcome'] == 'error' for case in cases):
+        raise FixtureError('test_execution_error')
+    if any(case['outcome'] not in ('pass', 'failure') for case in cases):
+        raise FixtureError('invalid_test_report')
+    failed = sorted(case['name'] for case in cases if case['outcome'] == 'failure')
+    if any(case['outcome'] == 'failure' and case['type'] not in PYTHON_FAILURE_TYPES for case in cases):
+        raise FixtureError('non_behavioral_test_failure')
+    if exit_code not in (0, 1) or (exit_code == 0) != (not failed):
+        raise FixtureError('inconsistent_build_exit')
+    return {'tests': len(cases), 'failed': failed, 'passed': len(cases) - len(failed)}
+
+
+def run_python_stage(root, data, interpreter, home, runtime, timeout, expected):
+    spec = specification(data['_fixture'])
+    fixture(data['_fixture'])
+    if hashes(root) != expected:
+        raise FixtureError('grading_inputs_changed')
+    (root / 'target').mkdir(mode=0o700)
+    started = time.monotonic()
+    code, _, _ = command(python_recipe(interpreter, root, spec), cwd=root, env=python_environment(home),
+                         timeout=timeout)
+    if hashes(root) != expected:
+        raise FixtureError('grading_inputs_changed')
+    fixture(data['_fixture'])  # Controller-owned grading files must also stay unchanged during execution.
+    result = classify_python_report(root, data, code, runtime)
+    result['seconds'] = round(time.monotonic() - started, 3)
+    return result
+
+
+def qualify_python(data, spec, python, timeout):
+    trusted = trusted_bytes(data)
+    interpreter = python_interpreter(python)
+    archive = git('archive', '--format=tar', spec['baseline'], '--', *spec['export_paths'])
+    with tempfile.TemporaryDirectory(prefix='blackbox-repository-fixture-') as temp:
+        private = Path(temp).resolve()
+        home = private / 'home'
+        home.mkdir(mode=0o700)
+        runtime = python_runtime(interpreter, home)
+        worker = private / 'worker-input'
+        worker.mkdir(mode=0o700)
+        extract_snapshot(archive, worker, spec['export_paths'])
+        if set(hashes(worker)) != set(spec['export_paths']):
+            raise FixtureError('worker_export_mismatch')
+        (worker / 'TASK.md').write_bytes(trusted[spec['task_file']])
+        worker_hashes = hashes(worker)
+        results = {}
+        for name, revision in (('baseline', spec['baseline']), ('reference', spec['reference'])):
+            grading = private / ('grading-' + name)
+            shutil.copytree(worker, grading)
+            target = grading / spec['grader']
+            if target.exists():
+                raise FixtureError('grader_path_already_exists')
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            target.write_bytes(trusted[spec['grader_file']])
+            if name == 'reference':
+                (grading / spec['source']).write_bytes(git('show', spec['reference'] + ':' + spec['source']))
+            expected = dict(worker_hashes, **{spec['grader']: data['trusted_files'][spec['grader_file']]})
+            expected.update(data['tracked_hashes'][revision])
+            results[name] = run_python_stage(grading, data, interpreter, home, runtime, timeout, expected)
+            required = sorted(data['baseline_failures']) if name == 'baseline' else []
+            if results[name]['failed'] != required:
+                raise FixtureError('baseline_not_reproduced' if name == 'baseline' else 'reference_not_correct')
+            if hashes(worker) != worker_hashes:
+                raise FixtureError('worker_export_changed')
+        return {'qualification': 'passed', 'results': results, 'runtime': runtime, 'worker_input_sha256': sha(
+                    json.dumps(worker_hashes, sort_keys=True).encode()), 'baseline_archive_sha256': sha(archive)}
+
+
+def qualify(data, cache, timeout, python=None):
+    spec = specification(data['_fixture'])
+    if spec.get('runtime') == 'python':
+        return qualify_python(data, spec, python, timeout)
     if not cache.is_dir():
         raise FixtureError('maven_cache_missing')
     trusted = trusted_bytes(data)
@@ -402,6 +562,7 @@ def main(argv=None):
     parser.add_argument('--output', help='Optional new JSON report; no source/log artifacts are retained')
     parser.add_argument('--maven-repo', type=Path, default=Path.home() / '.m2/repository')
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--python', help='Absolute Python 3.9+ interpreter for Python fixtures (default: this one)')
     args = parser.parse_args(argv)
     spec = specification(args.fixture)
     report = {'schema_version': 1, 'evidence': 'infrastructure_only', 'fixture': args.fixture + '-development',
@@ -421,7 +582,10 @@ def main(argv=None):
                 raise FixtureError('execute_flag_required')
             if args.output:
                 destination = output_path(args.output)
-            report.update(qualify(data, args.maven_repo.resolve(), args.timeout))
+            if spec.get('runtime') == 'python':
+                report.update(qualify(data, None, args.timeout, args.python))
+            else:
+                report.update(qualify(data, args.maven_repo.resolve(), args.timeout))
         status = 0
     except FixtureError as exc:
         report['error'] = str(exc)
