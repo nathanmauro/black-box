@@ -259,6 +259,13 @@ git config core.hooksPath scripts/git-hooks   # optional: lint/format staged fro
                                               # every commit and run verify.sh before every push
 ```
 
+CI checks the supported Python 3.9 minimum in a separate job with a five-minute timeout: the actual
+hook smoke and full outbox suite, plus offline benchmark and checkpoint-evaluation contracts. The existing
+backend job also runs those checks with the Ubuntu runner's current Python. Both use synthetic
+fixtures; no model calls or live capture store are needed. To reproduce minimum-version coverage,
+put Python 3.9 on `PATH` and run `./scripts/test-agent-hook.sh`, followed by unittest discovery in
+`scripts/benchmarks/blackbox_memory` and `scripts/evaluation` with `-p 'test_*.py'`.
+
 Frontend lint and formatting conventions are described in
 [Frontend standards](docs/frontend-standards.md).
 
