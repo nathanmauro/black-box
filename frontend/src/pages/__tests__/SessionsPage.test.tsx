@@ -15,6 +15,7 @@ import {
 import type {
   AgentEvent,
   AgentSession,
+  DagResponse,
   SessionLinksResponse,
   SessionTranscriptParams,
   SessionTranscriptResponse,
@@ -235,6 +236,259 @@ beforeEach(() => {
 });
 
 describe("SessionsPage", () => {
+  it("hides retained lineage from another session while its own relationships load", async () => {
+    const dag = (id: string): DagResponse => ({
+      nodes: [
+        { id: `session:${id}`, type: "session", label: id, ref: id },
+        { id: `session:${id}-child`, type: "session", label: `${id} child`, ref: `${id}-child` },
+      ],
+      edges: [{ from: `session:${id}`, to: `session:${id}-child`, type: "spawned" }],
+    });
+    let finishSecond!: (value: DagResponse) => void;
+    vi.mocked(getSessionDag).mockImplementation((id) =>
+      id === "session-2"
+        ? new Promise((resolve) => {
+            finishSecond = resolve;
+          })
+        : Promise.resolve(dag(id)),
+    );
+    vi.mocked(getSessionTranscript).mockImplementation(async (id) =>
+      transcriptResponse(
+        [{ ...events[4], id: `prompt-${id}`, sessionId: id, text: `Reader ${id}` }],
+        { sessionId: id },
+      ),
+    );
+    render(() => <SessionsPage />);
+    await screen.findByRole("button", { name: "Subagent: session-1 child" });
+    setRouteSessionId("session-2");
+    await screen.findByRole("heading", { name: "Cockpit cleanup" });
+    await screen.findByText("Reader session-2");
+    expect(screen.queryByRole("navigation", { name: "Agent lineage" })).not.toBeInTheDocument();
+    finishSecond(dag("session-2"));
+    await screen.findByRole("button", { name: "Current agent: session-2" });
+    expect(
+      screen.queryByRole("button", { name: "Subagent: session-1 child" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(["success", "error"])(
+    "keeps B pagination independent of A's late %s and finally",
+    async (outcome) => {
+      let finishA!: (value: SessionTranscriptResponse) => void;
+      let failA!: (reason: Error) => void;
+      let finishB!: (value: SessionTranscriptResponse) => void;
+      const row = (id: string, text: string): AgentEvent => ({
+        ...events[4],
+        id: text,
+        sessionId: id,
+        text,
+      });
+      vi.mocked(getSessionTranscript).mockImplementation(async (id, params = {}) => {
+        if (params.before)
+          return new Promise((resolve, reject) => {
+            if (id === "session-1") {
+              finishA = resolve;
+              failA = reject;
+            } else finishB = resolve;
+          });
+        return transcriptResponse([row(id, `Reader ${id}`)], {
+          sessionId: id,
+          nextBefore: `older-${id}`,
+        });
+      });
+      render(() => <SessionsPage />);
+      await screen.findByText("Reader session-1");
+      fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+      await waitFor(() => expect(finishA).toBeDefined());
+      setRouteSessionId("session-2");
+      await screen.findByText("Reader session-2");
+      const next = screen.getByRole("button", { name: "Load older events" });
+      expect(next).toBeEnabled();
+      fireEvent.click(next);
+      await waitFor(() => expect(finishB).toBeDefined());
+      if (outcome === "success") finishA(transcriptResponse([row("session-1", "Stale A page")]));
+      else failA(new Error("Old A request failed"));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(screen.getByRole("button", { name: "Loading older…" })).toBeDisabled();
+      expect(screen.queryByText("Stale A page")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Older transcript events could not be loaded. Try again."),
+      ).not.toBeInTheDocument();
+      finishB(transcriptResponse([row("session-2", "Older B page")], { sessionId: "session-2" }));
+      await screen.findByText("Older B page");
+      expect(
+        screen.queryByRole("button", { name: /Load older|Loading older/ }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("rejects an older request after A to B to A even when its session ID matches again", async () => {
+    const pending: ((value: SessionTranscriptResponse) => void)[] = [];
+    vi.mocked(getSessionTranscript).mockImplementation(async (id, params = {}) => {
+      if (params.before) return new Promise((resolve) => pending.push(resolve));
+      return transcriptResponse(
+        [{ ...events[4], id: `prompt-${id}`, sessionId: id, text: `Reader ${id}` }],
+        { sessionId: id, nextBefore: `older-${id}` },
+      );
+    });
+    render(() => <SessionsPage />);
+    await screen.findByText("Reader session-1");
+    fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    setRouteSessionId("session-2");
+    await screen.findByText("Reader session-2");
+    setRouteSessionId("session-1");
+    await screen.findByText("Reader session-1");
+    fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+    await waitFor(() => expect(pending).toHaveLength(2));
+    pending[0](
+      transcriptResponse([{ ...events[4], id: "obsolete-page", text: "Obsolete first A page" }], {
+        nextBefore: null,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByText("Obsolete first A page")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Loading older…" })).toBeDisabled();
+    pending[1](
+      transcriptResponse([{ ...events[4], id: "new-page", text: "Current A page" }], {
+        nextBefore: null,
+      }),
+    );
+    await screen.findByText("Current A page");
+    expect(
+      screen.queryByRole("button", { name: /Load older|Loading older/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(["query", "human mode"])("releases paging ownership when %s changes", async (context) => {
+    const human = { ...sessions[0], firstHumanTurn: "A human turn" };
+    vi.mocked(getSessions).mockResolvedValue([human]);
+    vi.mocked(getSession).mockResolvedValue(human);
+    let finishOld!: (value: SessionTranscriptResponse) => void;
+    vi.mocked(getSessionTranscript).mockImplementation(async (id, params = {}) => {
+      if (params.before)
+        return new Promise((resolve) => {
+          finishOld = resolve;
+        });
+      return transcriptResponse([events[4]], { sessionId: id, nextBefore: "more-events" });
+    });
+    render(() => <SessionsPage />);
+    await screen.findByText("Focus the session reader.");
+    fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+    await waitFor(() => expect(finishOld).toBeDefined());
+    if (context === "query") {
+      fireEvent.input(screen.getByRole("searchbox", { name: "Find in session" }), {
+        target: { value: "Focus" },
+      });
+      await waitFor(() =>
+        expect(getSessionTranscript).toHaveBeenLastCalledWith(
+          "session-1",
+          expect.objectContaining({ q: "Focus" }),
+        ),
+      );
+    } else {
+      setHumanOnly(true);
+      await waitFor(() =>
+        expect(getSessionTranscript).toHaveBeenLastCalledWith(
+          "session-1",
+          expect.objectContaining({ humanOnly: true }),
+        ),
+      );
+    }
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Load older (events|matches)/ })).toBeEnabled(),
+    );
+    finishOld(transcriptResponse([{ ...events[4], id: "old-context", text: "Old context page" }]));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByText("Old context page")).not.toBeInTheDocument();
+  });
+
+  it.each(["success", "error"])(
+    "preserves a live-refreshed cursor after an older page's late %s",
+    async (outcome) => {
+      let appended!: (event: EventAppended) => void;
+      let finishOlder!: (value: SessionTranscriptResponse) => void;
+      let failOlder!: (reason: Error) => void;
+      let refreshed = false;
+      const live: LiveStore = {
+        status: () => "live",
+        events: () => [],
+        onEventAppended: (callback) => {
+          appended = callback;
+          return () => {};
+        },
+        onSessionUpdated: () => () => {},
+      };
+      vi.mocked(getSessionTranscript).mockImplementation(async (id, params = {}) => {
+        if (params.before === "original-cursor")
+          return new Promise((resolve, reject) => {
+            finishOlder = resolve;
+            failOlder = reject;
+          });
+        if (params.before === "refreshed-cursor")
+          return transcriptResponse([
+            { ...events[4], id: "intervening", text: "Intervening evidence" },
+          ]);
+        return transcriptResponse(
+          [
+            {
+              ...events[4],
+              id: refreshed ? "fresh" : "initial",
+              text: refreshed ? "Refreshed first page" : "Original first page",
+            },
+          ],
+          {
+            sessionId: id,
+            nextBefore: refreshed ? "refreshed-cursor" : "original-cursor",
+          },
+        );
+      });
+      render(() => (
+        <LiveStoreContext.Provider value={live}>
+          <SessionsPage />
+        </LiveStoreContext.Provider>
+      ));
+      await screen.findByText("Original first page");
+      fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+      await waitFor(() => expect(finishOlder).toBeDefined());
+      refreshed = true;
+      appended({
+        id: "fresh",
+        sessionId: "session-1",
+        source: "codex",
+        eventType: "UserPromptSubmit",
+        observedAt: "2026-10-03T12:00:00Z",
+      });
+      await screen.findByText("Refreshed first page");
+      if (outcome === "success")
+        finishOlder(
+          transcriptResponse([{ ...events[4], id: "obsolete", text: "Obsolete older page" }], {
+            nextBefore: "skipped-intervening-cursor",
+          }),
+        );
+      else failOlder(new Error("Old cursor failed"));
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Loading older…" })).not.toBeInTheDocument(),
+      );
+      expect(screen.queryByText("Obsolete older page")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Older transcript events could not be loaded. Try again."),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Refreshed first page")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Load older events" }));
+      await screen.findByText("Intervening evidence");
+      expect(getSessionTranscript).toHaveBeenLastCalledWith("session-1", {
+        limit: 50,
+        before: "refreshed-cursor",
+        q: undefined,
+        humanOnly: undefined,
+      });
+    },
+  );
+
   it("reveals an explicitly linked direct session despite incompatible saved Browse filters", async () => {
     routeReveal = "session";
     setHumanOnly(true);
