@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import {
+  batch,
   createEffect,
   createMemo,
   createResource,
@@ -7,8 +8,10 @@ import {
   createUniqueId,
   For,
   onCleanup,
+  on,
   Show,
   useContext,
+  untrack,
 } from "solid-js";
 import ConversationNavigator, {
   type ConversationNavigatorTurn,
@@ -105,6 +108,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const params = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
   const live = useContext(LiveStoreContext);
+  let transcriptGeneration = 0;
   const [sessionFilter, setSessionFilter] = createSignal("");
   const [transcriptQuery, setTranscriptQuery] = createSignal("");
   const [debouncedTranscriptQuery, setDebouncedTranscriptQuery] = createSignal("");
@@ -119,12 +123,12 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
   const [olderEventsLoading, setOlderEventsLoading] = createSignal(false);
   const [olderEventsError, setOlderEventsError] = createSignal("");
   const [showMemoryEvents, setShowMemoryEvents] = createSignal(false);
-  const [allSessions] = createResource(
+  const [allSessions, { refetch: refetchSessions }] = createResource(
     () => (props.project ? null : sourceFilter.key()),
     async () => sourceFilter.matches(await getSessions(RECENT_SESSION_LIMIT)),
     { initialValue: [] as AgentSession[] },
   );
-  const [projectSessions] = createResource(
+  const [projectSessions, { refetch: refetchProjectSessions }] = createResource(
     () => props.project?.projectKey,
     async (projectKey): Promise<ProjectSessionResult | null> =>
       projectKey
@@ -144,7 +148,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     return sourceFilter.matches(result.sessions);
   });
   const requestedSessionId = createMemo(() => props.selectedSessionId || params.sessionId || "");
-  const [requestedSession] = createResource(
+  const [requestedSession, { refetch: refetchRequestedSession }] = createResource(
     requestedSessionId,
     async (id) => {
       if (!id) return null;
@@ -380,23 +384,65 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     searchSessionId = nextSessionId;
   });
 
+  function refreshReader() {
+    void refetchSessions();
+    void refetchProjectSessions();
+    void refetchRequestedSession();
+    void refetchEvents();
+    void refetchChildCounts();
+    void refetchLineageDag();
+  }
+
   createEffect(() => {
-    if (!live || !selectedId()) return;
+    if (!live) return;
     let refetchTimer: number | undefined;
-    const unsubscribe = live.onSessionUpdated((update) => {
-      if (update.sessionId !== selectedId()) return;
-      window.clearTimeout(refetchTimer);
+    const schedule = () => {
+      if (refetchTimer !== undefined) return;
       refetchTimer = window.setTimeout(() => {
+        refetchTimer = undefined;
         void refetchEvents();
         void refetchChildCounts();
         void refetchLineageDag();
       }, 180);
+    };
+    const stopSessions = live.onSessionUpdated((update) =>
+      untrack(() => {
+        if (update.sessionId === selectedId()) schedule();
+      }),
+    );
+    // Replay contains event.appended frames; it need not repeat transient session.updated frames.
+    const stopEvents = live.onEventAppended((event) =>
+      untrack(() => {
+        if (event.sessionId === selectedId()) schedule();
+      }),
+    );
+    const stopReset = live.onReset?.(() => {
+      transcriptGeneration++;
+      batch(() => {
+        setBaselineEvents({ sessionId: "", events: [] });
+        mutateTranscript({ ...EMPTY_TRANSCRIPT });
+        setOlderEventsLoading(false);
+        setOlderEventsError("");
+        setActiveSearchTurnId("");
+        refreshReader();
+      });
     });
     onCleanup(() => {
       window.clearTimeout(refetchTimer);
-      unsubscribe();
+      stopSessions();
+      stopEvents();
+      stopReset?.();
     });
   });
+  createEffect(
+    on(
+      () => live?.status(),
+      (status, previous) => {
+        if (status === "live" && previous === "down") refreshReader();
+      },
+      { defer: true },
+    ),
+  );
 
   createEffect(() => {
     const targetId = props.targetEventId;
@@ -448,6 +494,7 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
     const before = current.nextBefore;
     if (!before || olderEventsLoading() || transcriptLoading()) return;
 
+    const generation = transcriptGeneration;
     const sessionId = current.sessionId;
     const query = current.query;
     const human = current.humanOnly;
@@ -460,7 +507,12 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         q: query || undefined,
         humanOnly: human || undefined,
       });
-      if (selectedId() !== sessionId || debouncedTranscriptQuery() !== query) return;
+      if (
+        generation !== transcriptGeneration ||
+        selectedId() !== sessionId ||
+        debouncedTranscriptQuery() !== query
+      )
+        return;
       const olderEvents = response.events.map((event) => withHumanText(event, human));
       mutateTranscript((latest) => {
         if (latest.sessionId !== sessionId || latest.query !== query || latest.humanOnly !== human)
@@ -478,11 +530,15 @@ export default function SessionsPage(props: SessionsPageProps = {}) {
         };
       });
     } catch {
-      if (selectedId() === sessionId && debouncedTranscriptQuery() === query) {
+      if (
+        generation === transcriptGeneration &&
+        selectedId() === sessionId &&
+        debouncedTranscriptQuery() === query
+      ) {
         setOlderEventsError("Older transcript events could not be loaded. Try again.");
       }
     } finally {
-      setOlderEventsLoading(false);
+      if (generation === transcriptGeneration) setOlderEventsLoading(false);
     }
   }
 

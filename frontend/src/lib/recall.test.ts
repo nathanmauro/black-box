@@ -39,6 +39,42 @@ describe("continuity evidence export", () => {
     expect(text).toMatch(/Export limits: [1-9]\d* captures truncated; [1-9]\d* captures omitted\./);
     expect(text).toContain("event=e0&project=");
   });
+  it("copies complete observation bodies once and keeps legacy headline-only items usable", () => {
+    const body = "Observation title\nVerification failed.\nKeep the old database.";
+    const text = buildRecallBriefing(
+      [{ ...base, kind: "observation", headline: "Observation title", body }],
+      options,
+    );
+    expect(text).toContain(body);
+    expect(text.split("Observation title")).toHaveLength(2);
+    expect(text).toContain("Export limits: 0 captures truncated; 0 captures omitted.");
+    expect(buildRecallBriefing([{ ...base, kind: "observation" }], options)).toContain(
+      base.headline!,
+    );
+  });
+  it("marks oversized observation bodies as truncated without dropping their provenance", () => {
+    const text = buildRecallBriefing(
+      [{ ...base, kind: "observation", body: "Observation\n" + "Evidence ".repeat(4000) }],
+      options,
+    );
+    expect(text.length).toBeLessThanOrEqual(BRIEFING_MAX_CHARS);
+    expect(text).toContain("[Capture truncated; open the evidence link for full text.]");
+    expect(text).toContain("Export limits: 1 captures truncated; 0 captures omitted.");
+    expect(text).toContain("2026-10-01T12:00:00Z");
+    expect(text).toContain("https://blackbox.example/?view=browse&session=s1&event=e1&project=");
+  });
+  it("does not split an emoji at the observation copy budget boundary", () => {
+    const suffix = "\n[Capture truncated; open the evidence link for full text.]";
+    const prefix = "x".repeat(6000 - suffix.length - 1);
+    const text = buildRecallBriefing(
+      [{ ...base, kind: "observation", body: prefix + "🧪" + "y".repeat(8000) }],
+      options,
+    );
+    expect(text).toContain(prefix + suffix);
+    expect(text).not.toContain("\uD83E");
+    expect(text.length).toBeLessThanOrEqual(BRIEFING_MAX_CHARS);
+    expect(text).toContain("Export limits: 1 captures truncated; 0 captures omitted.");
+  });
   it("finds latest retrieved handoff without treating replaced evidence as current", () => {
     expect(
       newestRecorded(

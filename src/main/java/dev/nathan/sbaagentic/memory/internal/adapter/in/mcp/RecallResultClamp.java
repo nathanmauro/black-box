@@ -81,9 +81,20 @@ final class RecallResultClamp {
         long cost = itemCost(candidate);
         boolean trimmed = false;
 
+        TrimmedField body = trimField(candidate.body(), cost - maxItemCost);
+        if (body != null) {
+            candidate = withText(candidate, candidate.headline(), candidate.rationale(), body.value());
+            cost -= body.savedChars();
+            trimmed = true;
+        }
+        if (cost <= maxItemCost && trimmed) {
+
+            return new TrimmedItem(candidate);
+        }
+
         TrimmedField rationale = trimField(candidate.rationale(), cost - maxItemCost);
         if (rationale != null) {
-            candidate = withText(candidate, candidate.headline(), rationale.value());
+            candidate = withText(candidate, candidate.headline(), rationale.value(), candidate.body());
             cost -= rationale.savedChars();
             trimmed = true;
         }
@@ -94,7 +105,7 @@ final class RecallResultClamp {
 
         TrimmedField headline = trimField(candidate.headline(), cost - maxItemCost);
         if (headline != null) {
-            candidate = withText(candidate, headline.value(), candidate.rationale());
+            candidate = withText(candidate, headline.value(), candidate.rationale(), candidate.body());
             cost -= headline.savedChars();
             trimmed = true;
         }
@@ -124,6 +135,10 @@ final class RecallResultClamp {
             chosenKeep = MIN_TRIMMED_FIELD_CHARS;
         }
 
+        // Do not split a supplementary Unicode character at the truncation boundary.
+        if (chosenKeep > 0
+                && Character.isHighSurrogate(value.charAt(chosenKeep - 1))
+                && Character.isLowSurrogate(value.charAt(chosenKeep))) chosenKeep--;
         int savedChars = savings(value.length(), chosenKeep);
         if (savedChars <= 0) {
 
@@ -153,6 +168,7 @@ final class RecallResultClamp {
         }
 
         return ITEM_OVERHEAD_CHARS
+                + length(item.body())
                 + length(item.headline())
                 + length(item.rationale())
                 + length(item.nextAction())
@@ -187,7 +203,7 @@ final class RecallResultClamp {
         return length;
     }
 
-    private static RecalledItem withText(RecalledItem item, String headline, String rationale) {
+    private static RecalledItem withText(RecalledItem item, String headline, String rationale, String body) {
 
         return new RecalledItem(
                 item.eventId(),
@@ -206,7 +222,8 @@ final class RecallResultClamp {
                 item.toAgent(),
                 item.score(),
                 item.supersedesEventId(),
-                item.supersededByEventId());
+                item.supersededByEventId(),
+                body);
     }
 
     private record TrimmedField(String value, int savedChars) {}

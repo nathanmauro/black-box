@@ -103,6 +103,8 @@ export type SearchResponse = {
 };
 
 export type RecalledItem = {
+  // Full captured Observation text; older servers and other kinds omit this field.
+  body?: string | null;
   eventId: string;
   sessionId: string;
   kind: string;

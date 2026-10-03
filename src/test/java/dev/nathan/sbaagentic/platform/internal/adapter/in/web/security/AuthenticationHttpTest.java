@@ -143,6 +143,12 @@ class AuthenticationHttpTest {
             try (var streamReader = new BufferedReader(new InputStreamReader(stream.body(), StandardCharsets.UTF_8))) {
                 assertThat(streamReader.readLine()).isEqualTo(":connected");
                 assertThat(streamReader.readLine()).isEmpty();
+                // Read the initial durable checkpoint before logging out. It was authorized and
+                // flushed with the opening comment; subsequent private frames remain forbidden.
+                assertThat(streamReader.readLine()).startsWith("id:v2|");
+                assertThat(streamReader.readLine()).isEqualTo("event:stream.checkpoint");
+                assertThat(streamReader.readLine()).startsWith("data:").contains("cursor");
+                assertThat(streamReader.readLine()).isEmpty();
 
                 var loggedOut = send(
                         browser, get("/logout").header("X-XSRF-TOKEN", csrf).POST(HttpRequest.BodyPublishers.noBody()));
