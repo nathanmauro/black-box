@@ -153,20 +153,19 @@ disposable verification. Normal Maven builds intentionally have no formatting ga
 
 ## Agent skills
 
-Per-repo configuration for the `mattpocock-skills` engineering skills (`/grill-with-docs`,
-`/to-spec`, `/to-tickets`, `/implement`, `/triage`, `tdd`, `code-review`, and the rest).
+The workflow skills (`/grill-with-docs`, `/to-spec`, `/to-tickets`, `tdd`, `diagnosing-bugs`,
+`domain-modeling` and the rest) come from the Cockpit-owned pack in
+`~/Developer/proj/cockpit/agents/shared/skills/`, which carries its own Linear and Black Box
+rules. This repo adds only what is specific to it.
 
 ### Issue tracker
 
-Linear, project `Black Box` in team `Nathanmauro` (`NAT-<n>`). See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage roles map to Linear statuses, not labels. See `docs/agents/triage-labels.md`.
+Linear, project `Black Box` in team `Nathanmauro` (`NAT-<n>`); the pack resolves it from the repo
+name. Specs are `Spec: <name>` issues with sub-issue tickets. Roles are statuses, not labels.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` and `docs/adr/` at the repo root, created lazily. See
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. See
 `docs/agents/domain.md`.
 
 ## Docs routing
