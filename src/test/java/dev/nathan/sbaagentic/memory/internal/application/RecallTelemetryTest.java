@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -36,6 +37,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+@DisplayName("Explain recall outcomes without exposing private context")
 class RecallTelemetryTest {
     private final MemoryEventReader events = mock(MemoryEventReader.class);
     private final TextEmbedder embedder = mock(TextEmbedder.class);
@@ -191,10 +193,17 @@ class RecallTelemetryTest {
     }
 
     @Test
+    @DisplayName("A vector outage retains exact lexical evidence and records the fallback")
     void vectorSearchFailureFallsBackAndRetainsLexicalResults() {
         when(events.recall(anyList(), any(), any(), anyInt())).thenReturn(List.of(event("lexical", "text")));
         when(vectors.knn(any(), anyInt(), any())).thenThrow(new IllegalStateException("secret database path"));
-        assertThat(service.recall("topic", 168, null).count()).isEqualTo(1);
+        var result = service.recall("topic", 168, null);
+        assertThat(result.count()).isEqualTo(1);
+        assertThat(result.mode()).isEqualTo("lexical");
+        assertThat(result.items()).singleElement().satisfies(item -> {
+            assertThat(item.eventId()).isEqualTo("lexical");
+            assertThat(item.score()).isNull();
+        });
         assertThat(record())
                 .containsEntry("fallback_reason", "vector_error")
                 .containsEntry("vector_outcome", "error")
