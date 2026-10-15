@@ -207,28 +207,24 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
                 """, request.source(), request.clientSessionId(), captureId, requestHash);
         if (reserved == 0) {
-
-            return jdbcTemplate.queryForObject(
+            // Read the receipt, then its event and session: row mappers never query.
+            CaptureReceipt receipt = jdbcTemplate.queryForObject(
                     """
                     SELECT request_hash, event_id FROM event_capture_receipts
                      WHERE source = ? AND client_session_id = ? AND capture_id = ?
                     """,
-                    (row, rowNum) -> {
-                        if (!requestHash.equals(row.getString("request_hash"))) {
-                            throw new CaptureIdConflictException();
-                        }
-                        AgentEvent event = findEventById(row.getString("event_id"))
-                                .orElseThrow(
-                                        () -> new IllegalStateException("Capture receipt has no canonical event."));
-                        AgentSession session =
-                                findSessionById(event.sessionId()).orElseThrow();
-
-                        return new RecordingStore.IdempotentPersisted(
-                                new RecordingStore.Persisted(session, event), true);
-                    },
+                    (row, rowNum) -> new CaptureReceipt(row.getString("request_hash"), row.getString("event_id")),
                     request.source(),
                     request.clientSessionId(),
                     captureId);
+            if (!requestHash.equals(receipt.requestHash())) {
+                throw new CaptureIdConflictException();
+            }
+            AgentEvent event = findEventById(receipt.eventId())
+                    .orElseThrow(() -> new IllegalStateException("Capture receipt has no canonical event."));
+            AgentSession session = findSessionById(event.sessionId()).orElseThrow();
+
+            return new RecordingStore.IdempotentPersisted(new RecordingStore.Persisted(session, event), true);
         }
         RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
         int bound = jdbcTemplate.update(
@@ -1242,6 +1238,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     }
 
     private record FeedCursor(Instant observedAt, String id) {}
+
+    private record CaptureReceipt(String requestHash, String eventId) {}
 
     private String toJson(Object value) {
         if (value == null) {

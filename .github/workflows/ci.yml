@@ -117,7 +117,7 @@ jobs:
               suite = ET.parse(report).getroot()
               assert int(suite.get('tests', '0')) > 0, f'{label} PostgreSQL consumer checks did not run'
               assert int(suite.get('skipped', '0')) == 0, f'{label} PostgreSQL consumer checks were skipped'
-          for name in ('ProjectlessBraidPostgresHttpTest', 'MeldSchemaPostgresMigrationTest', 'ProjectMeldRedactionPostgresHttpTest', 'BraidDiscoveryPostgresHttpMcpTest'):
+          for name in ('ProjectlessBraidPostgresHttpTest', 'MeldSchemaPostgresMigrationTest', 'ProjectMeldRedactionPostgresHttpTest', 'BraidDiscoveryPostgresHttpMcpTest', 'SavedMeldReadPoolPostgresHttpTest'):
               report = Path('target/surefire-reports') / f'TEST-dev.nathan.sbaagentic.project.{name}.xml'
               suite = ET.parse(report).getroot()
               assert int(suite.get('tests', '0')) > 0, f'{name} did not run'
