@@ -10,6 +10,7 @@ import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
 import dev.nathan.sbaagentic.recording.Titles;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -57,6 +58,49 @@ public class EvidenceService {
         }
 
         return new EvidenceListResponse(List.copyOf(result), result.size());
+    }
+
+    /**
+     * Evidence that explicitly supports or refutes any of these events, recorded in the project or
+     * its aliases, newest first. One scan serves every target.
+     */
+    public List<EvidenceView> linkedTo(Collection<String> eventIds, String project, int limit) {
+        Set<String> targets = new HashSet<>();
+        if (eventIds != null) {
+            for (String id : eventIds) {
+                if (id != null && !id.isBlank()) {
+                    targets.add("event:" + id.strip().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        if (targets.isEmpty() || limit <= 0) {
+
+            return List.of();
+        }
+        Set<String> projects = resolve(project, null);
+        List<EvidenceView> result = new ArrayList<>();
+        for (EvidenceRow row : all()) {
+            EvidenceView view = row.view();
+            if (projects != null
+                    && (view.repo() == null
+                            || !projects.contains(ProjectKey.of(view.repo()).value()))) {
+                continue;
+            }
+            if (!linksAny(view.supports(), targets) && !linksAny(view.refutes(), targets)) {
+                continue;
+            }
+            result.add(view);
+            if (result.size() == limit) {
+                break;
+            }
+        }
+
+        return List.copyOf(result);
+    }
+
+    private static boolean linksAny(List<String> links, Set<String> targets) {
+
+        return links != null && links.stream().anyMatch(targets::contains);
     }
 
     /** MCP entry point: an unknown key is an actionable tool error. */

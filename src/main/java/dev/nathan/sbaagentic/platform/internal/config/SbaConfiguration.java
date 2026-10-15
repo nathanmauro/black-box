@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.platform.internal.config;
 import dev.nathan.sbaagentic.ask.AskModelProperties;
 import dev.nathan.sbaagentic.ask.AskProperties;
 import dev.nathan.sbaagentic.judgment.JudgmentProperties;
+import dev.nathan.sbaagentic.memory.ContinuationSynthesisProperties;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
 import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
     AskModelProperties.class,
     AskProperties.class,
     JudgmentProperties.class,
+    ContinuationSynthesisProperties.class,
     ElasticsearchProperties.class,
     IngestionProperties.class,
     TranscriptProperties.class,

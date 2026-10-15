@@ -686,6 +686,113 @@ export function getRecall(
   return getJson(`/api/recall?${params.toString()}`);
 }
 
+export type ContinuationBasis = "handoff.nextAction" | "handoff.openLoop" | "decision.openLoop";
+
+export type ContinuationEvidence = {
+  eventId: string;
+  sessionId: string;
+  kind: string;
+  field: string;
+  // The recorded time, even when it is later than generatedAt.
+  observedAt?: string | null;
+  // A relative Recall evidence link. Copy prompt makes exactly these strings absolute.
+  href: string;
+};
+
+export type ContinuationNote = {
+  code: string;
+  message: string;
+  eventId?: string | null;
+  href?: string | null;
+};
+
+export type ContinuationCandidate = {
+  id: string;
+  rank: number;
+  basis: ContinuationBasis | string;
+  title: string;
+  why: string;
+  ageDays: number;
+  stale: boolean;
+  prompt: string;
+  evidence: ContinuationEvidence[];
+  caveats: ContinuationNote[];
+};
+
+export type ContinuationResponse = {
+  project: { canonicalKey: string; projectKey: string; label: string; scopes: ProjectScope[] };
+  generatedAt: string;
+  newestEvidenceAt?: string | null;
+  headAt?: string | null;
+  stale: boolean;
+  withinHours: number;
+  mode: "deterministic" | string;
+  retrieval: { handoffs: number; decisions: number; poolCap: number; excludedReplaced: boolean };
+  candidates: ContinuationCandidate[];
+  // Always includes the historical-evidence caveat.
+  warnings: Array<{ code: string; message: string }>;
+  // True only when the opt-in local-model restatement can be attempted.
+  synthesisAvailable?: boolean;
+};
+
+export type ContinuationSynthesisReason =
+  | "disabled"
+  | "remote_model_not_allowed"
+  | "input_over_budget"
+  | "unavailable"
+  | "timeout"
+  | "truncated"
+  | "invalid_reference"
+  | "empty";
+
+export type ContinuationCitation = {
+  handle: string;
+  eventId: string;
+  sessionId: string;
+  kind: string;
+  observedAt?: string | null;
+  href: string;
+};
+
+export type ContinuationSynthesisResponse = {
+  // The deterministic candidate, unchanged.
+  candidate: ContinuationCandidate;
+  // Model output citing only the listed evidence; null unless it passed validation.
+  synthesized: {
+    text: string;
+    model?: string | null;
+    promptVersion: string;
+    citations: ContinuationCitation[];
+  } | null;
+  synthesis: {
+    status: "ok" | "degraded" | string;
+    reason?: ContinuationSynthesisReason | string | null;
+  };
+};
+
+/** Deterministic prompts built on request from one project's record; `project` is a path. */
+export function getContinuations(
+  project: string,
+  withinHours = 8760,
+  max = 3,
+): Promise<ContinuationResponse> {
+  const params = new URLSearchParams({
+    project,
+    withinHours: String(withinHours),
+    max: String(max),
+  });
+  return getJson(`/api/continuations?${params.toString()}`);
+}
+
+/** One explicit, opt-in model restatement of a deterministic candidate; never called automatically. */
+export function synthesizeContinuation(request: {
+  project: string;
+  withinHours?: number;
+  candidateId: string;
+}): Promise<ContinuationSynthesisResponse> {
+  return postJson("/api/continuations/synthesize", request);
+}
+
 export type CaptureDecisionRequest = {
   source: string;
   clientSessionId: string;

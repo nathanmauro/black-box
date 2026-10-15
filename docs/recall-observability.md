@@ -60,7 +60,10 @@ Neither initialization metadata nor declarations authenticate a person or an app
 
 Allowed clients are `codex`, `claude`, `manual`, `other`, and `unknown`. Allowed purposes are
 `normal`, `audit`, `test`, and `unknown`. Missing/invalid values become `unknown`; unknown calls must
-not be silently counted as normal usage. Even `normal` is a caller declaration, not proof of organic
+not be silently counted as normal usage. The server assigns a fifth purpose, `continuation`, to the
+two internal recalls (one per kind) behind each `GET /api/continuations` or
+`POST /api/continuations/synthesize` request, under one request ID. Callers cannot declare it: a
+declared `continuation` becomes `unknown`. Even `normal` is a caller declaration, not proof of organic
 adoption. Research probes should declare `audit`; fixtures and automated verification should declare
 `test`. Unlabeled historical probes cannot be retrospectively separated reliably.
 

@@ -12,6 +12,7 @@ import {
   untrack,
   type JSX,
 } from "solid-js";
+import ContinuationPanel from "../components/ContinuationPanel";
 import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
@@ -24,7 +25,12 @@ import {
   type RecallResult,
 } from "../lib/api";
 import { timeAgo, truncatePath } from "../lib/format";
-import { findProjectByIdentifier, primaryProjectScope } from "../lib/projects";
+import {
+  canonicalizeProjectPath,
+  findProjectByIdentifier,
+  NO_PROJECT_SCOPE,
+  primaryProjectScope,
+} from "../lib/projects";
 import { buildRecallBriefing, newestRecorded, recalledItemHref } from "../lib/recall";
 import { forgetRecall, recallFor, rememberRecall } from "../lib/recallMemory";
 import { sourceFilter } from "../lib/stores";
@@ -83,6 +89,17 @@ export default function RecallPage() {
   const filteredItems = createMemo(() => sourceFilter.matches(result()?.items || []));
   const groupedItems = createMemo(() => groupByKind(filteredItems()));
   const latestHandoff = createMemo(() => newestRecorded(filteredItems(), "handoff"));
+  // Continuations take a path. Resolve a catalog identifier (including a projectKey deep link) to
+  // its primary canonical key first; an uncatalogued value is sent as the path it already is. The
+  // server rejects the no-project scope and "/" (an all-slash path canonicalizes to "" here), so
+  // the panel is not offered for them.
+  const continuationProject = createMemo(() => {
+    if (legacy() || !project()) return "";
+    const known = findProjectByIdentifier(projects.error ? [] : projects() || [], project());
+    const target = known ? primaryProjectScope(known).canonicalKey : project();
+    const canonical = canonicalizeProjectPath(target);
+    return !canonical || canonical === "/" || canonical === NO_PROJECT_SCOPE ? "" : target;
+  });
   const recordedQuestions = createMemo(() =>
     filteredItems()
       .filter((item) => !item.supersededByEventId)
@@ -498,6 +515,9 @@ export default function RecallPage() {
           </button>
         </div>
       </form>
+      <Show when={continuationProject()} keyed>
+        {(target) => <ContinuationPanel project={target} disabled={projects.loading} />}
+      </Show>
       <Show when={selectedEvidence()}>
         {(item) => (
           <section class="recall-evidence" aria-label="Selected evidence">

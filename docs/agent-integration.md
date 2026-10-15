@@ -443,6 +443,12 @@ use a result's Browse link to open its exact source event.
 | --- | --- |
 | Optional SessionStart hook | 720 hours (30 days), 3 Decisions/Handoffs, 4,000-character context block |
 | MCP `recallContext` | 168 hours, Decisions/Handoffs, 10 items (maximum 50); `maxChars` defaults to 24,000, minimum 500 |
+| REST `GET /api/continuations` | 8,760 hours (range 1–8,760), up to 3 prompts (range 1–3) from the newest 50 Handoffs and 50 current Decisions; each prompt at most 6,000 characters |
+| REST `POST /api/continuations/synthesize` | Off by default; at most one loopback local-model call per request, 512 output tokens, 4,000-character reply, validated citations |
+
+`GET /api/continuations` builds deterministic starting prompts from one project's record; see
+[Prompts from the record](project-continuity.md#prompts-from-the-record). It is not an MCP tool.
+Its prompts restate recorded text inside fences and are not verified as current.
 
 These are different layers. The MCP clamp bounds item text fields, can trim body/rationale/headline
 with a visible suffix and drop later items, and reports `truncated`. It is not the hook's packet

@@ -104,13 +104,15 @@ mvn -Dtest=PostgresBackendContractTest,AuthenticatedPostgresConsumerContractTest
 The two classes above create randomly named `bb_contract_...` or `bb_auth_contract_...` schemas,
 use them for real HTTP servers, close the servers, and drop only those schemas. The database role
 needs CREATE SCHEMA permission. The full suite also runs `EvidencePostgresHttpMcpTest`, which uses
-its own random `bb_evidence_...` schema and verifies Evidence capture, recall and Idea links.
+its own random `bb_evidence_...` schema and verifies Evidence capture, recall and Idea links, and
+`ContinuationPostgresApiTest`, which uses a random `bb_continuation_...` schema for the
+continuation prompt checks.
 
-For that Evidence fixture, set an explicit port in the JDBC URL (1–65535), using `127.0.0.1` or
+For those fixtures, set an explicit port in the JDBC URL (1–65535), using `127.0.0.1` or
 `localhost`, database `blackbox_test` and username `blackbox_test`. Port 5432 is an example;
 another explicitly provisioned disposable server port is supported equally inside and outside CI.
 URL query parameters, user information and fragments are rejected. Before creating or deleting
-its schema, the fixture checks the observed database, user and server port against those settings.
+its schema, each fixture checks the observed database, user and server port against those settings.
 Port forwarding that changes the observed server port is not supported. Optionally set
 `SBA_POSTGRES_TEST_EXPECTED_DATA_DIRECTORY` to the disposable server's exact `data_directory`;
 a mismatch also stops the fixture before schema changes. These checks do not make a live database

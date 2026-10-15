@@ -62,6 +62,15 @@ sba:
     # transcript, leaving headroom on a 4096-token context after output + system prompt. Raise for bigger
     # context windows; lower it for a 2k-context model.
     max-input-chars: ${SBA_LOCAL_AI_MAX_INPUT_CHARS:8000}
+  continuation:
+    synthesis:
+      # Opt-in model restatement for POST /api/continuations/synthesize. Off by default; when on it
+      # calls the sba.local-ai model once per request and refuses a non-loopback base URL unless
+      # allow-non-loopback is set. GET /api/continuations never calls a model.
+      enabled: ${SBA_CONTINUATION_SYNTHESIS_ENABLED:false}
+      allow-non-loopback: ${SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK:false}
+      max-output-tokens: ${SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS:512}
+      max-output-chars: ${SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS:4000}
   summary:
     # external is the default and sends transcript text through the bundled Codex CLI wrapper;
     # `local` is an explicit opt-in for an OpenAI-compatible local server and degrades to a

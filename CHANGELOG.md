@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Prompts from the record: `GET /api/continuations` builds up to three deterministic starting
+  prompts from one project's recorded handoffs and current decisions (exact project and alias
+  scope, replaced decisions excluded, trajectory frontier, stale and future-dated labels, explicit
+  Evidence caveats, fenced captured text, 6,000-character budget). Recall gains a **Prompts from
+  the record** panel with Inspect and Copy prompt. No model is involved and nothing is stored.
+- Optional continuation restatement, off by default: `POST /api/continuations/synthesize` asks a
+  loopback local model (`SBA_CONTINUATION_SYNTHESIS_ENABLED`) to restate one prompt with `[E#]`
+  evidence handles and redacted, fenced input, validates the whole reply, and returns
+  `synthesized: null` with a fixed reason on any failure. The deterministic prompt never changes.
 - Stream query composition: completion follows the caret, including negated, quoted and
   comma-listed tokens. It offers recorded values for facets, labelled with where they came from
   (counts appear only when they describe the query being composed), and grammar values for time

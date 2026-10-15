@@ -14,17 +14,22 @@ import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.mcp.MemoryMcpTools;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContextController;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContinuationController;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore.ScoredKey;
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
+import dev.nathan.sbaagentic.project.ProjectScope;
+import dev.nathan.sbaagentic.project.ProjectScopeOperations;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -282,6 +287,62 @@ class RecallTelemetryTest {
                 .isEqualTo(record().get("request_id"))
                 .matches("[a-f0-9-]{36}")
                 .isNotEqualTo("attacker-id");
+        assertThat(RecallRequestContext.current()).isNull();
+    }
+
+    @Test
+    void callersCannotDeclareTheServerAssignedContinuationPurpose() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(
+                        new ContextController(service, mock(RecordingCaptureOperations.class)))
+                .build();
+        mvc.perform(get("/api/recall")
+                        .param("scope", "/private/path")
+                        .header("X-Blackbox-Client", "codex")
+                        .header("X-Blackbox-Purpose", "continuation"))
+                .andExpect(status().isOk());
+        assertThat(record()).containsEntry("client", "codex").containsEntry("purpose", "unknown");
+        try (var declared = RecallRequestContext.open("mcp", "claude", " Continuation ", null)) {
+            assertThat(declared.purpose()).isEqualTo("unknown");
+        }
+        try (var assigned = RecallRequestContext.openContinuation("http", "claude", null)) {
+            assertThat(assigned.purpose()).isEqualTo(RecallRequestContext.CONTINUATION_PURPOSE);
+        }
+        assertThat(RecallRequestContext.current()).isNull();
+    }
+
+    @Test
+    void continuationRequestsRecordBothRecallsUnderOneIdWithTheContinuationPurpose() throws Exception {
+        ProjectScopeOperations projects = mock(ProjectScopeOperations.class);
+        when(projects.projectScopesFor("/private/path"))
+                .thenReturn(List.of(new ProjectScope("key", "/private/path", "/private/path", true, null)));
+        var continuations = new ContinuationService(
+                service,
+                projects,
+                mock(EvidenceService.class),
+                Clock.fixed(Instant.parse("2026-10-15T12:00:00Z"), ZoneOffset.UTC));
+        @SuppressWarnings("unchecked")
+        org.springframework.beans.factory.ObjectProvider<dev.nathan.sbaagentic.memory.ContinuationSynthesizer> none =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        var synthesis = new ContinuationSynthesisService(
+                continuations, none, text -> text, new dev.nathan.sbaagentic.memory.ContinuationSynthesisProperties());
+        var mvc = MockMvcBuilders.standaloneSetup(new ContinuationController(continuations, synthesis))
+                .build();
+        var result = mvc.perform(get("/api/continuations")
+                        .param("project", "/private/path")
+                        .header("X-Blackbox-Client", "codex")
+                        .header("X-Blackbox-Purpose", "audit"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String requestId = result.getResponse().getHeader("X-Blackbox-Recall-Id");
+        assertThat(requestId).matches("[a-f0-9-]{36}");
+        assertThat(records)
+                .hasSize(2)
+                .allSatisfy(record -> assertThat(record)
+                        .containsEntry("transport", "http")
+                        .containsEntry("client", "codex")
+                        .containsEntry("purpose", "continuation")
+                        .containsEntry("request_id", requestId));
+        assertThat(records.toString()).doesNotContain("/private/path");
         assertThat(RecallRequestContext.current()).isNull();
     }
 
