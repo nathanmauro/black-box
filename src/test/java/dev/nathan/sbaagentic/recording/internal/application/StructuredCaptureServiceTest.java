@@ -21,15 +21,21 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("Validate and normalize structured captures before they are recorded")
 class StructuredCaptureServiceTest {
 
     @Mock
@@ -60,25 +66,18 @@ class StructuredCaptureServiceTest {
         verifyNoInteractions(recorder);
     }
 
-    @Test
-    void captureProjectionCapsPathsAndStoresProjectionMetadata() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("projectionPaths")
+    @DisplayName("Keep the first five titled paths and their structured metadata")
+    void captureProjectionNormalizesBeforeCappingAndPreservesMetadata(
+            String scenario, List<ProjectionPath> suppliedPaths, String firstLine, Map<String, Object> firstMetadata) {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-1", "session-1", "codex", "client-1", "Projection", false));
 
         StructuredCaptureService service =
                 new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
         service.captureProjection(new CaptureProjectionRequest(
-                "codex",
-                "client-1",
-                "/repo",
-                "Head handoff left graph capture open",
-                List.of(
-                        new ProjectionPath("Path 1", "Description 1", 0.1),
-                        new ProjectionPath("Path 2", "Description 2", 0.2),
-                        new ProjectionPath("Path 3", "Description 3", 0.3),
-                        new ProjectionPath("Path 4", "Description 4", 0.4),
-                        new ProjectionPath("Path 5", "Description 5", 0.5),
-                        new ProjectionPath("Path 6", "Description 6", 0.6))));
+                "codex", "client-1", "/repo", "Head handoff left graph capture open", suppliedPaths));
 
         ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
         verify(recorder).ingest(captor.capture());
@@ -88,91 +87,69 @@ class StructuredCaptureServiceTest {
         assertThat(captured.cwd()).isEqualTo("/repo");
         assertThat(captured.text())
                 .contains("Projected futures:")
-                .contains("1. Path 1 — Description 1")
+                .contains(firstLine)
                 .contains("5. Path 5 — Description 5")
                 .contains("Basis: Head handoff left graph capture open")
-                .doesNotContain("Path 6");
-
-        assertThat(captured.metadata()).containsEntry("kind", "projection");
-        assertThat(captured.metadata()).containsEntry("basis", "Head handoff left graph capture open");
-        assertThat(captured.metadata()).containsEntry("repo", "/repo");
+                .doesNotContain("Untitled projection", "Description without a title", "Path 6");
+        assertThat(captured.metadata())
+                .containsEntry("kind", "projection")
+                .containsEntry("basis", "Head handoff left graph capture open")
+                .containsEntry("repo", "/repo");
         assertThat(captured.metadata().get("paths")).isInstanceOf(List.class);
-
         List<?> paths = (List<?>) captured.metadata().get("paths");
         assertThat(paths).hasSize(5);
-        assertThat(paths.getFirst()).isInstanceOf(Map.class);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> first = (Map<String, Object>) paths.getFirst();
-        assertThat(first).containsEntry("title", "Path 1");
-        assertThat(first).containsEntry("description", "Description 1");
-        assertThat(first).containsEntry("confidence", 0.1);
+        assertThat(paths.getFirst()).isEqualTo(firstMetadata);
         assertThat(paths.getLast()).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> last = (Map<String, Object>) paths.getLast();
         assertThat(last).containsEntry("title", "Path 5");
     }
 
-    @Test
-    void captureProjectionRejectsNullAndEmptyPaths() {
+    static Stream<Arguments> projectionPaths() {
+        List<ProjectionPath> titledPaths = List.of(
+                new ProjectionPath("Path 1", "Description 1", 0.1),
+                new ProjectionPath("Path 2", "Description 2", 0.2),
+                new ProjectionPath("Path 3", "Description 3", 0.3),
+                new ProjectionPath("Path 4", "Description 4", 0.4),
+                new ProjectionPath("Path 5", "Description 5", 0.5),
+                new ProjectionPath("Path 6", "Description 6", 0.6));
+        List<ProjectionPath> pathsWithBlanks = Stream.concat(
+                        Stream.of(
+                                new ProjectionPath(" ", " ", null),
+                                new ProjectionPath(" ", "Description without a title", 0.99),
+                                new ProjectionPath(" Path 1 ", " ", null)),
+                        titledPaths.stream().skip(1))
+                .toList();
+
+        return Stream.of(
+                Arguments.of(
+                        "Six titled paths retain the first five",
+                        titledPaths,
+                        "1. Path 1 — Description 1",
+                        Map.of("title", "Path 1", "description", "Description 1", "confidence", 0.1)),
+                Arguments.of(
+                        "Blank paths are discarded before the cap and optional blank fields are omitted",
+                        pathsWithBlanks,
+                        "1. Path 1",
+                        Map.of("title", "Path 1")));
+    }
+
+    @ParameterizedTest(name = "paths={0}")
+    @NullAndEmptySource
+    @DisplayName("Missing or empty paths are rejected before recording anything")
+    void captureProjectionRejectsMissingPaths(List<ProjectionPath> paths) {
         StructuredCaptureService service =
                 new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
 
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> service.captureProjection(
-                        new CaptureProjectionRequest("codex", "client-null", "/repo", "Basis", null)))
+                        new CaptureProjectionRequest("codex", "client-empty", "/repo", "Basis", paths)))
                 .withMessage("Projection paths must include at least one path with a title.");
-
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> service.captureProjection(
-                        new CaptureProjectionRequest("codex", "client-empty", "/repo", "Basis", List.of())))
-                .withMessage("Projection paths must include at least one path with a title.");
-
         verifyNoInteractions(recorder);
     }
 
     @Test
-    void captureProjectionTrimsBlankPathEntriesBeforeCapping() {
-        when(recorder.ingest(any(EventIngestRequest.class)))
-                .thenReturn(new IngestResponse("event-2", "session-1", "codex", "client-2", "Projection", false));
-
-        StructuredCaptureService service =
-                new StructuredCaptureService(recorder, new RedactionService(new IngestionProperties()));
-        service.captureProjection(new CaptureProjectionRequest(
-                "codex",
-                "client-2",
-                "/repo",
-                "Trim blank entries",
-                List.of(
-                        new ProjectionPath(" ", " ", null),
-                        new ProjectionPath(" ", "Description without a title", 0.99),
-                        new ProjectionPath(" Path 1 ", " ", null),
-                        new ProjectionPath("Path 2", "Description 2", 0.2),
-                        new ProjectionPath("Path 3", "Description 3", 0.3),
-                        new ProjectionPath("Path 4", "Description 4", 0.4),
-                        new ProjectionPath("Path 5", "Description 5", 0.5),
-                        new ProjectionPath("Path 6", "Description 6", 0.6))));
-
-        ArgumentCaptor<EventIngestRequest> captor = ArgumentCaptor.forClass(EventIngestRequest.class);
-        verify(recorder).ingest(captor.capture());
-        EventIngestRequest captured = captor.getValue();
-
-        assertThat(captured.text())
-                .contains("1. Path 1")
-                .contains("5. Path 5 — Description 5")
-                .doesNotContain("Untitled projection")
-                .doesNotContain("Description without a title")
-                .doesNotContain("Path 6");
-
-        List<?> paths = (List<?>) captured.metadata().get("paths");
-        assertThat(paths).hasSize(5);
-        assertThat(paths.getFirst()).isInstanceOf(Map.class);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> first = (Map<String, Object>) paths.getFirst();
-        assertThat(first).containsEntry("title", "Path 1");
-        assertThat(first).doesNotContainKey("description");
-    }
-
-    @Test
+    @DisplayName("An omitted basis leaves the first path available as a headline")
     void captureProjectionWithoutBasisLeavesPathRenderAsHeadlineFallback() {
         when(recorder.ingest(any(EventIngestRequest.class)))
                 .thenReturn(new IngestResponse("event-3", "session-1", "codex", "client-3", "Projection", false));

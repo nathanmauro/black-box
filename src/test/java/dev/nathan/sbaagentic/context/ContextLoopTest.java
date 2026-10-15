@@ -26,6 +26,8 @@ import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite.RecordingSqlStore;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -48,6 +50,7 @@ import org.springframework.test.web.servlet.MockMvc;
             "sba.memory.embedding.enabled=false"
         })
 @AutoConfigureMockMvc
+@DisplayName("Capture intent, find its evidence, and resume work")
 class ContextLoopTest {
 
     @Autowired
@@ -68,343 +71,359 @@ class ContextLoopTest {
     @Autowired
     ObjectMapper objectMapper;
 
-    @Test
-    void decisionRoundTripsAsStructuredIntentRecallableByRepo() {
-        captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex",
-                "codex-1",
-                "/tmp/acme-roundtrip",
-                "Use JWT refresh-rotation for auth",
-                "Stateless and horizontally scalable",
-                List.of("Server-side sessions in Redis"),
-                0.8,
-                List.of("revoke-on-logout not wired yet")));
+    @Nested
+    @DisplayName("Decisions retain their reasoning and remain findable")
+    class Decisions {
 
-        RecallResult byRepo = contextService.recall("/tmp/acme-roundtrip", 168, List.of("decision"));
-        assertThat(byRepo.count()).isEqualTo(1);
-        RecalledItem item = byRepo.items().getFirst();
-        AgentSession session = repository.findSession("codex", "codex-1").orElseThrow();
-        assertThat(item.sessionId()).isEqualTo(session.id());
-        assertThat(item.kind()).isEqualTo("decision");
-        assertThat(item.source()).isEqualTo("codex");
-        assertThat(item.headline()).contains("JWT refresh-rotation");
-        assertThat(item.rationale()).contains("Stateless");
-        assertThat(item.alternatives()).containsExactly("Server-side sessions in Redis");
-        assertThat(item.confidence()).isEqualTo(0.8);
-        assertThat(item.openLoops()).containsExactly("revoke-on-logout not wired yet");
-        assertThat(item.repo()).isEqualTo("/tmp/acme-roundtrip");
-    }
+        @Test
+        @DisplayName("A captured decision preserves its reasoning in recall and its evidence on the timeline")
+        void decisionRoundTripsAsStructuredIntentRecallableByRepo() {
+            IngestResponse captured = captureOperations.captureDecision(new CaptureDecisionRequest(
+                    "codex",
+                    "codex-1",
+                    "/tmp/acme-roundtrip",
+                    "Use JWT refresh-rotation for auth",
+                    "Stateless and horizontally scalable",
+                    List.of("Server-side sessions in Redis"),
+                    0.8,
+                    List.of("revoke-on-logout not wired yet")));
 
-    @Test
-    void recallMatchesByTopicInTextNotJustRepo() {
-        captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex",
-                "codex-topic",
-                "/tmp/other-repo",
-                "Adopt structured logging with correlation ids",
-                "Traceability across services",
-                List.of(),
-                0.6,
-                List.of()));
-
-        // The repo does not match, but the topic appears in the decision text.
-        RecallResult byTopic = contextService.recall("correlation", 168, List.of("decision"));
-        assertThat(byTopic.count()).isEqualTo(1);
-        assertThat(byTopic.items().getFirst().headline()).contains("structured logging");
-    }
-
-    @Test
-    void handoffIsRecalledByDefaultAndCarriesOpenLoops() {
-        captureOperations.captureHandoff(new CaptureHandoffRequest(
-                "claude",
-                "claude-7",
-                "/tmp/checkout",
-                "next-session",
-                "Wired the payment intent flow",
-                List.of("webhook signature check missing"),
-                "Verify the Stripe webhook secret in staging"));
-
-        // Default kinds (decision + handoff) must surface the handoff.
-        RecallResult recalled = contextService.recall("/tmp/checkout", 168, null);
-        assertThat(recalled.kinds()).containsExactly("decision", "handoff");
-        assertThat(recalled.count()).isEqualTo(1);
-        RecalledItem item = recalled.items().getFirst();
-        assertThat(item.kind()).isEqualTo("handoff");
-        assertThat(item.toAgent()).isEqualTo("next-session");
-        assertThat(item.openLoops()).containsExactly("webhook signature check missing");
-        assertThat(item.nextAction()).contains("Stripe webhook secret");
-    }
-
-    @Test
-    void handoffEventIdIsADirectRecallKey() {
-        IngestResponse captured = captureOperations.captureHandoff(new CaptureHandoffRequest(
-                "codex",
-                "codex-id-recall",
-                "/tmp/id-recall",
-                "next-agent",
-                "Completed the queue adapter contract",
-                List.of("Board client remains"),
-                "Use the linked handoff id for recall"));
-
-        RecallResult recalled = contextService.recall(captured.eventId(), 168, List.of("handoff"));
-
-        assertThat(recalled.scope()).isEqualTo(captured.eventId());
-        assertThat(recalled.items()).singleElement().satisfies(item -> {
+            RecallResult byRepo = contextService.recall("/tmp/acme-roundtrip", 168, List.of("decision"));
+            assertThat(byRepo.count()).isEqualTo(1);
+            RecalledItem item = byRepo.items().getFirst();
+            AgentSession session = repository.findSession("codex", "codex-1").orElseThrow();
             assertThat(item.eventId()).isEqualTo(captured.eventId());
-            assertThat(item.headline()).isEqualTo("Completed the queue adapter contract");
-        });
+            assertThat(item.sessionId()).isEqualTo(session.id());
+            assertThat(item.kind()).isEqualTo("decision");
+            assertThat(item.source()).isEqualTo("codex");
+            assertThat(item.headline()).contains("JWT refresh-rotation");
+            assertThat(item.rationale()).contains("Stateless");
+            assertThat(item.alternatives()).containsExactly("Server-side sessions in Redis");
+            assertThat(item.confidence()).isEqualTo(0.8);
+            assertThat(item.openLoops()).containsExactly("revoke-on-logout not wired yet");
+            assertThat(item.repo()).isEqualTo("/tmp/acme-roundtrip");
+
+            // The recalled intent is the same evidence visible on the session timeline.
+            assertThat(repository.eventsForSession(session.id(), 10))
+                    .singleElement()
+                    .satisfies(event -> {
+                        assertThat(event.id()).isEqualTo(captured.eventId());
+                        assertThat(event.eventType()).isEqualTo("Decision");
+                        assertThat(event.text()).contains("Use JWT refresh-rotation for auth");
+                    });
+        }
+
+        @Test
+        @DisplayName("A topic finds a decision even when the repository name does not match")
+        void recallMatchesByTopicInTextNotJustRepo() {
+            captureOperations.captureDecision(new CaptureDecisionRequest(
+                    "codex",
+                    "codex-topic",
+                    "/tmp/other-repo",
+                    "Adopt structured logging with correlation ids",
+                    "Traceability across services",
+                    List.of(),
+                    0.6,
+                    List.of()));
+
+            // The repo does not match, but the topic appears in the decision text.
+            RecallResult byTopic = contextService.recall("correlation", 168, List.of("decision"));
+            assertThat(byTopic.count()).isEqualTo(1);
+            assertThat(byTopic.items().getFirst().headline()).contains("structured logging");
+        }
+
+        @Test
+        @DisplayName("An unknown topic returns no invented context")
+        void unmatchedScopeRecallsNothing() {
+            captureOperations.captureDecision(new CaptureDecisionRequest(
+                    "codex", "codex-empty", "/tmp/zzz-isolated", "Something", null, null, 0.5, null));
+
+            RecallResult none = contextService.recall("a-topic-that-does-not-exist-anywhere", 168, null);
+            assertThat(none.count()).isZero();
+            assertThat(none.items()).isEmpty();
+        }
     }
 
-    @Test
-    void projectionRoundTripsThroughRecallAndProjectGraphFeed() {
-        String repo = "/tmp/projection-roundtrip";
-        IngestResponse captured = captureOperations.captureProjection(new CaptureProjectionRequest(
-                "codex",
-                "codex-projection",
-                repo,
-                "Current graph feed can already render projection ghost nodes",
-                List.of(
-                        new ProjectionPath(
-                                "Ship projection capture", "Add MCP and REST capture surfaces for future paths.", 0.78),
-                        new ProjectionPath(
-                                "Tune trajectory ranking",
-                                "Let the frontend pick the latest set and rank ghost futures.",
-                                0.51))));
+    @Nested
+    @DisplayName("Handoffs carry unfinished work to the next agent")
+    class Handoffs {
 
-        RecallResult recalled = contextService.recall(repo, 168, List.of("projection"));
-        assertThat(recalled.kinds()).containsExactly("projection");
-        assertThat(recalled.count()).isEqualTo(1);
-        RecalledItem recalledProjection = recalled.items().getFirst();
-        assertThat(recalledProjection).satisfies(item -> {
-            assertThat(item.eventId()).isEqualTo(captured.eventId());
-            assertThat(item.kind()).isEqualTo("projection");
-            assertThat(item.headline()).isEqualTo("Ship projection capture");
-            assertThat(item.rationale()).isEqualTo("Current graph feed can already render projection ghost nodes");
-            assertThat(item.confidence()).isEqualTo(0.78);
-            assertThat(item.body())
-                    .isEqualTo(repository
-                            .findEventById(captured.eventId())
-                            .orElseThrow()
-                            .text())
-                    .contains(
-                            "1. Ship projection capture — Add MCP and REST capture surfaces for future paths. (confidence: 0.78)",
-                            "2. Tune trajectory ranking — Let the frontend pick the latest set and rank ghost futures. (confidence: 0.51)");
-            assertThat(item.repo()).isEqualTo(repo);
-        });
+        @Test
+        @DisplayName("A handoff is recalled by default and can be resumed by its event ID")
+        void handoffIsRecalledByDefaultAndCarriesOpenLoops() {
+            IngestResponse captured = captureOperations.captureHandoff(new CaptureHandoffRequest(
+                    "claude",
+                    "claude-7",
+                    "/tmp/checkout",
+                    "next-session",
+                    "Wired the payment intent flow",
+                    List.of("webhook signature check missing"),
+                    "Verify the Stripe webhook secret in staging"));
 
-        ProjectTrajectoryResponse graph = projectGraph.graph(ProjectKey.of(repo).encoded());
-        assertThat(graph.canonicalKey()).isEqualTo(repo);
-        assertThat(graph.captures())
-                .filteredOn(capture -> captured.eventId().equals(capture.id()))
-                .singleElement()
-                .satisfies(capture -> {
-                    assertThat(capture.kind()).isEqualTo("projection");
-                    assertThat(capture.headline()).isEqualTo(recalledProjection.headline());
-                    assertThat(capture.paths()).hasSize(2);
-                    assertThat(capture.paths().getFirst().title()).isEqualTo("Ship projection capture");
-                    assertThat(capture.paths().getFirst().description())
-                            .isEqualTo("Add MCP and REST capture surfaces for future paths.");
-                    assertThat(capture.paths().getFirst().confidence()).isEqualTo(0.78);
-                });
+            // Default kinds (decision + handoff) must surface the handoff.
+            RecallResult recalled = contextService.recall("/tmp/checkout", 168, null);
+            assertThat(recalled.kinds()).containsExactly("decision", "handoff");
+            assertThat(recalled.count()).isEqualTo(1);
+            RecalledItem item = recalled.items().getFirst();
+            assertThat(item.kind()).isEqualTo("handoff");
+            assertThat(item.toAgent()).isEqualTo("next-session");
+            assertThat(item.openLoops()).containsExactly("webhook signature check missing");
+            assertThat(item.nextAction()).contains("Stripe webhook secret");
+
+            // The next agent can also resume directly from the capture acknowledgement.
+            RecallResult byId = contextService.recall(captured.eventId(), 168, List.of("handoff"));
+            assertThat(byId.scope()).isEqualTo(captured.eventId());
+            assertThat(byId.items()).singleElement().satisfies(handoff -> {
+                assertThat(handoff.eventId()).isEqualTo(captured.eventId());
+                assertThat(handoff.headline()).isEqualTo("Wired the payment intent flow");
+            });
+        }
     }
 
-    @Test
-    void projectionWithoutBasisUsesFirstPathHeadlineInRecall() {
-        String repo = "/tmp/projection-no-basis";
-        captureOperations.captureProjection(new CaptureProjectionRequest(
-                "codex",
-                "codex-projection-no-basis",
-                repo,
-                null,
-                List.of(new ProjectionPath("Basis-free path", null, null))));
+    @Nested
+    @DisplayName("Possible futures remain connected to the project")
+    class Projections {
 
-        RecallResult recalled = contextService.recall(repo, 168, List.of("projection"));
+        @Test
+        @DisplayName("Projected paths are recalled and appear in the project graph")
+        void projectionRoundTripsThroughRecallAndProjectGraphFeed() {
+            String repo = "/tmp/projection-roundtrip";
+            IngestResponse captured = captureOperations.captureProjection(new CaptureProjectionRequest(
+                    "codex",
+                    "codex-projection",
+                    repo,
+                    "Current graph feed can already render projection ghost nodes",
+                    List.of(
+                            new ProjectionPath(
+                                    "Ship projection capture",
+                                    "Add MCP and REST capture surfaces for future paths.",
+                                    0.78),
+                            new ProjectionPath(
+                                    "Tune trajectory ranking",
+                                    "Let the frontend pick the latest set and rank ghost futures.",
+                                    0.51))));
 
-        assertThat(recalled.items()).singleElement().satisfies(item -> {
-            assertThat(item.headline()).isEqualTo("Basis-free path");
-            assertThat(item.body()).isEqualTo("Projected futures:\n1. Basis-free path");
-            assertThat(item.rationale()).isNull();
-            assertThat(item.confidence()).isNull();
-        });
+            RecallResult recalled = contextService.recall(repo, 168, List.of("projection"));
+            assertThat(recalled.kinds()).containsExactly("projection");
+            assertThat(recalled.count()).isEqualTo(1);
+            RecalledItem recalledProjection = recalled.items().getFirst();
+            assertThat(recalledProjection).satisfies(item -> {
+                assertThat(item.eventId()).isEqualTo(captured.eventId());
+                assertThat(item.kind()).isEqualTo("projection");
+                assertThat(item.headline()).isEqualTo("Ship projection capture");
+                assertThat(item.rationale()).isEqualTo("Current graph feed can already render projection ghost nodes");
+                assertThat(item.confidence()).isEqualTo(0.78);
+                assertThat(item.body())
+                        .isEqualTo(repository
+                                .findEventById(captured.eventId())
+                                .orElseThrow()
+                                .text())
+                        .contains(
+                                "1. Ship projection capture — Add MCP and REST capture surfaces for future paths. (confidence: 0.78)",
+                                "2. Tune trajectory ranking — Let the frontend pick the latest set and rank ghost futures. (confidence: 0.51)");
+                assertThat(item.repo()).isEqualTo(repo);
+            });
+
+            ProjectTrajectoryResponse graph =
+                    projectGraph.graph(ProjectKey.of(repo).encoded());
+            assertThat(graph.canonicalKey()).isEqualTo(repo);
+            assertThat(graph.captures())
+                    .filteredOn(capture -> captured.eventId().equals(capture.id()))
+                    .singleElement()
+                    .satisfies(capture -> {
+                        assertThat(capture.kind()).isEqualTo("projection");
+                        assertThat(capture.headline()).isEqualTo(recalledProjection.headline());
+                        assertThat(capture.paths()).hasSize(2);
+                        assertThat(capture.paths().getFirst().title()).isEqualTo("Ship projection capture");
+                        assertThat(capture.paths().getFirst().description())
+                                .isEqualTo("Add MCP and REST capture surfaces for future paths.");
+                        assertThat(capture.paths().getFirst().confidence()).isEqualTo(0.78);
+                    });
+        }
+
+        @Test
+        @DisplayName("A projection without a basis still has its first path as a headline")
+        void projectionWithoutBasisUsesFirstPathHeadlineInRecall() {
+            String repo = "/tmp/projection-no-basis";
+            captureOperations.captureProjection(new CaptureProjectionRequest(
+                    "codex",
+                    "codex-projection-no-basis",
+                    repo,
+                    null,
+                    List.of(new ProjectionPath("Basis-free path", null, null))));
+
+            RecallResult recalled = contextService.recall(repo, 168, List.of("projection"));
+
+            assertThat(recalled.items()).singleElement().satisfies(item -> {
+                assertThat(item.headline()).isEqualTo("Basis-free path");
+                assertThat(item.body()).isEqualTo("Projected futures:\n1. Basis-free path");
+                assertThat(item.rationale()).isNull();
+                assertThat(item.confidence()).isNull();
+            });
+        }
     }
 
-    @Test
-    void projectionPostEndpointValidatesAndStoresPaths() throws Exception {
-        String repo = "/tmp/projection-http";
-        String response = mockMvc.perform(post("/api/projections")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "source": "codex",
-                                  "clientSessionId": "codex-projection-http",
-                                  "repo": "%s",
-                                  "basis": "HTTP endpoint captures structured future paths",
-                                  "paths": [
+    @Nested
+    @DisplayName("Evidence and parked ideas surface when their kinds are requested")
+    class EvidenceAndIdeas {
+
+        @Test
+        @DisplayName("Evidence is recalled with its claim and supporting detail")
+        void evidenceRecallsWhenRequested() {
+            var captured = captureOperations.captureEvidence(new dev.nathan.sbaagentic.recording.CaptureEvidenceRequest(
+                    "codex",
+                    "evidence-recall",
+                    "/tmp/evidence-recall",
+                    "Zero matching runs",
+                    "rg returned no lines",
+                    "rg --files",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null));
+            RecallResult result = contextService.recall("/tmp/evidence-recall", 168, List.of("evidence"));
+            assertThat(result.items()).singleElement().satisfies(item -> {
+                assertThat(item.eventId()).isEqualTo(captured.eventId());
+                assertThat(item.kind()).isEqualTo("evidence");
+                assertThat(item.headline()).isEqualTo("Zero matching runs");
+                assertThat(item.rationale()).isEqualTo("rg returned no lines");
+            });
+        }
+
+        @Test
+        @DisplayName("An idea stays out of default recall and is returned when its kind is requested")
+        void ideaRecallsOnlyWhenTheIdeaKindIsRequested() throws Exception {
+            String repo = "/tmp/idea-recall-roundtrip";
+            IngestResponse captured = captureOperations.captureIdea(new CaptureIdeaRequest(
+                    "claude",
+                    "claude-idea-recall",
+                    repo,
+                    "Lanes board",
+                    "One swimlane per project.",
+                    "human-aside",
+                    "a live board with lanes",
+                    null,
+                    8,
+                    null,
+                    List.of("Orbit"),
+                    "Sketch the lanes",
+                    null,
+                    null,
+                    null));
+
+            RecallResult recalled = contextService.recall(repo, 168, List.of("idea"));
+            assertThat(recalled.kinds()).containsExactly("idea");
+            assertThat(recalled.items()).singleElement().satisfies(item -> {
+                assertThat(item.eventId()).isEqualTo(captured.eventId());
+                assertThat(item.kind()).isEqualTo("idea");
+                assertThat(item.headline()).isEqualTo("Lanes board");
+                assertThat(item.rationale()).isEqualTo("One swimlane per project.");
+                assertThat(item.nextAction()).isEqualTo("Sketch the lanes");
+                assertThat(item.repo()).isEqualTo(repo);
+            });
+
+            assertThat(contextService.recall(repo, 168, null).items()).isEmpty();
+
+            mockMvc.perform(get("/api/recall").param("scope", repo).param("kinds", "idea"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.kinds[0]").value("idea"))
+                    .andExpect(jsonPath("$.items[0].headline").value("Lanes board"))
+                    .andExpect(jsonPath("$.items[0].rationale").value("One swimlane per project."));
+        }
+    }
+
+    @Nested
+    @DisplayName("HTTP capture accepts structured paths and rejects invalid requests")
+    class CaptureOverHttp {
+
+        @Test
+        @DisplayName("Projection JSON preserves optional fields and validates missing, empty, and untitled paths")
+        void projectionPostEndpointValidatesAndStoresPaths() throws Exception {
+            String repo = "/tmp/projection-http";
+            String response = mockMvc.perform(post("/api/projections")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
                                     {
-                                      "title": "Capture through REST",
-                                      "description": "Bind JSON into ProjectionPath records.",
-                                      "confidence": 0.72
-                                    },
-                                    {
-                                      "title": "Recall the captured projection"
+                                      "source": "codex",
+                                      "clientSessionId": "codex-projection-http",
+                                      "repo": "%s",
+                                      "basis": "HTTP endpoint captures structured future paths",
+                                      "paths": [
+                                        {
+                                          "title": "Capture through REST",
+                                          "description": "Bind JSON into ProjectionPath records.",
+                                          "confidence": 0.72
+                                        },
+                                        {
+                                          "title": "Recall the captured projection"
+                                        }
+                                      ]
                                     }
-                                  ]
-                                }
-                                """.formatted(repo)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.eventType").value("Projection"))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        JsonNode body = objectMapper.readTree(response);
-        AgentEvent stored =
-                repository.findEventById(body.path("eventId").asText()).orElseThrow();
+                                    """.formatted(repo)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.eventType").value("Projection"))
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString();
+            JsonNode body = objectMapper.readTree(response);
+            AgentEvent stored =
+                    repository.findEventById(body.path("eventId").asText()).orElseThrow();
 
-        assertThat(stored.eventType()).isEqualTo("Projection");
-        assertThat(stored.text())
-                .contains("1. Capture through REST — Bind JSON into ProjectionPath records.")
-                .contains("2. Recall the captured projection");
-        assertThat(stored.metadata()).containsEntry("kind", "projection");
-        assertThat(stored.metadata().get("paths")).isInstanceOf(List.class);
-        List<?> paths = (List<?>) stored.metadata().get("paths");
-        assertThat(paths).hasSize(2);
-        assertThat(paths.getFirst()).isInstanceOf(Map.class);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> first = (Map<String, Object>) paths.getFirst();
-        assertThat(first).containsEntry("title", "Capture through REST");
-        assertThat(first).containsEntry("description", "Bind JSON into ProjectionPath records.");
-        assertThat(first).containsEntry("confidence", 0.72);
-        assertThat(paths.getLast()).isInstanceOf(Map.class);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> last = (Map<String, Object>) paths.getLast();
-        assertThat(last).containsEntry("title", "Recall the captured projection");
-        assertThat(last).doesNotContainKeys("description", "confidence");
+            assertThat(stored.eventType()).isEqualTo("Projection");
+            assertThat(stored.text())
+                    .contains("1. Capture through REST — Bind JSON into ProjectionPath records.")
+                    .contains("2. Recall the captured projection");
+            assertThat(stored.metadata()).containsEntry("kind", "projection");
+            assertThat(stored.metadata().get("paths")).isInstanceOf(List.class);
+            List<?> paths = (List<?>) stored.metadata().get("paths");
+            assertThat(paths).hasSize(2);
+            assertThat(paths.getFirst()).isInstanceOf(Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> first = (Map<String, Object>) paths.getFirst();
+            assertThat(first).containsEntry("title", "Capture through REST");
+            assertThat(first).containsEntry("description", "Bind JSON into ProjectionPath records.");
+            assertThat(first).containsEntry("confidence", 0.72);
+            assertThat(paths.getLast()).isInstanceOf(Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> last = (Map<String, Object>) paths.getLast();
+            assertThat(last).containsEntry("title", "Recall the captured projection");
+            assertThat(last).doesNotContainKeys("description", "confidence");
 
-        mockMvc.perform(post("/api/projections")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"codex","clientSessionId":"missing-paths","repo":"%s"}
-                                """.formatted(repo)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+            mockMvc.perform(post("/api/projections")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"source":"codex","clientSessionId":"missing-paths","repo":"%s"}
+                                    """.formatted(repo)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.type").value("validation_failed"));
 
-        mockMvc.perform(post("/api/projections")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"codex","clientSessionId":"empty-paths","repo":"%s","paths":[]}
-                                """.formatted(repo)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.type").value("validation_failed"));
+            mockMvc.perform(post("/api/projections")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"source":"codex","clientSessionId":"empty-paths","repo":"%s","paths":[]}
+                                    """.formatted(repo)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.type").value("validation_failed"));
 
-        mockMvc.perform(post("/api/projections")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "source": "codex",
-                                  "clientSessionId": "blank-paths",
-                                  "repo": "%s",
-                                  "paths": [
-                                    {"title": " ", "description": " "},
-                                    {"description": "missing title", "confidence": 0.4}
-                                  ]
-                                }
-                                """.formatted(repo)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.type").value("invalid_argument"));
-    }
-
-    @Test
-    void evidenceRecallsWhenRequested() {
-        var captured = captureOperations.captureEvidence(new dev.nathan.sbaagentic.recording.CaptureEvidenceRequest(
-                "codex",
-                "evidence-recall",
-                "/tmp/evidence-recall",
-                "Zero matching runs",
-                "rg returned no lines",
-                "rg --files",
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null));
-        RecallResult result = contextService.recall("/tmp/evidence-recall", 168, List.of("evidence"));
-        assertThat(result.items()).singleElement().satisfies(item -> {
-            assertThat(item.eventId()).isEqualTo(captured.eventId());
-            assertThat(item.kind()).isEqualTo("evidence");
-            assertThat(item.headline()).isEqualTo("Zero matching runs");
-            assertThat(item.rationale()).isEqualTo("rg returned no lines");
-        });
-    }
-
-    @Test
-    void ideaRecallsOnlyWhenTheIdeaKindIsRequested() throws Exception {
-        String repo = "/tmp/idea-recall-roundtrip";
-        IngestResponse captured = captureOperations.captureIdea(new CaptureIdeaRequest(
-                "claude",
-                "claude-idea-recall",
-                repo,
-                "Lanes board",
-                "One swimlane per project.",
-                "human-aside",
-                "a live board with lanes",
-                null,
-                8,
-                null,
-                List.of("Orbit"),
-                "Sketch the lanes",
-                null,
-                null,
-                null));
-
-        RecallResult recalled = contextService.recall(repo, 168, List.of("idea"));
-        assertThat(recalled.kinds()).containsExactly("idea");
-        assertThat(recalled.items()).singleElement().satisfies(item -> {
-            assertThat(item.eventId()).isEqualTo(captured.eventId());
-            assertThat(item.kind()).isEqualTo("idea");
-            assertThat(item.headline()).isEqualTo("Lanes board");
-            assertThat(item.rationale()).isEqualTo("One swimlane per project.");
-            assertThat(item.nextAction()).isEqualTo("Sketch the lanes");
-            assertThat(item.repo()).isEqualTo(repo);
-        });
-
-        assertThat(contextService.recall(repo, 168, null).items()).isEmpty();
-
-        mockMvc.perform(get("/api/recall").param("scope", repo).param("kinds", "idea"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.kinds[0]").value("idea"))
-                .andExpect(jsonPath("$.items[0].headline").value("Lanes board"))
-                .andExpect(jsonPath("$.items[0].rationale").value("One swimlane per project."));
-    }
-
-    @Test
-    void capturedIntentAlsoLandsAsAnEventOnTheTimeline() {
-        captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex",
-                "codex-timeline",
-                "/tmp/acme-timeline",
-                "Pin the SQLite driver version",
-                "Reproducible builds",
-                List.of(),
-                0.9,
-                List.of()));
-
-        AgentSession session = repository.findSession("codex", "codex-timeline").orElseThrow();
-        List<AgentEvent> events = repository.eventsForSession(session.id(), 10);
-        assertThat(events).hasSize(1);
-        assertThat(events.getFirst().eventType()).isEqualTo("Decision");
-        assertThat(events.getFirst().text()).contains("Pin the SQLite driver version");
-    }
-
-    @Test
-    void unmatchedScopeRecallsNothing() {
-        captureOperations.captureDecision(new CaptureDecisionRequest(
-                "codex", "codex-empty", "/tmp/zzz-isolated", "Something", null, null, 0.5, null));
-
-        RecallResult none = contextService.recall("a-topic-that-does-not-exist-anywhere", 168, null);
-        assertThat(none.count()).isZero();
-        assertThat(none.items()).isEmpty();
+            mockMvc.perform(post("/api/projections")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "source": "codex",
+                                      "clientSessionId": "blank-paths",
+                                      "repo": "%s",
+                                      "paths": [
+                                        {"title": " ", "description": " "},
+                                        {"description": "missing title", "confidence": 0.4}
+                                      ]
+                                    }
+                                    """.formatted(repo)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.type").value("invalid_argument"));
+        }
     }
 }

@@ -88,6 +88,7 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
+/** REST, MCP, and live streams share one set of serialized wire contracts. */
 class WireContractFixtureTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -121,6 +122,58 @@ class WireContractFixtureTest {
         assertThat(toSet(sseFrames.fieldNames())).isEqualTo(frames.keySet());
         frames.forEach((name, type) ->
                 assertThat(toSet(sseFrames.path(name).fieldNames())).as(name).isEqualTo(serializedProperties(type)));
+    }
+
+    @Test
+    void recallFixturesPreserveStructuredEvidenceAndNullableRelevanceScores() throws IOException {
+        JsonNode records = fixture().path("records");
+        assertRecallResultShape(records.path("RecallResult"));
+        assertRecalledItemShape(records.path("RecalledItem"));
+    }
+
+    private static void assertRecallResultShape(JsonNode result) {
+        assertThat(toSet(result.fieldNames()))
+                .contains("scope", "withinHours", "kinds", "count", "items", "mode", "truncated");
+        assertThat(result.path("scope").isTextual()).isTrue();
+        assertThat(result.path("withinHours").isInt()).isTrue();
+        assertThat(result.path("kinds").isArray()).isTrue();
+        assertThat(result.path("count").isInt()).isTrue();
+        assertThat(result.path("items").isArray()).isTrue();
+        assertThat(result.path("mode").isTextual()).isTrue();
+        assertThat(result.path("truncated").isBoolean()).isTrue();
+    }
+
+    private static void assertRecalledItemShape(JsonNode item) {
+        assertThat(toSet(item.fieldNames()))
+                .contains(
+                        "eventId",
+                        "sessionId",
+                        "kind",
+                        "source",
+                        "clientSessionId",
+                        "repo",
+                        "observedAt",
+                        "headline",
+                        "rationale",
+                        "alternatives",
+                        "confidence",
+                        "openLoops",
+                        "nextAction",
+                        "toAgent",
+                        "score");
+        assertThat(item.path("eventId").isTextual()).isTrue();
+        assertThat(item.path("sessionId").isTextual()).isTrue();
+        assertThat(item.path("kind").isTextual()).isTrue();
+        assertThat(item.path("source").isTextual()).isTrue();
+        assertThat(item.path("clientSessionId").isTextual()).isTrue();
+        assertThat(item.path("repo").isTextual()).isTrue();
+        assertThat(item.path("observedAt").isTextual()).isTrue();
+        assertThat(item.path("headline").isTextual()).isTrue();
+        assertThat(item.path("alternatives").isArray()).isTrue();
+        assertThat(item.path("openLoops").isArray()).isTrue();
+        assertThat(item.path("nextAction").isTextual()).isTrue();
+        assertThat(item.path("toAgent").isTextual()).isTrue();
+        assertThat(item.path("score").isNumber() || item.path("score").isNull()).isTrue();
     }
 
     private JsonNode fixture() throws IOException {

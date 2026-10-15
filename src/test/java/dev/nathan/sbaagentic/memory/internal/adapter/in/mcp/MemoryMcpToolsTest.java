@@ -23,10 +23,14 @@ import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -39,6 +43,7 @@ import org.springframework.ai.tool.ToolCallback;
  * MCP server uses, not the Java methods directly.
  */
 @ExtendWith(MockitoExtension.class)
+@DisplayName("MCP tools bind agent arguments faithfully and bound recalled context")
 class MemoryMcpToolsTest {
 
     @Mock
@@ -254,36 +259,34 @@ class MemoryMcpToolsTest {
         verify(memorySearch).search("jar swap", 3, true);
     }
 
-    @Test
-    void captureDecisionWithoutConfidenceRecordsNullConfidence() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("decisionConfidence")
+    @DisplayName("Capture decisions with the confidence the caller actually supplied")
+    void captureDecisionPreservesOptionalConfidence(
+            String scenario, String arguments, String decision, Double confidence) {
         when(captureOperations.captureDecision(any(CaptureDecisionRequest.class)))
                 .thenReturn(new IngestResponse("e1", "s1", "claude", "c1", "Decision", false));
 
-        String result = callback("captureDecision").call("""
-                {"source":"claude","clientSessionId":"c1","repo":"/tmp/repo",
-                 "decision":"use boxed params","rationale":"omitted MCP args arrive as null"}
-                """);
+        String result = callback("captureDecision").call(arguments);
 
         assertThat(result).contains("e1");
         ArgumentCaptor<CaptureDecisionRequest> captor = ArgumentCaptor.forClass(CaptureDecisionRequest.class);
         verify(captureOperations).captureDecision(captor.capture());
-        assertThat(captor.getValue().confidence()).isNull();
-        assertThat(captor.getValue().decision()).isEqualTo("use boxed params");
+        assertThat(captor.getValue().confidence()).isEqualTo(confidence);
+        assertThat(captor.getValue().decision()).isEqualTo(decision);
     }
 
-    @Test
-    void captureDecisionKeepsProvidedConfidence() {
-        when(captureOperations.captureDecision(any(CaptureDecisionRequest.class)))
-                .thenReturn(new IngestResponse("e2", "s1", "claude", "c1", "Decision", false));
+    static Stream<Arguments> decisionConfidence() {
 
-        callback("captureDecision").call("""
-                {"source":"claude","clientSessionId":"c1","repo":"/tmp/repo",
-                 "decision":"ship it","rationale":"verified","confidence":0.85}
-                """);
-
-        ArgumentCaptor<CaptureDecisionRequest> captor = ArgumentCaptor.forClass(CaptureDecisionRequest.class);
-        verify(captureOperations).captureDecision(captor.capture());
-        assertThat(captor.getValue().confidence()).isEqualTo(0.85);
+        return Stream.of(
+                Arguments.of("Omitted confidence remains unknown", """
+                        {"source":"claude","clientSessionId":"c1","repo":"/tmp/repo",
+                         "decision":"use boxed params","rationale":"omitted MCP args arrive as null"}
+                        """, "use boxed params", null),
+                Arguments.of("Explicit confidence survives JSON binding", """
+                        {"source":"claude","clientSessionId":"c1","repo":"/tmp/repo",
+                         "decision":"ship it","rationale":"verified","confidence":0.85}
+                        """, "ship it", 0.85));
     }
 
     @Test

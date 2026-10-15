@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +44,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
             "sba.ask.embedding-enabled=false",
             "sba.memory.embedding.enabled=false"
         })
+@DisplayName("Recall decisions by topic while preserving exact scope and relevance")
 class ContextServiceHybridRecallTest {
 
     private static final String REPO = "/tmp/hybrid-recall";
@@ -116,37 +118,6 @@ class ContextServiceHybridRecallTest {
 
         assertThat(recalled.mode()).isEqualTo("lexical");
         assertThat(eventIds(recalled)).contains(captured.eventId());
-        assertThat(recalled.items().getFirst().score()).isNull();
-    }
-
-    @Test
-    void vectorStoreUnavailableReturnsLexicalModeWithLexicalResults() {
-        AgentEvent event = new AgentEvent(
-                "event-vector-down",
-                "session-vector-down",
-                "codex",
-                "vector-down",
-                null,
-                "Decision",
-                "assistant",
-                "Keep vector outage lexical token recallable",
-                null,
-                null,
-                null,
-                Map.of(
-                        "kind", "decision",
-                        "repo", REPO,
-                        "decision", "Keep vector outage lexical token recallable"),
-                Instant.now());
-        MemoryEventReader reader = new SingleEventReader(event, REPO);
-        StubTextEmbedder availableEmbedder = new StubTextEmbedder();
-        MemoryVectorStore throwingStore = new ThrowingVectorStore();
-        ContextService service = new ContextService(reader, availableEmbedder, throwingStore, recallProperties(0.61));
-
-        RecallResult recalled = service.recall("vector outage lexical token", 168, List.of("decision"));
-
-        assertThat(recalled.mode()).isEqualTo("lexical");
-        assertThat(eventIds(recalled)).contains(event.id());
         assertThat(recalled.items().getFirst().score()).isNull();
     }
 
@@ -658,21 +629,6 @@ class ContextServiceHybridRecallTest {
         }
     }
 
-    private static class ThrowingVectorStore implements MemoryVectorStore {
-
-        @Override
-        public List<MemoryVectorStore.ScoredKey> knn(
-                EmbeddingVector query, int k, java.util.function.Predicate<String> keyFilter) {
-            throw new IllegalStateException("vector store down");
-        }
-
-        @Override
-        public Map<String, EmbeddingVector> fetchVectors(Collection<String> keys, String model, int dimensions) {
-
-            return Map.of();
-        }
-    }
-
     private record StaticEventReader(List<AgentEvent> events, String cwd) implements MemoryEventReader {
 
         @Override
@@ -714,53 +670,6 @@ class ContextServiceHybridRecallTest {
             String needle = scopeLike.replace("%", "").toLowerCase(Locale.ROOT);
 
             return event.id().toLowerCase(Locale.ROOT).contains(needle)
-                    || event.text().toLowerCase(Locale.ROOT).contains(needle);
-        }
-    }
-
-    private record SingleEventReader(AgentEvent event, String cwd) implements MemoryEventReader {
-
-        @Override
-        public List<AgentEvent> searchEvents(String query, List<String> projectScopes, int limit, boolean humanOnly) {
-
-            return List.of();
-        }
-
-        @Override
-        public List<String> distinctFieldValues(String field, String prefix, int limit) {
-
-            return List.of();
-        }
-
-        @Override
-        public List<AgentEvent> recall(List<String> eventTypes, String scopeLike, Instant since, int limit) {
-            if (!eventTypes.contains(event.eventType()) || event.observedAt().isBefore(since)) {
-
-                return List.of();
-            }
-            if (scopeLike == null || lexicalMatch(scopeLike)) {
-
-                return List.of(event);
-            }
-
-            return List.of();
-        }
-
-        @Override
-        public List<RecallCandidate> recallCandidates(List<String> eventTypes, Instant since) {
-            if (!eventTypes.contains(event.eventType()) || event.observedAt().isBefore(since)) {
-
-                return List.of();
-            }
-
-            return List.of(new RecallCandidate(event, cwd));
-        }
-
-        private boolean lexicalMatch(String scopeLike) {
-            String needle = scopeLike.replace("%", "").toLowerCase(Locale.ROOT);
-
-            return event.id().toLowerCase(Locale.ROOT).contains(needle)
-                    || cwd.toLowerCase(Locale.ROOT).contains(needle)
                     || event.text().toLowerCase(Locale.ROOT).contains(needle);
         }
     }

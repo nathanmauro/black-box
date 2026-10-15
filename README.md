@@ -145,7 +145,8 @@ Use a separate checkout for verification builds if a service is running from you
 packaging replaces files under `target/`. The full verification path includes packaged browser
 journeys against disposable storage. See
 [frontend standards](docs/frontend-standards.md), [Java formatting](docs/java-formatting.md),
-[architecture](docs/architecture.md), and [package conventions](docs/architecture/package-conventions.md).
+[Java test stories](docs/java-tests.md), [architecture](docs/architecture.md), and
+[package conventions](docs/architecture/package-conventions.md).
 The [documentation index](docs/README.md) separates user guides, contributor references, experiments,
 and historical design records.
 
