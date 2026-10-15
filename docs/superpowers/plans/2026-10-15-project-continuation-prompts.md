@@ -291,3 +291,25 @@ Both remain visible in Recall.
   source. New tests: shared UUID, ticket id and file path cases in `ContinuationTextTest`, and
   `distinctActionsThatShareAnIdentifierStaySeparate` in `ContinuationRankerTest`. This deliberately
   differs from the Projects trajectory display, which still uses the original tokenizer.
+- 2026-10-15 integration, after rebasing onto `main` and the identifier fix above:
+  - **Suites**
+    - `mvn -q test`: 1,242 tests, 0 failures, 83 skipped (PostgreSQL-gated).
+    - Packaged browser suite: 91 of 93 before the fix; then the continuation, continuity, recall
+      and smoke specs passed 18 of 18.
+  - **Deterministic endpoint (isolated jar on a synthetic fixture: three projects, an alias, a replaced decision, a stored injection probe)**
+    - Three ranked candidates.
+    - The alias path resolves to the same root and the same ids.
+    - No other project's text appears, and the replaced decision's open loop is absent.
+    - Injection text stays inside fences.
+    - A sparse project and an unknown project both get `insufficient_evidence`.
+    - Six bad inputs return 400 `invalid_argument`.
+  - **Synthesis outcomes**
+    - Disabled: `disabled`.
+    - Model server down: `unavailable`.
+    - Loopback fake: `ok`, with validated `[E1]`/`[E2]` citations, 0 model calls on GET and exactly
+      1 per POST.
+    - Bad citation: `invalid_reference`.
+    - `finish_reason=length`: `truncated`.
+    - Non-loopback URL: `remote_model_not_allowed` in 0.1 s, so no network attempt.
+  - **Browser:** build, inspect and copy at desktop and phone width, including a `projectKey` deep link.
+    The copied prompt has absolute source links, and no exception text leaked anywhere.
