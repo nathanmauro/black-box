@@ -5,8 +5,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A ranked, deduplicated next step or open loop. {@code text} is the newest source's collapsed text;
- * {@code primary} is the best-tier source, which supplies the basis. Sources are newest first.
+ * A ranked, deduplicated next step or open loop. {@code primary} is the strongest source (best tier,
+ * then newest, then event ID) and supplies the basis, the collapsed {@code text} and the {@code id};
+ * {@code recordedAt} is the newest source's time. {@code sources} are newest first, and
+ * {@link #primaryFirst()} is the order in which they are listed.
  */
 public record ContinuationCandidate(
         String id,

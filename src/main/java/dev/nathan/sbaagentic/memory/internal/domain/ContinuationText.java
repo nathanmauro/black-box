@@ -17,9 +17,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Pure text rules for continuation prompts. The no-action filter, the dynamic fence and the id
- * hash are ported from {@code scripts/linear/blackbox_linear.py}; the token rule is the trajectory
- * view's, so the API and the Projects graph agree on what counts as the same item.
+ * Pure text rules for continuation prompts. The dynamic fence and the id hash are ported from
+ * {@code scripts/linear/blackbox_linear.py}, and so are the no-action phrases, although here they
+ * must make up the whole text. The token rule deliberately differs from the Projects trajectory view
+ * ({@code frontend/src/lib/trajectory.ts}): each whitespace-delimited word is one token, so a shared
+ * identifier, ticket number or path cannot merge different actions, and the two views can disagree
+ * on what counts as the same item.
  */
 public final class ContinuationText {
 
