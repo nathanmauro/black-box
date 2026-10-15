@@ -37,6 +37,8 @@ import {
   resolvesToPastInstant,
   serializeQuery,
   setFacet,
+  stripProjectIncludes,
+  tokenizeSpans,
   type FacetField,
   type FacetKey,
   type FacetMode,
@@ -213,8 +215,10 @@ export default function StreamPage(props: StreamPageProps = {}) {
   let facetsToken = 0;
 
   const submitted = () => params.q ?? "";
+  // A pinned project's hidden scope replaces visible project:/cwd: includes. They are removed by
+  // span, never by re-serializing, so the rest of the text stays as typed and the URL settles.
   const visibleSubmitted = createMemo(() =>
-    props.project ? setFacet(submitted(), "project", null) : submitted(),
+    props.project ? stripProjectIncludes(submitted()) : submitted(),
   );
   const apiQuery = createMemo(() =>
     props.project
@@ -1175,9 +1179,12 @@ function formatMatchCount(total: number): string {
 }
 
 function appendProjectGroupScope(query: string, canonicalKey: string): string {
-  return [query.trim(), `project_group:${quoteHiddenFacet(canonicalKey)}`]
-    .filter(Boolean)
-    .join(" ");
+  const scope = `project_group:${quoteHiddenFacet(canonicalKey)}`;
+  const visible = query.trim();
+  // An unclosed quote swallows everything after it, so there the hidden scope goes first rather
+  // than vanishing into the quoted text.
+  if (tokenizeSpans(visible).at(-1)?.unclosedQuote) return `${scope} ${visible}`;
+  return [visible, scope].filter(Boolean).join(" ");
 }
 
 // Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a

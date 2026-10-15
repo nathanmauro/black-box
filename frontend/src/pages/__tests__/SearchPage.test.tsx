@@ -189,6 +189,19 @@ describe("SearchPage", () => {
     );
   });
 
+  it("settles the pinned-project URL without rewriting other text", async () => {
+    // The old re-serializing strip never converged for an unclosed quote and rewrote last:/-x.
+    [params, setParams] = createStore<{ q?: string }>({ q: 'last:2H -kind:x "ask history' });
+    const setSpy = vi.fn(setParams);
+    setParams = setSpy as unknown as SetStoreFunction<{ q?: string }>;
+
+    render(() => <SearchPage project={selectedProject} />);
+
+    await waitFor(() => expect(search).toHaveBeenCalled());
+    expect(params.q).toBe('last:2H -kind:x "ask history');
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
   it("warns that Ask is not scoped by selected project", async () => {
     mocks.askStatus.mockResolvedValue({
       chat: { enabled: true, available: true },

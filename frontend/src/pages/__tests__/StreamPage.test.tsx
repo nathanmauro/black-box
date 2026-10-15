@@ -315,6 +315,19 @@ describe("StreamPage", () => {
     });
   });
 
+  it("keeps the hidden scope and a settled URL when the query ends in an unclosed quote", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: '"ask history' });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(params.q).toBe('"ask history');
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: 'project_group:/Users/nathan/Developer/proj/sba-agentic "ask history',
+      meaningful: true,
+    });
+  });
+
   it("narrows the URL query by picking a quick value from the popover", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
@@ -1571,13 +1584,13 @@ describe("StreamPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Views" }));
     fireEvent.click(screen.getByRole("button", { name: /Codex right now/ }));
 
-    // With a pinned project the slice-6 project-strip effect round-trips q through the parser,
-    // normalizing last:2h to its equivalent since-duration token (same semantics, D7).
-    await waitFor(() => expect(params.q).toBe("source:codex since:2h"));
+    // The pinned-project strip removes project tokens by span and never re-serializes, so the
+    // view's q stays exactly as written (no last:2h -> since:2h rewrite).
+    await waitFor(() => expect(params.q).toBe("source:codex last:2h"));
     await waitFor(() =>
       expect(getEventFeed).toHaveBeenLastCalledWith({
         limit: 100,
-        q: "source:codex since:2h project_group:/Users/nathan/Developer/proj/sba-agentic",
+        q: "source:codex last:2h project_group:/Users/nathan/Developer/proj/sba-agentic",
         meaningful: true,
       }),
     );
