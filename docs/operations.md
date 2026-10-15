@@ -336,8 +336,9 @@ When enabled, each POST recomputes the deterministic candidates and makes exactl
 model sees evidence handles (`[E1]`), never event IDs, and every captured string passes through
 export redaction. Input longer than `SBA_LOCAL_AI_MAX_INPUT_CHARS` (minimum 500) is refused, not
 elided. The reply is rejected whole unless it is non-blank, finished with `finish_reason: stop`,
-within the output bound, cites at least one handle, cites only known handles and mentions no other
-event ID. Failures return `synthesized: null` with one reason: `disabled`,
+within the output bound, cites at least one handle in square brackets, mentions no handle other
+than the known ones (any `E` followed by digits, in any case, bracketed or not, such as `(E9)`,
+`[E9; E1]` or `[e9]`) and mentions no other event ID. Failures return `synthesized: null` with one reason: `disabled`,
 `remote_model_not_allowed`, `input_over_budget`, `unavailable`, `timeout`, `truncated`,
 `invalid_reference` or `empty`. Prompt text and model replies are never logged; a failed call logs
 only the exception class. Nothing is cached or retried, and the deterministic prompt is unchanged.

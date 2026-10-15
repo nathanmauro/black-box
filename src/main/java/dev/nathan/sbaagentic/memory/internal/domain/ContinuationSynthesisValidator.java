@@ -12,8 +12,9 @@ import java.util.regex.Pattern;
 
 /**
  * Whole-reply validation: one failure rejects the reply. A reply must be non-blank, complete
- * ({@code finish_reason} {@code stop}) and within the output bound, cite at least one handle, cite
- * only known handles, and mention no event ID outside the evidence it was given.
+ * ({@code finish_reason} {@code stop}) and within the output bound, cite at least one handle in
+ * square brackets, mention no handle-shaped token ({@code E} and digits, in any case, bracketed or
+ * not) other than a known handle, and mention no event ID outside the evidence it was given.
  */
 public final class ContinuationSynthesisValidator {
 
@@ -22,6 +23,9 @@ public final class ContinuationSynthesisValidator {
     public static final String INVALID_REFERENCE = "invalid_reference";
 
     private static final Pattern CITATION = Pattern.compile("\\[(E\\d+(?:\\s*,\\s*E\\d+)*)\\]");
+    /** Any mention of a handle, whatever surrounds it; only the bracketed list above counts as a citation. */
+    private static final Pattern HANDLE_MENTION = Pattern.compile("\\bE\\d+\\b", Pattern.CASE_INSENSITIVE);
+
     private static final Pattern UUID = Pattern.compile(
             "(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])",
             Pattern.CASE_INSENSITIVE);
@@ -62,6 +66,15 @@ public final class ContinuationSynthesisValidator {
         if (cited.isEmpty()) {
 
             return Verdict.rejected(INVALID_REFERENCE);
+        }
+        // Event IDs are checked below; blanking them first keeps a hex group such as "e123" from
+        // reading as a handle.
+        Matcher mention = HANDLE_MENTION.matcher(UUID.matcher(text).replaceAll(" "));
+        while (mention.find()) {
+            if (!byHandle.containsKey(mention.group().toUpperCase(Locale.ROOT))) {
+
+                return Verdict.rejected(INVALID_REFERENCE);
+            }
         }
         Matcher uuid = UUID.matcher(text);
         while (uuid.find()) {

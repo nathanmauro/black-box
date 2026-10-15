@@ -155,8 +155,9 @@ Both remain visible in Recall.
 **Validation**
 - The reply must be non-blank, within the output cap, and stopped with `finish_reason == "stop"`.
   This needs a sibling to `complete()` that also returns the finish reason and the model.
-- It must cite at least one handle, cite only known handles, and contain no raw UUID or `event:`
-  reference outside the retrieved set.
+- It must cite at least one handle, mention only known handles in any form (every token matching
+  `\bE\d+\b`, case-insensitive, outside event IDs), and contain no raw UUID or `event:` reference
+  outside the retrieved set.
 
 **Failure and privacy**
 - Any failure returns `synthesized: null` with a fixed reason code: `disabled`,
