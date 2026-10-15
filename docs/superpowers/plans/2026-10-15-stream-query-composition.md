@@ -256,3 +256,24 @@ cd .. && git diff --check
     - `kind:UserPromptSubmit` offers "Include all events" (16 rows).
     - An unclosed quote is flagged.
     - On a phone viewport, tapping a field then a value keeps focus.
+- 2026-10-15 final-review follow-ups (`8b36f60b`..`5a694617`, then these docs): a value or field
+  name typed in full is listed first, before the list is cut, so Tab keeps it (`tool:Task` no
+  longer becomes `tool:TaskUpdate`), and a whole word that names a field (`fix session`) becomes a
+  field only when highlighted. Inside an unclosed quote, nothing is offered while more of the
+  word follows the caret, because the value has no known end; the old range closed the quote
+  mid-word (`"/tmp/harbor notes"rbor`). A name with nothing after its colon (`TODO:`) gets no
+  field suggestion. The pinned-project normalization on the Stream and Search pages replaces the
+  history entry instead of pushing one, so Back is not trapped. A draft reset by the applied query
+  moves the caret to the end and closes the suggestions. Option rows are keyed by option id, so
+  counts arriving between a press and its click no longer replace the pressed element. The shared
+  grammar fixture pins `constructor:`, `__proto__:` and `toString:` as free text for both
+  parsers. The changelog and the §4.6 amendment now match the standards (counted values stay
+  without numbers when the draft differs; the value index fills in only when counts are
+  unavailable or leave room). Verified: each new test failed before its fix (the fixture cases
+  against the pre-fix TypeScript field lookup); `npx vitest run` (66 files, 944 tests);
+  `npm run check` (0 errors, the same 68 warnings); `npm run build` (reproduces the committed
+  bundle); `mvn -q -o test -Dtest=EventQueryGrammarTest` (63 tests) and `mvn -q -o test` (1090
+  tests, 0 failures, 74 skipped); `git diff --check`. The packaged e2e suite was not run here.
+  Still open: the Search page's find mode appends the hidden `project_group` scope after the
+  query, so an unclosed quote or a trailing `NOT` can swallow or negate it there, and
+  `quoteHiddenFacet` on both pages escapes `"` as `\"`, which the grammar cannot read back.

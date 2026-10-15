@@ -202,10 +202,11 @@ toggle and the meaningful toggle (§5 `is:all`).
 
 > **Amended 2026-10-15** ([query composition plan](../plans/2026-10-15-stream-query-composition.md)):
 > the static quick values are replaced by recorded values. `source:`, `kind:` and `tool:` offer
-> the counted values of the applied query, labelled "in current results", with the number shown
-> only while the draft's other filters match the applied query; otherwise they fall back to the
-> value index, labelled "recorded". Nothing is offered that no event carries. Completion edits
-> the token at the caret (including negated, quoted and comma-listed values) instead of the last
+> the counted values of the applied query, labelled "in current results". The number is shown
+> only while the draft's other filters match the applied query; otherwise the same values are
+> still offered, without numbers. The value index, labelled "recorded", fills in only when counts
+> are unavailable or leave room. Nothing is offered that no event carries. Completion edits the
+> token at the caret (including negated, quoted and comma-listed values) instead of the last
 > token, and Tab accepts. Submitted queries are explained under the chip rail, and an empty result
 > offers one-click fixes (a close value, `is:all`).
 
