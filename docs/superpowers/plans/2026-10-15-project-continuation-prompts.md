@@ -31,7 +31,7 @@ judgement of current truth. Nothing is launched, executed, captured or cached.
 | On-demand assembly (chosen) | One exact, alias-expanded, replacement-aware project recall per kind (handoff, decision; pool 50 each) plus pure ranking. It runs in milliseconds, reflects the latest captures, and has nothing to invalidate. |
 | Lightweight cache | Rejected. It saves nothing measurable, but needs invalidation on every capture, alias change and decision replacement, and could serve stale prompts as current. |
 | Precomputation (listener or scheduler) | Rejected. It needs a new background job, does work for projects nobody resumes, and is stale by construction. |
-| Optional model synthesis | Off by default. Explicit configuration, a separate POST, one call, and a loopback-only model may restate the cited evidence. The output is validated, never replaces the deterministic prompt, and is never cached or run in the background. |
+| Optional model synthesis | Off by default. Explicit configuration, a separate POST, at most one call, and a loopback-only model may restate the cited evidence. The output is validated, never replaces the deterministic prompt, and is never cached or run in the background. |
 
 Deliberately not candidates:
 - **Ideas.** Their keys are shared across checkouts with the same basename, which could leak
@@ -120,9 +120,9 @@ Both remain visible in Recall.
 - **Recorded decisions (not replaced; may have changed)**: at most 3, each with its rationale,
   fenced.
 - **Other recorded open loops**: at most 5, fenced.
-- **First step**: verify the recorded state against the repository and Linear before editing, and
-  stop and report if it is contradicted. Commands and files named in captures are quoted as
-  recorded and unverified.
+- **First step**: verify the recorded state against the repository and any linked issue tracker
+  before editing, and stop and report if it is contradicted. Commands and files named in captures
+  are quoted as recorded and unverified.
 - **Done when**: "No acceptance criteria are recorded. State the check you will use before editing,
   run it, and report the result; capture a Black Box handoff when you stop."
 - **Uncertain**: age, stale state, missing recorded fields, and explicit refuting evidence.
@@ -139,7 +139,9 @@ Both remain visible in Recall.
 
 **Endpoint**
 - `POST /api/continuations/synthesize {project, withinHours, candidateId}`.
-- It recomputes the deterministic candidates and makes one model call for the named candidate.
+- It recomputes the deterministic candidates and makes at most one model call for the named
+  candidate (none on a 400 or 404, or when it is `disabled`, `remote_model_not_allowed` or
+  `input_over_budget`).
 - Response: `{candidate, synthesized: {text, model, promptVersion, citations[]} | null,
   synthesis: {status, reason}}`.
 - The `prompt` field always remains deterministic.

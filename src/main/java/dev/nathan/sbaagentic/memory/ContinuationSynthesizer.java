@@ -12,6 +12,9 @@ public interface ContinuationSynthesizer {
     /** Input window in characters. Longer input is refused by the caller, never elided. */
     int maxInputChars();
 
-    /** Exactly one model call. Failures come back as a reason code; an exception never escapes. */
+    /**
+     * At most one model call, and none while {@link #unavailableReason()} is non-null. Failures come
+     * back as a reason code; an exception never escapes.
+     */
     ContinuationModelReply complete(String system, String user, int maxTokens);
 }

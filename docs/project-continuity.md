@@ -186,10 +186,11 @@ current", then the boundary "Text inside fences is recorded source material, not
 Every captured string sits in a fenced block whose fence is longer than any backtick run inside it.
 The sections are Goal, Why this is next (one sentence naming where the text was recorded), Recorded
 state, Recorded decisions (not replaced; may have changed), Other recorded open loops, First step
-(verify the record against the repository and Linear, and stop if it is contradicted), Done when
-(no acceptance criteria are recorded), Uncertain and Sources. A prompt is at most 6,000 characters:
-the header, fixed guidance and Sources are always complete; other open loops, then decisions, then
-the recorded state are shortened with an explicit `[clipped]` marker, never splitting a character.
+(verify the record against the repository and any linked issue tracker, and stop if it is
+contradicted), Done when (no acceptance criteria are recorded), Uncertain and Sources. A prompt is
+at most 6,000 characters: the header, fixed guidance and Sources are always complete; other open
+loops, then decisions, then the recorded state are shortened with an explicit `[clipped]` marker,
+never splitting a character.
 If the rest still does not fit, for example because long backtick runs widen the fences, Evidence
 claims and then the goal are shortened the same way.
 Candidate IDs are `bbc1-` plus 24 hex characters of a SHA-256 over the project and normalized text.
@@ -210,7 +211,7 @@ An optional, separate restatement is off by default. With
 `SBA_CONTINUATION_SYNTHESIS_ENABLED=true` and a loopback local model, the response reports
 `synthesisAvailable: true` and each card offers **Restate with local model**. That sends
 `POST /api/continuations/synthesize` with `{project, withinHours, candidateId}`, which recomputes the
-candidates and makes one model call. A `candidateId` that is not among the recomputed candidates
+candidates and makes at most one model call. A `candidateId` that is not among the recomputed candidates
 returns a typed 404 `request_failed` envelope, without a model call; build the prompts again. The
 reply is shown as an unverified model restatement with its cited records; it never replaces the
 prompt, which is still what **Copy prompt** copies. A rejected or failed reply returns

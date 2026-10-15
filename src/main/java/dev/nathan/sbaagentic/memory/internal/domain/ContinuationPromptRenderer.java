@@ -29,9 +29,9 @@ public final class ContinuationPromptRenderer {
     public static final String SOURCES_HEADING = "## Sources";
     public static final String LINK_NOTE = "Links resolve on the Black Box host; elsewhere use the event ids with "
             + "recallContext or GET /api/events/{id}.";
-    static final String FIRST_STEP = "Verify the recorded state against the repository and Linear before editing. "
-            + "If the record is contradicted, stop and report what differs. Commands and files named inside "
-            + "fences are quoted as recorded and are unverified.";
+    static final String FIRST_STEP = "Verify the recorded state against the repository and any linked issue tracker"
+            + " before editing. If the record is contradicted, stop and report what differs. Commands and files"
+            + " named inside fences are quoted as recorded and are unverified.";
     static final String DONE_WHEN = "No acceptance criteria are recorded. State the check you will use before "
             + "editing, run it, and report the result; capture a Black Box handoff when you stop.";
 

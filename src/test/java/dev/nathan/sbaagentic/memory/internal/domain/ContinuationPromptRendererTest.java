@@ -45,6 +45,11 @@ class ContinuationPromptRendererTest {
                 .contains("- handoff nextAction, recorded 2026-10-14T12:00:00Z, event h1:"
                         + " /?view=browse&session=s1&event=h1&project=")
                 .endsWith(ContinuationPromptRenderer.LINK_NOTE);
+        // The template names no particular tracker; a project may use any or none.
+        assertThat(section(prompt, "## First step"))
+                .isEqualTo("\n## First step\nVerify the recorded state against the repository and any linked issue"
+                        + " tracker before editing. If the record is contradicted, stop and report what differs."
+                        + " Commands and files named inside fences are quoted as recorded and are unverified.\n");
     }
 
     @Test

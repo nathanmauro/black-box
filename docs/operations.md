@@ -328,23 +328,25 @@ continuation prompt. It is off by default; `GET /api/continuations` never calls 
 | --- | --- | --- |
 | `SBA_CONTINUATION_SYNTHESIS_ENABLED` | `false` | Create the restatement adapter; without it every request reports `disabled` |
 | `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` | `false` | Allow a chat completions URL (`SBA_LOCAL_AI_CHAT_PATH` resolved against `SBA_LOCAL_AI_BASE_URL`) whose host is not `localhost`, `127.0.0.0/8` or `::1` |
-| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` for the single model call |
+| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` for the model call, when one is made |
 | `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS` | `4000` | Longest reply accepted; a longer reply is rejected as `truncated` |
 
-When enabled, each POST recomputes the deterministic candidates and makes exactly one call to
-the chat completions URL (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. That
-URL is `SBA_LOCAL_AI_CHAT_PATH` resolved against `SBA_LOCAL_AI_BASE_URL`, exactly as the client
-calls it, so the loopback rule also refuses an absolute chat path that names another host. The
-model sees evidence handles (`[E1]`), never event IDs, and every captured string passes through
-export redaction. Input longer than `SBA_LOCAL_AI_MAX_INPUT_CHARS` (minimum 500) is refused, not
-elided. The reply is rejected whole unless it is non-blank, finished with `finish_reason: stop`,
-within the output bound, cites at least one handle in square brackets, mentions no handle other
-than the known ones (any `E` followed by digits, in any case, bracketed or not, such as `(E9)`,
-`[E9; E1]` or `[e9]`) and mentions no other event ID. Failures return `synthesized: null` with one reason: `disabled`,
+When enabled, each POST recomputes the deterministic candidates and makes at most one call to the
+chat completions URL (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. It makes
+none for a 400 or 404 (unknown candidate) or when the reason is `disabled`,
+`remote_model_not_allowed` or `input_over_budget`. That URL is `SBA_LOCAL_AI_CHAT_PATH` resolved
+against `SBA_LOCAL_AI_BASE_URL`, exactly as the client calls it, so the loopback rule also refuses
+an absolute chat path that names another host. The model sees evidence handles (`[E1]`), never event
+IDs, and every captured string passes through export redaction. Input longer than
+`SBA_LOCAL_AI_MAX_INPUT_CHARS` (minimum 500) is refused, not elided. The reply is rejected whole
+unless it is non-blank, finished with `finish_reason: stop`, within the output bound, cites at least
+one handle in square brackets, mentions no handle other than the known ones (any `E` followed by
+digits, in any case, bracketed or not, such as `(E9)`, `[E9; E1]` or `[e9]`) and mentions no other
+event ID. Failures return `synthesized: null` with one reason: `disabled`,
 `remote_model_not_allowed`, `input_over_budget`, `unavailable`, `timeout`, `truncated`,
 `invalid_reference` or `empty`. Prompt text and model replies are never logged; a failed call logs
-only the exception class. Nothing is cached or retried, and the deterministic prompt is unchanged.
-A non-loopback URL with `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK=true` sends that evidence to
+only the exception class. Nothing is cached or retried, and the deterministic prompt is unchanged. A
+non-loopback URL with `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK=true` sends that evidence to
 the configured host.
 
 The wrappers have their own environment settings:
