@@ -69,6 +69,7 @@ public class SessionFinalizationService {
     }
 
     private void summarize(AgentSession session) {
+        boolean stoppedByShutdown = false;
         try {
             AgentSession latest = repository.findSessionById(session.id()).orElse(null);
             if (latest != null && !hasSummary(latest)) {
@@ -76,7 +77,8 @@ public class SessionFinalizationService {
             }
         } catch (Exception ex) {
             if (abandoning) {
-                // Shutdown interrupted it, and its warning already names this session.
+                // Shutdown interrupted it; it stays pending, so the shutdown warning names it.
+                stoppedByShutdown = true;
                 log.debug("Final summary for sessionId={} stopped by shutdown", session.id(), ex);
             } else {
                 log.warn(
@@ -87,7 +89,7 @@ public class SessionFinalizationService {
                         ex);
             }
         } finally {
-            pending.remove(session.id());
+            if (!stoppedByShutdown) pending.remove(session.id());
         }
     }
 
@@ -98,10 +100,11 @@ public class SessionFinalizationService {
 
             return;
 
-        List<String> unfinished = List.copyOf(pending);
         abandoning = true;
         executor.shutdownNow();
         awaitTermination(INTERRUPTED_STOP);
+        // Read after the wait, so a summary that still finished in it is not reported.
+        List<String> unfinished = List.copyOf(pending);
         if (unfinished.isEmpty())
 
             return;

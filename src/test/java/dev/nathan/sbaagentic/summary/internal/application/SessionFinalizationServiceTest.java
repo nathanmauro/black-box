@@ -90,6 +90,43 @@ class SessionFinalizationServiceTest {
     }
 
     @Test
+    void shutdownNamesOnlyTheSummariesThatStayedUnfinished() throws Exception {
+        var started = new CountDownLatch(1);
+        var service = new SessionFinalizationService(catalog(), summaries(sessionId -> {
+            if (!sessionId.equals("finishing")) {
+                new CountDownLatch(1).await(); // never finishes, if it starts at all
+
+                return;
+            }
+            started.countDown();
+            // Like a local model request, it ignores the interrupt and finishes just after the
+            // grace, while shutdown waits for interrupted summaries to stop.
+            long finish = System.nanoTime()
+                    + SessionFinalizationService.SHUTDOWN_GRACE.plusMillis(200).toNanos();
+            while (System.nanoTime() < finish) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException ignored) {
+                    // keep going, as an uninterruptible request would
+                }
+            }
+            summarized.add(sessionId);
+        }));
+        service.summarizeAfterFinalEvent(stopped("finishing"));
+        service.summarizeAfterFinalEvent(stopped("queued"));
+        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+        service.shutdown();
+
+        assertThat(summarized).containsExactly("finishing");
+        assertThat(warnings())
+                .singleElement()
+                .asString()
+                .contains("sessionIds=[queued]", "summarize-missing")
+                .doesNotContain("finishing");
+    }
+
+    @Test
     void terminalEventsAfterShutdownAreReportedForBackfillInsteadOfFailingPublication() {
         var service = new SessionFinalizationService(catalog(), summaries(summarized::add));
         service.shutdown();
