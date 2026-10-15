@@ -149,7 +149,8 @@ public class ContinuationService {
             ContinuationFrontier frontier,
             List<ContinuationRelation> relations,
             boolean handoffsRecorded) {
-        List<ContinuationLink> goal = candidate.sources().stream()
+        // The primary source supplies the goal text, so a cap on listed sources must never drop it.
+        List<ContinuationLink> goal = candidate.primaryFirst().stream()
                 .map(source -> new ContinuationLink(
                         source.capture().eventId(),
                         source.capture().sessionId(),

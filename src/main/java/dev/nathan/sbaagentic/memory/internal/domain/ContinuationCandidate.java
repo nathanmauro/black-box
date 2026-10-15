@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.memory.internal.domain;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -25,5 +26,14 @@ public record ContinuationCandidate(
     public boolean futureDated() {
 
         return sources.stream().anyMatch(ContinuationSource::futureDated);
+    }
+
+    /** The order sources are listed in: the primary source, then every other source newest first. */
+    public List<ContinuationSource> primaryFirst() {
+        List<ContinuationSource> ordered = new ArrayList<>(sources.size() + 1);
+        ordered.add(primary);
+        sources.stream().filter(source -> !source.equals(primary)).forEach(ordered::add);
+
+        return ordered;
     }
 }

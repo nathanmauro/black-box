@@ -89,7 +89,8 @@ Both remain visible in Recall.
    - Merge duplicates: exact normalized text first, then word-token Jaccard ≥ 0.5, where each
      whitespace-delimited word is one token (edge punctuation removed) so a shared identifier or
      path counts once. A merged candidate takes its label, text and id from its strongest source
-     (tier, then newest) and keeps the union of evidence.
+     (tier, then newest). `evidence[]` and Sources list that source first, then up to four other
+     matching sources, newest first, and the prompt counts the older ones left out.
 5. **Explicit evidence relations only.**
    - Recorded Evidence that supports or refutes a candidate's source event becomes a caveat with
      its link.

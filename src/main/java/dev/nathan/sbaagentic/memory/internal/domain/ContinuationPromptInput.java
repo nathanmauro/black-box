@@ -5,8 +5,8 @@ import java.util.List;
 
 /**
  * Everything one prompt may quote. {@code state} is the handoff whose summary becomes Recorded
- * state, or null; {@code sources} are the linked sources, already capped, with {@code omittedSources}
- * counting the rest.
+ * state, or null; {@code sources} are the linked sources, primary source first and already capped,
+ * with {@code omittedSources} counting the older matching sources left out.
  */
 public record ContinuationPromptInput(
         ContinuationCandidate candidate,
