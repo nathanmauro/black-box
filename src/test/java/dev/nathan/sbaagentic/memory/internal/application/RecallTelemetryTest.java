@@ -291,6 +291,26 @@ class RecallTelemetryTest {
     }
 
     @Test
+    void callersCannotDeclareTheServerAssignedContinuationPurpose() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(
+                        new ContextController(service, mock(RecordingCaptureOperations.class)))
+                .build();
+        mvc.perform(get("/api/recall")
+                        .param("scope", "/private/path")
+                        .header("X-Blackbox-Client", "codex")
+                        .header("X-Blackbox-Purpose", "continuation"))
+                .andExpect(status().isOk());
+        assertThat(record()).containsEntry("client", "codex").containsEntry("purpose", "unknown");
+        try (var declared = RecallRequestContext.open("mcp", "claude", " Continuation ", null)) {
+            assertThat(declared.purpose()).isEqualTo("unknown");
+        }
+        try (var assigned = RecallRequestContext.openContinuation("http", "claude", null)) {
+            assertThat(assigned.purpose()).isEqualTo(RecallRequestContext.CONTINUATION_PURPOSE);
+        }
+        assertThat(RecallRequestContext.current()).isNull();
+    }
+
+    @Test
     void continuationRequestsRecordBothRecallsUnderOneIdWithTheContinuationPurpose() throws Exception {
         ProjectScopeOperations projects = mock(ProjectScopeOperations.class);
         when(projects.projectScopesFor("/private/path"))
@@ -315,11 +335,13 @@ class RecallTelemetryTest {
                 .andReturn();
         String requestId = result.getResponse().getHeader("X-Blackbox-Recall-Id");
         assertThat(requestId).matches("[a-f0-9-]{36}");
-        assertThat(records).hasSize(2).allSatisfy(record -> assertThat(record)
-                .containsEntry("transport", "http")
-                .containsEntry("client", "codex")
-                .containsEntry("purpose", "continuation")
-                .containsEntry("request_id", requestId));
+        assertThat(records)
+                .hasSize(2)
+                .allSatisfy(record -> assertThat(record)
+                        .containsEntry("transport", "http")
+                        .containsEntry("client", "codex")
+                        .containsEntry("purpose", "continuation")
+                        .containsEntry("request_id", requestId));
         assertThat(records.toString()).doesNotContain("/private/path");
         assertThat(RecallRequestContext.current()).isNull();
     }

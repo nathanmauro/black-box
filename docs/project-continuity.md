@@ -196,8 +196,8 @@ caveats and source links. **Inspect prompt** reveals the full prompt; **Copy pro
 makes only the listed source links absolute for this host. Elsewhere, use the event IDs with
 `recallContext` or `GET /api/events/{id}`. Prompts are never kept: Back, reload or another project
 starts empty. A `project=<projectKey>` deep link resolves to the catalog's canonical path first.
-**Resume this project** links are unchanged. The request is recorded in recall telemetry with
-purpose `continuation`.
+**Resume this project** links are unchanged. The request is recorded in recall telemetry with the
+server-assigned purpose `continuation`, which callers cannot declare.
 
 An optional, separate restatement is off by default. With
 `SBA_CONTINUATION_SYNTHESIS_ENABLED=true` and a loopback local model, the response reports

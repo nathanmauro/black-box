@@ -39,7 +39,7 @@ public class ContinuationController {
             @RequestHeader(value = "X-Blackbox-Client", required = false) String client,
             @RequestHeader(value = "X-Blackbox-Project", required = false) String telemetryProject,
             HttpServletResponse response) {
-        try (var context = RecallRequestContext.open("http", client, "continuation", telemetryProject)) {
+        try (var context = RecallRequestContext.openContinuation("http", client, telemetryProject)) {
             response.setHeader("X-Blackbox-Recall-Id", context.requestId());
 
             return ContinuationResponse.from(continuations.build(project, withinHours, max), synthesis.available());
@@ -52,7 +52,7 @@ public class ContinuationController {
             @RequestHeader(value = "X-Blackbox-Client", required = false) String client,
             @RequestHeader(value = "X-Blackbox-Project", required = false) String telemetryProject,
             HttpServletResponse response) {
-        try (var context = RecallRequestContext.open("http", client, "continuation", telemetryProject)) {
+        try (var context = RecallRequestContext.openContinuation("http", client, telemetryProject)) {
             response.setHeader("X-Blackbox-Recall-Id", context.requestId());
 
             return ContinuationSynthesisResponse.from(
