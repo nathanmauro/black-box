@@ -44,12 +44,18 @@ fi
 # pieces and turns a multibyte character split between two of them into U+FFFD, while --rawfile
 # keeps it whole. Only jq 1.5, which has no --rawfile, falls back to -Rs.
 #
+# Some readers stop before the end of their input: jq -e rejects non-JSON at its first bad byte,
+# and a jq without --rawfile exits at once. When the hook inherits an ignored SIGPIPE, as on CI
+# runners, writing the unread rest then fails with EPIPE and bash reports it on stderr, so these
+# writes drop that expected error. The reader's own status still decides the outcome.
+pipe_text() { printf '%s' "$1" 2>/dev/null; }
+
 # Tolerate non-JSON stdin: wrap it so the text is still captured rather than dropped.
-if printf '%s' "$RAW" | jq -e . >/dev/null 2>&1; then
+if pipe_text "$RAW" | jq -e . >/dev/null 2>&1; then
   PAYLOAD="$RAW"
 else
-  PAYLOAD="$(printf '%s' "$RAW" | jq -n --rawfile t /dev/stdin '{hook_event_name: "RawText", prompt: $t}' 2>/dev/null)" ||
-    PAYLOAD="$(printf '%s' "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
+  PAYLOAD="$(pipe_text "$RAW" | jq -n --rawfile t /dev/stdin '{hook_event_name: "RawText", prompt: $t}' 2>/dev/null)" ||
+    PAYLOAD="$(pipe_text "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
 fi
 
 # Bash can spill large here-strings to disk. Durable input must stay in a pipe until sanitized.
@@ -169,7 +175,7 @@ fi
 # payload must be exactly one JSON document, as --argjson required.
 {
   printf '%s\n' "$PAYLOAD"
-  printf '%s' "$TEXT" | jq -n --rawfile t /dev/stdin '$t' 2>/dev/null || printf '%s' "$TEXT" | jq -Rs .
+  pipe_text "$TEXT" | jq -n --rawfile t /dev/stdin '$t' 2>/dev/null || pipe_text "$TEXT" | jq -Rs .
 } | jq -n \
   --arg source "$SOURCE" \
   --arg clientSessionId "$SESSION_ID" \

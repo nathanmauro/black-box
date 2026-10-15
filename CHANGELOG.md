@@ -27,7 +27,8 @@ All notable changes to this project will be documented in this file.
   event; the recorder applies its own text limits.
   Only a payload or text over 20,000,000 bytes is clipped first, to the recorder's 50,000-unit
   scalar budget, because the recorder rejects a JSON string over 20,000,000 UTF-16 units. With jq
-  1.6 or later, smaller events are sent byte for byte as before.
+  1.6 or later, smaller events are sent byte for byte as before. Large non-JSON input no longer
+  makes the hook print a broken-pipe error when it runs with SIGPIPE ignored, as on CI runners.
 - The SQLite snapshot in `scripts/storage/blackbox_backup.py` works while the service is running.
   It copied 256 pages per step, and every commit by another connection restarted the copy from the
   first page, so against the live service it never finished and failed with

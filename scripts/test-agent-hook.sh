@@ -301,10 +301,15 @@ assert_payload_event() {
   local bytes status=0
   bytes="$(wc -c <"$LARGE_PAYLOAD" | tr -d '[:space:]')"
   rm -f "$CAPTURE" "$HOOK_STDERR"
-  PATH="$FAKE_BIN:$PATH" \
-  SBA_AGENT_HOOK_TEST_CAPTURE="$CAPTURE" \
-  SBA_AGENTIC_URL="http://fixture.invalid" \
-    "$HOOK" fixture-source <"$LARGE_PAYLOAD" 2>"$HOOK_STDERR" || status=$?
+  # CI runners start the hook with SIGPIPE ignored, so a write to a reader that stopped early fails
+  # with EPIPE instead of ending quietly. Run it that way here so such stderr reports are caught.
+  (
+    trap '' PIPE
+    PATH="$FAKE_BIN:$PATH" \
+    SBA_AGENT_HOOK_TEST_CAPTURE="$CAPTURE" \
+    SBA_AGENTIC_URL="http://fixture.invalid" \
+      exec "$HOOK" fixture-source <"$LARGE_PAYLOAD" 2>"$HOOK_STDERR"
+  ) || status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "$label: expected exit 0, got $status" >&2
     exit 1
