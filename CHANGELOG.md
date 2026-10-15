@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Optional macOS menu-bar quick recall helper (`macos/BlackBoxRecall`) with its build, install and
+  hermetic test scripts and an opt-in Trace with Jev action; see
+  [docs/macos-quick-recall.md](docs/macos-quick-recall.md).
 - Frontend lint and formatting: ESLint 10 (typescript-eslint, eslint-plugin-solid) and Prettier 3
   with `npm run lint`, `format`, `format:check`, and `check`; enforced in CI and `scripts/verify.sh`,
   with an opt-in pre-commit hook and a one-time mechanical reformat of `frontend/`.

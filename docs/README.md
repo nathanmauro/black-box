@@ -17,6 +17,7 @@ Upgrading source or downloading a JAR does not update an already-running install
 | [Project continuity](project-continuity.md) | Recall a project, follow evidence, and record decision replacements. |
 | [Projectless braids](projectless-braids.md) | Collect related sessions across project boundaries. |
 | [Companion](companion.md) | Use the browser companion and optional macOS shell. |
+| [macOS quick recall](macos-quick-recall.md) | Search a running server from a menu bar shortcut; optional, with an opt-in Jev trace. |
 | [Cortex judgment stage](cortex.md) | Understand the optional, default-off model integration and its outbound data. |
 | [Cross-environment capture](cross-environment-capture.md) | Preserve origin, scope, and provenance across clients. |
 
