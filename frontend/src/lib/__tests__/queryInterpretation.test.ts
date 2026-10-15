@@ -135,6 +135,18 @@ describe("interpretQuery", () => {
     ]);
   });
 
+  it("suggests no field for a name with nothing after its colon", () => {
+    // Prose like "TODO: fix it": the suggested field would have no value either, so it would
+    // still be searched as text.
+    const notes = interpretQuery("TODO: fix the parser");
+    expect(summary(notes)).toEqual([{ token: "TODO:", fix: undefined, recovery: false }]);
+    expect(notes[0].text).toBe("was searched as text: there is no todo: field.");
+    expect(interpretQuery('knd:"" recall')[0].fix).toBeUndefined();
+    expect(interpretQuery("-knd:")[0].fix).toBeUndefined();
+    // With a value, the suggestion stays.
+    expect(interpretQuery("todo:x")[0].text).toContain("Did you mean tool:?");
+  });
+
   it("notes time values only when they cannot be ISO-shaped", () => {
     expect(interpretQuery("since:banana")[0].text).toContain("Invalid time filter");
     expect(interpretQuery("last:today")[0].text).toContain("Invalid time filter");

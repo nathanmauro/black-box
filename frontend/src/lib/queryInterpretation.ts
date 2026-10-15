@@ -206,7 +206,9 @@ function unknownFieldNote(
     text: `was searched as text: there is no ${name}: field.`,
     recovery: false,
   };
-  const suggestion = suggestField(name, token.negated);
+  // Nothing after the colon (`TODO: fix it`) reads as prose, and the suggested field would have
+  // no value either, so it would still be searched as text: no suggestion.
+  const suggestion = unquote(value).trim() ? suggestField(name, token.negated) : null;
   if (!suggestion) return note;
   const nameStart = token.span.start + (token.span.text.startsWith("-") ? 1 : 0);
   const typedName = query.slice(nameStart, nameStart + name.length);
