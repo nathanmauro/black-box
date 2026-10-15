@@ -225,6 +225,18 @@ if [[ "$(jq -r '.metadata | keys | join(",")' "$CAPTURE")" != "rawHook" ]]; then
   exit 1
 fi
 
+# jq skips a byte order mark only at the start of its input, so the payload must lead the stream.
+assert_event \
+  "byte order mark before payload" \
+  $'\xef\xbb\xbf{"hook_event_name":"Stop","last_assistant_message":"after the mark"}' \
+  "assistant" \
+  "Stop"
+if [[ "$(jq -r '.text' "$CAPTURE")" != "after the mark" ]]; then
+  echo "byte order mark before payload: text was not captured" >&2
+  jq . "$CAPTURE" >&2
+  exit 1
+fi
+
 # A subagent event without agent_id must not derive a child key.
 assert_event \
   "subagent start without agent id stays plain" \
@@ -277,6 +289,104 @@ assert_transcript_locator "legacy leaves privacy filtering to ingestion" \
   '{"session_id":"parent","hook_event_name":"Stop","message":"answer","transcript_path":"/fixture/password=fake-sentinel/session.jsonl"}' \
   "/fixture/password=fake-sentinel/session.jsonl" "parent"
 
+# Payloads larger than ARG_MAX (1 MiB on macOS, shared with the environment) must reach the
+# recorder whole. Passed to jq as arguments they failed with "Argument list too long" and the
+# event was lost. The recorder applies its own text and scalar limits, so the hook sends it all.
+HOOK_STDERR="$TMP_DIR/hook.stderr"
+LARGE_PAYLOAD="$TMP_DIR/large-payload"
+# Sends the fixture in $LARGE_PAYLOAD and checks the event with a jq predicate that sees the
+# fixture's text as $input.
+assert_payload_event() {
+  local label="$1" check="$2"
+  local bytes status=0
+  bytes="$(wc -c <"$LARGE_PAYLOAD" | tr -d '[:space:]')"
+  rm -f "$CAPTURE" "$HOOK_STDERR"
+  PATH="$FAKE_BIN:$PATH" \
+  SBA_AGENT_HOOK_TEST_CAPTURE="$CAPTURE" \
+  SBA_AGENTIC_URL="http://fixture.invalid" \
+    "$HOOK" fixture-source <"$LARGE_PAYLOAD" 2>"$HOOK_STDERR" || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    echo "$label: expected exit 0, got $status" >&2
+    exit 1
+  fi
+  if [[ -s "$HOOK_STDERR" ]]; then
+    echo "$label: hook reported an error:" >&2
+    head -c 2000 "$HOOK_STDERR" >&2
+    exit 1
+  fi
+  if [[ ! -s "$CAPTURE" ]]; then
+    echo "$label: hook did not send an event" >&2
+    exit 1
+  fi
+  if ! jq -e --rawfile input "$LARGE_PAYLOAD" "$check" "$CAPTURE" >/dev/null; then
+    echo "$label: event did not carry the expected payload" >&2
+    exit 1
+  fi
+  echo "$label: $bytes-byte payload sent as expected"
+}
+assert_large_event() {
+  local bytes
+  bytes="$(wc -c <"$LARGE_PAYLOAD" | tr -d '[:space:]')"
+  if [[ "$bytes" -le 1048576 ]]; then
+    echo "$1: fixture has $bytes bytes; it must exceed 1 MiB" >&2
+    exit 1
+  fi
+  assert_payload_event "$@"
+}
+# Raw text must keep every multibyte character. jq -R before 1.8 reads a long line in 4,095-byte
+# pieces and turns a character split between two of them into U+FFFD. These single-line events
+# are four-byte characters only, so most piece boundaries fall inside one; they stay under ARG_MAX,
+# where the hook has always recorded them exactly.
+jq -n -c '{hook_event_name: "PostToolUse", session_id: "multibyte-line", tool_name: "Bash",
+  tool_input: {command: "cat emoji.log"},
+  tool_response: {stdout: ("🙂" * 7000), stderr: "", interrupted: false, isImage: false}}' >"$LARGE_PAYLOAD"
+assert_payload_event "single-line multibyte tool response" '
+  ($input | fromjson) as $raw |
+  .text == ($raw.tool_response | tojson) and .toolOutput == $raw.tool_response and
+  .metadata.rawHook == $raw and ([.text | scan("\ufffd")] | length) == 0'
+jq -n -j '"not json: " + ("🙂" * 3000)' >"$LARGE_PAYLOAD"
+assert_payload_event "single-line multibyte non-JSON stdin" '
+  .eventType == "RawText" and .text == $input and
+  .metadata.rawHook == {hook_event_name: "RawText", prompt: $input}'
+# Every JSON escape class, multibyte widths and line breaks, so a buffer boundary cannot hide
+# corruption anywhere in the copy. Escaped, the unit is 46 bytes, which does not divide jq's
+# 4,095-byte raw pieces, so their boundaries reach every offset of the unit.
+LARGE_UNIT='"line é 日本 🙂 \"quoted\" \\ back\ttabs\n"'
+jq -n -c "($LARGE_UNIT * 40000) as \$big | {
+  hook_event_name: \"PostToolUse\", session_id: \"large-session\", tool_name: \"Bash\",
+  tool_input: {command: \"cat big.log\"},
+  tool_response: {stdout: \$big, stderr: \"\", interrupted: false, isImage: false}}" >"$LARGE_PAYLOAD"
+assert_large_event "large structured tool response" '
+  ($input | fromjson) as $raw |
+  .role == "tool" and .eventType == "PostToolUse" and .toolName == "Bash" and
+  .clientSessionId == "large-session" and .toolInput == $raw.tool_input and
+  .toolOutput == $raw.tool_response and .text == ($raw.tool_response | tojson) and
+  .metadata.rawHook == $raw'
+# Text keeps its interior line breaks and loses only trailing ones, exactly as before.
+jq -n -c "($LARGE_UNIT * 30000) as \$big | {
+  hookEventName: \"post_tool_use\", sessionId: \"large-input\", toolName: \"Write\",
+  toolInput: {file_path: \"/fixture/big.txt\", content: \$big},
+  toolResponse: (\$big + \"written\n\n\n\")}" >"$LARGE_PAYLOAD"
+assert_large_event "large tool input and text response" '
+  ($input | fromjson) as $raw |
+  .role == "tool" and .eventType == "post_tool_use" and .toolName == "Write" and
+  .clientSessionId == "large-input" and .toolInput == $raw.toolInput and
+  .toolOutput == $raw.toolResponse and .text == ($raw.toolResponse | rtrimstr("\n\n\n")) and
+  .metadata.rawHook == $raw'
+jq -n -j "\"not json: \" + ($LARGE_UNIT * 30000) + \"end\"" >"$LARGE_PAYLOAD"
+assert_large_event "large non-JSON stdin" '
+  .role == "agent" and .eventType == "RawText" and .text == $input and
+  .metadata.rawHook == {hook_event_name: "RawText", prompt: $input}'
+# The recorder's JSON parser rejects a string over 20,000,000 UTF-16 units. Only a payload or text
+# over 20,000,000 bytes gets the recorder's own 50,000-unit scalar clip early, so it is recorded.
+jq -n -c '{hook_event_name: "PostToolUse", session_id: "oversized-string", tool_name: "Read",
+  tool_input: {file_path: "/fixture/huge.log"}, tool_response: ("x" * 20000001)}' >"$LARGE_PAYLOAD"
+assert_large_event "string beyond the recorder parser limit" '
+  ($input | fromjson) as $raw | ($raw.tool_response[:50000] + " …[truncated]") as $clipped |
+  .role == "tool" and .clientSessionId == "oversized-string" and .toolName == "Read" and
+  .toolInput == $raw.tool_input and .toolOutput == $clipped and .text == $clipped and
+  .metadata.rawHook == ($raw | .tool_response = $clipped)'
+
 # Never-fail contract: real curl on PATH, recorder unreachable -> still exit 0.
 set +e
 printf '%s' '{"hook_event_name":"SubagentStop","session_id":"p","agent_id":"a","agent_type":"Explore","last_assistant_message":"done"}' |
@@ -300,5 +410,25 @@ if [[ "$HOOK_STATUS" -ne 0 ]]; then
   exit 1
 fi
 echo "never-fail with non-JSON stdin: exit=0"
+
+# Several JSON documents are not one hook event: nothing is recorded, as before, and the hook
+# still exits 0. Their parts must never be mistaken for the event text.
+rm -f "$CAPTURE"
+set +e
+printf '%s' '{"hook_event_name":"Stop","message":"first"} {"hook_event_name":"Stop","message":"second"}' |
+  PATH="$FAKE_BIN:$PATH" SBA_AGENT_HOOK_TEST_CAPTURE="$CAPTURE" SBA_AGENTIC_URL="http://fixture.invalid" \
+  SBA_AGENT_SOURCE=fixture-source "$HOOK" 2>/dev/null
+HOOK_STATUS=$?
+set -e
+if [[ "$HOOK_STATUS" -ne 0 ]]; then
+  echo "never-fail with several JSON documents: expected exit 0, got $HOOK_STATUS" >&2
+  exit 1
+fi
+if [[ -s "$CAPTURE" ]]; then
+  echo "never-fail with several JSON documents: an event was recorded" >&2
+  jq . "$CAPTURE" >&2
+  exit 1
+fi
+echo "never-fail with several JSON documents: exit=0, nothing recorded"
 
 python3 "$SCRIPT_DIR/hooks/test_capture_outbox.py"

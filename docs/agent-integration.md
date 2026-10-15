@@ -465,7 +465,12 @@ independent choices: registering a write hook does not enable SessionStart recal
   and `tool` roles so Browse can reconstruct the recorded conversation. `SubagentStart` and
   `SubagentStop` payloads are recorded as child sessions keyed `<parent session_id>:<agent_id>`, with
   the lineage carried in event metadata (`agentId`, `agentType`, `parentClientSessionId`) so Browse
-  can nest subagents under their parent. Set `SBA_CAPTURE_DURABLE=1` for an opt-in sanitized local
+  can nest subagents under their parent. Payloads reach `jq` on stdin, never as process arguments,
+  and raw text is read with `--rawfile` (jq 1.6 or later), which keeps multibyte characters whole.
+  By default the whole event is sent and the recorder applies its own
+  [text limits](capture-text-limits.md); only a payload or text over 20,000,000 bytes has its
+  strings clipped in the hook first.
+  Set `SBA_CAPTURE_DURABLE=1` for an opt-in sanitized local
   queue with idempotent retries (it accepts numeric loopback URLs such as `http://127.0.0.1:8766`,
   not `localhost`, if you override `SBA_AGENTIC_URL`); see [durable capture](durable-capture.md) for requirements,
   destination restrictions, recovery commands, and privacy limits.

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- The capture hook no longer silently drops large events. It passed each payload to `jq` as process
+  arguments, about three copies for a tool event, and argv shares `ARG_MAX` (1 MiB on macOS) with the
+  environment. On macOS, tool events from about 350 KB, and prompts or non-JSON input from about
+  530 KB, failed with `Argument list too long`, and nothing was recorded; Linux refuses any single
+  argument over 128 KiB. The hook now streams payload and text to `jq` on stdin and sends the whole
+  event; the recorder applies its own text limits.
+  Only a payload or text over 20,000,000 bytes is clipped first, to the recorder's 50,000-unit
+  scalar budget, because the recorder rejects a JSON string over 20,000,000 UTF-16 units. With jq
+  1.6 or later, smaller events are sent byte for byte as before.
 - The SQLite snapshot in `scripts/storage/blackbox_backup.py` works while the service is running.
   It copied 256 pages per step, and every commit by another connection restarted the copy from the
   first page, so against the live service it never finished and failed with
