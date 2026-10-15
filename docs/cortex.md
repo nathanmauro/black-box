@@ -21,7 +21,9 @@ SBA_JUDGE_PROVIDER=jev
 When disabled, no beat scheduler, judgment executor, Jev HTTP client, API calls, or judgment rows
 are created. Black Box capture, recall, and streaming work without this stage or any
 Constellate process. Provider failures are isolated in a bounded background worker and do not
-roll back recorded events; under pressure, the 256-beat queue drops older pending judgments.
+roll back recorded events; under pressure, the 256-beat queue drops older pending judgments. At
+shutdown, a judgment underway gets 0.5 seconds to finish; queued beats are not judged or backfilled,
+and a warning counts them.
 
 ## Beat Rule
 

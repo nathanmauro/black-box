@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
+  stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
+  timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped
+  queued summaries and post-commit fan-out such as Elasticsearch indexing. Both kinds of stream now
+  end cleanly as shutdown begins; an `/api/stream` request that arrives during shutdown ends after
+  its opening frames, and new MCP requests get 503. Clients reconnect with `Last-Event-ID` and
+  resume after their last event. Graceful shutdown then waits only for in-flight requests, and each
+  shutdown phase is capped at 2 seconds (`spring.lifecycle.timeout-per-shutdown-phase`), before
+  browsers reconnect. Background summaries get 1 second to finish and judgments 0.5 seconds;
+  unfinished summaries are named in a warning so `summarize-missing` can backfill them. A summary
+  command that is interrupted or times out now also stops the programs it started, so a
+  summarizer's agent CLI no longer outlives the server. With both kinds of stream attached and a
+  summary running, SIGTERM to exit took 32.1 s before this change and about 1.1 s after.
 - The capture hook no longer silently drops large events. It passed each payload to `jq` as process
   arguments, about three copies for a tool event, and argv shares `ARG_MAX` (1 MiB on macOS) with the
   environment. On macOS, tool events from about 350 KB, and prompts or non-JSON input from about

@@ -21,6 +21,11 @@ this automatically. The versioned cursor binds a database generation, append pos
 identity. A `stream.checkpoint` frame establishes a cursor even when a connection has seen no
 captures, and advances through positions whose payloads were deleted or filtered out.
 
+A server that is stopping ends every stream cleanly, without resetting the connection, before it
+waits for in-flight requests; a stream opened while it stops delivers its opening comment and
+checkpoint, then ends. Reconnect with the last ID as usual: the restarted server resumes after it,
+including captures committed while the client was away.
+
 Each drain examines at most 2,000 positions plus one look-ahead. If another page exists,
 `replay.more` includes the last examined cursor and closes the connection. Reconnect to continue.
 No omitted look-ahead row advances the cursor. Consumers should tolerate repeated event IDs around
@@ -72,7 +77,9 @@ it does not establish safe multiple writers outside the application's capture tr
 
 `StreamReplayOrderingTest` covers late/tied timestamps, stable migration and failure rollback,
 retained anchors, invalid/restored cursors, reversed callbacks, heartbeat recovery and bounded pages.
-`EventStreamTest` exercises real HTTP disconnect/checkpoint/reconnect. `StreamPositionPostgresTest`
-uses an explicitly configured disposable PostgreSQL schema and latch-controlled concurrent commits
-and rollback; CI requires it to run. `DatabaseRestoreContractTest` compares both new tables during
-native SQLite/PostgreSQL recovery. Frontend unit and browser tests exercise transcript catch-up.
+`EventStreamTest` exercises real HTTP disconnect/checkpoint/reconnect. `StreamShutdownTest` stops
+the server with attached stream clients, restarts it on the same database, and resumes after the
+last delivered ID. `StreamPositionPostgresTest` uses an explicitly configured disposable PostgreSQL
+schema and latch-controlled concurrent commits and rollback; CI requires it to run.
+`DatabaseRestoreContractTest` compares both new tables during native SQLite/PostgreSQL recovery.
+Frontend unit and browser tests exercise transcript catch-up.

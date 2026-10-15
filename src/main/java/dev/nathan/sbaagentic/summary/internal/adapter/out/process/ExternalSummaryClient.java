@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -28,12 +29,14 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
             return Optional.empty();
         }
 
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("/bin/sh", "-c", command).start();
-            CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> read(process.getInputStream()));
-            CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> read(process.getErrorStream()));
+            Process started = new ProcessBuilder("/bin/sh", "-c", command).start();
+            process = started;
+            CompletableFuture<String> stdout = CompletableFuture.supplyAsync(() -> read(started.getInputStream()));
+            CompletableFuture<String> stderr = CompletableFuture.supplyAsync(() -> read(started.getErrorStream()));
 
-            try (var stdin = process.getOutputStream()) {
+            try (var stdin = started.getOutputStream()) {
                 stdin.write((transcript == null ? "" : transcript).getBytes(StandardCharsets.UTF_8));
             } catch (IOException brokenPipe) {
                 // The command may exit or close stdin before the transcript is fully
@@ -42,16 +45,13 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
             }
 
             Duration timeout = properties.getTimeout() == null ? Duration.ofMinutes(10) : properties.getTimeout();
-            boolean finished = process.waitFor(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
+            boolean finished = started.waitFor(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
             if (!finished) {
-                process.destroy();
-                if (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
-                    process.destroyForcibly();
-                }
+                stop(started);
 
                 return Optional.empty();
             }
-            if (process.exitValue() != 0) {
+            if (started.exitValue() != 0) {
                 stderr.join();
 
                 return Optional.empty();
@@ -61,11 +61,36 @@ public class ExternalSummaryClient implements ExternalSummaryModel {
             return summary.isBlank() ? Optional.empty() : Optional.of(summary);
         } catch (IOException | InterruptedException | UncheckedIOException ex) {
             if (ex instanceof InterruptedException) {
+                // Shutdown interrupts a running summary: its command must not outlive the server.
+                stop(process);
                 Thread.currentThread().interrupt();
             }
 
             return Optional.empty();
         }
+    }
+
+    /**
+     * Ends the command and the programs it started. A wrapper script runs its agent CLI as a child,
+     * and that child is reparented, not stopped, when only the shell is destroyed.
+     */
+    private static void stop(Process process) {
+        if (process == null)
+
+            return;
+
+        List<ProcessHandle> children = process.descendants().toList();
+        children.forEach(ProcessHandle::destroy);
+        process.destroy();
+        try {
+            if (!process.waitFor(250, TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+            }
+        } catch (InterruptedException ex) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+        }
+        children.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
     }
 
     private static String read(InputStream input) {

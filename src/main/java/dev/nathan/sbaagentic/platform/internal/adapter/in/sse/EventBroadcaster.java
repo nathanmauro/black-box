@@ -7,17 +7,26 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import org.springframework.boot.web.context.WebServerGracefulShutdownLifecycle;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** Live notifications wake bounded, commit-ordered database drains. Payloads remain lightweight. */
+/**
+ * Live notifications wake bounded, commit-ordered database drains. Payloads remain lightweight.
+ *
+ * <p>Subscriptions never finish on their own, and graceful web shutdown waits for every open
+ * request. The broadcaster therefore stops in the phase just before that shutdown: it ends every
+ * stream and ends new ones after their opening frames. Clients reconnect with their last ID.
+ */
 @Component
 @EnableScheduling
-public class EventBroadcaster {
+public class EventBroadcaster implements SmartLifecycle {
     static final int REPLAY_LIMIT = 2_000;
+    static final int SHUTDOWN_PHASE = WebServerGracefulShutdownLifecycle.SMART_LIFECYCLE_PHASE + 1;
 
     public record Frame(String cursor, StreamEvents.EventAppended payload) {}
 
@@ -38,6 +47,8 @@ public class EventBroadcaster {
     }
 
     private final List<Subscriber> subscribers = new CopyOnWriteArrayList<>();
+    private volatile boolean running;
+    private volatile boolean stopping;
 
     public SseEmitter register() {
 
@@ -65,6 +76,9 @@ public class EventBroadcaster {
                 if (cursor != null) checkpoint(subscriber);
                 drain(subscriber);
             }
+            // Read after the add above; stop() sets the flag before it reads the list, so either
+            // stop() closes this subscriber or this request sees the flag and ends its own stream.
+            if (stopping) close(subscriber);
         }
 
         return subscriber.emitter;
@@ -213,6 +227,32 @@ public class EventBroadcaster {
         }
 
         return false;
+    }
+
+    @Override
+    public void start() {
+        stopping = false;
+        running = true;
+    }
+
+    /** Ends every stream before graceful shutdown starts waiting for open requests. */
+    @Override
+    public void stop() {
+        stopping = true;
+        running = false;
+        closeAll();
+    }
+
+    @Override
+    public boolean isRunning() {
+
+        return running;
+    }
+
+    @Override
+    public int getPhase() {
+
+        return SHUTDOWN_PHASE;
     }
 
     @PreDestroy
