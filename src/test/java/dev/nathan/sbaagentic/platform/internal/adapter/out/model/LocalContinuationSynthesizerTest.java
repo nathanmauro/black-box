@@ -41,10 +41,55 @@ class LocalContinuationSynthesizerTest {
                 "http://127.0.0.1:1234",
                 "http://127.5.6.7",
                 "https://127.0.0.1",
-                "http://[::1]:1234"
+                "http://[::1]:1234",
+                "http://[0:0:0:0:0:0:0:1]:1234"
             })
     void loopbackUrlsAreAccepted(String url) {
         assertThat(LoopbackAddress.isLoopbackUrl(url)).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "localhost",
+                "127.0.0.1",
+                "::1",
+                "[::1]",
+                "0:0:0:0:0:0:0:1",
+                "0000:0000:0000:0000:0000:0000:0000:0001",
+                "::0001",
+                "0::1",
+                "::0:0:1"
+            })
+    void loopbackHostsAreRecognizedAsText(String host) {
+        assertThat(LoopbackAddress.isLoopbackHost(host)).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "a:b",
+                "1:2",
+                ".::1",
+                ".:",
+                ":::1",
+                "::1::",
+                "1::2::3",
+                "::1:",
+                "::00001",
+                "0:0:0:0:0:0:0:0:1",
+                "0:0:0:0:0:0:0::1",
+                "::",
+                "::2",
+                "1::",
+                "::ffff:127.0.0.1",
+                "::127.0.0.1",
+                "fe80::1%lo0",
+                "",
+                "lmstudio.local"
+            })
+    void malformedAndOtherHostsAreRefused(String host) {
+        assertThat(LoopbackAddress.isLoopbackHost(host)).isFalse();
     }
 
     @ParameterizedTest
@@ -59,6 +104,7 @@ class LocalContinuationSynthesizerTest {
                 "http://127.0.0.256",
                 "http://2130706433",
                 "http://[::]:1234",
+                "http://[::ffff:127.0.0.1]:1234",
                 "not a url",
                 ""
             })
