@@ -151,9 +151,11 @@ spring:
     url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
     driver-class-name: org.sqlite.JDBC
     hikari:
-      # WAL (set once at startup) lets several connections read while one writes; a pool of a few
-      # connections plus a busy_timeout means concurrent agents can capture without blocking the UI,
-      # and the rare writer-vs-writer overlap waits briefly instead of erroring.
+      # WAL (set once at startup) lets several connections read while one writes. SQLite admits one
+      # writer at a time, and busy_timeout makes a writer wait up to 5 s for that lock, but only
+      # where the lock is first requested: a transaction that has already read fails at once with
+      # SQLITE_BUSY. The application's transaction manager (SqliteTransactionManager) therefore
+      # begins read-write transactions IMMEDIATE, so they wait; read-only ones stay deferred.
       maximum-pool-size: 4
       connection-test-query: SELECT 1
       # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's

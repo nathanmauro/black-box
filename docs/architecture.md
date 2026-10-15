@@ -225,6 +225,14 @@ database; it does not synchronize SQLite history or provide safe multiple API re
 apply to the default backend. Elasticsearch is disabled by default and is only a secondary index
 for new events.
 
+SQLite runs in WAL mode and admits one writer at a time. The application's transaction manager
+begins every read-write transaction `IMMEDIATE`, taking the writer lock before its first read, so a
+concurrent writer (a capture, a summary, a saved braid) delays it by up to the 5-second
+`busy_timeout` instead of failing it with `SQLITE_BUSY`. A writer that holds the lock longer than
+that still fails the waiting request. Read-only transactions keep a deferred begin and never block
+writers. Code that builds its own `DataSourceTransactionManager` bypasses this and must write before
+it reads, as the startup stream-position and sqlite-vec steps do.
+
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |

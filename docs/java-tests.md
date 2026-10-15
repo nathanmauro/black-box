@@ -36,7 +36,7 @@ coverage; repeated assertions against the same implementation usually are.
 
 | Area | Responsibility of its focused suites |
 | --- | --- |
-| `recording`, `event`, `session` | Capture normalization, validation, and identity; redaction; acknowledgement after the canonical commit; canonical time and chronology; human turns; transcripts; lifecycle publication; migrations; and feed SQL. |
+| `recording`, `event`, `session` | Capture normalization, validation, and identity; redaction; acknowledgement after the canonical commit; canonical time and chronology; human turns; transcripts; lifecycle publication; migrations; SQLite writer-lock transactions; and feed SQL. |
 | `query`, `search` | Query grammar and time resolution, search SQL and facets, compact response budgets, backend fallback, and Elasticsearch transport behavior. Feed SQL and search SQL are separate implementations. |
 | `memory` | Ranking and relevance rules, recall telemetry and fallback, idea and evidence capture and revisions, embedding/indexing/backfill lifecycle, serialization, and each vector-store implementation. Live model evaluations are separately gated measurements. |
 | `summary`, `ask` | Backend selection, subprocess and HTTP contracts, chunk budgets and ordering, safe export writes, answer citations, and unavailable-model behavior. |
