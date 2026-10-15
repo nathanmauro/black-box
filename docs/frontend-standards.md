@@ -284,3 +284,45 @@ Empty copy distinguishes an unfiltered recorder, meaningful-only results, My tur
 project/query/source filtering. Loading and failed requests must not claim the recorder is empty.
 The packaged `stream-controls.spec.ts` journey covers the controls at desktop, narrow portrait and
 landscape sizes; intercepted empty/error responses supplement real capture and navigation checks.
+
+## Stream query composition
+
+The query box completes the token under the caret, not the last token, and accepting replaces
+only that token, or one comma value of it. Negated (`-kind:`, `NOT kind:`), quoted and aliased
+tokens complete as typed. Field and operator names complete from their first letter; the hidden
+`project_group:` is never offered. Time operators offer grammar values only, and `is:` offers
+`all`.
+
+Values come from recorded data only:
+
+- `source:`, `kind:` and `tool:` list the applied query's counted values, labelled "in current
+  results". The number is shown only while the draft's other filters match the applied query,
+  and it stays out of the option's accessible name; a polite live region announces it.
+- When counts are unavailable or leave room, the value index fills in, labelled "recorded" (it is
+  global and ignores the current filters).
+- `project:` and `project_exact:` complete from the current results' project paths and the
+  project catalog, by substring and by exact prefix; only `project_exact:` shows counts, because
+  they count exact paths. While a project is pinned, `project:` shows a note instead, because the
+  pinned scope replaces project filters.
+- `session:` lists recent top-level sessions (subagent sessions are not listed), filtered to the
+  pinned project, by title and last-seen age, and inserts the server id.
+
+Values containing a quote or a control character are never offered; values with whitespace or
+commas are quoted, never escaped.
+
+Up and Down move the highlight. Enter accepts a highlighted option and otherwise submits the raw
+text. Tab accepts the highlighted option, or the first one once the token has a typed prefix; it
+never accepts with a modifier, during IME composition, or on an empty draft, and otherwise moves
+focus. This is a deliberate deviation from the ARIA combobox pattern. Accepting a value closes
+the list until the next keystroke; accepting a field name opens its values.
+
+After a query runs, notes under the chips explain what the parser did not apply as a filter: an
+unknown field (suggesting a field only for a unique close match), a time value the grammar
+rejects (date-shaped values excepted, because the server parses more date-time forms), a negated
+operator or excluded free text, an unclosed quote, a lowercase `not` that negated the next
+filter, or a project token the pinned project removed. An empty result offers one-click fixes
+that rewrite a single token and run the query: a close value for an exact `source:`, `kind:` or
+`tool:` value when the counted list is complete, and `is:all` when the meaningful filter may be
+hiding rows (not under My turns, which replaces that filter). The packaged
+`stream-compose.spec.ts` journey covers keyboard-only composition, a mid-string edit and a quoted
+project path at desktop and phone widths.

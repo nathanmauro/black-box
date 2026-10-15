@@ -189,3 +189,28 @@ cd .. && git diff --check
 - 2026-10-15: friction reproduced in the browser on an isolated build (table above). The plan was
   revised after an independent design review (counts accessibility, Tab, accept rules, unclosed
   quotes, honest counts, pinned project, case merging, hidden listbox).
+- 2026-10-15: implemented on `claude/stream-next` in verified commits: span tokenizer, parser
+  readings and the idempotent pinned-project strip (`fccec336`); Slice 1, caret-aware completion
+  (`8308cd83`); Slice 2, interpretation notes and zero-result fixes (`08f3013f`); then this
+  documentation.
+  - Verified: `npm test` (66 files, 912 tests), `npm run check` (0 errors; the 68 existing Solid
+    warnings unchanged), `npm run build`, `mvn -q test` (1086 tests, 0 failures, 74 skipped),
+    `git diff --check`. `stream-compose.spec.ts` lints and typechecks; the packaged e2e suite was
+    not run here, because it needs the exclusive :8799 runner.
+  - A real Chromium drove an isolated build of the branch (temporary SQLite, optional systems
+    off, port 18777) through each Acceptance case at 1440 and 390 px. It also replayed the
+    byte-identical `smoke.spec.ts:61-91` and `stream-controls.spec.ts:145-182` flows, the Enter
+    and Filter submissions of `stream-controls.spec.ts:105-112` and `stream.spec.ts:78-132`, and
+    the `stream-compose.spec.ts` bodies. All passed.
+  - Interpretations made while building:
+    - A field-name edit replaces the typed name and its colon, so `|source:claude` plus `kind:`
+      gives `kind:claude`; a bare word is replaced whole.
+    - The keyboard highlight follows an option id, so values that arrive later do not move it.
+    - `is:all` is not offered under My turns, which replaces the meaningful filter.
+    - Notes also cover `is:` values other than `all`, valueless filters (`kind:`) and a trailing
+      `NOT`.
+    - The hidden `project_group` scope goes first when the visible query ends inside an unclosed
+      quote, so the quote cannot swallow it.
+    - Inherited object member names (`constructor:`) now read as unknown fields, as in Java.
+  - Tests changed beyond the planned list: the pinned "Codex right now" view now keeps `last:2h`
+    as typed, and the value-index mock returns sources for `source:`.
