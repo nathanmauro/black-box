@@ -2659,8 +2659,9 @@ a {
 }
 .suggest-option {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 12px;
+  gap: 1px 12px;
   padding: 7px 10px;
   border-radius: 4px;
   color: var(--text);
@@ -2685,6 +2686,27 @@ a {
   margin-left: auto;
   color: var(--text-faint);
   font-size: 11px;
+}
+/* One quiet line under an option (plan 2026-10-15): where a value came from ("in current
+   results" or "recorded"), a field's help, or a session's recency. */
+.suggest-option-detail {
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+/* A non-selectable explanation in place of options (a pinned project replaces project:). */
+.suggest-option--note,
+.suggest-option--note:hover {
+  background: none;
+  color: var(--text-dim);
+  font-family: var(--font-sans);
+  white-space: normal;
+  cursor: default;
 }
 .facet-rail {
   display: flex;

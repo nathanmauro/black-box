@@ -1,5 +1,6 @@
 import { A, useSearchParams } from "@solidjs/router";
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -19,6 +20,7 @@ import {
   getEventFeed,
   getSessions,
   searchValues,
+  type AgentSession,
   type EventFacetCounts,
   type EventFacetFields,
   type EventFeedItem,
@@ -44,6 +46,16 @@ import {
   type FacetMode,
   type QueryState,
 } from "../lib/query";
+import {
+  applyCompletion,
+  completionAt,
+  countsApplyToDraft,
+  fieldOptions,
+  needsRecordedValues,
+  recordedValueField,
+  valueOptions,
+  type CompletionOption,
+} from "../lib/queryCompletion";
 import { useLiveStore } from "../lib/sse";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
 import { reconcileSegments, segmentStream, type FoldRow, type Segment } from "../lib/streamGroups";
@@ -51,31 +63,12 @@ import { reconcileSegments, segmentStream, type FoldRow, type Segment } from "..
 const FEED_LIMIT = 100;
 const MAX_ROWS = 500;
 
-const VALUE_FIELD: Record<FacetField["key"], string> = {
-  source: "source",
-  kind: "event_type",
-  tool: "tool_name",
-  project: "cwd",
-};
-
-// No longer a standing rail (spec §4.6): these surface in the suggest-popover when a facet
-// token is typed with an empty prefix. tool:/project:/session: suggest live values instead.
-const QUICK_VALUES: Record<FacetField["key"], string[]> = {
-  source: ["claude", "codex", "cursor", "raycast", "cockpit", "cli", "manual"],
-  kind: [
-    "Decision",
-    "Handoff",
-    "Observation",
-    "Idea",
-    "Evidence",
-    "UserPromptSubmit",
-    "PostToolUse",
-  ],
-  tool: [],
-  project: [],
-};
-
 const FACETS_DEBOUNCE_MS = 300;
+// Value-index lookups wait for a typing pause and abort when the token changes again.
+const VALUES_DEBOUNCE_MS = 150;
+const RECORDED_VALUE_LIMIT = 20;
+// Recent sessions for session: completion, fetched once per popover opening.
+const SESSION_SUGGESTION_LIMIT = 100;
 
 // Built-in view presets (spec §8, D13): each is just a q string in the locked grammar, doubling
 // as documentation of it. An "Errors today" preset is NOT shippable — zero error-shaped
@@ -93,10 +86,7 @@ const TRAJECTORY_LINK_KINDS = new Set(["Decision", "Handoff", "Observation"]);
 
 type StreamPanel = "views" | "options";
 
-type EditingToken = { key: FacetField["key"] | "session"; prefix: string };
-
-// Popover option: counts ride along when the suggestion came from the facets endpoint (§6.4).
-type Suggestion = { value: string; count?: number };
+type RecordedRequest = { key: string; field: string; prefix: string };
 
 type StreamPageProps = {
   project?: ProjectSummary | null;
@@ -178,7 +168,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
         ?.focus();
     }
   }
+  // The popover opens on input and closes on accept, Escape, Tab, submit or an outside press.
   const [suggestionsOpen, setSuggestionsOpen] = createSignal(false);
+  // ArrowDown/ArrowUp asked for the list, so field names show before a letter is typed.
+  const [explicitOpen, setExplicitOpen] = createSignal(false);
+  // The input's selectionStart (UTF-16), tracked on input, keyup, click, select and focus. It is
+  // only read while the popover is open, which always follows one of those events.
+  const [caret, setCaret] = createSignal(0);
   // "Options" (spec §4.6: density + meaningful) and "Views" (spec §8, D13: presets + saved views)
   // are two quiet disclosures sharing one slot: opening one closes the other, and Escape or a
   // pointer-down outside the open panel dismisses it.
@@ -391,47 +387,124 @@ export default function StreamPage(props: StreamPageProps = {}) {
     return counts && counts.fields ? counts.total : null;
   });
 
-  const editing = createMemo<EditingToken | null>(() => {
-    const tokens = draft().split(/\s+/);
-    const last = tokens[tokens.length - 1] ?? "";
-    const sep = last.indexOf(":");
-    if (sep <= 0) return null;
-    const raw = last.slice(0, sep).toLowerCase();
-    if (raw === "session") return { key: "session", prefix: last.slice(sep + 1) };
-    const field = FACET_FIELDS.find(
-      (f) => f.key === raw || (raw === "agent" && f.key === "source"),
-    );
-    if (!field) return null;
-    return { key: field.key, prefix: last.slice(sep + 1) };
-  });
-  const [suggestions] = createSignalResource(editing, async (edit): Promise<Suggestion[]> => {
-    if (!edit) return [];
-    if (edit.key === "session")
-      return (await sessionSuggestions(edit.prefix)).map((value) => ({ value }));
-    // Empty prefix on an enumerable facet surfaces the static quick values (spec §4.6);
-    // tool:/project: prefer the facets endpoint's counted top values under the current query
-    // (spec §6.4), falling back to the live value index when counts are unavailable.
-    if (!edit.prefix && QUICK_VALUES[edit.key].length)
-      return QUICK_VALUES[edit.key].map((value) => ({ value }));
-    if (!edit.prefix && (edit.key === "tool" || edit.key === "project")) {
-      const fields = countedFields();
-      if (fields) return fields[edit.key].slice(0, 8).map(({ value, count }) => ({ value, count }));
-    }
-    const values = await searchValues(VALUE_FIELD[edit.key], edit.prefix, 8).catch(() => []);
-    return values.map((value) => ({ value }));
-  });
-  const showSuggestions = () =>
-    suggestionsOpen() && editing() !== null && (suggestions()?.length ?? 0) > 0;
-  // Keyboard highlight for the popover: -1 means "typing, nothing highlighted".
-  const [activeSuggestion, setActiveSuggestion] = createSignal(-1);
+  // ---- Query composition (plan 2026-10-15): complete the token at the caret, never the rest.
+  const completion = createMemo(() => completionAt(draft(), caret()));
 
+  // Value-index lookups (/api/search/values) are global "recorded" values: asked only when counts
+  // are unavailable or leave room, debounced, and aborted when the edited token changes.
+  const recordedRequest = createMemo<RecordedRequest | null>(
+    () => {
+      const context = completion();
+      if (!suggestionsOpen() || !context || context.kind !== "value") return null;
+      const field = recordedValueField(context.field);
+      if (!field || !needsRecordedValues(context, countedFields())) return null;
+      return { key: `${field}\n${context.prefix}`, field, prefix: context.prefix };
+    },
+    null,
+    { equals: (left, right) => left?.key === right?.key },
+  );
+  const [recorded, setRecorded] = createSignal<{ key: string; values: string[] } | null>(null);
+  let recordedTimer: ReturnType<typeof setTimeout> | undefined;
+  let recordedAbort: AbortController | undefined;
   createEffect(() => {
-    if (editing() === null) setSuggestionsOpen(false);
+    const request = recordedRequest();
+    if (recordedTimer) clearTimeout(recordedTimer);
+    recordedAbort?.abort();
+    recordedAbort = undefined;
+    if (!request) return;
+    recordedTimer = setTimeout(() => {
+      const controller = new AbortController();
+      recordedAbort = controller;
+      searchValues(request.field, request.prefix, RECORDED_VALUE_LIMIT, controller.signal)
+        .then((values) => {
+          if (!controller.signal.aborted) setRecorded({ key: request.key, values });
+        })
+        .catch(() => {
+          // An unavailable value index leaves the list to the other sources.
+          if (!controller.signal.aborted) setRecorded({ key: request.key, values: [] });
+        });
+    }, VALUES_DEBOUNCE_MS);
+  });
+  // Only values answered for the token being edited now; a stale list is never selectable.
+  const recordedValues = () => {
+    const current = recorded();
+    return current && current.key === recordedRequest()?.key ? current.values : null;
+  };
+
+  // session: offers recent sessions, fetched once per popover opening and filtered locally.
+  const [recentSessions, setRecentSessions] = createSignal<AgentSession[] | null>(null);
+  let sessionsOpening = 0;
+  let sessionsFetchedFor = -1;
+  createEffect(() => {
+    if (suggestionsOpen()) return;
+    sessionsOpening += 1;
+    setRecentSessions(null);
+  });
+  const wantsSessions = createMemo(() => {
+    const context = completion();
+    return suggestionsOpen() && context?.kind === "value" && context.field === "session";
   });
   createEffect(() => {
-    suggestions();
-    editing();
-    setActiveSuggestion(-1);
+    if (!wantsSessions() || sessionsFetchedFor === sessionsOpening) return;
+    const opening = sessionsOpening;
+    sessionsFetchedFor = opening;
+    getSessions(SESSION_SUGGESTION_LIMIT)
+      .then((sessions) => {
+        if (opening === sessionsOpening) setRecentSessions(sessions);
+      })
+      .catch(() => {
+        if (opening === sessionsOpening) setRecentSessions([]);
+      });
+  });
+
+  const suggestionOptions = createMemo<CompletionOption[]>(() => {
+    const context = completion();
+    if (!context) return [];
+    if (context.kind === "field") return fieldOptions(context);
+    return valueOptions(context, {
+      counts: countedFields(),
+      showCounts: countsApplyToDraft(draft(), context, visibleSubmitted()),
+      recorded: recordedValues(),
+      projects: props.projects ?? [],
+      pinnedProject: props.project ?? null,
+      sessions: recentSessions(),
+    });
+  });
+  const selectableOptions = createMemo(() =>
+    suggestionOptions().filter((option) => option.kind !== "note"),
+  );
+  const showSuggestions = createMemo(() => {
+    const context = completion();
+    if (!suggestionsOpen() || !context || !suggestionOptions().length) return false;
+    // Before a letter is typed, field names wait for an explicit ArrowDown/ArrowUp.
+    return !(context.kind === "field" && context.explicitOnly) || explicitOpen();
+  });
+  // Rendered rows with their keyboard index; a note is never highlighted or accepted.
+  const renderedOptions = createMemo(() => {
+    if (!showSuggestions()) return [];
+    let selectable = -1;
+    return suggestionOptions().map((option) => ({
+      option,
+      index: option.kind === "note" ? -1 : ++selectable,
+    }));
+  });
+  // Keyboard highlight, held by option id so values that arrive later (counts, the value index,
+  // sessions) never move it to a different option; -1 means "typing, nothing highlighted".
+  const [activeSuggestionId, setActiveSuggestionId] = createSignal<string | null>(null);
+  const activeSuggestion = createMemo(() => {
+    const id = activeSuggestionId();
+    return id === null ? -1 : selectableOptions().findIndex((option) => option.id === id);
+  });
+  // Another token under the caret (typing, moving, accepting) starts without a highlight.
+  createEffect(on(completion, () => setActiveSuggestionId(null), { defer: true }));
+  // Counts stay out of option names (aria-hidden); the polite region carries them instead.
+  const suggestionAnnouncement = createMemo(() => {
+    if (!showSuggestions()) return "";
+    const options = selectableOptions();
+    const active = options[activeSuggestion()];
+    if (active?.count !== undefined) return `${active.label}: ${active.count} in current results`;
+    if (!options.length) return "";
+    return `${options.length} ${options.length === 1 ? "suggestion" : "suggestions"}`;
   });
 
   function refreshCanonicalSnapshot() {
@@ -479,6 +552,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
+    dismissSuggestions();
     run(draft());
   }
 
@@ -522,42 +596,105 @@ export default function StreamPage(props: StreamPageProps = {}) {
   }
 
   function dismissSuggestions() {
-    setSuggestionsOpen(false);
-    setActiveSuggestion(-1);
+    batch(() => {
+      setSuggestionsOpen(false);
+      setExplicitOpen(false);
+      setActiveSuggestionId(null);
+    });
+  }
+
+  function handleQueryInput(input: HTMLInputElement) {
+    batch(() => {
+      setDraft(input.value);
+      setCaret(input.selectionStart ?? input.value.length);
+      setExplicitOpen(false);
+      setActiveSuggestionId(null);
+      setSuggestionsOpen(true);
+    });
+  }
+
+  function trackCaret(input: HTMLInputElement) {
+    setCaret(input.selectionStart ?? input.value.length);
   }
 
   function handleInputKeyDown(event: KeyboardEvent) {
+    // Keys pressed while an IME composes text belong to the IME, not to the popover.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === "Escape") {
       // Dismiss the closest visible popup first; a later Escape can close a surrounding panel.
       if (showSuggestions()) event.preventDefault();
       dismissSuggestions();
       return;
     }
-    const list = suggestions() ?? [];
-    if (editing() === null || !list.length) return;
-    if (event.key === "ArrowDown") {
+    if (event.key === "Tab") {
+      handleTab(event);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!selectableOptions().length) return;
       event.preventDefault();
-      setSuggestionsOpen(true);
-      setActiveSuggestion((index) => (index + 1) % list.length);
-    } else if (event.key === "ArrowUp") {
+      batch(() => {
+        setSuggestionsOpen(true);
+        setExplicitOpen(true);
+      });
+      const options = selectableOptions();
+      if (!options.length) return;
+      const index = activeSuggestion();
+      const next =
+        event.key === "ArrowDown"
+          ? (index + 1) % options.length
+          : index <= 0
+            ? options.length - 1
+            : index - 1;
+      setActiveSuggestionId(options[next].id);
+      return;
+    }
+    if (event.key === "Enter" && showSuggestions() && activeSuggestion() >= 0) {
+      // Enter with a highlight accepts the suggestion; without one it submits the raw text.
       event.preventDefault();
-      setSuggestionsOpen(true);
-      setActiveSuggestion((index) => (index <= 0 ? list.length - 1 : index - 1));
-    } else if (event.key === "Enter" && showSuggestions() && activeSuggestion() >= 0) {
-      // Enter with a highlight accepts the suggestion; without one it submits the form.
-      event.preventDefault();
-      pickSuggestion(list[activeSuggestion()].value);
+      const option = selectableOptions()[activeSuggestion()];
+      if (option) acceptSuggestion(option);
     }
   }
 
-  function pickSuggestion(value: string) {
-    const edit = editing();
-    if (!edit) return;
-    const tokens = draft().split(/\s+/);
-    tokens[tokens.length - 1] = `${edit.key}:${/\s/.test(value) ? `"${value}"` : value}`;
-    setDraft(tokens.join(" ") + " ");
+  // Tab accepts the highlighted option, or the first one once the edited token has a typed
+  // prefix — a documented deviation from the APG combobox, which accepts on Tab only after a
+  // selection. Never with a modifier or on an empty draft; otherwise focus simply moves on.
+  function handleTab(event: KeyboardEvent) {
+    const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
+    const context = completion();
+    if (!modified && draft().trim() && showSuggestions() && context) {
+      const options = selectableOptions();
+      const target = options[activeSuggestion()] ?? (context.prefix ? options[0] : undefined);
+      if (target) {
+        event.preventDefault();
+        acceptSuggestion(target);
+        return;
+      }
+    }
     dismissSuggestions();
-    inputRef?.focus();
+  }
+
+  // Replaces only the edited range. A value closes the popover until the next input; a field
+  // name keeps it open on that field's values.
+  function acceptSuggestion(option: CompletionOption) {
+    const context = completion();
+    if (!context || option.kind === "note") return;
+    const next = applyCompletion(draft(), context, option);
+    batch(() => {
+      setDraft(next.text);
+      setCaret(next.caret);
+      setActiveSuggestionId(null);
+      setExplicitOpen(false);
+      setSuggestionsOpen(option.kind === "field");
+    });
+    // The value binding moved the caret to the end; put it after the inserted text.
+    if (inputRef) {
+      if (inputRef.value !== next.text) inputRef.value = next.text;
+      if (document.activeElement !== inputRef) inputRef.focus();
+      inputRef.setSelectionRange(next.caret, next.caret);
+    }
+    setCaret(next.caret);
   }
 
   function handleDocumentPointerDown(event: PointerEvent) {
@@ -669,14 +806,19 @@ export default function StreamPage(props: StreamPageProps = {}) {
               ref={inputRef}
               class="search-input"
               value={draft()}
-              onInput={(event) => {
-                setDraft(event.currentTarget.value);
-                setSuggestionsOpen(true);
-              }}
+              onInput={(event) => handleQueryInput(event.currentTarget)}
               onKeyDown={handleInputKeyDown}
+              onKeyUp={(event) => trackCaret(event.currentTarget)}
+              onClick={(event) => trackCaret(event.currentTarget)}
+              onSelect={(event) => trackCaret(event.currentTarget)}
+              onFocus={(event) => trackCaret(event.currentTarget)}
               placeholder="source:codex kind:Decision recall bug"
               aria-label="Stream query"
               role="combobox"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck={false}
+              enterkeyhint="search"
               aria-expanded={showSuggestions()}
               aria-controls="stream-suggest-list"
               aria-autocomplete="list"
@@ -687,34 +829,65 @@ export default function StreamPage(props: StreamPageProps = {}) {
               }
             />
             <button type="submit">Filter</button>
-            <Show when={showSuggestions()}>
-              <ul
-                class="suggest-popover"
-                role="listbox"
-                id="stream-suggest-list"
-                aria-label="Query suggestions"
-              >
-                <For each={suggestions()}>
-                  {(suggestion, index) => (
+            {/* Always mounted (hidden when closed) so aria-controls never points at nothing. */}
+            <ul
+              class="suggest-popover"
+              role="listbox"
+              id="stream-suggest-list"
+              aria-label="Query suggestions"
+              hidden={!showSuggestions()}
+            >
+              <For each={renderedOptions()}>
+                {(entry) => (
+                  <Show
+                    when={entry.index >= 0}
+                    fallback={
+                      <li
+                        role="option"
+                        aria-disabled="true"
+                        aria-selected="false"
+                        class="suggest-option suggest-option--note"
+                      >
+                        {entry.option.label}
+                      </li>
+                    }
+                  >
                     <li
                       role="option"
-                      id={`stream-suggest-option-${index()}`}
-                      aria-selected={index() === activeSuggestion()}
+                      id={`stream-suggest-option-${entry.index}`}
+                      aria-selected={entry.index === activeSuggestion()}
+                      aria-describedby={
+                        entry.option.detail ? `stream-suggest-detail-${entry.index}` : undefined
+                      }
                       classList={{
                         "suggest-option": true,
-                        "suggest-option--active": index() === activeSuggestion(),
+                        "suggest-option--active": entry.index === activeSuggestion(),
                       }}
-                      onClick={() => pickSuggestion(suggestion.value)}
+                      // Keep focus (and the caret) in the query while choosing with a pointer.
+                      onPointerDown={(event) => event.preventDefault()}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => acceptSuggestion(entry.option)}
                     >
-                      <span class="suggest-option-value">{suggestion.value}</span>
-                      <Show when={suggestion.count !== undefined}>
-                        <span class="suggest-option-count">{suggestion.count}</span>
+                      <span class="suggest-option-value">{entry.option.label}</span>
+                      <Show when={entry.option.count !== undefined}>
+                        <span class="suggest-option-count" aria-hidden="true">
+                          {entry.option.count}
+                        </span>
+                      </Show>
+                      <Show when={entry.option.detail}>
+                        <span
+                          id={`stream-suggest-detail-${entry.index}`}
+                          class="suggest-option-detail"
+                          aria-hidden="true"
+                        >
+                          {entry.option.detail}
+                        </span>
                       </Show>
                     </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
+                  </Show>
+                )}
+              </For>
+            </ul>
           </div>
           <div ref={viewsRef} class="stream-options stream-views">
             <button
@@ -1047,6 +1220,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
       <div class="visually-hidden" aria-live="polite">
         {newCount() > 0 ? `${newCount()} new ${newCount() === 1 ? "event" : "events"}` : ""}
       </div>
+      {/* The same persistent pattern for query suggestions: their counts are aria-hidden in the
+          options (names stay the values), so the count and list size are announced here. */}
+      <div class="visually-hidden" aria-live="polite" id="stream-suggest-status">
+        {suggestionAnnouncement()}
+      </div>
 
       <div
         ref={feedRef}
@@ -1211,28 +1389,6 @@ function sessionStreamLink(visibleQuery: string, sessionId: string, projectKey: 
   return `${window.location.origin}/stream?${search.toString()}`;
 }
 
-// session: suggestions from the recent-sessions listing — the cheapest live-value source
-// already in api.ts; tool:/project: get counted top values from the facets endpoint instead.
-async function sessionSuggestions(prefix: string): Promise<string[]> {
-  try {
-    const sessions = await getSessions(50);
-    const needle = prefix.toLowerCase();
-    const values: string[] = [];
-    for (const session of sessions) {
-      const value = session.clientSessionId || session.id;
-      if (!value || values.includes(value)) continue;
-      const haystacks = [value, session.id, session.title ?? ""];
-      if (needle && !haystacks.some((candidate) => candidate.toLowerCase().includes(needle)))
-        continue;
-      values.push(value);
-      if (values.length >= 8) break;
-    }
-    return values;
-  } catch {
-    return [];
-  }
-}
-
 function shortSessionRef(value: string): string {
   return value.length > 14 ? `${value.slice(0, 12)}…` : value;
 }
@@ -1282,20 +1438,4 @@ function runSessionHref(sessionId: string, project: ProjectSummary | null | unde
 
 function cwdDiffers(rowCwd: string | null | undefined, runCwd: string | null | undefined): boolean {
   return (rowCwd ?? null) !== (runCwd ?? null);
-}
-
-function createSignalResource<TSource, TResult>(
-  source: () => TSource,
-  fetcher: (source: TSource) => Promise<TResult>,
-): [() => TResult | undefined] {
-  const [value, setValue] = createSignal<TResult>();
-  let token = 0;
-  createEffect(() => {
-    const currentSource = source();
-    const currentToken = ++token;
-    fetcher(currentSource).then((next) => {
-      if (currentToken === token) setValue(() => next);
-    });
-  });
-  return [value];
 }
