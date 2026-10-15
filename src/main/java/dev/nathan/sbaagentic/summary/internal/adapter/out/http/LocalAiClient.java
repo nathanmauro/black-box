@@ -329,9 +329,10 @@ public class LocalAiClient implements LocalSummaryModel, SummaryModelOperations 
 
     private Map<?, ?> post(Map<String, Object> request) {
 
+        // Post to exactly the URI SummaryModelProperties.chatUri() reports, so a check on it holds.
         return restClient
                 .post()
-                .uri(properties.getChatPath())
+                .uri(properties.chatUri())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(request)
                 .retrieve()

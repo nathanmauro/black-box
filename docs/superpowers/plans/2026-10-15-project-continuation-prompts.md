@@ -144,7 +144,8 @@ Both remain visible in Recall.
   implements it by calling the summary module's local OpenAI-compatible client. No new module edges
   are needed, and the precedent is `platform/internal/adapter/out/sse/JudgmentSseAdapter`.
 - The bean exists only when `sba.continuation.synthesis.enabled=true`.
-- The base URL must be loopback (`127.0.0.0/8`, `::1` or `localhost`) unless `allow-non-loopback`
+- The URL the client posts to (the chat path resolved against the base URL, so an absolute chat
+  path counts) must be loopback (`127.0.0.0/8`, `::1` or `localhost`) unless `allow-non-loopback`
   is set.
 
 **Model input**

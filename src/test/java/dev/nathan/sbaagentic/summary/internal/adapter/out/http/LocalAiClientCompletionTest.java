@@ -9,6 +9,7 @@ import dev.nathan.sbaagentic.summary.ModelCompletion;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -71,6 +72,39 @@ class LocalAiClientCompletionTest {
     }
 
     @Test
+    void aRelativeChatPathResolvesAgainstTheBaseUrlIncludingItsPath() {
+        String base = properties.getBaseUrl();
+
+        assertThat(properties.chatUri()).isEqualTo(URI.create(base + "/v1/chat/completions"));
+        properties.setBaseUrl(base + "/proxy");
+        assertThat(properties.chatUri()).isEqualTo(URI.create(base + "/proxy/v1/chat/completions"));
+    }
+
+    /** The URI a caller can check is the one the client posts to, even when the chat path names its own host. */
+    @Test
+    void anAbsoluteChatPathSendsTheCallToTheHostItNames() throws IOException {
+        List<String> elsewhere = new CopyOnWriteArrayList<>();
+        HttpServer other = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        other.createContext("/other/chat", exchange -> respond(exchange, elsewhere));
+        other.start();
+        try {
+            reply.set("{\"choices\":[{\"message\":{\"content\":\"Moved [E1].\"},\"finish_reason\":\"stop\"}]}");
+            URI target = URI.create("http://127.0.0.1:" + other.getAddress().getPort() + "/other/chat");
+            for (String chatPath : List.of(target.toString(), "//127.0.0.1:" + target.getPort() + "/other/chat")) {
+                properties.setChatPath(chatPath);
+
+                assertThat(properties.chatUri()).isEqualTo(target);
+                assertThat(new LocalAiClient(properties).completeWithMetadata("s", "u", 10))
+                        .isEqualTo(new ModelCompletion("Moved [E1].", "stop", null));
+            }
+            assertThat(elsewhere).hasSize(2);
+            assertThat(bodies).isEmpty();
+        } finally {
+            other.stop(0);
+        }
+    }
+
+    @Test
     void aDisabledClientThrowsWithoutACall() {
         properties.setEnabled(false);
         var client = new LocalAiClient(properties);
@@ -80,7 +114,11 @@ class LocalAiClientCompletionTest {
     }
 
     private void respond(HttpExchange exchange) throws IOException {
-        bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        respond(exchange, bodies);
+    }
+
+    private void respond(HttpExchange exchange, List<String> sink) throws IOException {
+        sink.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
         byte[] body = reply.get().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, body.length);

@@ -301,7 +301,7 @@ database, not the service database. See [PostgreSQL](postgres-backend.md).
 | `SBA_SUMMARY_TIMEOUT` | `10m` | External summary subprocess timeout |
 | `SBA_LOCAL_AI_ENABLED` | `true` | Enable OpenAI-compatible local model calls |
 | `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | Local model base URL |
-| `SBA_LOCAL_AI_CHAT_PATH` | `/v1/chat/completions` | Chat endpoint path |
+| `SBA_LOCAL_AI_CHAT_PATH` | `/v1/chat/completions` | Chat endpoint path, resolved against the base URL; an absolute URL (a scheme or a leading `//`) names its own host |
 | `SBA_LOCAL_AI_MODEL` | `local-model` | Configured local model identifier |
 | `SBA_LOCAL_AI_API_KEY` | `lm-studio` | Local-compatible API credential; replace when the selected server requires it |
 | `SBA_LOCAL_AI_MAX_INPUT_CHARS` | `8000` | Per-request input window; larger transcripts are map-reduced |
@@ -327,12 +327,14 @@ continuation prompt. It is off by default; `GET /api/continuations` never calls 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SBA_CONTINUATION_SYNTHESIS_ENABLED` | `false` | Create the restatement adapter; without it every request reports `disabled` |
-| `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` | `false` | Allow a `SBA_LOCAL_AI_BASE_URL` host other than `localhost`, `127.0.0.0/8` or `::1` |
+| `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` | `false` | Allow a chat completions URL (`SBA_LOCAL_AI_CHAT_PATH` resolved against `SBA_LOCAL_AI_BASE_URL`) whose host is not `localhost`, `127.0.0.0/8` or `::1` |
 | `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` for the single model call |
 | `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS` | `4000` | Longest reply accepted; a longer reply is rejected as `truncated` |
 
 When enabled, each POST recomputes the deterministic candidates and makes exactly one call to
-`SBA_LOCAL_AI_BASE_URL` (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. The
+the chat completions URL (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. That
+URL is `SBA_LOCAL_AI_CHAT_PATH` resolved against `SBA_LOCAL_AI_BASE_URL`, exactly as the client
+calls it, so the loopback rule also refuses an absolute chat path that names another host. The
 model sees evidence handles (`[E1]`), never event IDs, and every captured string passes through
 export redaction. Input longer than `SBA_LOCAL_AI_MAX_INPUT_CHARS` (minimum 500) is refused, not
 elided. The reply is rejected whole unless it is non-blank, finished with `finish_reason: stop`,

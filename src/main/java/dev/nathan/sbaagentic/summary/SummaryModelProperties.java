@@ -1,7 +1,9 @@
 package dev.nathan.sbaagentic.summary;
 
+import java.net.URI;
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.web.util.DefaultUriBuilderFactory;
 
 @ConfigurationProperties(prefix = "sba.local-ai")
 public class SummaryModelProperties {
@@ -40,6 +42,20 @@ public class SummaryModelProperties {
 
     public void setChatPath(String chatPath) {
         this.chatPath = chatPath;
+    }
+
+    /**
+     * The URI chat completions are posted to: {@code chat-path} resolved against {@code base-url} the
+     * way a {@code RestClient} with that base URL resolves a request URI. An absolute chat path, with
+     * a scheme or a leading {@code //}, names its own host and replaces the base URL's.
+     *
+     * @throws RuntimeException when the two values do not form a URI
+     */
+    public URI chatUri() {
+        DefaultUriBuilderFactory factory = new DefaultUriBuilderFactory(baseUrl);
+        URI uri = factory.expand(chatPath);
+
+        return uri.isAbsolute() ? uri : factory.expand("").resolve(uri);
     }
 
     public String getModel() {

@@ -7,6 +7,7 @@ import dev.nathan.sbaagentic.summary.ModelCompletion;
 import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.http.HttpTimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,8 @@ import org.springframework.stereotype.Component;
 /**
  * Opt-in continuation restatement through the summary module's local OpenAI-compatible client. It
  * exists only when synthesis is enabled, refuses a non-loopback model unless explicitly allowed,
- * makes one call per request, and never logs prompt text or exception messages.
+ * makes at most one call per request, and never logs prompt text or exception messages. Loopback is
+ * judged on the URI the client posts to, so an absolute {@code chat-path} cannot route around it.
  */
 @Component
 @ConditionalOnProperty(name = "sba.continuation.synthesis.enabled", havingValue = "true")
@@ -50,12 +52,23 @@ public class LocalContinuationSynthesizer implements ContinuationSynthesizer {
 
             return DISABLED;
         }
-        if (!synthesis.isAllowNonLoopback() && !LoopbackAddress.isLoopbackUrl(localAi.getBaseUrl())) {
+        if (!synthesis.isAllowNonLoopback() && !LoopbackAddress.isLoopbackUri(chatUri())) {
 
             return REMOTE_MODEL_NOT_ALLOWED;
         }
 
         return null;
+    }
+
+    /** Where the client will post the request, or null when the configuration does not form a URI. */
+    private URI chatUri() {
+        try {
+
+            return localAi.chatUri();
+        } catch (RuntimeException ex) {
+
+            return null;
+        }
     }
 
     @Override

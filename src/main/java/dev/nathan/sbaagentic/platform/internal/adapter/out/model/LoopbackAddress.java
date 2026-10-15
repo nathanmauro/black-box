@@ -25,15 +25,18 @@ final class LoopbackAddress {
 
             return false;
         }
-        String host;
         try {
-            host = URI.create(url.strip()).getHost();
+
+            return isLoopbackUri(URI.create(url.strip()));
         } catch (IllegalArgumentException ex) {
 
             return false;
         }
+    }
 
-        return host != null && isLoopbackHost(host);
+    static boolean isLoopbackUri(URI uri) {
+
+        return uri != null && uri.getHost() != null && isLoopbackHost(uri.getHost());
     }
 
     static boolean isLoopbackHost(String rawHost) {

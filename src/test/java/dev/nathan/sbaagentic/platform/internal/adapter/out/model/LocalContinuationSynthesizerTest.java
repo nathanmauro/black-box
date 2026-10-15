@@ -128,6 +128,46 @@ class LocalContinuationSynthesizerTest {
                 .isEqualTo(ContinuationModelReply.reply("Restated [E1].", "stop", "remote-model"));
     }
 
+    /** The client posts to the chat path resolved against the base URL, so an absolute chat path picks the host. */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "http://api.example.com/v1/chat/completions",
+                "https://192.168.1.10:1234/v1/chat/completions",
+                "HTTP://api.example.com/v1/chat/completions",
+                "//api.example.com/v1/chat/completions",
+                "//127.0.0.1@api.example.com/v1/chat/completions",
+                "http://127.0.0.1:1234@api.example.com/v1/chat/completions",
+                "{host}/v1/chat/completions"
+            })
+    void aChatPathThatLeavesTheLoopbackHostIsRefusedWithoutACallUnlessExplicitlyAllowed(String chatPath) {
+        localAi.setBaseUrl("http://127.0.0.1:1234");
+        localAi.setChatPath(chatPath);
+
+        assertThat(synthesizer.unavailableReason()).isEqualTo("remote_model_not_allowed");
+        assertThat(synthesizer.complete("system", "user", 512).failureReason()).isEqualTo("remote_model_not_allowed");
+        verify(model, never()).completeWithMetadata(anyString(), anyString(), anyInt());
+
+        synthesis.setAllowNonLoopback(true);
+        assertThat(synthesizer.unavailableReason()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "/v1/chat/completions",
+                "/proxy/v1/chat/completions",
+                "http://localhost:4321/v1/chat/completions",
+                "//127.0.0.1:4321/v1/chat/completions",
+                "https://[::1]:4321/v1/chat/completions"
+            })
+    void aChatPathThatStaysOnALoopbackHostIsAccepted(String chatPath) {
+        localAi.setBaseUrl("http://127.0.0.1:1234");
+        localAi.setChatPath(chatPath);
+
+        assertThat(synthesizer.unavailableReason()).isNull();
+    }
+
     @Test
     void aDisabledLocalModelIsDisabled() {
         localAi.setEnabled(false);

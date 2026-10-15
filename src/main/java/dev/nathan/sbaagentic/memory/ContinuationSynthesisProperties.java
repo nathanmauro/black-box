@@ -3,8 +3,9 @@ package dev.nathan.sbaagentic.memory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Opt-in model restatement of continuation prompts. Off by default; when on, the configured local
- * model ({@code sba.local-ai.*}) must be on a loopback address unless non-loopback is allowed.
+ * Opt-in model restatement of continuation prompts. Off by default; when on, the URL the configured
+ * local model client posts to ({@code sba.local-ai.chat-path} resolved against {@code base-url}) must
+ * be on a loopback host unless non-loopback is allowed.
  */
 @ConfigurationProperties(prefix = "sba.continuation.synthesis")
 public class ContinuationSynthesisProperties {
