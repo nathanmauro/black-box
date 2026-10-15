@@ -62,12 +62,12 @@ unless `--text` is supplied. A pipe that never closes likewise waits for its pro
 
 ## Run as a service
 
-An optional macOS menu bar helper, [macOS quick recall](macos-quick-recall.md), searches an
-already running server from a **Control–Option–B** shortcut. It installs its own app and login
-agent (`dev.blackbox.quick-recall`), never this server service; its opt-in **Trace with Jev**
-action sends bounded excerpts to TypeSafe only when invoked. The [companion](companion.md)'s
-recall field is the embedded alternative. Both open the Recall page with `run=1`; the helper uses
-the legacy `scope` parameter, which the page still accepts.
+An optional macOS menu bar helper, [macOS quick recall](macos-quick-recall.md), searches an already
+running server from a **Control–Option–B** shortcut. It installs its own app and login agent
+(`dev.blackbox.quick-recall`), never this server service; its opt-in **Trace with Jev** action sends
+bounded excerpts to TypeSafe ([Cortex judgment stage](cortex.md)) only when invoked. The
+[companion](companion.md)'s recall field is the embedded alternative. Both open the Recall page with
+`run=1`; the helper uses the legacy `scope` parameter, which the page still accepts.
 
 ### macOS launchd
 

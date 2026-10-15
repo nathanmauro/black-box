@@ -126,7 +126,7 @@ mv "$agent_tmp" "$agent"
 launchctl bootstrap "gui/$UID" "$agent"
 launchctl kickstart "gui/$UID/$label"
 started=false
-for attempt in {1..50}; do
+for _ in {1..50}; do
   started_pid="$(launchctl print "gui/$UID/$label" 2>/dev/null | awk '/^[[:space:]]*pid = / { print $3 }' || true)"
   if [[ -n "$started_pid" ]] && kill -0 "$started_pid" 2>/dev/null; then
     started=true

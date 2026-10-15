@@ -45,11 +45,12 @@ captured; an old event can be described in a newer capture.
 
 Tracing is an explicit action. Ordinary typing does not call Jev. A trace sends the query and
 bounded Decision/Handoff excerpts, with each capture's kind, capture time, and repository folder
-name, to TypeSafe's HTTPS API in at most two calls; it does not send whole transcripts or
-continuously relay new events. Jev selects short candidate labels which the helper maps back to
-local source links; excerpts can themselves contain source identifiers. The helper renders source
-text and fixed labels, not generated summaries. Query changes and popup dismissal cancel the
-pending trace; ordinary search remains available during errors or uncertainty.
+name, to TypeSafe's HTTPS API (the provider described in [Cortex judgment stage](cortex.md)) in at
+most two calls; it does not send whole transcripts or continuously relay new events. Jev selects
+short candidate labels which the helper maps back to local source links; excerpts can themselves
+contain source identifiers. The helper renders source text and fixed labels, not generated
+summaries. Query changes and popup dismissal cancel the pending trace; ordinary search remains
+available during errors or uncertainty.
 
 The provider key belongs in the helper's macOS Keychain item. It is never stored in the application
 bundle, repository, or login-agent plist. Jev setup is separate from basic search installation.
@@ -97,8 +98,9 @@ command can show macOS's approval prompt for the helper's own TypeSafe item; a r
 the existing item. Normal use suppresses Keychain prompts and reports unavailable access instead
 of waiting for a security dialog.
 
-Installation writes only `~/Applications/Black Box Recall.app` and
-`~/Library/LaunchAgents/dev.blackbox.quick-recall.plist`, and loads that login agent.
+A basic installation writes only `~/Applications/Black Box Recall.app` and
+`~/Library/LaunchAgents/dev.blackbox.quick-recall.plist`, and loads that login agent;
+`--enable-jev` additionally writes the helper's Keychain item (see Uninstall).
 Existing targets must have the helper's own identity before the installer replaces them;
 symlink targets are rejected. A manually launched copy must be quit before reinstalling; the installer
 refuses to overwrite a running copy outside its launch agent. It explicitly starts the installed
