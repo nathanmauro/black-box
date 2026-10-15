@@ -56,7 +56,7 @@ or live services.
 
 3. Plan
    - For substantial work, publish the spec and its tickets to Linear (see
-     `docs/agents/issue-tracker.md`). An agent whose harness still uses a plan-file workflow may
+     [Issue tracker](#issue-tracker) below). An agent whose harness still uses a plan-file workflow may
      write the plan under `docs/superpowers/plans/` instead; the plans and specs already there
      stay as history.
    - Keep tasks independently verifiable.
