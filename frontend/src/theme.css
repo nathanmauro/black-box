@@ -6617,6 +6617,31 @@ a {
   font-size: 12px;
   color: var(--text-dim);
 }
+.continuation-restatement {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+.continuation-restatement-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--yellow);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.continuation-restatement-text {
+  margin: 8px 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.continuation-citations {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 640px) {
   .recall-form.recall-form--continuity {
     padding: 12px;

@@ -10,6 +10,7 @@ import java.util.List;
 /**
  * {@code GET /api/continuations}: deterministic prompts built from one project's record. Hrefs are
  * relative Recall evidence links; {@code warnings} always carries the historical-evidence caveat.
+ * {@code synthesisAvailable} says whether the opt-in restatement endpoint can call a model.
  */
 public record ContinuationResponse(
         Project project,
@@ -21,11 +22,12 @@ public record ContinuationResponse(
         String mode,
         Retrieval retrieval,
         List<Candidate> candidates,
-        List<Warning> warnings) {
+        List<Warning> warnings,
+        boolean synthesisAvailable) {
 
     public static final String MODE = "deterministic";
 
-    static ContinuationResponse from(ContinuationReport report) {
+    static ContinuationResponse from(ContinuationReport report, boolean synthesisAvailable) {
 
         return new ContinuationResponse(
                 new Project(
@@ -43,7 +45,8 @@ public record ContinuationResponse(
                 report.candidates().stream().map(Candidate::from).toList(),
                 report.warnings().stream()
                         .map(warning -> new Warning(warning.code(), warning.message()))
-                        .toList());
+                        .toList(),
+                synthesisAvailable);
     }
 
     public record Project(String canonicalKey, String projectKey, String label, List<ProjectScope> scopes) {}

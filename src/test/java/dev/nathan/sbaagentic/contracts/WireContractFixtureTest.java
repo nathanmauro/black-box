@@ -31,6 +31,8 @@ import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
 import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContinuationResponse;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContinuationSynthesisRequest;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContinuationSynthesisResponse;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceListResponse;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceView;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaDetail;
@@ -299,7 +301,28 @@ class WireContractFixtureTest {
                         "deterministic",
                         continuationRetrieval,
                         java.util.List.of(continuationCandidate),
-                        java.util.List.of(continuationWarning)));
+                        java.util.List.of(continuationWarning),
+                        false));
+        var continuationCitation = new ContinuationSynthesisResponse.Citation(
+                "E1",
+                "event-3",
+                "session-1",
+                "handoff",
+                java.time.Instant.parse("2026-10-14T12:00:00Z"),
+                "/?view=browse&session=session-1&event=event-3&project=");
+        var continuationSynthesized = new ContinuationSynthesisResponse.Synthesized(
+                "Reproduce the recovery path [E1].",
+                "local-model",
+                "continuation-synthesis-v1",
+                java.util.List.of(continuationCitation));
+        var continuationSynthesis = new ContinuationSynthesisResponse.Synthesis("ok", null);
+        updates.put("ContinuationSynthesisRequest", new ContinuationSynthesisRequest("/repo", 8760, "bbc1-104d185173789cbe307fcab8"));
+        updates.put("ContinuationSynthesisResponse.Citation", continuationCitation);
+        updates.put("ContinuationSynthesisResponse.Synthesized", continuationSynthesized);
+        updates.put("ContinuationSynthesisResponse.Synthesis", continuationSynthesis);
+        updates.put(
+                "ContinuationSynthesisResponse",
+                new ContinuationSynthesisResponse(continuationCandidate, continuationSynthesized, continuationSynthesis));
         var braid = new ProjectSavedMeld(
                 "braid-1",
                 null,
@@ -420,6 +443,11 @@ class WireContractFixtureTest {
                 entry("ContinuationResponse.Evidence", ContinuationResponse.Evidence.class),
                 entry("ContinuationResponse.Caveat", ContinuationResponse.Caveat.class),
                 entry("ContinuationResponse.Warning", ContinuationResponse.Warning.class),
+                entry("ContinuationSynthesisRequest", ContinuationSynthesisRequest.class),
+                entry("ContinuationSynthesisResponse", ContinuationSynthesisResponse.class),
+                entry("ContinuationSynthesisResponse.Synthesized", ContinuationSynthesisResponse.Synthesized.class),
+                entry("ContinuationSynthesisResponse.Citation", ContinuationSynthesisResponse.Citation.class),
+                entry("ContinuationSynthesisResponse.Synthesis", ContinuationSynthesisResponse.Synthesis.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
                 entry("CodeReference", CodeReference.class),
                 entry("CreateSessionLinkRequest", CreateSessionLinkRequest.class),

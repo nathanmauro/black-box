@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { continuationBasisLabel, promptWithAbsoluteLinks, recordedAgo } from "./continuations";
+import {
+  continuationBasisLabel,
+  promptWithAbsoluteLinks,
+  recordedAgo,
+  synthesisReasonText,
+} from "./continuations";
 
 const href = "/?view=browse&session=s1&event=e1&project=";
 const evidence = [
@@ -62,5 +67,26 @@ describe("continuation labels", () => {
     expect(recordedAgo(0)).toBe("recorded less than a day ago");
     expect(recordedAgo(1)).toBe("recorded 1 day ago");
     expect(recordedAgo(20)).toBe("recorded 20 days ago");
+  });
+});
+
+describe("synthesisReasonText", () => {
+  it("explains every fixed reason and falls back for anything else", () => {
+    for (const reason of [
+      "disabled",
+      "remote_model_not_allowed",
+      "input_over_budget",
+      "unavailable",
+      "timeout",
+      "truncated",
+      "invalid_reference",
+      "empty",
+    ]) {
+      expect(synthesisReasonText(reason)).not.toBe("The local model restatement is unavailable.");
+    }
+    expect(synthesisReasonText("something new")).toBe(
+      "The local model restatement is unavailable.",
+    );
+    expect(synthesisReasonText(null)).toBe("The local model restatement is unavailable.");
   });
 });

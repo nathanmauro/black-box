@@ -138,7 +138,8 @@ With a project selected, **Recall** shows **Prompts from the record**. **Build p
 `GET /api/continuations` and shows up to three starting prompts a fresh agent could use. They restate
 the project's recorded handoffs and decisions; they are proposals from the record, not a judgement
 of what is current. Nothing is launched, executed, captured or cached, and no generation model is
-involved. Recall suggestions above are unchanged.
+involved unless the optional restatement below is enabled and requested. Recall suggestions above
+are unchanged.
 
 ```bash
 curl -fsSG http://localhost:8766/api/continuations \
@@ -196,9 +197,21 @@ starts empty. A `project=<projectKey>` deep link resolves to the catalog's canon
 **Resume this project** links are unchanged. The request is recorded in recall telemetry with
 purpose `continuation`.
 
+An optional, separate restatement is off by default. With
+`SBA_CONTINUATION_SYNTHESIS_ENABLED=true` and a loopback local model, the response reports
+`synthesisAvailable: true` and each card offers **Restate with local model**. That sends
+`POST /api/continuations/synthesize` with `{project, withinHours, candidateId}`, which recomputes the
+candidates and makes one model call. The reply is shown as an unverified model restatement with its
+cited records; it never replaces the prompt, which is still what **Copy prompt** copies. A rejected
+or failed reply returns `synthesized: null` and a fixed reason. See
+[Continuation restatement](operations.md#continuation-restatement-optional) for flags and validation.
+
 `ContinuationApiTest`, and `ContinuationPostgresApiTest` on a disposable PostgreSQL schema,
 characterize alias inclusion, cross-project and replacement exclusion, validation, staleness and
-Evidence caveats. See the [continuation prompt plan](superpowers/plans/2026-10-15-project-continuation-prompts.md).
+Evidence caveats. `ContinuationSynthesisDisabledTest` shows that the default configuration has no
+synthesizer and makes no model request; `ContinuationSynthesisApiTest` drives a loopback fake model
+through success and every rejection; `ContinuationSynthesisRemoteRefusedTest` refuses a
+non-loopback model before connecting. See the [continuation prompt plan](superpowers/plans/2026-10-15-project-continuation-prompts.md).
 
 ## Capture API
 

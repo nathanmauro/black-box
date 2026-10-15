@@ -7,6 +7,7 @@ import {
   getContinuations,
   getProjects,
   getRecall,
+  synthesizeContinuation,
   type ContinuationResponse,
   type RecallResult,
   type RecalledItem,
@@ -135,6 +136,7 @@ vi.mock("../../lib/api", async (importOriginal) => ({
   getEvent: vi.fn(async (eventId: string) => ({ id: eventId, sessionId: `owning-${eventId}` })),
   captureDecision: vi.fn(),
   getContinuations: vi.fn(),
+  synthesizeContinuation: vi.fn(),
 }));
 beforeEach(() => {
   [params, updateParams] = createStore<Params>({});
@@ -173,6 +175,7 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({} as never);
   vi.mocked(getContinuations).mockReset().mockResolvedValue(continuations());
+  vi.mocked(synthesizeContinuation).mockReset();
   writeText.mockReset().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
   sourceFilter.clear();
@@ -1009,6 +1012,85 @@ describe("RecallPage", () => {
       [params, updateParams] = createStore<Params>({ scope: "/repos/alpha" });
       render(() => <RecallPage />);
       expect(screen.queryByRole("region", { name: "Prompts from the record" })).toBeNull();
+    });
+
+    it("offers a local-model restatement only when available and labels it as unverified", async () => {
+      updateParams({ project: "/repos/alpha" });
+      const view = render(() => <RecallPage />);
+      fireEvent.click(await enabledBuild());
+      const plain = await screen.findByRole("article", { name: "Reproduce the recovery path" });
+      expect(
+        within(plain).queryByRole("button", { name: "Restate with local model" }),
+      ).not.toBeInTheDocument();
+      view.unmount();
+
+      vi.mocked(getContinuations).mockResolvedValueOnce({
+        ...continuations(),
+        synthesisAvailable: true,
+      });
+      const restated = "Reproduce the recovery path [E1].";
+      vi.mocked(synthesizeContinuation).mockResolvedValueOnce({
+        candidate: continuations().candidates[0],
+        synthesized: {
+          text: restated,
+          model: "fixture-model",
+          promptVersion: "continuation-synthesis-v1",
+          citations: [
+            {
+              handle: "E1",
+              eventId: "handoff-9",
+              sessionId: "session-9",
+              kind: "handoff",
+              observedAt: "2026-10-14T12:00:00Z",
+              href: promptHref,
+            },
+          ],
+        },
+        synthesis: { status: "ok", reason: null },
+      });
+      render(() => <RecallPage />);
+      fireEvent.click(await enabledBuild());
+      const card = await screen.findByRole("article", { name: "Reproduce the recovery path" });
+      expect(synthesizeContinuation).not.toHaveBeenCalled();
+      fireEvent.click(within(card).getByRole("button", { name: "Restate with local model" }));
+      const output = await within(card).findByRole("region", { name: "Local model restatement" });
+      expect(synthesizeContinuation).toHaveBeenCalledExactlyOnceWith({
+        project: "/repos/alpha",
+        withinHours: 8760,
+        candidateId: "bbc1-104d185173789cbe307fcab8",
+      });
+      expect(output).toHaveTextContent("Model restatement · unverified");
+      expect(output).toHaveTextContent("Written by fixture-model from the cited records");
+      expect(output).toHaveTextContent(restated);
+      expect(within(output).getByRole("link", { name: "[E1] handoff" })).toHaveAttribute(
+        "href",
+        promptHref,
+      );
+      fireEvent.click(within(card).getByRole("button", { name: "Copy prompt" }));
+      await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+      expect(writeText.mock.calls[0][0]).not.toContain(restated);
+      expect(writeText.mock.calls[0][0]).toContain("Black Box continuation prompt");
+    });
+
+    it("explains a degraded restatement with its fixed reason", async () => {
+      updateParams({ project: "/repos/alpha" });
+      vi.mocked(getContinuations).mockResolvedValueOnce({
+        ...continuations(),
+        synthesisAvailable: true,
+      });
+      vi.mocked(synthesizeContinuation).mockResolvedValueOnce({
+        candidate: continuations().candidates[0],
+        synthesized: null,
+        synthesis: { status: "degraded", reason: "timeout" },
+      });
+      render(() => <RecallPage />);
+      fireEvent.click(await enabledBuild());
+      const card = await screen.findByRole("article", { name: "Reproduce the recovery path" });
+      fireEvent.click(within(card).getByRole("button", { name: "Restate with local model" }));
+      expect(await within(card).findByText("The local model timed out.")).toBeInTheDocument();
+      expect(
+        within(card).queryByRole("region", { name: "Local model restatement" }),
+      ).not.toBeInTheDocument();
     });
 
     it("reports a failed build without touching the recall result", async () => {

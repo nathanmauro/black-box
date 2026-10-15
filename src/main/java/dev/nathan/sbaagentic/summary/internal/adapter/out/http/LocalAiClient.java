@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.summary.internal.adapter.out.http;
 
 import dev.nathan.sbaagentic.recording.Titles;
 import dev.nathan.sbaagentic.summary.AiHealth;
+import dev.nathan.sbaagentic.summary.ModelCompletion;
 import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import dev.nathan.sbaagentic.summary.internal.application.port.LocalSummaryModel;
@@ -195,6 +196,36 @@ public class LocalAiClient implements LocalSummaryModel, SummaryModelOperations 
         }
 
         return content;
+    }
+
+    @Override
+    public ModelCompletion completeWithMetadata(String system, String user, int maxTokens) {
+        if (!properties.isEnabled()) {
+            throw new RestClientException("local AI disabled");
+        }
+        Map<?, ?> response = post(chatRequest(maxTokens, system, user == null ? "" : user));
+        Map<?, ?> choice = firstChoice(response);
+        String content = null;
+        if (choice != null && choice.get("message") instanceof Map<?, ?> message) {
+            content = message.get("content") instanceof String value ? value.trim() : null;
+        }
+        Object finishReason = choice == null ? null : choice.get("finish_reason");
+        Object model = response == null ? null : response.get("model");
+
+        return new ModelCompletion(
+                content == null ? "" : content,
+                finishReason instanceof String value ? value : null,
+                model instanceof String value ? value : null);
+    }
+
+    private static Map<?, ?> firstChoice(Map<?, ?> response) {
+        Object choices = response == null ? null : response.get("choices");
+        if (choices instanceof List<?> list && !list.isEmpty() && list.getFirst() instanceof Map<?, ?> first) {
+
+            return first;
+        }
+
+        return null;
     }
 
     private Map<String, Object> chatRequest(int maxTokens, String system, String user) {

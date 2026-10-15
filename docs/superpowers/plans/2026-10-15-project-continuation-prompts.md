@@ -250,3 +250,33 @@ Both remain visible in Recall.
     `git diff --check` clean. `ContinuationPostgresApiTest` 14/14 (and `EvidencePostgresHttpMcpTest`
     28/28) against a throwaway local PostgreSQL 16 cluster on a random loopback port, removed
     afterwards. `frontend/tests/e2e/continuation.spec.ts` is linted but not run here.
+- 2026-10-15: slice 2 shipped. `POST /api/continuations/synthesize` (memory
+  `ContinuationSynthesisService`, root port `ContinuationSynthesizer`, platform
+  `LocalContinuationSynthesizer` over the new `SummaryModelOperations.completeWithMetadata`, which
+  returns content, `finish_reason` and model without changing `complete()`). Off by default
+  (`SBA_CONTINUATION_SYNTHESIS_ENABLED`); loopback is `localhost`, `127.0.0.0/8` or `::1`, names are
+  never resolved, and `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` overrides it. The model sees
+  `[E#]` handles, redacted and fenced text, and a versioned system prompt
+  (`continuation-synthesis-v1`); input over the local window is refused. `GET` reports
+  `synthesisAvailable`; Recall shows **Restate with local model** only then and labels the output as
+  an unverified model restatement. A missing candidate is `404`.
+  - Verification: `mvn -q -o test` 1,209 tests, 0 failures, 83 skipped, before and after the
+    formatting-only pass (`mvn -Pjava-format spotless:apply` scoped to the files this branch added);
+    `ContinuationSynthesisDisabledTest` proves no bean and zero
+    requests to a reachable loopback model under defaults; `ContinuationSynthesisApiTest` covers
+    success, `truncated`, `invalid_reference` (unknown handle, foreign UUID, no citation), `empty`,
+    `unavailable` (HTTP 500) and `timeout` (1 s client timeout), one request each;
+    `ContinuationSynthesisRemoteRefusedTest` refuses `192.0.2.10` without connecting;
+    `LocalContinuationSynthesizerTest` covers the loopback table, failure mapping and class-only
+    logging; `LocalAiClientCompletionTest` covers the sibling over a loopback socket. `npm test`
+    834 passed; `npm run check` 0 errors; `npm run build` regenerated the static bundle.
+  - Packaged jar (`mvn -q -o -DskipTests package` in this worktree, run with `env -i`, temporary
+    HOME and `-Duser.home`, SQLite in a temp dir, optional systems off, port 18778; 18777 was held
+    by another process and left alone): `GET /api/continuations` returned `project`, `generatedAt`,
+    `newestEvidenceAt`, `headAt`, `stale`, `withinHours`, `mode`, `retrieval`, `candidates`,
+    `warnings`, `synthesisAvailable` with three candidates (alias next step, root next step, handoff
+    open loop), no other-project or replaced-decision text, and an `X-Blackbox-Recall-Id` header;
+    bad inputs returned `400 invalid_argument`; synthesis was `degraded`/`disabled`. A second run
+    with synthesis on and a loopback fake model: `synthesisAvailable: true`, zero model requests on
+    GET, exactly one on POST, `synthesis: ok` with a validated `[E1]` citation and the
+    deterministic prompt unchanged.

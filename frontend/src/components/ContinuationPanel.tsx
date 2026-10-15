@@ -2,10 +2,17 @@ import { A } from "@solidjs/router";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import {
   getContinuations,
+  synthesizeContinuation,
   type ContinuationCandidate,
   type ContinuationResponse,
+  type ContinuationSynthesisResponse,
 } from "../lib/api";
-import { continuationBasisLabel, promptWithAbsoluteLinks, recordedAgo } from "../lib/continuations";
+import {
+  continuationBasisLabel,
+  promptWithAbsoluteLinks,
+  recordedAgo,
+  synthesisReasonText,
+} from "../lib/continuations";
 
 /**
  * Prompts from the record for one project path. Nothing is fetched until Build prompts, and
@@ -80,7 +87,14 @@ export default function ContinuationPanel(props: { project: string; disabled?: b
             <Show when={resolved().candidates.length}>
               <div class="continuation-cards">
                 <For each={resolved().candidates}>
-                  {(candidate) => <ContinuationCard candidate={candidate} />}
+                  {(candidate) => (
+                    <ContinuationCard
+                      candidate={candidate}
+                      project={props.project}
+                      withinHours={resolved().withinHours}
+                      synthesisAvailable={resolved().synthesisAvailable === true}
+                    />
+                  )}
                 </For>
               </div>
             </Show>
@@ -91,9 +105,40 @@ export default function ContinuationPanel(props: { project: string; disabled?: b
   );
 }
 
-function ContinuationCard(props: { candidate: ContinuationCandidate }) {
+function ContinuationCard(props: {
+  candidate: ContinuationCandidate;
+  project: string;
+  withinHours: number;
+  synthesisAvailable: boolean;
+}) {
   const [copyStatus, setCopyStatus] = createSignal("");
+  const [restating, setRestating] = createSignal(false);
+  const [restatement, setRestatement] = createSignal<ContinuationSynthesisResponse | null>(null);
+  const [restateError, setRestateError] = createSignal<string | null>(null);
   let summary!: HTMLElement;
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
+
+  // One explicit model call per click; the deterministic prompt is never replaced.
+  async function restate() {
+    setRestating(true);
+    setRestateError(null);
+    setRestatement(null);
+    try {
+      const result = await synthesizeContinuation({
+        project: props.project,
+        withinHours: props.withinHours,
+        candidateId: props.candidate.id,
+      });
+      if (alive) setRestatement(result);
+    } catch (err) {
+      if (alive) setRestateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (alive) setRestating(false);
+    }
+  }
 
   async function copyPrompt() {
     try {
@@ -168,8 +213,62 @@ function ContinuationCard(props: { candidate: ContinuationCandidate }) {
         <button type="button" class="secondary-action" onClick={() => void copyPrompt()}>
           Copy prompt
         </button>
+        <Show when={props.synthesisAvailable}>
+          <button
+            type="button"
+            class="secondary-action"
+            disabled={restating()}
+            onClick={() => void restate()}
+          >
+            {restating() ? "Restating…" : "Restate with local model"}
+          </button>
+        </Show>
         <p role="status">{copyStatus()}</p>
       </div>
+      <Show when={restateError()}>
+        {(message) => (
+          <p class="inline-error" role="alert">
+            Restatement failed: {message()}
+          </p>
+        )}
+      </Show>
+      <Show when={restatement()}>
+        {(result) => (
+          <Show
+            when={result().synthesized}
+            fallback={
+              <p class="recall-hint" role="status">
+                {synthesisReasonText(result().synthesis.reason)}
+              </p>
+            }
+          >
+            {(synthesized) => (
+              <section class="continuation-restatement" aria-label="Local model restatement">
+                <p class="continuation-restatement-label">Model restatement · unverified</p>
+                <p class="recall-hint">
+                  Written by {synthesized().model || "the local model"} from the cited records; it
+                  can be wrong. The prompt from the record is unchanged, and Copy prompt copies it.
+                </p>
+                <p class="continuation-restatement-text">{synthesized().text}</p>
+                <ul class="continuation-citations" aria-label="Cited records">
+                  <For each={synthesized().citations}>
+                    {(citation) => (
+                      <li>
+                        <A href={citation.href}>
+                          [{citation.handle}] {citation.kind}
+                        </A>{" "}
+                        <time datetime={citation.observedAt || undefined}>
+                          {citation.observedAt}
+                        </time>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </section>
+            )}
+          </Show>
+        )}
+      </Show>
     </article>
   );
 }

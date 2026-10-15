@@ -166,10 +166,11 @@ public class ContinuationService {
                 ? primary
                 : frontier.frontierHandoffs().stream().findFirst().orElse(null);
         List<ContinuationCandidate> otherLoops = frontier.candidates().stream()
-                .filter(other -> !other.id().equals(candidate.id()) && other.basis().openLoop())
+                .filter(other ->
+                        !other.id().equals(candidate.id()) && other.basis().openLoop())
                 .limit(MAX_OTHER_LOOPS)
                 .toList();
-        String prompt = ContinuationPromptRenderer.render(new ContinuationPromptInput(
+        ContinuationPromptInput promptInput = new ContinuationPromptInput(
                 candidate,
                 frontier.now(),
                 frontier.stale(),
@@ -180,7 +181,8 @@ public class ContinuationService {
                 otherLoops,
                 relations,
                 links,
-                omitted));
+                omitted);
+        String prompt = ContinuationPromptRenderer.render(promptInput);
 
         List<ContinuationReport.Caveat> caveats = new ArrayList<>();
         for (ContinuationRelation relation : relations) {
@@ -204,7 +206,8 @@ public class ContinuationService {
                 ContinuationPromptRenderer.why(candidate),
                 prompt,
                 links,
-                caveats);
+                caveats,
+                promptInput);
     }
 
     /** Explicit supports/refutes links only, refuting first; never a rank change or an inferred outcome. */
@@ -220,9 +223,11 @@ public class ContinuationService {
         Map<String, List<ContinuationRelation>> byCandidate = new HashMap<>();
         for (ContinuationCandidate candidate : candidates) {
             Map<String, String> sourceRefs = new HashMap<>();
-            candidate.sources().forEach(source -> sourceRefs.put(
-                    "event:" + source.capture().eventId().toLowerCase(Locale.ROOT),
-                    source.capture().eventId()));
+            candidate
+                    .sources()
+                    .forEach(source -> sourceRefs.put(
+                            "event:" + source.capture().eventId().toLowerCase(Locale.ROOT),
+                            source.capture().eventId()));
             List<ContinuationRelation> refutes = new ArrayList<>();
             List<ContinuationRelation> supports = new ArrayList<>();
             for (EvidenceView view : linked) {

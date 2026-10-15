@@ -37,3 +37,19 @@ export function recordedAgo(days: number): string {
   if (!Number.isFinite(days) || days <= 0) return "recorded less than a day ago";
   return days === 1 ? "recorded 1 day ago" : `recorded ${days} days ago`;
 }
+
+const SYNTHESIS_REASONS: Record<string, string> = {
+  disabled: "Restatement is off; the prompt from the record is unchanged.",
+  remote_model_not_allowed:
+    "Restatement refused: the configured model is not on a loopback address.",
+  input_over_budget: "This prompt is longer than the local model's input window.",
+  unavailable: "The local model did not answer.",
+  timeout: "The local model timed out.",
+  truncated: "The model's reply was cut off, so it was discarded.",
+  invalid_reference: "The reply cited evidence it was not given, so it was discarded.",
+  empty: "The local model returned nothing.",
+};
+
+export function synthesisReasonText(reason: string | null | undefined): string {
+  return SYNTHESIS_REASONS[reason ?? ""] ?? "The local model restatement is unavailable.";
+}

@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
   scope, replaced decisions excluded, trajectory frontier, stale and future-dated labels, explicit
   Evidence caveats, fenced captured text, 6,000-character budget). Recall gains a **Prompts from
   the record** panel with Inspect and Copy prompt. No model is involved and nothing is stored.
+- Optional continuation restatement, off by default: `POST /api/continuations/synthesize` asks a
+  loopback local model (`SBA_CONTINUATION_SYNTHESIS_ENABLED`) to restate one prompt with `[E#]`
+  evidence handles and redacted, fenced input, validates the whole reply, and returns
+  `synthesized: null` with a fixed reason on any failure. The deterministic prompt never changes.
 - Optional macOS menu-bar quick recall helper (`macos/BlackBoxRecall`) with its build, install and
   hermetic test scripts and an opt-in Trace with Jev action; see
   [docs/macos-quick-recall.md](docs/macos-quick-recall.md).

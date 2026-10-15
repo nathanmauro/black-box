@@ -49,6 +49,7 @@ GET /sessions
 GET /sessions/**
 GET /stream
 POST /api/ask
+POST /api/continuations/synthesize
 POST /api/decisions
 POST /api/events
 POST /api/events/idempotent

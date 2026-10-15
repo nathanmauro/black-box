@@ -300,7 +300,12 @@ class RecallTelemetryTest {
                 projects,
                 mock(EvidenceService.class),
                 Clock.fixed(Instant.parse("2026-10-15T12:00:00Z"), ZoneOffset.UTC));
-        var mvc = MockMvcBuilders.standaloneSetup(new ContinuationController(continuations))
+        @SuppressWarnings("unchecked")
+        org.springframework.beans.factory.ObjectProvider<dev.nathan.sbaagentic.memory.ContinuationSynthesizer> none =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        var synthesis = new ContinuationSynthesisService(
+                continuations, none, text -> text, new dev.nathan.sbaagentic.memory.ContinuationSynthesisProperties());
+        var mvc = MockMvcBuilders.standaloneSetup(new ContinuationController(continuations, synthesis))
                 .build();
         var result = mvc.perform(get("/api/continuations")
                         .param("project", "/private/path")

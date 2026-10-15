@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.nathan.sbaagentic.memory.ContinuationSynthesisProperties;
 import dev.nathan.sbaagentic.memory.ElasticsearchProperties;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingProperties;
 import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
@@ -21,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @ApplicationModuleTest(module = "memory", mode = BootstrapMode.DIRECT_DEPENDENCIES)
 @EnableConfigurationProperties({
+    ContinuationSynthesisProperties.class,
     ElasticsearchProperties.class,
     IngestionProperties.class,
     TranscriptProperties.class,

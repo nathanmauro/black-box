@@ -319,6 +319,31 @@ loopback, but a remote URL receives the transcript text. It falls back to compac
 if local summarization cannot run or `SBA_LOCAL_AI_ENABLED=false`. This configured summary
 subprocess does not execute queued work or launch worker agents.
 
+### Continuation restatement (optional)
+
+`POST /api/continuations/synthesize` can ask the local model above to restate one deterministic
+continuation prompt. It is off by default; `GET /api/continuations` never calls a model.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SBA_CONTINUATION_SYNTHESIS_ENABLED` | `false` | Create the restatement adapter; without it every request reports `disabled` |
+| `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` | `false` | Allow a `SBA_LOCAL_AI_BASE_URL` host other than `localhost`, `127.0.0.0/8` or `::1` |
+| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` for the single model call |
+| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS` | `4000` | Longest reply accepted; a longer reply is rejected as `truncated` |
+
+When enabled, each POST recomputes the deterministic candidates and makes exactly one call to
+`SBA_LOCAL_AI_BASE_URL` (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. The
+model sees evidence handles (`[E1]`), never event IDs, and every captured string passes through
+export redaction. Input longer than `SBA_LOCAL_AI_MAX_INPUT_CHARS` (minimum 500) is refused, not
+elided. The reply is rejected whole unless it is non-blank, finished with `finish_reason: stop`,
+within the output bound, cites at least one handle, cites only known handles and mentions no other
+event ID. Failures return `synthesized: null` with one reason: `disabled`,
+`remote_model_not_allowed`, `input_over_budget`, `unavailable`, `timeout`, `truncated`,
+`invalid_reference` or `empty`. Prompt text and model replies are never logged; a failed call logs
+only the exception class. Nothing is cached or retried, and the deterministic prompt is unchanged.
+A non-loopback URL with `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK=true` sends that evidence to
+the configured host.
+
 The wrappers have their own environment settings:
 
 | Variable | Checked-in default | Purpose |

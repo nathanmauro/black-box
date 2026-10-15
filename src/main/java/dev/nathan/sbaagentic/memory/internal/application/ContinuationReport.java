@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.memory.internal.application;
 import dev.nathan.sbaagentic.memory.internal.domain.ContinuationCandidate;
 import dev.nathan.sbaagentic.memory.internal.domain.ContinuationFrontier;
 import dev.nathan.sbaagentic.memory.internal.domain.ContinuationLink;
+import dev.nathan.sbaagentic.memory.internal.domain.ContinuationPromptInput;
 import dev.nathan.sbaagentic.project.ProjectScope;
 import java.time.Instant;
 import java.util.List;
@@ -26,14 +27,18 @@ public record ContinuationReport(
         warnings = List.copyOf(warnings);
     }
 
-    /** A selected candidate with its rendered prompt and the sources the prompt links. */
+    /**
+     * A selected candidate with its rendered prompt, the sources the prompt links and the material it
+     * quotes, which an optional restatement reuses.
+     */
     public record Entry(
             ContinuationCandidate candidate,
             String title,
             String why,
             String prompt,
             List<ContinuationLink> evidence,
-            List<Caveat> caveats) {
+            List<Caveat> caveats,
+            ContinuationPromptInput promptInput) {
 
         public Entry {
             evidence = List.copyOf(evidence);
