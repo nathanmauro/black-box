@@ -1005,6 +1005,26 @@ describe("RecallPage", () => {
       expect(screen.queryByRole("article")).not.toBeInTheDocument();
     });
 
+    it("starts empty when the project param changes, including back to the built project", async () => {
+      updateParams({ project: "/repos/alpha" });
+      render(() => <RecallPage />);
+      fireEvent.click(await enabledBuild());
+      await screen.findByRole("article", { name: "Reproduce the recovery path" });
+      expect(getContinuations).toHaveBeenCalledExactlyOnceWith("/repos/alpha");
+      const panel = () => screen.getByRole("region", { name: "Prompts from the record" });
+
+      updateParams({ project: "/repos/beta" });
+      await enabledBuild();
+      expect(within(panel()).queryByRole("article")).not.toBeInTheDocument();
+      expect(within(panel()).queryByRole("list", { name: "Prompt warnings" })).toBeNull();
+
+      updateParams({ project: "/repos/alpha" });
+      await enabledBuild();
+      expect(within(panel()).queryByRole("article")).not.toBeInTheDocument();
+      expect(within(panel()).queryByRole("list", { name: "Prompt warnings" })).toBeNull();
+      expect(getContinuations).toHaveBeenCalledOnce();
+    });
+
     it("is absent without a selected project and for legacy scope links", async () => {
       const view = render(() => <RecallPage />);
       expect(screen.queryByRole("region", { name: "Prompts from the record" })).toBeNull();
