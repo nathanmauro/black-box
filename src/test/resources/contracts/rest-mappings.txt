@@ -2,6 +2,7 @@
 DELETE /api/project-aliases
 GET /api/ask/retrieve
 GET /api/ask/status
+GET /api/continuations
 GET /api/dag
 GET /api/events
 GET /api/events/facets

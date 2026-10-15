@@ -21,7 +21,8 @@ supported environment settings.
 
 CI supplies a disposable PostgreSQL 16 service and fails unless the PostgreSQL contract suites run
 without skips: `PostgresBackendContractTest`, `AuthenticatedPostgresConsumerContractTest`,
-`DatabaseRestoreContractTest`, `StreamPositionPostgresTest`, `EvidencePostgresHttpMcpTest`, and the
+`DatabaseRestoreContractTest`, `StreamPositionPostgresTest`, `EvidencePostgresHttpMcpTest`,
+`ContinuationPostgresApiTest`, and the
 project suites `ProjectlessBraidPostgresHttpTest`, `MeldSchemaPostgresMigrationTest`,
 `ProjectMeldRedactionPostgresHttpTest`, and `BraidDiscoveryPostgresHttpMcpTest` (see
 [`ci.yml`](../.github/workflows/ci.yml)).

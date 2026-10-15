@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Prompts from the record: `GET /api/continuations` builds up to three deterministic starting
+  prompts from one project's recorded handoffs and current decisions (exact project and alias
+  scope, replaced decisions excluded, trajectory frontier, stale and future-dated labels, explicit
+  Evidence caveats, fenced captured text, 6,000-character budget). Recall gains a **Prompts from
+  the record** panel with Inspect and Copy prompt. No model is involved and nothing is stored.
 - Optional macOS menu-bar quick recall helper (`macos/BlackBoxRecall`) with its build, install and
   hermetic test scripts and an opt-in Trace with Jev action; see
   [docs/macos-quick-recall.md](docs/macos-quick-recall.md).

@@ -30,6 +30,7 @@ import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillResult;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.adapter.in.web.ContinuationResponse;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceListResponse;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceView;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaDetail;
@@ -247,6 +248,58 @@ class WireContractFixtureTest {
                 "IdeaDetail",
                 new IdeaDetail((IdeaView) updates.get("IdeaView"), java.util.List.of(evidence), java.util.List.of()));
         updates.put("LaneListing", lanes.getFirst());
+        var continuationEvidence = new ContinuationResponse.Evidence(
+                "event-3",
+                "session-1",
+                "handoff",
+                "nextAction",
+                java.time.Instant.parse("2026-10-14T12:00:00Z"),
+                "/?view=browse&session=session-1&event=event-3&project=");
+        var continuationCaveat = new ContinuationResponse.Caveat(
+                "evidence_refutes",
+                "Evidence recorded on 2026-10-14 refutes a source of this prompt. It is an explicit recorded link,"
+                        + " not a verification.",
+                "event-4",
+                "/?view=browse&session=session-2&event=event-4&project=");
+        var continuationCandidate = new ContinuationResponse.Candidate(
+                "bbc1-104d185173789cbe307fcab8",
+                1,
+                "handoff.nextAction",
+                "Reproduce the recovery path",
+                "Recorded as the next action in the newest handoff of session session-1 on 2026-10-14.",
+                1,
+                false,
+                "Black Box continuation prompt — built from records captured 2026-10-14 (1 day ago); recorded, not"
+                        + " verified as current.",
+                java.util.List.of(continuationEvidence),
+                java.util.List.of(continuationCaveat));
+        var continuationProject = new ContinuationResponse.Project(
+                "/repo",
+                "L3JlcG8",
+                "/repo",
+                java.util.List.of(new ProjectScope("L3JlcG8", "/repo", "/repo", true, null)));
+        var continuationRetrieval = new ContinuationResponse.Retrieval(1, 0, 50, true);
+        var continuationWarning = new ContinuationResponse.Warning(
+                "historical_evidence", "Historical evidence does not prove an action is still relevant or unfinished.");
+        updates.put("ContinuationResponse.Evidence", continuationEvidence);
+        updates.put("ContinuationResponse.Caveat", continuationCaveat);
+        updates.put("ContinuationResponse.Candidate", continuationCandidate);
+        updates.put("ContinuationResponse.Project", continuationProject);
+        updates.put("ContinuationResponse.Retrieval", continuationRetrieval);
+        updates.put("ContinuationResponse.Warning", continuationWarning);
+        updates.put(
+                "ContinuationResponse",
+                new ContinuationResponse(
+                        continuationProject,
+                        java.time.Instant.parse("2026-10-15T12:00:00Z"),
+                        java.time.Instant.parse("2026-10-14T12:00:00Z"),
+                        java.time.Instant.parse("2026-10-14T12:00:00Z"),
+                        false,
+                        8760,
+                        "deterministic",
+                        continuationRetrieval,
+                        java.util.List.of(continuationCandidate),
+                        java.util.List.of(continuationWarning)));
         var braid = new ProjectSavedMeld(
                 "braid-1",
                 null,
@@ -360,6 +413,13 @@ class WireContractFixtureTest {
                 entry("CaptureEvidenceRequest", CaptureEvidenceRequest.class),
                 entry("LaneListing", LaneListing.class),
                 entry("CodeNavigationResult", CodeNavigationResult.class),
+                entry("ContinuationResponse", ContinuationResponse.class),
+                entry("ContinuationResponse.Project", ContinuationResponse.Project.class),
+                entry("ContinuationResponse.Retrieval", ContinuationResponse.Retrieval.class),
+                entry("ContinuationResponse.Candidate", ContinuationResponse.Candidate.class),
+                entry("ContinuationResponse.Evidence", ContinuationResponse.Evidence.class),
+                entry("ContinuationResponse.Caveat", ContinuationResponse.Caveat.class),
+                entry("ContinuationResponse.Warning", ContinuationResponse.Warning.class),
                 entry("CodeProjectScope", CodeProjectScope.class),
                 entry("CodeReference", CodeReference.class),
                 entry("CreateSessionLinkRequest", CreateSessionLinkRequest.class),

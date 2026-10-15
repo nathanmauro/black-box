@@ -59,8 +59,9 @@ otherwise the explicit declaration is used. Raw initialized names and versions a
 Neither initialization metadata nor declarations authenticate a person or an application.
 
 Allowed clients are `codex`, `claude`, `manual`, `other`, and `unknown`. Allowed purposes are
-`normal`, `audit`, `test`, and `unknown`. Missing/invalid values become `unknown`; unknown calls must
-not be silently counted as normal usage. Even `normal` is a caller declaration, not proof of organic
+`normal`, `audit`, `test`, `continuation`, and `unknown`. Missing/invalid values become `unknown`;
+unknown calls must not be silently counted as normal usage. `GET /api/continuations` records its two
+internal recalls (one per kind) with purpose `continuation` under one request ID. Even `normal` is a caller declaration, not proof of organic
 adoption. Research probes should declare `audit`; fixtures and automated verification should declare
 `test`. Unlabeled historical probes cannot be retrospectively separated reliably.
 

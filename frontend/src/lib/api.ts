@@ -686,6 +686,67 @@ export function getRecall(
   return getJson(`/api/recall?${params.toString()}`);
 }
 
+export type ContinuationBasis = "handoff.nextAction" | "handoff.openLoop" | "decision.openLoop";
+
+export type ContinuationEvidence = {
+  eventId: string;
+  sessionId: string;
+  kind: string;
+  field: string;
+  // The recorded time, even when it is later than generatedAt.
+  observedAt?: string | null;
+  // A relative Recall evidence link. Copy prompt makes exactly these strings absolute.
+  href: string;
+};
+
+export type ContinuationNote = {
+  code: string;
+  message: string;
+  eventId?: string | null;
+  href?: string | null;
+};
+
+export type ContinuationCandidate = {
+  id: string;
+  rank: number;
+  basis: ContinuationBasis | string;
+  title: string;
+  why: string;
+  ageDays: number;
+  stale: boolean;
+  prompt: string;
+  evidence: ContinuationEvidence[];
+  caveats: ContinuationNote[];
+};
+
+export type ContinuationResponse = {
+  project: { canonicalKey: string; projectKey: string; label: string; scopes: ProjectScope[] };
+  generatedAt: string;
+  newestEvidenceAt?: string | null;
+  headAt?: string | null;
+  stale: boolean;
+  withinHours: number;
+  mode: "deterministic" | string;
+  retrieval: { handoffs: number; decisions: number; poolCap: number; excludedReplaced: boolean };
+  candidates: ContinuationCandidate[];
+  // Always includes the historical-evidence caveat.
+  warnings: Array<{ code: string; message: string }>;
+};
+
+/** Deterministic prompts built on request from one project's record; `project` is a path. */
+export function getContinuations(
+  project: string,
+  withinHours = 8760,
+  max = 3,
+): Promise<ContinuationResponse> {
+  const params = new URLSearchParams({
+    project,
+    withinHours: String(withinHours),
+    max: String(max),
+  });
+  return getJson(`/api/continuations?${params.toString()}`);
+}
+
 export type CaptureDecisionRequest = {
   source: string;
   clientSessionId: string;

@@ -9,7 +9,7 @@ public final class RecallRequestContext implements AutoCloseable {
 
     private static final ThreadLocal<RecallRequestContext> CURRENT = new ThreadLocal<>();
     private static final Set<String> CLIENTS = Set.of("codex", "claude", "manual", "other");
-    private static final Set<String> PURPOSES = Set.of("normal", "audit", "test");
+    private static final Set<String> PURPOSES = Set.of("normal", "audit", "test", "continuation");
 
     private final RecallRequestContext previous;
     private final String requestId = UUID.randomUUID().toString();

@@ -12,6 +12,7 @@ import {
   untrack,
   type JSX,
 } from "solid-js";
+import ContinuationPanel from "../components/ContinuationPanel";
 import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
 import SourceDot from "../components/SourceDot";
@@ -83,6 +84,13 @@ export default function RecallPage() {
   const filteredItems = createMemo(() => sourceFilter.matches(result()?.items || []));
   const groupedItems = createMemo(() => groupByKind(filteredItems()));
   const latestHandoff = createMemo(() => newestRecorded(filteredItems(), "handoff"));
+  // Continuations take a path. Resolve a catalog identifier (including a projectKey deep link) to
+  // its primary canonical key first; an uncatalogued value is sent as the path it already is.
+  const continuationProject = createMemo(() => {
+    if (legacy() || !project()) return "";
+    const known = findProjectByIdentifier(projects.error ? [] : projects() || [], project());
+    return known ? primaryProjectScope(known).canonicalKey : project();
+  });
   const recordedQuestions = createMemo(() =>
     filteredItems()
       .filter((item) => !item.supersededByEventId)
@@ -498,6 +506,9 @@ export default function RecallPage() {
           </button>
         </div>
       </form>
+      <Show when={continuationProject()} keyed>
+        {(target) => <ContinuationPanel project={target} disabled={projects.loading} />}
+      </Show>
       <Show when={selectedEvidence()}>
         {(item) => (
           <section class="recall-evidence" aria-label="Selected evidence">
