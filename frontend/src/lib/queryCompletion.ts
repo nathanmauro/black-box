@@ -55,7 +55,8 @@ export type ValueCompletion = {
   value: string;
   /**
    * Replaced on accept: [token start, segment end), or [token start, caret) when the segment's
-   * quote never closed, so everything after the caret stays byte-identical.
+   * quote never closed, so everything after the caret stays byte-identical. An unclosed quote is
+   * completed only with whitespace or the end of the input after the caret.
    */
   range: [number, number];
   /** Token text kept before the edited segment (`-`, the name, the colon, earlier values). */
@@ -173,6 +174,9 @@ function valueCompletion(
     segments[segments.length - 1];
   // Only the final segment of an unclosed token can hold the open quote (it runs to the end).
   const open = token.span.unclosedQuote && segment.end === token.span.end;
+  // An open quote has no end, so neither does a word running on past the caret inside it: rather
+  // than guess how much to replace (and close the quote mid-word), offer nothing there.
+  if (open && position < input.length && !/\s/.test(input[position])) return null;
   const quoted = input[segment.start] === '"';
   let prefixEnd = position;
   if (quoted && !open) {

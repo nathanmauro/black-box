@@ -148,6 +148,18 @@ describe("completionAt", () => {
     expect(context).toMatchObject({ prefix: "/tmp/x/harb", range: [0, 20], head: "project:" });
   });
 
+  it("offers nothing inside an unclosed quote while text runs on past the caret", () => {
+    // The quote never closed, so where this value ends is unknown: no range would be safe.
+    expect(at('project:"/tmp/x/harb|xyz kind:Decision')).toBeNull();
+    expect(at('project:"/tmp/ha|rbor kind:x')).toBeNull();
+    expect(at('project:|"/tmp/x')).toBeNull();
+    expect(at('project:a,"b|c d')).toBeNull();
+    expect(at('project:ab|c"d e')).toBeNull();
+    // Whitespace or the end after the caret still completes.
+    expect(valueAt('project:"/tmp/x/harb|')).toMatchObject({ prefix: "/tmp/x/harb" });
+    expect(valueAt('project:"| kind:x')).toMatchObject({ prefix: "", range: [0, 9] });
+  });
+
   describe("caret tie-breaks", () => {
     it("prefers the token ending at the caret", () => {
       expect(at("kind:Decision|")?.kind).toBe("value");
@@ -273,9 +285,32 @@ describe("applyCompletion", () => {
     expect(accept('project:"/tmp/x/harb|', "/tmp/x/harbor notes").text).toBe(
       'project:"/tmp/x/harbor notes" ',
     );
-    // A caret inside the quoted text keeps the rest of it verbatim too.
-    const inside = accept('project:"/tmp/ha|rbor kind:x', "/tmp/harbor notes");
-    expect(inside.text).toBe('project:"/tmp/harbor notes"rbor kind:x');
+  });
+
+  it("never glues a closed quote onto text after the caret in an unclosed quote", () => {
+    // Once offered, the bytes after the replaced range stay identical; mid-word, nothing is
+    // offered, so a closing quote can never land inside a word (`"/tmp/harbor notes"rbor`).
+    for (const marked of [
+      'project:"/tmp/x/harb| kind:Decision',
+      'project:"/tmp/x/harb|xyz kind:Decision',
+      'project:"/tmp/ha|rbor kind:x',
+      'kind:x project:"my pro|  source:y',
+      'project:"|/tmp/x',
+      'project:"/tmp/x/harb|',
+    ]) {
+      const caret = marked.indexOf("|");
+      const input = marked.replace("|", "");
+      const context = completionAt(input, caret);
+      expect(context === null, marked).toBe(/\S/.test(input.charAt(caret)));
+      if (!context) continue;
+      const result = applyCompletion(input, context, { insert: "/tmp/x/harbor notes" });
+      const kept = input.slice(context.range[1]);
+      // One space is added only when the range ran to the end of the input.
+      const space = kept ? "" : " ";
+      const before = input.slice(0, context.range[0]) + 'project:"/tmp/x/harbor notes"' + space;
+      expect(result, marked).toEqual({ text: before + kept, caret: before.length });
+      expect(kept === "" || /^\s/.test(kept), marked).toBe(true);
+    }
   });
 
   it("quotes values with whitespace or commas and never escapes", () => {

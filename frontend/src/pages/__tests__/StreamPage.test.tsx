@@ -1792,6 +1792,13 @@ describe("StreamPage query composition", () => {
     fireEvent.keyDown(input, { key: "Tab" });
     expect(input).toHaveValue('project:"/tmp/x/harbor notes" kind:Decision');
     expect(input.selectionStart).toBe(29);
+
+    // Mid-word inside an unclosed quote the value's end is unknown: nothing is offered, and Tab
+    // leaves the text alone rather than closing the quote inside the word.
+    typeAtCaret(input, 'project:"/tmp/x/harb|xyz kind:Decision');
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue('project:"/tmp/x/harbxyz kind:Decision');
   });
 
   it("completes negated tokens and keeps the negation as typed", async () => {
