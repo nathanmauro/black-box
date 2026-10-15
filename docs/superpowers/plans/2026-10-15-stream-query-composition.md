@@ -123,6 +123,8 @@ projection and evidence.
 - **Zero-result "did you mean".**
   - Only for exact-match facet values (source/kind/tool), and only when the counted list for that
     field is complete (fewer than 25 rows).
+  - Only when the rest of the query still matches rows: each field's counts drop only that
+    field's own values, so free text, other filters and time bounds still narrow the list.
   - Never for `session:` or `project:`.
   - The one-click fix rewrites only that token, by span, and runs the query.
 - **Meaningful filter.** When a query returns no rows and does not already include `is:all`, a
@@ -166,9 +168,15 @@ projection and evidence.
   - Tab accepts on a non-empty prefix and is inert on an empty draft.
   - Enter without a highlight submits the raw text.
   - A session option shows its title.
-- **Interpretation.** `knd:Decision kind:Hand recall last:7` with complete counts kind=[Decision,
-  Handoff] gives three notes: `knd:` (kind?), `last:7` (needs a unit) and `kind:Hand` (fix:
-  `kind:Handoff`). There is no "did you mean" while counts are unavailable.
+- **Interpretation**
+  - `knd:Decision recall last:7` gives two notes: `knd:` (kind?) and `last:7` (needs a unit).
+  - With Decision and Handoff events in the last week, `kind:Hand last:7d` returns no rows. The
+    server's kind counts drop only the kind values, so `last:7d` still applies and they list
+    [Decision, Handoff]. `kind:Hand` gets the fix `kind:Handoff`.
+  - Free text that matches nothing empties the counted lists, so `knd:Decision kind:Hand recall
+    last:7` gets no value fix against a real server. The pure unit test still covers all three
+    notes, with the counts passed in directly.
+  - There is no "did you mean" while counts are unavailable.
 - **Browser, 1440 and 390 px, scoped to an owned `project_exact:` repo**
   - Keyboard-only composition narrows the rows, and the URL `q` equals the composed string.
   - A mid-string edit and a quoted path with a space complete correctly.
@@ -214,3 +222,21 @@ cd .. && git diff --check
     - Inherited object member names (`constructor:`) now read as unknown fields, as in Java.
   - Tests changed beyond the planned list: the pinned "Codex right now" view now keeps `last:2h`
     as typed, and the value-index mock returns sources for `source:`.
+- 2026-10-15: an independent review approved the branch with no must-fix items. Every should-fix
+  item was applied:
+  - A trailing bare `NOT` negated whatever was appended after it, and both parsers read a negated
+    `is:all` or `project_group:` as text. So "Include all events" narrowed the query, and a
+    pinned project's scope dropped out of the request. A shared `appendQueryToken` in `query.ts`
+    now puts the token first after an unclosed quote or a bare `NOT` (`982d9595`).
+  - The stripped-project note came back for a later query that lost nothing, and after unpinning
+    and pinning again. Its record now names the pinned project, and the next query or project
+    change retires it (`c9e47add`).
+  - Value-index lookups are cancelled when the page unmounts (`bbb931db`).
+  - The did-you-mean acceptance example and its component test now use `kind:Hand last:7d`.
+    The server's per-field counts keep free text, other filters and time bounds, so the old
+    example gets no value fix against a real server. The standards and changelog wording now say
+    so.
+  - Verified: `npm test` (66 files, 920 tests), `npm run check` (0 errors; the same 68
+    warnings), `npm run build` (reproduces the committed bundle), `mvn -q test` (1086 tests, 0
+    failures, 74 skipped) and `git diff --check`. Each new test failed before its fix. The packaged
+    e2e suite was not run.

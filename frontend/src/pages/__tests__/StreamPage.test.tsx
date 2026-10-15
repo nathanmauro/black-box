@@ -2071,26 +2071,34 @@ describe("StreamPage query composition", () => {
     expect(screen.queryByText(note)).not.toBeInTheDocument();
   });
 
-  it("explains the applied query and offers a did-you-mean fix that runs it", async () => {
+  it("explains how the applied query was read", async () => {
     getEventFeed.mockResolvedValue(feed([]));
-    mocks.getEventFacets.mockResolvedValue(kindCounts(0));
-    [params, setParams] = createStore<{ q?: string }>({
-      q: "knd:Decision kind:Hand recall last:7",
-    });
+    [params, setParams] = createStore<{ q?: string }>({ q: "knd:Decision recall last:7" });
     render(() => <StreamPage />);
 
     const notes = await screen.findByRole("list", { name: "How the query was read" });
     expect(within(notes).getByText(/there is no knd: field/)).toBeInTheDocument();
+    expect(within(notes).getByRole("button", { name: "Use kind:Decision" })).toBeInTheDocument();
     expect(within(notes).getByText(/A duration needs a unit/)).toBeInTheDocument();
+  });
+
+  it("offers a did-you-mean fix from the counted values and runs it", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    // What the server returns here: kind:Hand matches nothing (total 0), but each field's list
+    // drops only its own values, so the kind list still holds the kinds within last:7d.
+    mocks.getEventFacets.mockResolvedValue(kindCounts(0));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Hand last:7d" });
+    render(() => <StreamPage />);
+
     // The did-you-mean waits for complete counts; it renders with the empty-state recovery.
     const fix = await screen.findByRole("button", { name: "Use kind:Handoff" });
     expect(screen.getByRole("list", { name: "Ways to widen the query" })).toContainElement(fix);
     fireEvent.click(fix);
-    await waitFor(() => expect(params.q).toBe("knd:Decision kind:Handoff recall last:7"));
+    await waitFor(() => expect(params.q).toBe("kind:Handoff last:7d"));
     await waitFor(() =>
       expect(getEventFeed).toHaveBeenLastCalledWith({
         limit: 100,
-        q: "knd:Decision kind:Handoff recall last:7",
+        q: "kind:Handoff last:7d",
         meaningful: true,
       }),
     );

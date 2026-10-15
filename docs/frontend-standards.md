@@ -321,8 +321,17 @@ unknown field (suggesting a field only for a unique close match), a time value t
 rejects (date-shaped values excepted, because the server parses more date-time forms), a negated
 operator or excluded free text, an unclosed quote, a lowercase `not` that negated the next
 filter, or a project token the pinned project removed. An empty result offers one-click fixes
-that rewrite a single token and run the query: a close value for an exact `source:`, `kind:` or
-`tool:` value when the counted list is complete, and `is:all` when the meaningful filter may be
-hiding rows (not under My turns, which replaces that filter). The packaged
-`stream-compose.spec.ts` journey covers keyboard-only composition, a mid-string edit and a quoted
-project path at desktop and phone widths.
+that each change one token and run the query:
+
+- A close value for an exact `source:`, `kind:` or `tool:` value, when that field's counted list
+  is complete and the rest of the query still matches rows. Each field's counts drop only that
+  field's own values, while free text, other filters and time bounds still apply, so free text or
+  another filter that matches nothing leaves no value to offer.
+- `is:all` when the meaningful filter may be hiding rows (not under My turns, which replaces that
+  filter).
+
+`is:all`, like the pinned project's hidden scope, goes first when the query ends in an unclosed
+quote or a bare `NOT`, which would otherwise swallow or negate it.
+
+The packaged `stream-compose.spec.ts` journey covers keyboard-only composition, a mid-string edit
+and a quoted project path at desktop and phone widths.
