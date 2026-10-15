@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
+  stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
+  timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped
+  queued summaries and post-commit fan-out such as Elasticsearch indexing. Both kinds of stream now
+  end cleanly as shutdown begins (an MCP listening stream resumed with `Last-Event-ID`, which the
+  MCP SDK cannot replay, still waits for the 2-second cap); an `/api/stream` request that arrives
+  during shutdown ends after its opening frames, and new MCP requests get 503. Clients reconnect
+  with `Last-Event-ID` and resume after their last event. Graceful shutdown then waits only for
+  in-flight requests, and each shutdown phase is capped at 2 seconds
+  (`spring.lifecycle.timeout-per-shutdown-phase`), before browsers reconnect. Background summaries
+  get 1 second to finish and judgments 0.5 seconds; unfinished summaries are named in a warning so
+  `summarize-missing` can backfill them. A summary command that is interrupted or times out now also
+  stops the programs it started, so a summarizer's agent CLI no longer outlives the server. With
+  both kinds of stream attached and a summary running, SIGTERM to exit took 32.1 s before this
+  change and about 1.1 s after.
+- The capture hook no longer silently drops large events. It passed each payload to `jq` as process
+  arguments, about three copies for a tool event, and argv shares `ARG_MAX` (1 MiB on macOS) with the
+  environment. On macOS, tool events from about 350 KB, and prompts or non-JSON input from about
+  530 KB, failed with `Argument list too long`, and nothing was recorded; Linux refuses any single
+  argument over 128 KiB. The hook now streams payload and text to `jq` on stdin and sends the whole
+  event; the recorder applies its own text limits.
+  Only a payload or text over 20,000,000 bytes is clipped first, to the recorder's 50,000-unit
+  scalar budget, because the recorder rejects a JSON string over 20,000,000 UTF-16 units. With jq
+  1.6 or later, smaller events are sent byte for byte as before. Large non-JSON input no longer
+  makes the hook print a broken-pipe error when it runs with SIGPIPE ignored, as on CI runners.
+- The SQLite snapshot in `scripts/storage/blackbox_backup.py` works while the service is running.
+  It copied 256 pages per step, and every commit by another connection restarted the copy from the
+  first page, so against the live service it never finished and failed with
+  `sqlite_backup_timeout` after five minutes. It now copies the whole database in one step under
+  one read snapshot. In WAL mode the service keeps committing meanwhile, and its `-wal` file grows
+  until the copy ends. The five-minute limit now applies only while waiting for a busy or locked
+  source; see [docs/database-recovery.md](docs/database-recovery.md).
+- Saved meld and braid reads no longer lock up the connection pool. Each read resolved its project
+  and loaded its source sessions with a query per row while the row query still held its pooled
+  connection, so four concurrent braid lists could take all four SQLite connections and wait on
+  each other; requests, captures included, then stalled for 30 seconds or more, and most failed
+  with a 500. Meld by ID, the unassigned braid list, project melds, timeline and graph, and
+  `findBraids` now map their rows first and load sources in batched queries, one connection at a
+  time, on both backends.
+- SQLite read-write transactions begin `IMMEDIATE`. A save that reads before it writes, such as a
+  saved braid or meld, now waits up to the 5-second `busy_timeout` for a concurrent capture or
+  summary instead of failing at once with `SQLITE_BUSY`. Read-only transactions stay deferred, and
+  PostgreSQL is unchanged. Because a read-write transaction now holds the writer lock from its
+  begin, [docs/architecture.md](docs/architecture.md) lists what code inside one must not do.
 - Prompts from the record: `GET /api/continuations` builds up to three deterministic starting
   prompts from one project's recorded handoffs and current decisions (exact project and alias
   scope, replaced decisions excluded, trajectory frontier, stale and future-dated labels, explicit

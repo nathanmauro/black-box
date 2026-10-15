@@ -115,8 +115,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         // WAL lets concurrent agents (a Claude hook and a Codex hook firing at once) read while one
         // writes, instead of serializing behind a global lock. It is a persistent property of the
-        // database file, so setting it once per boot is enough; busy_timeout (set per connection in
-        // application.yml) keeps the rare writer-vs-writer contention from surfacing as an error.
+        // database file, so setting it once per boot is enough. Writers still take turns:
+        // busy_timeout (set per connection in application.yml) makes one wait for another, and
+        // SqliteTransactionManager begins read-write transactions IMMEDIATE so that the wait applies.
         jdbcTemplate.execute("PRAGMA journal_mode=WAL");
         List<Map<String, Object>> columns = jdbcTemplate.queryForList("PRAGMA table_info(agent_sessions)");
         if (columns.isEmpty()) {
@@ -199,35 +200,31 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             String title,
             int titleRank) {
         // Reserve before any reads/session writes. Concurrent PostgreSQL inserts wait on this
-        // key; SQLite obtains its writer lock here, without a read-to-write snapshot upgrade.
+        // key; on SQLite the transaction already holds the writer lock from BEGIN IMMEDIATE.
         int reserved = jdbcTemplate.update("""
                 INSERT INTO event_capture_receipts (source, client_session_id, capture_id, request_hash)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
                 """, request.source(), request.clientSessionId(), captureId, requestHash);
         if (reserved == 0) {
-
-            return jdbcTemplate.queryForObject(
+            // Read the receipt, then its event and session: row mappers never query.
+            CaptureReceipt receipt = jdbcTemplate.queryForObject(
                     """
                     SELECT request_hash, event_id FROM event_capture_receipts
                      WHERE source = ? AND client_session_id = ? AND capture_id = ?
                     """,
-                    (row, rowNum) -> {
-                        if (!requestHash.equals(row.getString("request_hash"))) {
-                            throw new CaptureIdConflictException();
-                        }
-                        AgentEvent event = findEventById(row.getString("event_id"))
-                                .orElseThrow(
-                                        () -> new IllegalStateException("Capture receipt has no canonical event."));
-                        AgentSession session =
-                                findSessionById(event.sessionId()).orElseThrow();
-
-                        return new RecordingStore.IdempotentPersisted(
-                                new RecordingStore.Persisted(session, event), true);
-                    },
+                    (row, rowNum) -> new CaptureReceipt(row.getString("request_hash"), row.getString("event_id")),
                     request.source(),
                     request.clientSessionId(),
                     captureId);
+            if (!requestHash.equals(receipt.requestHash())) {
+                throw new CaptureIdConflictException();
+            }
+            AgentEvent event = findEventById(receipt.eventId())
+                    .orElseThrow(() -> new IllegalStateException("Capture receipt has no canonical event."));
+            AgentSession session = findSessionById(event.sessionId()).orElseThrow();
+
+            return new RecordingStore.IdempotentPersisted(new RecordingStore.Persisted(session, event), true);
         }
         RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
         int bound = jdbcTemplate.update(
@@ -254,8 +251,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         if (projectScopes == null || projectScopes.isEmpty()) {
             throw new IllegalArgumentException("A decision replacement requires a project.");
         }
-        // This INSERT is the first database operation: SQLite obtains its writer lock before
-        // reading; PostgreSQL's unique constraint serializes contenders for the same target.
+        // This INSERT is the first database operation. SQLite already holds its writer lock from
+        // BEGIN IMMEDIATE; PostgreSQL's unique constraint serializes contenders for the same target.
         // No event/session or relation survives an invalid target or failed event persistence.
         String repoValue = postgres ? "e.metadata_json::jsonb ->> 'repo'" : "json_extract(e.metadata_json, '$.repo')";
         String project = "coalesce(nullif(trim(" + repoValue + "), ''), s.cwd)";
@@ -1241,6 +1238,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     }
 
     private record FeedCursor(Instant observedAt, String id) {}
+
+    private record CaptureReceipt(String requestHash, String eventId) {}
 
     private String toJson(Object value) {
         if (value == null) {

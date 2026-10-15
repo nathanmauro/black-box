@@ -24,7 +24,8 @@ without skips: `PostgresBackendContractTest`, `AuthenticatedPostgresConsumerCont
 `DatabaseRestoreContractTest`, `StreamPositionPostgresTest`, `EvidencePostgresHttpMcpTest`,
 `ContinuationPostgresApiTest`, and the
 project suites `ProjectlessBraidPostgresHttpTest`, `MeldSchemaPostgresMigrationTest`,
-`ProjectMeldRedactionPostgresHttpTest`, and `BraidDiscoveryPostgresHttpMcpTest` (see
+`ProjectMeldRedactionPostgresHttpTest`, `BraidDiscoveryPostgresHttpMcpTest`, and
+`SavedMeldReadPoolPostgresHttpTest` (see
 [`ci.yml`](../.github/workflows/ci.yml)).
 The authenticated consumer contract exercises real HTTP and streamable MCP calls, full event
 retrieval, idempotent replay, project isolation, Decision replacement/history, bearer SSE event and

@@ -22,6 +22,13 @@ class BackupError(Exception):
     """Stable public error code; underlying exceptions must never reach stdout/stderr."""
 
 
+# SQLite result codes; the sqlite3 module names them only from Python 3.11.
+SQLITE_BUSY, SQLITE_LOCKED = 5, 6
+# How long to keep retrying a source that is busy or locked before the copy can begin.
+# It does not limit the copy itself: that is one step, which cannot be interrupted.
+SQLITE_BUSY_WAIT_SECONDS = 300
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message):
         raise BackupError("invalid_arguments")
@@ -140,16 +147,24 @@ def snapshot_sqlite(source, staged):
     if not stat.S_ISREG(info.st_mode) or info.st_size == 0:
         raise BackupError("invalid_sqlite_source")
     # mode=ro sees committed WAL pages. immutable=1 must not be used: it can ignore WAL.
-    deadline = time.monotonic() + 300
+    deadline = time.monotonic() + SQLITE_BUSY_WAIT_SECONDS
 
     def progress(status, remaining, total):
-        if time.monotonic() > deadline:
+        # Called after each step. The single step either finishes the copy or finds the
+        # source busy or locked, and CPython then sleeps and retries. Only that wait is
+        # bounded; a copy that has already finished is never thrown away.
+        if status in (SQLITE_BUSY, SQLITE_LOCKED) and time.monotonic() > deadline:
             raise BackupError("sqlite_backup_timeout")
 
     try:
         with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as reader:
             with closing(sqlite3.connect(staged)) as writer:
-                reader.backup(writer, pages=256, progress=progress, sleep=0.05)
+                # pages=-1 copies every page in ONE step under one read snapshot. A paged copy
+                # restarts from page 1 whenever another connection commits between steps, so
+                # it never finishes against a running service. In WAL mode the snapshot does
+                # not block writers, but checkpoints wait for it, so the source WAL grows
+                # until the step ends.
+                reader.backup(writer, pages=-1, progress=progress, sleep=0.05)
                 # Only the destination is checkpointed; ship one standalone DB file.
                 writer.execute("PRAGMA journal_mode=DELETE")
                 # Avoid invoking application-defined CHECK functions. quick_check

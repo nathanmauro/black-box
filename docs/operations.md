@@ -151,6 +151,31 @@ packaging performed for E2E tests, can overwrite `target/` while a service is us
 managed deploy sequence or build in an isolated checkout/output location. A live PID alone does
 not establish health: check `/api/status`, the UI, and a representative API route after restart.
 
+### Stopping and restarting
+
+Stopping the service first ends every `/api/stream` subscription and every MCP listening stream
+(`GET /mcp`), because those responses never finish on their own. They end cleanly, so browsers and
+other `EventSource` clients reconnect with `Last-Event-ID` and resume after their last event (see
+[durable stream recovery](durable-stream-recovery.md)); MCP clients start a new session. One kind is
+not reached: an MCP listening stream resumed with `Last-Event-ID`, which the MCP SDK cannot replay,
+stays open until the phase timeout below cuts it off. During shutdown a new `/api/stream` request
+ends after its opening frames, and a new MCP request receives 503. Graceful shutdown then waits for
+in-flight requests and their post-commit fan-out, such as Elasticsearch indexing, for at most
+`spring.lifecycle.timeout-per-shutdown-phase` (2 seconds) per shutdown phase. That bound also ends
+shutdown before browsers reconnect, 3 seconds after a stream ends; a reconnect answered with 503 by
+the stopping server would end the browser's `EventSource`.
+
+Background session summaries get 1 second; queued summaries are not started after that. With the
+external backend a summary still running is stopped together with its command; a local-model
+request cannot be interrupted, so it is abandoned when the process exits unless it finishes within
+another half second. A warning names the sessions left without a summary; they keep none until
+`summarize-missing` (CLI) or `POST /api/sessions/summarize-missing` backfills them.
+An optional judgment underway gets 0.5 seconds, and queued beats are not judged. These limits keep a
+stop inside launchd's exit timeout, 5 seconds for a job installed from the template (it sets no
+`ExitTimeOut`), after which launchd sends SIGKILL. A service manager with a shorter stop timeout
+needs a smaller phase timeout, for example
+`--spring.lifecycle.timeout-per-shutdown-phase=1s`.
+
 ### Retired runner state
 
 The task board and runner are retired. The runner CLI, deployment script, launchd template, and
@@ -308,7 +333,8 @@ database, not the service database. See [PostgreSQL](postgres-backend.md).
 
 Summaries are scheduled automatically in the background when a session records a terminal
 event (`SessionEnd`, `Stop`, or `SubagentStop`) and has no summary yet; `summarize` and
-`summarize-missing` run them explicitly. Default external summarization can send transcript text
+`summarize-missing` run them explicitly. A restart stops unfinished background summaries; see
+[Stopping and restarting](#stopping-and-restarting). Default external summarization can send transcript text
 through the selected vendor. Both
 [`summarize-with-codex.sh`](../scripts/summarize-with-codex.sh) and
 [`summarize-with-claude.sh`](../scripts/summarize-with-claude.sh) are supplied. Select the latter

@@ -1,6 +1,14 @@
 spring:
   application:
     name: sba-agentic
+  lifecycle:
+    # Shutdown first ends /api/stream subscriptions and MCP listening streams, which never finish on
+    # their own; graceful shutdown then waits only for real in-flight requests. This bounds that wait
+    # and every other shutdown phase so the process exits inside a service manager's stop timeout
+    # (the launchd job sends SIGKILL 5 s after SIGTERM, losing queued summaries and fan-out). It also
+    # stays below the 3 s after which browsers reconnect an ended EventSource: a reconnect that
+    # reached the paused connector would get a 503, which stops the browser's EventSource for good.
+    timeout-per-shutdown-phase: 2s
   sql:
     init:
       mode: always
@@ -27,6 +35,9 @@ server:
   port: ${SBA_PORT:8766}
   # Localhost-only by default. Network deployments must enable SBA_AUTH_ENABLED and HTTPS.
   address: ${SBA_BIND_ADDRESS:127.0.0.1}
+  # Finish in-flight captures and their post-commit fan-out before stopping (Spring Boot's default,
+  # stated because spring.lifecycle.timeout-per-shutdown-phase above bounds it).
+  shutdown: graceful
 
 management:
   endpoints:
@@ -151,9 +162,11 @@ spring:
     url: ${SBA_DATASOURCE_URL:jdbc:sqlite:sba-agentic.db}
     driver-class-name: org.sqlite.JDBC
     hikari:
-      # WAL (set once at startup) lets several connections read while one writes; a pool of a few
-      # connections plus a busy_timeout means concurrent agents can capture without blocking the UI,
-      # and the rare writer-vs-writer overlap waits briefly instead of erroring.
+      # WAL (set once at startup) lets several connections read while one writes. SQLite admits one
+      # writer at a time, and busy_timeout makes a writer wait up to 5 s for that lock, but only
+      # where the lock is first requested: a transaction that has already read fails at once with
+      # SQLITE_BUSY. The application's transaction manager (SqliteTransactionManager) therefore
+      # begins read-write transactions IMMEDIATE, so they wait; read-only ones stay deferred.
       maximum-pool-size: 4
       connection-test-query: SELECT 1
       # xerial applies driver properties whenever Hikari creates a physical connection. SQLite's

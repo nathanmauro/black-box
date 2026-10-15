@@ -17,3 +17,11 @@ preserves character boundaries without expanding the budgets or changing the sto
 These limits apply before persistence. Reading an event returns its accepted stored text; it cannot
 recover content that ingestion already redacted or truncated. Existing stored captures are not
 rewritten by this boundary correction.
+
+The recorder sets no request size limit, but its JSON reader rejects any single string longer than
+20,000,000 UTF-16 units with `400 malformed_json` (Jackson's default read constraint). Only a payload
+or text over 20,000,000 bytes can hold such a string, so for those alone the capture hook
+(`scripts/hooks/sba-agent-hook.sh`) clips every string in the event's text, tool input, tool output
+and metadata to 50,000 code points plus the same ` …[truncated]` marker before sending. That keeps
+at least the prefix ingestion would store: stored text is unchanged, and so are stored tool and
+metadata strings while ingestion redaction is enabled. Smaller payloads are not clipped by the hook.

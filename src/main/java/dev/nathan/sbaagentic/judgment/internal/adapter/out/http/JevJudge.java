@@ -108,6 +108,14 @@ public class JevJudge implements Judge {
             telemetry.completed(requestId, state, clock.instant(), latency, judgment, null);
 
             return Optional.of(judgment);
+        } catch (InterruptedException ex) {
+            // Only shutdown interrupts the judgment thread; the provider did not fail.
+            Thread.currentThread().interrupt();
+            long latency = Duration.between(start, clock.instant()).toMillis();
+            telemetry.completed(requestId, state, clock.instant(), latency, null, ex);
+            log.debug("Jev judgment interrupted by shutdown");
+
+            return Optional.empty();
         } catch (Exception ex) {
             failures.incrementAndGet();
             long latency = Duration.between(start, clock.instant()).toMillis();

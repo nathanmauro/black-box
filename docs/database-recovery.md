@@ -71,10 +71,12 @@ a restore rehearsal or proof of capture completeness.
 Failures exit nonzero and print only `{"status":"failed","error":"<stable_code>"}`. The tool does
 not echo arguments, exception details, tool stderr, passfile paths, or credentials on failure.
 Common codes include `output_exists`, `unsafe_or_missing_output_parent`, `sqlite_sidecar_destination`,
-`invalid_sqlite_source`,
-`sqlite_backup_failed`, `postgres_tools_missing`, `postgres_dump_failed`, and
-`postgres_archive_invalid`. The operation and offline PostgreSQL archive validation each have a
-five-minute limit; large deployments need a separately reviewed backup approach.
+`invalid_sqlite_source`, `sqlite_backup_failed`, `sqlite_backup_timeout`, `postgres_tools_missing`,
+`postgres_dump_failed`, and `postgres_archive_invalid`. The PostgreSQL dump and its offline archive
+validation each have a five-minute limit; large PostgreSQL deployments need a separately reviewed
+backup approach. A SQLite snapshot gives up on a busy or locked source after about five minutes
+with `sqlite_backup_timeout`. Once the SQLite copy starts, it runs to completion (see
+[SQLite: preserve the native database](#sqlite-preserve-the-native-database)).
 
 ## SQLite: preserve the native database
 
@@ -82,6 +84,24 @@ The source is opened with SQLite URI `mode=ro`; the backup API reads committed W
 never uses `immutable=1`, writes source data, or asks the source to checkpoint. SQLite can still
 update shared-memory reader bookkeeping while reading a WAL database. A source symlink, missing
 file, zero-byte file, or corrupt database fails closed.
+
+The snapshot can be taken while the service is running, which is when a pre-deploy snapshot is
+needed. The tool copies the whole database in one backup step under one read snapshot. The artifact
+is the committed state at the moment the copy began: it leaves out later commits and never contains
+part of a commit. A copy made in many small steps would restart from the first page whenever another
+connection committed between two steps, so against a service that commits about once a second it
+would never finish. The one step cannot be interrupted part way. Ctrl-C takes effect when the step
+ends, and nothing is published.
+
+Black Box keeps its database in WAL mode, where the copy does not block the service and captures
+keep committing. SQLite cannot checkpoint past the copy's read snapshot, though, so the source
+`-wal` file grows by the pages committed while the copy runs. When the copy ends, automatic
+checkpoints catch up and SQLite reuses the WAL from its start. It does not shrink the file, which
+keeps its larger size until the service closes its last database connection. At about one commit per
+second, a copy lasting tens of seconds adds little. In one measurement on a local SSD, a 2.9 GB
+database was copied and checked in under five seconds while another process committed 20 times a
+second. Copy time grows with database size and disk speed. A rollback-journal (non-WAL) source
+behaves differently: the copy holds a shared lock, so no writer can commit until it finishes.
 
 Never use the source database's `-journal`, `-wal`, or `-shm` path as a snapshot
 destination, even when the sidecar does not exist. SQLite owns those names: a later
@@ -188,8 +208,12 @@ It covers WAL commits, stable source DB/WAL bytes, rowids, FTS, legacy/unknown o
 virtual-module schema with retained shadow pages, private permissions, dry runs, missing/corrupt
 sources, reserved SQLite sidecar destinations (including source-parent aliases), snapshots that
 remain unchanged after later source commits, output symlinks/collisions including publication races, connection-override rejection,
-credential-safe errors, and truncated archive rejection. The fake PostgreSQL tools check subprocess
-boundaries; native PostgreSQL restore evidence is a separate integration check.
+credential-safe errors, and truncated archive rejection. It also snapshots a multi-megabyte WAL
+source while another connection keeps committing, and checks that the result is one consistent
+point in time: every table, including rows on pages copied long before the end, shows the same
+commit. A locked source must stop at the wait limit without publishing, while a finished copy is
+never discarded. The fake PostgreSQL tools check subprocess boundaries; native PostgreSQL restore
+evidence is a separate integration check.
 
 The companion `DatabaseRestoreContractTest` rehearses real SQLite/WAL and optional PostgreSQL
 backup/restore journeys with exact typed comparisons across all 13 canonical tables, including stream counter/generation and position anchors, retained legacy

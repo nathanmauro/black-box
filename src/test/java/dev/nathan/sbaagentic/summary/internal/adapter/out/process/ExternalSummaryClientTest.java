@@ -3,9 +3,15 @@ package dev.nathan.sbaagentic.summary.internal.adapter.out.process;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.nathan.sbaagentic.summary.SummaryProperties;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 @DisplayName("Run the configured external summary command")
 class ExternalSummaryClientTest {
@@ -30,6 +36,42 @@ class ExternalSummaryClientTest {
         ExternalSummaryClient client = new ExternalSummaryClient(properties);
 
         assertThat(client.summarize("anything")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("An interrupted summary stops the command and the programs it started")
+    void interruptionStopsTheCommandAndItsChildren(@TempDir Path directory) throws Exception {
+        // Like the bundled wrapper scripts, the shell waits on a child that does the real work.
+        Path childPid = directory.resolve("child.pid");
+        SummaryProperties properties = new SummaryProperties();
+        properties.setExternalCommand("sleep 30 & echo $! > '" + childPid + "'; wait");
+        ExternalSummaryClient client = new ExternalSummaryClient(properties);
+        AtomicReference<Optional<String>> result = new AtomicReference<>();
+        Thread summarizer = new Thread(() -> result.set(client.summarize("anything")), "fixture-summarizer");
+        summarizer.start();
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (!Files.exists(childPid) || Files.readString(childPid).isBlank()) {
+            assertThat(System.nanoTime()).as("child started").isLessThan(deadline);
+            Thread.sleep(20);
+        }
+        ProcessHandle child = ProcessHandle.of(
+                        Long.parseLong(Files.readString(childPid).strip()))
+                .orElseThrow();
+        try {
+            summarizer.interrupt();
+            summarizer.join(Duration.ofSeconds(5));
+
+            assertThat(summarizer.isAlive()).isFalse();
+            assertThat(result.get()).isEmpty();
+            assertThat(child.onExit()
+                            .completeOnTimeout(child, 5, TimeUnit.SECONDS)
+                            .get()
+                            .isAlive())
+                    .as("the command's child process 5 s after the interrupted summary returned")
+                    .isFalse();
+        } finally {
+            child.destroyForcibly(); // only the fixture's own child, whatever the outcome
+        }
     }
 
     @Test

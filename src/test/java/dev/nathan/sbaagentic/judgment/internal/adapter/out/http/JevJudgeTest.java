@@ -2,7 +2,12 @@ package dev.nathan.sbaagentic.judgment.internal.adapter.out.http;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.nathan.sbaagentic.judgment.internal.application.Judgment;
 import dev.nathan.sbaagentic.judgment.internal.domain.Beat;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatEvent;
 import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
@@ -12,8 +17,10 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 
 class JevJudgeTest {
@@ -53,6 +60,43 @@ class JevJudgeTest {
         assertThat(body.get()).contains("\"questions\"").contains("\"kin_0\"").doesNotContain("\"human\"");
         assertThat(judge.stats().calls()).isEqualTo(1);
         assertThat(judge.stats().failures()).isZero();
+    }
+
+    /** Only shutdown interrupts the judgment thread, so an interrupted call is not a provider failure. */
+    @Test
+    void anInterruptedCallIsNeitherCountedNorWarnedAsAFailure() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        JudgeQuestionSet questions = JudgeQuestionSet.load(objectMapper, new ClassPathResource("judge/questions.json"));
+        JevTransport interrupted = (endpoint, apiKey, requestBody, timeout) -> {
+            throw new InterruptedException("judgment executor stopped");
+        };
+        JevJudge judge = new JevJudge(
+                "key",
+                Duration.ofSeconds(12),
+                objectMapper,
+                interrupted,
+                questions,
+                Clock.fixed(Instant.parse("2026-09-21T12:00:00Z"), ZoneOffset.UTC));
+        Logger log = (Logger) LoggerFactory.getLogger(JevJudge.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        log.addAppender(logs);
+        Optional<Judgment> result;
+        boolean interruptRestored;
+        try {
+            result = judge.judge(state());
+        } finally {
+            interruptRestored = Thread.interrupted(); // also clears it for the tests that follow
+            log.detachAppender(logs);
+        }
+
+        assertThat(result).isEmpty();
+        assertThat(interruptRestored)
+                .as("the judgment executor sees the interrupt")
+                .isTrue();
+        assertThat(judge.stats().calls()).isEqualTo(1);
+        assertThat(judge.stats().failures()).isZero();
+        assertThat(logs.list).noneMatch(event -> event.getLevel().isGreaterOrEqual(Level.WARN));
     }
 
     static BeatState state() {

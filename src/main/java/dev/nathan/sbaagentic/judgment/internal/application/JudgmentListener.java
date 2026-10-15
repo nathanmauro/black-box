@@ -10,6 +10,7 @@ import dev.nathan.sbaagentic.judgment.internal.domain.BeatState;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import jakarta.annotation.PreDestroy;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Map;
@@ -30,6 +31,9 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "sba.judge.enabled", havingValue = "true")
 public class JudgmentListener {
 
+    /** At shutdown, how long a judgment already underway may finish before it is stopped. */
+    static final Duration SHUTDOWN_GRACE = Duration.ofMillis(500);
+
     private static final int QUEUE_CAPACITY = 256;
     private static final int TRAIL_CAPACITY = 60;
     private static final Logger log = LoggerFactory.getLogger(JudgmentListener.class);
@@ -43,6 +47,7 @@ public class JudgmentListener {
     private final Map<String, ArrayDeque<String>> trails = new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicLong dropped = new AtomicLong();
     private final ThreadPoolExecutor executor;
+    private volatile boolean abandoning;
 
     public JudgmentListener(
             BeatFolder folder,
@@ -70,6 +75,12 @@ public class JudgmentListener {
                     return thread;
                 },
                 (runnable, pool) -> {
+                    if (pool.isShutdown()) {
+                        long count = dropped.incrementAndGet();
+                        log.warn("Dropped judgment beat after shutdown began; dropped={}", count);
+
+                        return;
+                    }
                     if (pool.getQueue().poll() != null) {
                         long count = dropped.incrementAndGet();
                         log.warn("Dropped oldest queued judgment beat; dropped={}", count);
@@ -134,7 +145,12 @@ public class JudgmentListener {
             repository.saveForBeat(beat, judgment.get());
             publish(beat, judgment.get());
         } catch (RuntimeException ex) {
-            log.warn("Judgment processing failed for beat {}", beat.id(), ex);
+            if (abandoning) {
+                // Shutdown interrupted it, and its warning already counts this beat.
+                log.debug("Judgment for beat {} stopped by shutdown", beat.id(), ex);
+            } else {
+                log.warn("Judgment processing failed for beat {}", beat.id(), ex);
+            }
         } finally {
             remember(beat);
         }
@@ -172,6 +188,22 @@ public class JudgmentListener {
 
     @PreDestroy
     void stop() {
-        executor.shutdownNow();
+        executor.shutdown();
+        try {
+            if (executor.awaitTermination(SHUTDOWN_GRACE.toMillis(), TimeUnit.MILLISECONDS)) {
+
+                return;
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
+        boolean judging = executor.getActiveCount() > 0;
+        abandoning = true;
+        int unjudged = executor.shutdownNow().size();
+        log.warn(
+                "Shutdown stopped judging: {} queued beats were not judged and {} in-progress judgment was"
+                        + " interrupted; judgments are optional and are not backfilled",
+                unjudged,
+                judging ? 1 : 0);
     }
 }

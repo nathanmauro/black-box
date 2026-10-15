@@ -36,15 +36,26 @@ if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
 else
   RAW="$(cat)"
 fi
+# Payload-sized values never travel as process arguments: argv and the environment share ARG_MAX
+# (1 MiB on macOS), so an oversized jq argument fails with E2BIG and the event is lost. Feed them
+# to jq on stdin; only short identity values below are passed with --arg.
+#
+# Raw text goes in with --rawfile on stdin, not -R: before jq 1.8, -R reads a long line in 4 KiB
+# pieces and turns a multibyte character split between two of them into U+FFFD, while --rawfile
+# keeps it whole. Only jq 1.5, which has no --rawfile, falls back to -Rs.
+#
+# Some readers stop before the end of their input: jq -e rejects non-JSON at its first bad byte,
+# and a jq without --rawfile exits at once. When the hook inherits an ignored SIGPIPE, as on CI
+# runners, writing the unread rest then fails with EPIPE and bash reports it on stderr, so these
+# writes drop that expected error. The reader's own status still decides the outcome.
+pipe_text() { printf '%s' "$1" 2>/dev/null; }
+
 # Tolerate non-JSON stdin: wrap it so the text is still captured rather than dropped.
-if printf '%s' "$RAW" | jq -e . >/dev/null 2>&1; then
+if pipe_text "$RAW" | jq -e . >/dev/null 2>&1; then
   PAYLOAD="$RAW"
 else
-  if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
-    PAYLOAD="$(printf '%s' "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
-  else
-    PAYLOAD="$(jq -n --arg t "$RAW" '{hook_event_name: "RawText", prompt: $t}')"
-  fi
+  PAYLOAD="$(pipe_text "$RAW" | jq -n --rawfile t /dev/stdin '{hook_event_name: "RawText", prompt: $t}' 2>/dev/null)" ||
+    PAYLOAD="$(pipe_text "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
 fi
 
 # Bash can spill large here-strings to disk. Durable input must stay in a pipe until sanitized.
@@ -65,8 +76,6 @@ TEXT="$(jq_payload -r '
   def stringify: if type == "string" then . else tojson end;
   (.prompt // .last_assistant_message // .lastAssistantMessage // .message // .tool_response // .toolResponse // .tool_output // .toolOutput // empty) | stringify
 ')"
-TOOL_INPUT="$(jq_payload -c '.tool_input // .toolInput // null')"
-TOOL_OUTPUT="$(jq_payload -c '.tool_response // .toolResponse // .tool_output // .toolOutput // null')"
 AGENT_ID="$(jq_payload -r '.agent_id // .agentId // empty')"
 AGENT_TYPE="$(jq_payload -r '.agent_type // .agentType // empty')"
 
@@ -149,20 +158,44 @@ if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
   exit 0
 fi
 
-jq -n \
+# The recorder truncates text and clips string scalars itself (docs/capture-text-limits.md), so the
+# whole event is sent. Its JSON parser rejects only a string over 20,000,000 UTF-16 units, which
+# needs a payload or text over 20,000,000 bytes (every unit takes at least one byte; count bytes in
+# the C locale). For those alone, apply the recorder's 50,000-unit scalar clip here, keeping a
+# code-point prefix at least as long as the one it stores, so the event is still recorded.
+CLIP_SCALARS=false
+PAYLOAD_BYTES="$(LC_ALL=C; printf '%s' "${#PAYLOAD}")"
+TEXT_BYTES="$(LC_ALL=C; printf '%s' "${#TEXT}")"
+if (( PAYLOAD_BYTES > 20000000 || TEXT_BYTES > 20000000 )); then
+  CLIP_SCALARS=true
+fi
+
+# Stream the event's large parts on stdin: the payload first, where jq still skips a leading byte
+# order mark, then TEXT (normalized above) as one JSON string, read with --rawfile as above. The
+# payload must be exactly one JSON document, as --argjson required.
+{
+  printf '%s\n' "$PAYLOAD"
+  pipe_text "$TEXT" | jq -n --rawfile t /dev/stdin '$t' 2>/dev/null || pipe_text "$TEXT" | jq -Rs .
+} | jq -n \
   --arg source "$SOURCE" \
   --arg clientSessionId "$SESSION_ID" \
   --arg turnId "$TURN_ID" \
   --arg eventType "$EVENT_TYPE" \
   --arg role "$ROLE" \
-  --arg text "$TEXT" \
   --arg cwd "$CWD" \
   --arg toolName "$TOOL_NAME" \
-  --argjson toolInput "$TOOL_INPUT" \
-  --argjson toolOutput "$TOOL_OUTPUT" \
-  --argjson raw "$PAYLOAD" \
   --argjson subagent "$SUBAGENT_METADATA" \
-  "${TRANSCRIPT_FILTER}"'{
+  --argjson clipScalars "$CLIP_SCALARS" \
+  "${TRANSCRIPT_FILTER}"'
+  def clip_scalars:
+    if type == "string" then (if length > 50000 then .[:50000] + " …[truncated]" else . end)
+    elif type == "array" then map(clip_scalars)
+    elif type == "object" then map_values(clip_scalars)
+    else . end;
+  [inputs] as $inputs |
+  if ($inputs | length) != 2 then error("one hook payload expected") else $inputs[0] end |
+  . as $raw | $inputs[1] as $text |
+  {
     source: $source,
     clientSessionId: $clientSessionId,
     turnId: (if $turnId | length > 0 then $turnId else null end),
@@ -171,11 +204,12 @@ jq -n \
     text: (if $text | length > 0 then $text else null end),
     cwd: $cwd,
     toolName: (if $toolName | length > 0 then $toolName else null end),
-    toolInput: $toolInput,
-    toolOutput: $toolOutput,
+    toolInput: (.tool_input // .toolInput // null),
+    toolOutput: (.tool_response // .toolResponse // .tool_output // .toolOutput // null),
     metadata: ({ rawHook: $raw } + ($subagent // {}) + ($raw | transcript_metadata($subagent != null))),
     observedAt: now | todateiso8601
-  }' |
+  } |
+  if $clipScalars then (.text, .toolInput, .toolOutput, .metadata) |= clip_scalars else . end' |
 curl -fsS --max-time 3 \
   -H "Content-Type: application/json" \
   -X POST \

@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.web.context.WebServerGracefulShutdownLifecycle;
 import org.springframework.mock.web.MockAsyncContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -98,6 +99,23 @@ class EventHeartbeatTest {
         int before = checks.get();
         broadcaster.heartbeat();
         assertThat(checks.get()).isEqualTo(before);
+    }
+
+    @Test
+    void streamsOpenedAfterShutdownBeganEndAfterTheirOpeningFrames() throws Exception {
+        var attached = open(() -> true);
+        broadcaster.start();
+
+        broadcaster.stop();
+        // A client that reconnects before Tomcat stops accepting must not hold shutdown open again.
+        var reconnected = open(() -> true);
+
+        assertThat(attached.getAsyncResult(1000)).isNull();
+        assertThat(reconnected.getAsyncResult(1000)).isNull();
+        assertThat(reconnected.getResponse().getContentAsString()).isEqualTo(":connected\n\n");
+        assertThat(broadcaster.subscriberCount()).isZero();
+        assertThat(broadcaster.isRunning()).isFalse();
+        assertThat(broadcaster.getPhase()).isGreaterThan(WebServerGracefulShutdownLifecycle.SMART_LIFECYCLE_PHASE);
     }
 
     private MvcResult open(BooleanSupplier allowed) throws Exception {

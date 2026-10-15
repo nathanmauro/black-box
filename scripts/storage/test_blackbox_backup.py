@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Actual CLI checks; every database, executable, and credential is a disposable fixture."""
 
+from contextlib import closing
 import hashlib
 import importlib.util
 import json
 import os
+import random
 from pathlib import Path
 import sqlite3
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import unicodedata
 from unittest import mock
@@ -31,10 +34,10 @@ class BackupCliTest(unittest.TestCase):
         self.output = self.root / "backup.db"
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
 
-    def cli(self, *args, success=True, env=None):
+    def cli(self, *args, success=True, env=None, timeout=20):
         result = subprocess.run([sys.executable, str(SCRIPT), *map(str, args)],
                                 capture_output=True, text=True, env=env or self.env,
-                                timeout=20, preexec_fn=lambda: os.umask(0))
+                                timeout=timeout, preexec_fn=lambda: os.umask(0))
         self.assertEqual(result.stderr, "")
         self.assertEqual(result.returncode == 0, success, result.stdout)
         data = json.loads(result.stdout)
@@ -435,6 +438,102 @@ if os.environ.get('FAKE_MODE') == 'truncated':
         other.mkdir()
         self.output = other / "source.db-journal"
         self.snapshot_survives_source_writes()
+
+    def test_wal_snapshot_finishes_while_another_connection_keeps_committing(self):
+        # A running service commits between the steps of a paged backup, and each such commit
+        # restarts the copy from page 1. One row per 4 KiB page makes a ~16 MB source.
+        with closing(self.seed(wal=True)) as db:
+            db.executescript("""
+                CREATE TABLE bulk(id INTEGER PRIMARY KEY, payload BLOB, tag INTEGER NOT NULL DEFAULT 0);
+                WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 4096)
+                INSERT INTO bulk(payload) SELECT randomblob(3000) FROM n;
+                CREATE TABLE live_writes(seq INTEGER PRIMARY KEY, payload BLOB);
+                CREATE TABLE commits(n INTEGER NOT NULL);
+                INSERT INTO commits VALUES (0);
+            """)
+        self.assertGreater(self.source.stat().st_size, 8 * 1024 * 1024)
+        writing, stop, failures = threading.Event(), threading.Event(), []
+        commits = 0
+
+        def write():
+            nonlocal commits
+            try:
+                with closing(sqlite3.connect(self.source)) as writer:
+                    while not stop.is_set():
+                        # One transaction touches three tables, and rewrites a random bulk row
+                        # that may sit on a page the copy has already passed.
+                        writer.execute("INSERT INTO live_writes(payload) VALUES (randomblob(64))")
+                        writer.execute("UPDATE commits SET n = n + 1")
+                        writer.execute(
+                            "UPDATE bulk SET payload = randomblob(3000), tag = (SELECT n FROM commits)"
+                            " WHERE id = ?", (random.randint(1, 4096),))
+                        writer.commit()
+                        commits += 1
+                        if commits == 20:
+                            writing.set()
+                        stop.wait(0.001)
+            except Exception as error:
+                failures.append(error)
+            finally:
+                writing.set()
+
+        thread = threading.Thread(target=write, daemon=True)
+        thread.start()
+        try:
+            self.assertTrue(writing.wait(10))
+            before = commits
+            try:
+                report = self.sqlite("--execute", timeout=10)
+            except subprocess.TimeoutExpired:
+                self.fail("snapshot did not finish within 10 s while another connection "
+                          f"committed {commits - before} times")
+            during = commits - before
+        finally:
+            stop.set()
+            thread.join(10)
+        self.assertEqual(failures, [])
+        self.assertGreater(during, 0)
+        self.assert_artifact(report)
+        with closing(sqlite3.connect(self.output)) as snapshot:
+            self.assertEqual(snapshot.execute("PRAGMA integrity_check").fetchall(), [("ok",)])
+            self.assertEqual(snapshot.execute("SELECT count(*) FROM bulk").fetchone(), (4096,))
+            # One read snapshot: a gap-free prefix of the writer's commits, never a torn mix.
+            count, last = snapshot.execute(
+                "SELECT count(*), coalesce(max(seq), 0) FROM live_writes").fetchone()
+            # Every table shows the same commit, including bulk pages copied long before the end.
+            counted, tagged = snapshot.execute(
+                "SELECT (SELECT n FROM commits), (SELECT max(tag) FROM bulk)").fetchone()
+        self.assertEqual(count, last)
+        self.assertEqual((counted, tagged), (count, count))
+        self.assertTrue(before <= count <= commits, (before, count, commits))
+        self.assertFalse(Path(str(self.output) + "-wal").exists())
+
+    def test_wait_bound_stops_a_locked_source_but_never_discards_a_finished_copy(self):
+        self.seed().close()
+        plan = self.sqlite()
+        with mock.patch.object(BACKUP, "SQLITE_BUSY_WAIT_SECONDS", 0):
+            # A rollback-journal writer holding its exclusive lock keeps every reader out.
+            with closing(sqlite3.connect(self.source, isolation_level=None,
+                                         check_same_thread=False)) as holder:
+                holder.execute("BEGIN EXCLUSIVE")
+                # Without the bound the copy would wait for this lock forever. Releasing it after
+                # 15 s turns that regression into a failure here instead of a hung suite.
+                release = threading.Timer(15, holder.execute, ("ROLLBACK",))
+                release.start()
+                try:
+                    with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_backup_timeout$"):
+                        BACKUP.execute(plan)
+                    self.assertTrue(release.is_alive(),
+                                    "the copy stopped only once the lock was released")
+                finally:
+                    release.cancel()
+                    release.join()
+                if holder.in_transaction:
+                    holder.execute("ROLLBACK")
+            self.assertFalse(self.output.exists())
+            self.assertEqual(list(self.root.glob(".blackbox-backup-*")), [])
+            # The bound has already passed when this copy starts; the finished step still counts.
+            self.assert_artifact(BACKUP.execute(plan))
 
     def test_postgres_exact_scope_credentials_and_offline_archive_validation(self):
         env = self.fake_postgres()

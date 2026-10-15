@@ -13,7 +13,9 @@ import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.summary.SummaryExportProperties;
 import dev.nathan.sbaagentic.summary.SummaryModelProperties;
 import dev.nathan.sbaagentic.summary.SummaryProperties;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -56,6 +58,16 @@ class SbaConfigurationTest {
                     .extracting(SummaryExportProperties.Target::getId)
                     .isEqualTo("obsidian");
         });
+    }
+
+    @Test
+    void everyShutdownPhaseEndsBeforeBrowsersReconnectAndInsideTheServiceManagerExitTimeout() {
+        // launchd sends SIGKILL 5 s after SIGTERM, losing queued and fan-out work. Browsers reconnect
+        // an ended EventSource after 3 s, and a 503 from the paused connector would end it for good.
+        contextRunner.run(context -> assertThat(Binder.get(context.getEnvironment())
+                        .bind("spring.lifecycle.timeout-per-shutdown-phase", Duration.class)
+                        .get())
+                .isLessThan(Duration.ofSeconds(3)));
     }
 
     @Test

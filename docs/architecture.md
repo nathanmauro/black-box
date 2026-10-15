@@ -225,6 +225,29 @@ database; it does not synchronize SQLite history or provide safe multiple API re
 apply to the default backend. Elasticsearch is disabled by default and is only a secondary index
 for new events.
 
+SQLite runs in WAL mode and admits one writer at a time. The application's transaction manager
+begins every read-write transaction `IMMEDIATE`, taking the writer lock before its first read, so a
+concurrent writer (a capture, a summary, a saved braid) delays it by up to the 5-second
+`busy_timeout` instead of failing it with `SQLITE_BUSY`. A writer that holds the lock longer than
+that still fails the waiting request. Read-only transactions keep a deferred begin and never block
+writers. Code that builds its own `DataSourceTransactionManager` bypasses this and must write before
+it reads, as the startup stream-position and sqlite-vec steps do.
+
+A read-write transaction holds the writer lock from its first statement until it commits, so code
+inside one must never write through another connection (a `REQUIRES_NEW` transaction, a raw
+`dataSource.getConnection()`, a second `DataSource`) and must never block on another thread that
+writes. That writer waits for the transaction's own lock, so the request stalls for the full
+`busy_timeout` and then fails. Mark a unit that only reads `@Transactional(readOnly = true)`: an
+unmarked one takes the writer lock at its begin and holds it for its whole duration.
+
+On both backends, a query outside a transaction borrows its own pooled connection, so a row mapper
+or result-set callback never queries. A lookup per row holds the outer query's connection while it
+waits for another one. Once concurrent readers hold every connection that way (four on SQLite; on
+PostgreSQL `SBA_DATASOURCE_POOL_SIZE`, default eight), they wait on each other until the pool's
+30-second connection timeout fails them, while every other request, captures included, stalls
+behind them and most fail with a 500. Map the rows first, then load related rows in batched `IN`
+queries, as the saved meld and braid reads do for their source sessions.
+
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |

@@ -22,15 +22,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.DependsOn;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -40,6 +44,23 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
     private static final int MAX_TRAJECTORY_CAPTURES = 120;
+
+    /** Meld ids bound per input query, far below the SQLite and PostgreSQL bind-variable limits. */
+    private static final int MELD_INPUT_BATCH = 500;
+
+    /**
+     * The ordered inputs of many melds, with each input's current session. %s is the meld id
+     * placeholder list. Saves number a meld's inputs 0..n-1; session_id only orders inputs that
+     * share an input_order, which saves never write.
+     */
+    private static final String MELD_INPUTS_SQL = """
+            SELECT i.meld_id, i.session_id, i.metadata_json AS input_metadata, s.id AS existing_id,
+                   s.source, s.client_session_id, s.title, s.cwd, s.started_at, s.last_seen_at, s.event_count
+              FROM session_meld_inputs i
+              LEFT JOIN agent_sessions s ON s.id = i.session_id
+             WHERE i.meld_id IN (%s)
+             ORDER BY i.meld_id, i.input_order, i.session_id
+            """;
 
     private static final String SESSION_CANONICAL_KEY_SQL = """
             CASE
@@ -311,7 +332,8 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         args.add(limit);
         args.add(offset);
 
-        return jdbcTemplate.query(timelineBlocksSql(scopes.size(), dialect), this::mapTimelineBlock, args.toArray());
+        return withMeldSources(
+                jdbcTemplate.query(timelineBlocksSql(scopes.size(), dialect), this::mapTimelineBlock, args.toArray()));
     }
 
     static String timelineBlocksSql(int scopeCount) {
@@ -391,8 +413,8 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         args.add(sessionId);
         args.add(limit);
 
-        return jdbcTemplate.query(
-                timelineBlocksForSessionSql(scopes.size(), dialect), this::mapTimelineBlock, args.toArray());
+        return withMeldSources(jdbcTemplate.query(
+                timelineBlocksForSessionSql(scopes.size(), dialect), this::mapTimelineBlock, args.toArray()));
     }
 
     static String timelineBlocksForSessionSql(int scopeCount) {
@@ -575,8 +597,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
     }
 
     public ProjectSavedMeld savedMeld(String id) {
-        List<ProjectSavedMeld> found =
-                jdbcTemplate.query("SELECT * FROM session_melds WHERE id=?", this::mapSavedMeld, id);
+        List<ProjectSavedMeld> found = savedMelds("SELECT * FROM session_melds WHERE id=?", id);
 
         return found.isEmpty() ? null : found.get(0);
     }
@@ -593,10 +614,9 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         }
         args.add(limit);
 
-        return jdbcTemplate.query(
+        return savedMelds(
                 "SELECT * FROM session_melds WHERE artifact_kind='braid' AND project_key IS NULL" + seek + " ORDER BY "
                         + time.descending("id") + " LIMIT ?",
-                this::mapSavedMeld,
                 args.toArray());
     }
 
@@ -628,62 +648,181 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         }
         args.add(limit);
 
-        return jdbcTemplate.query(
+        List<BraidRow> rows = jdbcTemplate.query(
                 "SELECT m.id,m.project_key,m.title,m.body,m.provider,m.model,m.created_at FROM session_melds m WHERE "
                         + where + " ORDER BY " + time.descending("m.id") + " LIMIT ?",
-                (rs, n) -> new BraidReader.Candidate(
+                (rs, n) -> new BraidRow(
                         rs.getString("id"),
-                        rs.getString("project_key") == null ? null : aliasService.resolve(rs.getString("project_key")),
+                        rs.getString("project_key"),
                         rs.getString("title"),
                         rs.getString("body"),
                         rs.getString("provider"),
                         rs.getString("model"),
-                        Instant.parse(rs.getString("created_at")),
-                        braidSources(rs.getString("id"))),
+                        Instant.parse(rs.getString("created_at"))),
                 args.toArray());
-    }
+        if (rows.isEmpty()) {
 
-    private List<BraidReader.Source> braidSources(String id) {
+            return List.of();
+        }
+        ProjectAliasSnapshot aliases =
+                aliasesFor(rows.stream().map(BraidRow::storedKey).toList());
+        Map<String, List<BraidReader.Source>> sources =
+                meldInputs(rows.stream().map(BraidRow::id).toList(), this::mapBraidSource);
 
-        return jdbcTemplate.query(
-                """
-            SELECT i.session_id,i.metadata_json,s.id AS existing_id,s.source,s.client_session_id,s.cwd
-              FROM session_meld_inputs i LEFT JOIN agent_sessions s ON s.id=i.session_id
-             WHERE i.meld_id=? ORDER BY i.input_order
-            """,
-                (rs, n) -> {
-                    Map<String, Object> snapshot = fromJsonMap(rs.getString("metadata_json"));
-                    if (snapshot == null) snapshot = Map.of();
-                    boolean captured = Integer.valueOf(1).equals(snapshot.get("provenanceVersion"))
-                            && snapshot.get("source") instanceof String
-                            && snapshot.get("clientSessionId") instanceof String
-                            && snapshot.containsKey("cwd")
-                            && (snapshot.get("cwd") == null || snapshot.get("cwd") instanceof String);
-                    String basis = captured
-                            ? "save_snapshot"
-                            : rs.getString("existing_id") == null ? "unavailable" : "current_session";
-
-                    return new BraidReader.Source(
-                            rs.getString("session_id"),
-                            captured ? (String) snapshot.get("source") : rs.getString("source"),
-                            captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
-                            captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
-                            basis);
-                },
-                id);
+        return rows.stream()
+                .map(row -> new BraidReader.Candidate(
+                        row.id(),
+                        row.storedKey() == null ? null : aliases.resolve(row.storedKey()),
+                        row.title(),
+                        row.body(),
+                        row.provider(),
+                        row.model(),
+                        row.createdAt(),
+                        sources.getOrDefault(row.id(), List.of())))
+                .toList();
     }
 
     public List<ProjectSavedMeld> savedMeldsForProject(String canonicalKey) {
         List<String> scopes = aliasService.scopesFor(canonicalKey);
 
-        return jdbcTemplate.query("""
+        return savedMelds("""
                 SELECT id, project_key, title, body, provider, model, prompt_version,
                        execution_mode, saved_from_preview, metadata_json, created_at
                   FROM session_melds
                  WHERE project_key IN (%s)
                  ORDER BY created_at DESC
-                """.formatted(placeholders(scopes.size())), this::mapSavedMeld, scopes.toArray());
+                """.formatted(placeholders(scopes.size())), scopes.toArray());
     }
+
+    /**
+     * Maps the meld rows first, then resolves their projects and loads their sources in batches.
+     * Row mapping must not query: outside a transaction each query borrows its own pooled
+     * connection, so a lookup per row held one connection while waiting for another, and readers
+     * holding every connection that way waited on each other until the pool timed out.
+     */
+    private List<ProjectSavedMeld> savedMelds(String sql, Object... args) {
+        List<SavedMeldRow> rows = jdbcTemplate.query(sql, this::mapSavedMeldRow, args);
+        if (rows.isEmpty()) {
+
+            return List.of();
+        }
+        ProjectAliasSnapshot aliases =
+                aliasesFor(rows.stream().map(SavedMeldRow::storedKey).toList());
+        Map<String, List<ProjectMeldSessionRef>> sources =
+                meldInputs(rows.stream().map(SavedMeldRow::id).toList(), this::mapMeldSessionRef);
+
+        return rows.stream()
+                .map(row -> row.toSavedMeld(aliases, sources.getOrDefault(row.id(), List.of())))
+                .toList();
+    }
+
+    /** One alias snapshot for every row, read only when some row has a project to resolve. */
+    private ProjectAliasSnapshot aliasesFor(List<String> storedKeys) {
+
+        return storedKeys.stream().anyMatch(Objects::nonNull) ? aliasService.snapshot() : null;
+    }
+
+    /**
+     * Loads the ordered inputs of the given melds, keyed by meld id, in batched queries. A NULL id,
+     * which only hand-edited SQLite data can hold, has no inputs and keeps its row readable.
+     */
+    private <T> Map<String, List<T>> meldInputs(Collection<String> meldIds, RowMapper<T> mapper) {
+        List<String> ids = meldIds.stream().filter(Objects::nonNull).distinct().toList();
+        Map<String, List<T>> inputs = new HashMap<>();
+        for (int from = 0; from < ids.size(); from += MELD_INPUT_BATCH) {
+            List<String> batch = ids.subList(from, Math.min(ids.size(), from + MELD_INPUT_BATCH));
+            List<Map.Entry<String, T>> rows = jdbcTemplate.query(
+                    MELD_INPUTS_SQL.formatted(placeholders(batch.size())),
+                    (rs, rowNum) -> Map.entry(rs.getString("meld_id"), mapper.mapRow(rs, rowNum)),
+                    batch.toArray());
+            for (Map.Entry<String, T> row : rows) {
+                inputs.computeIfAbsent(row.getKey(), id -> new ArrayList<>()).add(row.getValue());
+            }
+        }
+
+        return inputs;
+    }
+
+    /** Fills the source sessions of saved-meld blocks once the timeline query has finished. */
+    private List<ProjectTimelineBlock> withMeldSources(List<ProjectTimelineBlock> blocks) {
+        List<String> meldIds = blocks.stream()
+                .filter(block -> "saved_meld".equals(block.sourceType()))
+                .map(ProjectTimelineBlock::id)
+                .toList();
+        if (meldIds.isEmpty()) {
+
+            return blocks;
+        }
+        Map<String, List<ProjectMeldSessionRef>> sources = meldInputs(meldIds, this::mapMeldSessionRef);
+
+        return blocks.stream()
+                .map(block -> "saved_meld".equals(block.sourceType())
+                        ? withSourceSessions(block, sources.getOrDefault(block.id(), List.of()))
+                        : block)
+                .toList();
+    }
+
+    private static ProjectTimelineBlock withSourceSessions(
+            ProjectTimelineBlock block, List<ProjectMeldSessionRef> sourceSessions) {
+
+        return new ProjectTimelineBlock(
+                block.id(),
+                block.sourceType(),
+                block.blockType(),
+                block.headline(),
+                block.text(),
+                block.eventType(),
+                block.role(),
+                block.source(),
+                block.clientSessionId(),
+                block.sessionId(),
+                block.sessionTitle(),
+                block.cwd(),
+                block.toolName(),
+                block.toolInputJson(),
+                block.toolOutputJson(),
+                block.metadata(),
+                block.observedAt(),
+                sourceSessions);
+    }
+
+    /** A session_melds row as stored, before its project resolves and its inputs load. */
+    private record SavedMeldRow(
+            String id,
+            String storedKey,
+            String title,
+            String body,
+            String provider,
+            String model,
+            String promptVersion,
+            String executionMode,
+            boolean savedFromPreview,
+            Map<String, Object> metadata,
+            Instant createdAt) {
+
+        private ProjectSavedMeld toSavedMeld(ProjectAliasSnapshot aliases, List<ProjectMeldSessionRef> sessions) {
+            String canonicalKey = storedKey == null ? null : aliases.resolve(storedKey);
+
+            return new ProjectSavedMeld(
+                    id,
+                    canonicalKey == null ? null : ProjectKeyCodec.encode(canonicalKey),
+                    canonicalKey,
+                    title,
+                    body,
+                    provider,
+                    model,
+                    promptVersion,
+                    executionMode,
+                    savedFromPreview,
+                    metadata,
+                    createdAt,
+                    sessions);
+        }
+    }
+
+    /** A saved braid row as stored, before its project resolves and its inputs load. */
+    private record BraidRow(
+            String id, String storedKey, String title, String body, String provider, String model, Instant createdAt) {}
 
     private record RawSessionSummary(
             String scopeKey, long sessionCount, long eventCount, Instant firstSeenAt, Instant lastSeenAt) {}
@@ -797,6 +936,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 List.of());
     }
 
+    /** Its source sessions stay empty here; withMeldSources fills them after the timeline query. */
     private ProjectTimelineBlock mapSavedMeldTimelineBlock(ResultSet rs) throws SQLException {
         String id = rs.getString("id");
         Map<String, Object> metadata = new LinkedHashMap<>(fromJsonMap(rs.getString("metadata_json")));
@@ -825,7 +965,7 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 null,
                 metadata,
                 Instant.parse(rs.getString("observed_at")),
-                sourceSessionsForMeld(id));
+                List.of());
     }
 
     private CaptureRow mapTrajectoryEventCapture(ResultSet rs, int rowNum) throws SQLException {
@@ -870,15 +1010,11 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 Instant.parse(rs.getString("updated_at")));
     }
 
-    private ProjectSavedMeld mapSavedMeld(ResultSet rs, int rowNum) throws SQLException {
-        String storedKey = rs.getString("project_key");
-        String canonicalKey = storedKey == null ? null : aliasService.resolve(storedKey);
-        String id = rs.getString("id");
+    private SavedMeldRow mapSavedMeldRow(ResultSet rs, int rowNum) throws SQLException {
 
-        return new ProjectSavedMeld(
-                id,
-                canonicalKey == null ? null : ProjectKeyCodec.encode(canonicalKey),
-                canonicalKey,
+        return new SavedMeldRow(
+                rs.getString("id"),
+                rs.getString("project_key"),
                 rs.getString("title"),
                 rs.getString("body"),
                 rs.getString("provider"),
@@ -887,41 +1023,54 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
                 rs.getString("execution_mode"),
                 rs.getInt("saved_from_preview") != 0,
                 fromJsonMap(rs.getString("metadata_json")),
-                Instant.parse(rs.getString("created_at")),
-                sourceSessionsForMeld(id));
+                Instant.parse(rs.getString("created_at")));
     }
 
-    private List<ProjectMeldSessionRef> sourceSessionsForMeld(String meldId) {
+    /** A meld input row from MELD_INPUTS_SQL, preferring the session provenance captured at save. */
+    private ProjectMeldSessionRef mapMeldSessionRef(ResultSet rs, int rowNum) throws SQLException {
+        Map<String, Object> snapshot = inputSnapshot(rs.getString("input_metadata"));
+        boolean captured = capturedProvenance(snapshot);
 
-        return jdbcTemplate.query(
-                """
-                SELECT i.session_id AS id, i.metadata_json AS input_metadata, s.source, s.client_session_id, s.title, s.cwd,
-                       s.started_at, s.last_seen_at, s.event_count
-                  FROM session_meld_inputs i
-                  LEFT JOIN agent_sessions s ON s.id = i.session_id
-                 WHERE i.meld_id = ?
-                 ORDER BY i.input_order ASC
-                """,
-                (rs, rowNum) -> {
-                    Map<String, Object> snapshot = fromJsonMap(rs.getString("input_metadata"));
-                    if (snapshot == null) snapshot = Map.of();
-                    boolean captured = Integer.valueOf(1).equals(snapshot.get("provenanceVersion"))
-                            && snapshot.get("source") instanceof String
-                            && snapshot.get("clientSessionId") instanceof String
-                            && snapshot.containsKey("cwd")
-                            && (snapshot.get("cwd") == null || snapshot.get("cwd") instanceof String);
+        return new ProjectMeldSessionRef(
+                rs.getString("session_id"),
+                captured ? (String) snapshot.get("source") : rs.getString("source"),
+                captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
+                rs.getString("title"),
+                captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
+                rs.getLong("event_count"),
+                parseInstant(rs.getString("started_at")),
+                parseInstant(rs.getString("last_seen_at")));
+    }
 
-                    return new ProjectMeldSessionRef(
-                            rs.getString("id"),
-                            captured ? (String) snapshot.get("source") : rs.getString("source"),
-                            captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
-                            rs.getString("title"),
-                            captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
-                            rs.getLong("event_count"),
-                            parseInstant(rs.getString("started_at")),
-                            parseInstant(rs.getString("last_seen_at")));
-                },
-                meldId);
+    /** A meld input row from MELD_INPUTS_SQL, naming where its provenance came from. */
+    private BraidReader.Source mapBraidSource(ResultSet rs, int rowNum) throws SQLException {
+        Map<String, Object> snapshot = inputSnapshot(rs.getString("input_metadata"));
+        boolean captured = capturedProvenance(snapshot);
+        String basis =
+                captured ? "save_snapshot" : rs.getString("existing_id") == null ? "unavailable" : "current_session";
+
+        return new BraidReader.Source(
+                rs.getString("session_id"),
+                captured ? (String) snapshot.get("source") : rs.getString("source"),
+                captured ? (String) snapshot.get("clientSessionId") : rs.getString("client_session_id"),
+                captured ? (String) snapshot.get("cwd") : rs.getString("cwd"),
+                basis);
+    }
+
+    /** Input metadata stored as a JSON null reads as no snapshot. */
+    private Map<String, Object> inputSnapshot(String json) {
+        Map<String, Object> snapshot = fromJsonMap(json);
+
+        return snapshot == null ? Map.of() : snapshot;
+    }
+
+    private static boolean capturedProvenance(Map<String, Object> snapshot) {
+
+        return Integer.valueOf(1).equals(snapshot.get("provenanceVersion"))
+                && snapshot.get("source") instanceof String
+                && snapshot.get("clientSessionId") instanceof String
+                && snapshot.containsKey("cwd")
+                && (snapshot.get("cwd") == null || snapshot.get("cwd") instanceof String);
     }
 
     private ProjectMeldSessionRef mapSessionRef(ResultSet rs, int rowNum) throws SQLException {
