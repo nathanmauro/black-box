@@ -11,13 +11,15 @@ import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.sour
 import dev.nathan.sbaagentic.memory.internal.domain.ContinuationCapture.Kind;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import java.util.function.IntPredicate;
 
 /**
  * Fixed prompt template. Only template sentences are imperative; every captured string is fenced
  * with {@link ContinuationText#literal}. The header, Goal, fixed guidance, Uncertain and Sources are
  * always rendered; other open loops, then decisions, then recorded state are clipped, with an
- * explicit marker, to keep the prompt within {@link #BUDGET} UTF-16 units.
+ * explicit marker, to keep the prompt within {@link #BUDGET} UTF-16 units. If that is not enough,
+ * as when long backtick runs widen the fences, Evidence claims and then the Goal are shortened the
+ * same way. Sources are never shortened.
  */
 public final class ContinuationPromptRenderer {
 
@@ -102,7 +104,7 @@ public final class ContinuationPromptRenderer {
         }
         if (parts.stateText.isEmpty()) {
 
-            return parts.compose(0, 0, parts.state);
+            return parts.reservedWithinBudget(parts.state);
         }
         String marker = "\n" + CLIPPED + " Recorded state shortened to fit the " + BUDGET_LABEL
                 + "-character budget; read event " + input.state().eventId() + " for the full handoff.";
@@ -117,27 +119,35 @@ public final class ContinuationPromptRenderer {
             keep -= Math.max(1, attempt.length() - BUDGET);
         }
 
-        return parts.compose(
-                0,
-                0,
-                parts.stateLabel + "\n" + CLIPPED + " Recorded state omitted to fit the "
-                        + BUDGET_LABEL + "-character budget; read event "
-                        + input.state().eventId() + " for the full handoff.");
+        return parts.reservedWithinBudget(parts.stateLabel + "\n" + CLIPPED + " Recorded state omitted to fit the "
+                + BUDGET_LABEL + "-character budget; read event "
+                + input.state().eventId() + " for the full handoff.");
     }
 
     /** Fenced recorded text, shortened to {@code max} with a marker outside the fence. */
     private static String fenced(String raw, int max) {
-        String text = sourceText(raw);
+
+        return fenced(
+                sourceText(raw),
+                max,
+                "Shortened; open the source for the full text.",
+                "Omitted; open the source for the full text.");
+    }
+
+    /** {@code text} fenced whole, or shortened to {@code max} with a marker, or only a marker when nothing is left. */
+    private static String fenced(String text, int max, String shortened, String omitted) {
         String clipped = clip(text, max);
         if (clipped.length() == text.length()) {
 
             return literal(text);
         }
+        String kept = clipped.stripTrailing();
 
-        return literal(clipped.stripTrailing()) + "\n" + CLIPPED + " Shortened; open the source for the full text.";
+        return kept.isEmpty() ? CLIPPED + " " + omitted : literal(kept) + "\n" + CLIPPED + " " + shortened;
     }
 
     private static final class Parts {
+        private final ContinuationPromptInput input;
         private final String header;
         private final String goal;
         private final String why;
@@ -150,14 +160,11 @@ public final class ContinuationPromptRenderer {
         private final String sources;
 
         Parts(ContinuationPromptInput input) {
+            this.input = input;
             ContinuationCandidate candidate = input.candidate();
             header = "Black Box continuation prompt — built from records captured " + day(candidate.recordedAt()) + " ("
                     + ago(candidate.ageDays()) + "); recorded, not verified as current.\n" + BOUNDARY;
-            String goalText = clip(candidate.text(), GOAL_MAX);
-            goal = goalText.length() == candidate.text().length()
-                    ? literal(candidate.text())
-                    : literal(goalText.stripTrailing()) + "\n" + CLIPPED
-                            + " Goal shortened; open its first source for the full text.";
+            goal = goal(candidate, GOAL_MAX);
             why = ContinuationPromptRenderer.why(candidate);
 
             ContinuationCapture handoff = input.state();
@@ -197,14 +204,67 @@ public final class ContinuationPromptRenderer {
                         + day(loop.recordedAt()) + ":\n" + fenced(loop.text(), LOOP_MAX));
             }
 
-            uncertain = uncertain(input);
+            uncertain = uncertain(input, CLAIM_MAX);
             sources = sources(input);
         }
 
+        /**
+         * The last stage, with other loops and decisions already omitted: when the reserved sections
+         * alone overflow, Evidence claims give way first and then the Goal, each to the longest text
+         * that fits, or to a marker. Under the service's caps (five listed sources, three Evidence
+         * links) the rest always fits.
+         */
+        String reservedWithinBudget(String stateBody) {
+            if (fits(goal, uncertain, stateBody)) {
+
+                return compose(goal, uncertain, 0, 0, stateBody);
+            }
+            String claims =
+                    uncertain(input, longestFitting(CLAIM_MAX, max -> fits(goal, uncertain(input, max), stateBody)));
+            if (fits(goal, claims, stateBody)) {
+
+                return compose(goal, claims, 0, 0, stateBody);
+            }
+            int goalMax = longestFitting(GOAL_MAX, max -> fits(goal(input.candidate(), max), claims, stateBody));
+
+            return compose(goal(input.candidate(), goalMax), claims, 0, 0, stateBody);
+        }
+
+        private boolean fits(String goalBody, String uncertainBody, String stateBody) {
+
+            return compose(goalBody, uncertainBody, 0, 0, stateBody).length() <= BUDGET;
+        }
+
+        /**
+         * The largest limit in {@code [0, max]} that fits, by binary search, or 0. Shorter text never
+         * needs a wider fence; only the marker a clip adds breaks monotonicity, which can cost some
+         * kept text but never the budget, since every limit returned above 0 was tested.
+         */
+        private static int longestFitting(int max, IntPredicate fits) {
+            int low = 0;
+            int high = max;
+            while (low < high) {
+                int mid = (low + high + 1) >>> 1;
+                if (fits.test(mid)) {
+                    low = mid;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            return low;
+        }
+
         String compose(int loopCount, int decisionCount, String stateBody) {
+
+            return compose(goal, uncertain, loopCount, decisionCount, stateBody);
+        }
+
+        private String compose(
+                String goalBody, String uncertainBody, int loopCount, int decisionCount, String stateBody) {
             List<String> sections = new ArrayList<>();
             sections.add(header);
-            sections.add("## Goal\n" + goal);
+            sections.add("## Goal\n" + goalBody);
             sections.add("## Why this is next\n" + why);
             sections.add("## Recorded state\n" + stateBody);
             sections.add("## Recorded decisions (not replaced; may have changed)\n"
@@ -217,7 +277,7 @@ public final class ContinuationPromptRenderer {
                     + clippedList(loops, loopCount, "No other open loop recorded.", "recorded open loops"));
             sections.add("## First step\n" + FIRST_STEP);
             sections.add("## Done when\n" + DONE_WHEN);
-            sections.add("## Uncertain\n" + uncertain);
+            sections.add("## Uncertain\n" + uncertainBody);
             sections.add(sources);
 
             return String.join("\n\n", sections);
@@ -238,7 +298,17 @@ public final class ContinuationPromptRenderer {
             return String.join("\n\n", kept);
         }
 
-        private static String uncertain(ContinuationPromptInput input) {
+        private static String goal(ContinuationCandidate candidate, int max) {
+
+            return fenced(
+                    candidate.text(),
+                    max,
+                    "Goal shortened; open its first source for the full text.",
+                    "Goal omitted to fit the " + BUDGET_LABEL
+                            + "-character budget; open its first source for the full text.");
+        }
+
+        private static String uncertain(ContinuationPromptInput input, int claimMax) {
             ContinuationCandidate candidate = input.candidate();
             List<String> lines = new ArrayList<>();
             lines.add("- Recorded " + ago(candidate.ageDays()) + " and not verified as current.");
@@ -269,7 +339,12 @@ public final class ContinuationPromptRenderer {
                 lines.add("- Evidence " + relation.eventId() + ", recorded " + relation.observedAt() + ", "
                         + relation.relation().wire() + " source event " + relation.targetEventId()
                         + " (an explicit recorded link, not re-verified):\n"
-                        + fenced(Objects.requireNonNullElse(relation.claim(), ""), CLAIM_MAX));
+                        + fenced(
+                                sourceText(relation.claim()),
+                                claimMax,
+                                "Shortened; open the source for the full text.",
+                                "Claim omitted to fit the " + BUDGET_LABEL
+                                        + "-character budget; open the source for the full text."));
             }
 
             return String.join("\n", lines);

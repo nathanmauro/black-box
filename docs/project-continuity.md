@@ -183,6 +183,8 @@ state, Recorded decisions (not replaced; may have changed), Other recorded open 
 (no acceptance criteria are recorded), Uncertain and Sources. A prompt is at most 6,000 characters:
 the header, fixed guidance and Sources are always complete; other open loops, then decisions, then
 the recorded state are shortened with an explicit `[clipped]` marker, never splitting a character.
+If the rest still does not fit, for example because long backtick runs widen the fences, Evidence
+claims and then the goal are shortened the same way.
 Candidate IDs are `bbc1-` plus 24 hex characters of a SHA-256 over the project and normalized text.
 
 `warnings` always includes "Historical evidence does not prove an action is still relevant or

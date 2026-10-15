@@ -91,12 +91,49 @@ class ContinuationPromptRendererTest {
                 .contains("[clipped] Recorded state shortened to fit the 6,000-character budget; read event h1");
         assertThat(headingsOutsideFences(prompt)).containsExactlyElementsOf(SECTIONS);
         assertSourcesComplete(prompt, input);
-        for (int index = 0; index < prompt.length(); index++) {
-            char c = prompt.charAt(index);
-            if (Character.isHighSurrogate(c)) {
-                assertThat(Character.isLowSurrogate(prompt.charAt(index + 1))).isTrue();
-            } else if (Character.isLowSurrogate(c)) {
-                assertThat(Character.isHighSurrogate(prompt.charAt(index - 1))).isTrue();
+        assertNoSplitSurrogates(prompt);
+    }
+
+    @Test
+    void backtickRunsInTheGoalAndClaimsGiveWayClaimsFirstSoTheBudgetHolds() {
+        var input = crowded("`".repeat(1_200), "`".repeat(400));
+        String prompt = render(input);
+
+        assertThat(prompt.length()).isLessThanOrEqualTo(ContinuationPromptRenderer.BUDGET);
+        assertThat(headingsOutsideFences(prompt)).containsExactlyElementsOf(SECTIONS);
+        assertSourcesComplete(prompt, input);
+        assertThat(prompt)
+                .contains("[clipped] Recorded state omitted to fit the 6,000-character budget")
+                .contains("[clipped] Goal shortened; open its first source for the full text.")
+                .doesNotContain("Goal omitted");
+        String uncertain = section(prompt, "## Uncertain");
+        for (ContinuationRelation relation : input.relations()) {
+            assertThat(uncertain)
+                    .contains("- Evidence " + relation.eventId() + ", recorded " + relation.observedAt()
+                            + ", refutes source event " + relation.targetEventId());
+        }
+        assertThat(uncertain.split("\\[clipped] Claim omitted to fit the 6,000-character budget", -1))
+                .hasSize(4);
+        assertThat(section(prompt, "## Goal")).contains("`".repeat(200));
+    }
+
+    @Test
+    void theLargestInputTheServiceCanPassFitsTheBudget() {
+        for (String goal : List.of("Reproduce the recovery path ".repeat(50), "`".repeat(1_000), "`😀".repeat(700))) {
+            for (String claim : List.of("It already shipped ".repeat(25), "`".repeat(300), "x`".repeat(200))) {
+                var crowded = crowded(goal, claim);
+                for (var input : List.of(crowded, withoutState(crowded))) {
+                    String prompt = render(input);
+
+                    assertThat(prompt.length())
+                            .as(
+                                    "goal %s..., claim %s..., state %s",
+                                    goal.substring(0, 4), claim.substring(0, 4), input.state())
+                            .isLessThanOrEqualTo(ContinuationPromptRenderer.BUDGET);
+                    assertThat(headingsOutsideFences(prompt)).containsExactlyElementsOf(SECTIONS);
+                    assertSourcesComplete(prompt, input);
+                    assertNoSplitSurrogates(prompt);
+                }
             }
         }
     }
@@ -236,6 +273,132 @@ class ContinuationPromptRendererTest {
                         .map(source -> link(source.capture(), source.field()))
                         .toList(),
                 0);
+    }
+
+    /**
+     * Every service cap reached at once: seven merged sources (five listed), three refuting claims,
+     * three decisions, five other loops, a long state, UUID ids and nanosecond times, all stale.
+     */
+    private static ContinuationPromptInput crowded(String goal, String claim) {
+        Instant recorded = NOW.minus(Duration.ofDays(20)).plusNanos(123_456_789);
+        List<ContinuationSource> sources = IntStream.range(0, 7)
+                .mapToObj(index -> {
+                    var handoff = new ContinuationCapture(
+                            uuid(index),
+                            uuid(100 + index),
+                            Kind.HANDOFF,
+                            recorded.minusSeconds(index),
+                            "S".repeat(3_000),
+                            null,
+                            List.of(),
+                            goal);
+
+                    return new ContinuationSource(
+                            handoff, ContinuationBasis.HANDOFF_NEXT_ACTION, goal, handoff.observedAt(), false);
+                })
+                .toList();
+        var candidate = new ContinuationCandidate(
+                ContinuationText.candidateId(ROOT, goal),
+                1,
+                ContinuationBasis.HANDOFF_NEXT_ACTION,
+                goal,
+                recorded,
+                20,
+                true,
+                sources.getFirst(),
+                sources);
+        List<ContinuationCapture> decisions = IntStream.range(0, 3)
+                .mapToObj(index -> new ContinuationCapture(
+                        uuid(200 + index),
+                        uuid(300),
+                        Kind.DECISION,
+                        recorded,
+                        "d".repeat(500),
+                        "r".repeat(500),
+                        List.of(),
+                        null))
+                .toList();
+        List<ContinuationCandidate> loops = IntStream.range(0, 5)
+                .mapToObj(index -> {
+                    var owner = new ContinuationCapture(
+                            uuid(400 + index),
+                            uuid(400 + index),
+                            Kind.HANDOFF,
+                            recorded,
+                            "Owner",
+                            null,
+                            List.of("l".repeat(400)),
+                            null);
+                    var source = new ContinuationSource(
+                            owner, ContinuationBasis.HANDOFF_OPEN_LOOP, "l".repeat(400), recorded, false);
+
+                    return new ContinuationCandidate(
+                            "bbc1-loop" + index,
+                            index + 2,
+                            ContinuationBasis.HANDOFF_OPEN_LOOP,
+                            "l".repeat(400),
+                            recorded,
+                            20,
+                            true,
+                            source,
+                            List.of(source));
+                })
+                .toList();
+        List<ContinuationRelation> relations = IntStream.range(0, 3)
+                .mapToObj(index -> new ContinuationRelation(
+                        uuid(500 + index), uuid(600 + index), Relation.REFUTES, recorded, claim, uuid(index)))
+                .toList();
+        List<ContinuationLink> links = new ArrayList<>(sources.stream()
+                .limit(5)
+                .map(source -> link(source.capture(), source.field()))
+                .toList());
+        relations.forEach(relation -> links.add(relation.link()));
+
+        return new ContinuationPromptInput(
+                candidate,
+                NOW,
+                true,
+                recorded,
+                sources.getFirst().capture(),
+                true,
+                decisions,
+                loops,
+                relations,
+                links,
+                2);
+    }
+
+    /** The same input when no handoff is recorded near the head, so Recorded state is a fixed sentence. */
+    private static ContinuationPromptInput withoutState(ContinuationPromptInput input) {
+
+        return new ContinuationPromptInput(
+                input.candidate(),
+                input.now(),
+                input.projectStale(),
+                input.headAt(),
+                null,
+                true,
+                input.decisions(),
+                input.otherLoops(),
+                input.relations(),
+                input.sources(),
+                input.omittedSources());
+    }
+
+    private static String uuid(int index) {
+
+        return "00000000-0000-4000-8000-%012d".formatted(index);
+    }
+
+    private static void assertNoSplitSurrogates(String prompt) {
+        for (int index = 0; index < prompt.length(); index++) {
+            char c = prompt.charAt(index);
+            if (Character.isHighSurrogate(c)) {
+                assertThat(Character.isLowSurrogate(prompt.charAt(index + 1))).isTrue();
+            } else if (Character.isLowSurrogate(c)) {
+                assertThat(Character.isHighSurrogate(prompt.charAt(index - 1))).isTrue();
+            }
+        }
     }
 
     private static ContinuationPromptInput withBudgetIgnored(ContinuationPromptInput input) {
