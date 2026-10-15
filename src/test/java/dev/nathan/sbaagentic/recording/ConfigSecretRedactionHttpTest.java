@@ -1,0 +1,260 @@
+package dev.nathan.sbaagentic.recording;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
+import dev.nathan.sbaagentic.SbaAgenticApplication;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * An agent displays a launchd service's configuration: the capture keeps that evidence, while the
+ * stored event, its full-text index, its reads, its session and its Elasticsearch document never
+ * hold the credential. Fake values only, through the real HTTP ingest and canonical SQLite store.
+ */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ConfigSecretRedactionHttpTest {
+    private static final String FAKE_KEY = "apikey_0123456789abcdef0123456789abcdef_fedcba9876543210fedcba9876543210";
+    // The full-text tokenizer splits on '_', so each hex segment is its own indexed term.
+    private static final String FAKE_SEGMENT = "0123456789abcdef0123456789abcdef";
+    private static final String FAKE_SEGMENT_2 = "fedcba9876543210fedcba9876543210";
+    private static final String PLIST = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <plist version="1.0">
+            <dict>
+              <key>Label</key>
+              <string>com.example.blackbox</string>
+              <key>EnvironmentVariables</key>
+              <dict>
+                <key>SBA_PORT</key>
+                <string>8766</string>
+                <key>SBA_JUDGE_API_KEY</key>
+                <string>%s</string>
+              </dict>
+            </dict>
+            </plist>
+            """.formatted(FAKE_KEY);
+    private static final String PLUTIL = """
+            {
+              "EnvironmentVariables" => {
+                "SBA_JUDGE_API_KEY" => "%s"
+                "SBA_PORT" => "8766"
+              }
+              "Label" => "com.example.blackbox"
+            }
+            """.formatted(FAKE_KEY);
+    private static final String LAUNCHCTL =
+            "\tenvironment = {\n\t\tSBA_JUDGE_API_KEY => " + FAKE_KEY + "\n\t}\n\tcontext_tokens: 1234\n";
+    private static final String COMMAND = "plutil -p ~/Library/LaunchAgents/com.example.blackbox.plist; "
+            + "/usr/bin/env SBA_X_TOKEN=F4KE7_ENV_VALUE /usr/bin/java -jar black-box.jar";
+
+    @TempDir
+    static Path tempDir;
+
+    private final TestRestTemplate http = new TestRestTemplate();
+    private final Map<String, String> elasticDocuments = new ConcurrentHashMap<>();
+    private HttpServer elastic;
+    private ServletWebServerApplicationContext app;
+    private JdbcTemplate jdbc;
+    private ObjectMapper mapper;
+    private String base;
+
+    @BeforeAll
+    void start() throws IOException {
+        elastic = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        elastic.createContext("/", exchange -> {
+            String body = new String(exchange.getRequestBody().readAllBytes(), UTF_8);
+            String path = exchange.getRequestURI().getPath();
+            if (path.contains("/_doc/")) {
+                elasticDocuments.put(path.substring(path.lastIndexOf('/') + 1), body);
+            }
+            if ("HEAD".equals(exchange.getRequestMethod())) {
+                // A missing index makes the client create it before its first document.
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+
+                return;
+            }
+            byte[] ok = "{\"acknowledged\":true,\"result\":\"created\"}".getBytes(UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, ok.length);
+            exchange.getResponseBody().write(ok);
+            exchange.close();
+        });
+        elastic.start();
+        app = (ServletWebServerApplicationContext) new SpringApplicationBuilder(SbaAgenticApplication.class)
+                .run(
+                        "--spring.config.location=classpath:/application.yml",
+                        "--spring.datasource.url=jdbc:sqlite:" + tempDir.resolve("config-redaction.db"),
+                        "--server.address=127.0.0.1",
+                        "--server.port=0",
+                        "--sba.auth.enabled=false",
+                        "--sba.editor.enabled=false",
+                        "--sba.local-ai.enabled=false",
+                        "--sba.summary.backend=local",
+                        "--sba.elasticsearch.enabled=true",
+                        "--sba.elasticsearch.base-url=http://127.0.0.1:"
+                                + elastic.getAddress().getPort(),
+                        "--sba.elasticsearch.index-name=config-redaction",
+                        "--sba.memory.embedding.enabled=false",
+                        "--sba.ask.embedding-enabled=false",
+                        "--sba.judge.enabled=false",
+                        "--sba.ingestion.redact-enabled=true",
+                        "--spring.main.banner-mode=off",
+                        "--logging.level.root=WARN");
+        jdbc = app.getBean(JdbcTemplate.class);
+        mapper = app.getBean(ObjectMapper.class);
+        base = "http://127.0.0.1:" + app.getWebServer().getPort();
+    }
+
+    @AfterAll
+    void stop() {
+        if (app != null) app.close();
+        if (elastic != null) elastic.stop(0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void displayedServiceConfigurationKeepsEvidenceButNoStoredOrProjectedCopyOfItsCredential(boolean idempotent)
+            throws Exception {
+        String stdout = PLIST + PLUTIL + LAUNCHCTL;
+        Map<String, Object> toolInput = Map.of("command", COMMAND);
+        Map<String, Object> toolResponse = Map.of("stdout", stdout, "stderr", "", "interrupted", false);
+        // Like the capture hook: an object tool response is stored as JSON text, escaping its quotes and newlines.
+        Map<String, Object> event = event(
+                "PostToolUse",
+                mapper.writeValueAsString(toolResponse),
+                toolInput,
+                toolResponse,
+                Map.of(
+                        "rawHook",
+                        Map.of(
+                                "hook_event_name",
+                                "PostToolUse",
+                                "tool_name",
+                                "Bash",
+                                "tool_input",
+                                toolInput,
+                                "tool_response",
+                                toolResponse),
+                        "repo",
+                        "/fixture/config-redaction"));
+        String eventId = capture(event, idempotent);
+
+        Map<String, Object> stored = jdbc.queryForMap(
+                "SELECT text, tool_input_json, tool_output_json, metadata_json, human_text FROM agent_events WHERE id = ?",
+                eventId);
+        assertThat(stored.values().toString()).doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2, "F4KE7");
+        assertThat(stored.get("text").toString())
+                .contains("<string>com.example.blackbox</string>", "<string>8766</string>", "context_tokens: 1234")
+                .contains("<key>SBA_JUDGE_API_KEY</key>\\n    <string>[REDACTED]</string>")
+                .contains("\\\"SBA_JUDGE_API_KEY\\\" => \\\"[REDACTED]\\\"");
+        String redactedStdout = mapper.readTree(stored.get("tool_output_json").toString())
+                .path("stdout")
+                .asText();
+        assertThat(redactedStdout)
+                .contains("<key>SBA_JUDGE_API_KEY</key>\n    <string>[REDACTED]</string>")
+                .contains("\"SBA_JUDGE_API_KEY\" => \"[REDACTED]\"", "\"SBA_PORT\" => \"8766\"")
+                .contains("SBA_JUDGE_API_KEY => [REDACTED]\n", "context_tokens: 1234");
+        assertThat(mapper.readTree(stored.get("tool_input_json").toString())
+                        .path("command")
+                        .asText())
+                .contains("/usr/bin/env SBA_X_TOKEN=[REDACTED] /usr/bin/java");
+        JsonNode rawHook =
+                mapper.readTree(stored.get("metadata_json").toString()).path("rawHook");
+        assertThat(rawHook.path("tool_response").path("stdout").asText()).isEqualTo(redactedStdout);
+
+        assertThat(ftsHits(eventId, "\"" + FAKE_SEGMENT + "\"")).isZero();
+        assertThat(ftsHits(eventId, "\"" + FAKE_SEGMENT_2 + "\"")).isZero();
+        assertThat(ftsHits(eventId, "\"blackbox\"")).isOne();
+
+        var fetched = http.getForEntity(base + "/api/events/" + eventId, JsonNode.class);
+        assertThat(fetched.getStatusCode().value()).isEqualTo(200);
+        assertThat(fetched.getBody().toString())
+                .doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2, "F4KE7")
+                .contains("com.example.blackbox");
+        assertThat(elasticDocuments.get(eventId))
+                .isNotNull()
+                .doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2)
+                .contains("com.example.blackbox");
+    }
+
+    @Test
+    void configurationPastedIntoAPromptNeverBecomesAHumanTurnOrSessionTitle() throws Exception {
+        String prompt = "\"SBA_JUDGE_API_KEY\" => \"" + FAKE_KEY
+                + "\" is what plutil shows; why is launchd ignoring it?\n" + PLIST;
+        String eventId = capture(
+                event("UserPromptSubmit", prompt, null, null, Map.of("repo", "/fixture/config-redaction")), false);
+
+        Map<String, Object> stored = jdbc.queryForMap(
+                "SELECT e.text, e.human_text, s.title, s.first_human_turn FROM agent_events e"
+                        + " JOIN agent_sessions s ON s.id = e.session_id WHERE e.id = ?",
+                eventId);
+        assertThat(stored.values().toString()).doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2);
+        assertThat(stored.get("title"))
+                .isEqualTo("\"SBA_JUDGE_API_KEY\" => \"[REDACTED]\" is what plutil shows; why is launchd ignoring it?");
+        assertThat(stored.get("human_text").toString()).contains("<string>[REDACTED]</string>");
+        assertThat(stored.get("first_human_turn")).isEqualTo(stored.get("human_text"));
+        assertThat(ftsHits(eventId, "\"" + FAKE_SEGMENT + "\"")).isZero();
+        assertThat(elasticDocuments.get(eventId))
+                .isNotNull()
+                .doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2)
+                .contains("is what plutil shows");
+    }
+
+    private Map<String, Object> event(
+            String eventType, String text, Object toolInput, Object toolOutput, Map<String, Object> metadata) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("source", "claude");
+        event.put("clientSessionId", "config-redaction-" + UUID.randomUUID());
+        event.put("eventType", eventType);
+        event.put("cwd", "/fixture/config-redaction");
+        event.put("toolName", toolInput == null ? null : "Bash");
+        event.put("text", text);
+        event.put("toolInput", toolInput);
+        event.put("toolOutput", toolOutput);
+        event.put("metadata", metadata);
+
+        return event;
+    }
+
+    private String capture(Map<String, Object> event, boolean idempotent) {
+        Object payload = idempotent ? Map.of("captureId", UUID.randomUUID().toString(), "event", event) : event;
+        String endpoint = base + (idempotent ? "/api/events/idempotent" : "/api/events");
+        var captured = http.postForEntity(endpoint, payload, JsonNode.class);
+        assertThat(captured.getStatusCode().value()).isEqualTo(200);
+        String eventId = captured.getBody().path("eventId").asText();
+        assertThat(eventId).isNotBlank();
+
+        return eventId;
+    }
+
+    private int ftsHits(String eventId, String match) {
+
+        return jdbc.queryForObject(
+                "SELECT count(*) FROM event_fts JOIN agent_events e ON e.rowid = event_fts.rowid"
+                        + " WHERE event_fts MATCH ? AND e.id = ?",
+                Integer.class,
+                match,
+                eventId);
+    }
+}

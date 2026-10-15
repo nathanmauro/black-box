@@ -184,7 +184,10 @@ This is lossy, best-effort sanitization. Strings are scanned up to 50,000 charac
 tail is dropped, and truncation is marked. Deep or excessively complex structures are rejected.
 Unknown secrets may remain, benign text may be redacted, and redacted JSON key collisions can lose
 fields. Custom server redaction rules are not available to this local sanitizer and cannot protect
-the local queue before delivery. Queue privacy relies on normal local filesystem ownership; it is
+the local queue before delivery. Neither are the server's displayed-configuration rules
+(`=>` pairs, JSON-escaped quotes, property-list values and the `apikey_<hex>` key shape; see the
+[redaction policy](operations.md#configuration)): a queued row can hold such a value until it is
+delivered, and the server applies them on receipt. Queue privacy relies on normal local filesystem ownership; it is
 not encryption or protection against another process already running as the same user. Host
 clients' own input files, operating-system swap, and external logging are outside this hook's
 storage boundary.

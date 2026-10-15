@@ -248,7 +248,9 @@ These tables cover the application variables; hook and wrapper variables are sep
 | `SBA_EXPORT_OBSIDIAN_DIR` | Empty | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI |
 | `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
 
-Ingestion redaction applies before storage to event text, tool input/output, and metadata. It also
+Ingestion redaction applies before storage to event text, tool input/output, and metadata. The
+stored human turn, session title and first human turn, the SQLite full-text index and the optional
+Elasticsearch document are derived from those redacted values. It also
 applies to newly saved melds and braids: title, body, caller-declared provider/model/prompt version,
 and metadata. The save response and subsequent reads contain the accepted sanitized values.
 Canonical project ownership, ordered input IDs, server-derived source provenance, execution mode,
@@ -267,18 +269,46 @@ their structure.
 
 Default text rules also scan named assignments inside string leaves, including JSON text returned
 by tools. Existing secret-name spellings (such as `password`, `api_key`, `client_secret` and
-`access_token`, including their existing prefixes/suffixes) accept `=` or `:`, bare or matching
+`access_token`, including their existing prefixes/suffixes) accept `=`, `:` or `=>`, bare or matching
 single/double quoted keys, and values of any length. Quoted values can contain whitespace and
 backslash-escaped quotes; bare values end at whitespace or a JSON comma/closing bracket/brace.
 Complete `[REDACTED]` markers inside a bare credential are consumed as whole spans, so repeated
 markers cannot expose a trailing credential suffix. Genuine closing delimiters still end the value.
 Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned
-scalar. Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping
-and the existing truncation marker; replacement markers can expand short values. This is a small
+scalar. Characters glued to a closing quote, as in the shell word `"abc"def`, are redacted with
+the value; a delimiter, another quote or a JSON escape after the quote ends it.
+
+The same names also match displayed service configuration:
+
+- `=>` pairs, as printed by `plutil -p` (`"SBA_JUDGE_API_KEY" => "…"`), `launchctl print`
+  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP. A spaced `name => expression` with a bare name
+  containing lowercase letters and an unquoted value is treated as a lambda or arrow-function
+  parameter, such as `token => token.trim()`, and is kept.
+- JSON-encoded text, such as a tool result the capture hook stored as JSON: backslash-escaped key
+  and value quotes (`\"api_key\": \"…\"`, up to three encoding levels) are matched like ordinary
+  quotes, and a value ends at the matching escaped quote.
+- Property-list XML: a `<key>` whose name contains one of the structured secret words listed
+  above keeps its tags but has the following `<string>` or `<data>` value replaced, whether the
+  value is on the same line, on a later line (raw or JSON-escaped whitespace), or behind a
+  `cat -n`, `grep -n` or line-numbered file-view gutter.
+- The provider key shape `apikey_<hex>[_<hex>…]` with at least 16 hexadecimal digits is replaced
+  wherever it appears, including on its own line. Shorter identifiers such as `apikey_cafe` are
+  kept.
+
+A token count is not a credential: a name containing `tokens` or `tokenCount` and no other secret
+word (`max_tokens`, `context_tokens`, `promptTokenCount`) keeps an unquoted value of one to twelve
+digits that is followed by whitespace, a JSON delimiter, an escaped line break, or closing
+punctuation not glued to more letters or digits. Other values of those names are still redacted.
+Structured JSON members named that way are unchanged: their entire value is still replaced.
+
+Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping and the
+existing truncation marker; replacement markers can expand short values. The displayed-configuration
+rules do bounded work per scanned character, so near-miss input cannot stall ingestion. This is a small
 assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled
-secrets. Model export also applies these default
-assignment rules independently of ingestion settings and retains its conservative fallback for
-escaped quoted credential keys, which may remove the rest of a text leaf.
+secrets. Bare values in JSON-encoded text end only at whitespace or a JSON comma/closing
+bracket/brace, so they can also remove the text that follows them on later lines. Model export
+also applies these default rules independently of ingestion settings and retains its conservative
+fallback for escaped quoted credential keys, which may remove the rest of a text leaf.
 
 String member names are also scanned with the active text-redaction patterns. If redacting a name
 would collide with another member, the changed name gains a ` (redacted key N)` suffix so that the

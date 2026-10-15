@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Redaction now removes credentials from displayed service configuration before storage and
+  export: `=>` pairs from `plutil -p` and `launchctl print`, launchd property-list
+  `<key>`/`<string>` and `<data>` values (raw, JSON-escaped, or behind line-number gutters),
+  backslash-escaped quoted keys and values in JSON-encoded tool results, characters glued to a
+  quoted value, and the bare `apikey_<hex>` key shape. Previously such values reached event text,
+  tool output, metadata, the full-text index and Elasticsearch in plain text. Token counts such as
+  `max_tokens: 4096` in text are no longer redacted, and `token => token.trim()` lambdas are kept.
+  Existing captures are not rewritten; rotate any credential an agent displayed before this
+  change.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped
