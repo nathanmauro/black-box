@@ -25,6 +25,7 @@ import {
   parseQuery,
   removeFacetValue,
   setFacet,
+  stripProjectIncludes,
   type FacetField,
   type FacetKey,
   type FacetMode,
@@ -74,8 +75,9 @@ export default function SearchPage(props: SearchPageProps = {}) {
 
   // The URL's q is the source of truth for what was actually searched.
   const submitted = () => params.q ?? "";
+  // Same span-based strip as the Stream: idempotent, so the URL normalization below settles.
   const visibleSubmitted = createMemo(() =>
-    props.project ? setFacet(submitted(), "project", null) : submitted(),
+    props.project ? stripProjectIncludes(submitted()) : submitted(),
   );
   const apiQuery = createMemo(() =>
     props.project
@@ -86,7 +88,8 @@ export default function SearchPage(props: SearchPageProps = {}) {
   createEffect(() => {
     const visible = visibleSubmitted();
     if (props.project && visible !== submitted()) {
-      setParams({ q: visible || undefined });
+      // Replace, never push: Back would land on the unnormalized URL and come straight forward.
+      setParams({ q: visible || undefined }, { replace: true });
     }
   });
   createEffect(() => {

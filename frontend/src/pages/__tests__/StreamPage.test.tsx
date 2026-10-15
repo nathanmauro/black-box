@@ -8,6 +8,7 @@ import type {
   EventFeedResponse,
   ProjectSummary,
 } from "../../lib/api";
+import { getSessions, searchValues } from "../../lib/api";
 import { setHumanOnly } from "../../lib/humanOnly";
 import type { LiveStatus } from "../../lib/sse";
 import StreamPage from "../StreamPage";
@@ -18,11 +19,19 @@ let setParams: SetStoreFunction<{ q?: string }>;
 const mocks = vi.hoisted(() => ({
   getEventFeed: vi.fn(),
   getEventFacets: vi.fn(),
+  // The recorded-value index: sources for source:, otherwise a few kinds for any field.
+  recordedValues: async (field: string, prefix = "") =>
+    (field === "source"
+      ? ["claude", "codex", "cursor"]
+      : ["Decision", "Handoff", "Observation"]
+    ).filter((value) => value.toLowerCase().startsWith(prefix.toLowerCase())),
   liveEvents: () => [] as unknown[],
   setLiveEvents: (_events: unknown[]) => undefined,
   liveStatus: (): LiveStatus => "live",
   setLiveStatus: (_status: LiveStatus) => undefined,
   resetListeners: new Set<() => void>(),
+  // Every search-params navigation, with whether it replaced the history entry.
+  navigations: [] as Array<{ q?: string; replace: boolean }>,
 }));
 
 const getEventFeed = mocks.getEventFeed;
@@ -44,7 +53,14 @@ vi.mock("@solidjs/router", async (importOriginal) => {
         {props.children}
       </a>
     ),
-    useSearchParams: () => [params, setParams],
+    // Like the router's setter, this takes navigation options; it records them and updates q.
+    useSearchParams: () => [
+      params,
+      (next: { q?: string }, options?: { replace?: boolean }) => {
+        mocks.navigations.push({ q: next.q, replace: options?.replace === true });
+        setParams(next);
+      },
+    ],
   };
 });
 
@@ -54,11 +70,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     ...actual,
     getEventFeed: mocks.getEventFeed,
     getEventFacets: mocks.getEventFacets,
-    searchValues: vi.fn(async (_field: string, prefix: string) =>
-      ["Decision", "Handoff", "Observation"].filter((value) =>
-        value.toLowerCase().startsWith(prefix.toLowerCase()),
-      ),
-    ),
+    searchValues: vi.fn(mocks.recordedValues),
     getSessions: vi.fn(async () => [
       {
         id: "session-1",
@@ -109,6 +121,7 @@ beforeEach(() => {
   mocks.liveStatus = liveStatus;
   mocks.setLiveStatus = setLiveStatus;
   mocks.resetListeners.clear();
+  mocks.navigations.length = 0;
   getEventFeed.mockReset();
   getEventFeed.mockResolvedValue(feed([eventItem("event-1", "Make stream default")]));
   mocks.getEventFacets.mockReset();
@@ -313,6 +326,54 @@ describe("StreamPage", () => {
       q: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
+  });
+
+  it("replaces the history entry when the pinned project normalizes the URL", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+
+    // A pushed entry would trap Back: the previous URL normalizes forward again.
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    expect(mocks.navigations).toEqual([{ q: "kind:Decision", replace: true }]);
+
+    // A submitted query is still a new history entry.
+    fireEvent.input(queryInput(), { target: { value: "kind:Handoff" } });
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
+    await waitFor(() => expect(params.q).toBe("kind:Handoff"));
+    expect(mocks.navigations.at(-1)).toEqual({ q: "kind:Handoff", replace: false });
+  });
+
+  it("keeps the hidden scope and a settled URL when the query ends in an unclosed quote", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: '"ask history' });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    expect(params.q).toBe('"ask history');
+    expect(getEventFeed).toHaveBeenLastCalledWith({
+      limit: 100,
+      q: 'project_group:/Users/nathan/Developer/proj/sba-agentic "ask history',
+      meaningful: true,
+    });
+    expect(screen.getByText(/unclosed quote/)).toBeInTheDocument();
+  });
+
+  it("keeps the hidden scope when the query ends in a bare NOT", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:x NOT" });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    // After the NOT, the scope would be negated, and the parsers read a negated
+    // project_group as text, so the scope goes first.
+    expect(params.q).toBe("kind:x NOT");
+    const scoped = "project_group:/Users/nathan/Developer/proj/sba-agentic kind:x NOT";
+    expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: scoped, meaningful: true });
+    await waitFor(() =>
+      expect(mocks.getEventFacets).toHaveBeenLastCalledWith(
+        { q: scoped, meaningful: true },
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(screen.getByText(/has nothing after it to negate/)).toBeInTheDocument();
   });
 
   it("narrows the URL query by picking a quick value from the popover", async () => {
@@ -1254,23 +1315,34 @@ describe("StreamPage", () => {
     expect(document.querySelectorAll(".stream-row-wrap--expanded")).toHaveLength(4);
   });
 
-  it("suggests static quick values for an empty kind: prefix and supports keyboard selection", async () => {
+  it("lists exactly the counted kinds for an empty kind: prefix and supports keyboard selection", async () => {
+    mocks.getEventFacets.mockResolvedValue(kindCounts(15));
+    vi.mocked(searchValues).mockClear();
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
+    await screen.findByRole("button", { name: "15 matches" }); // counts have arrived
 
     const input = screen.getByLabelText("Stream query");
     fireEvent.input(input, { target: { value: "kind:" } });
-    // PostToolUse is in the static QUICK_VALUES but not the live searchValues mock — its
-    // presence proves the empty-prefix path serves the static list (spec §4.6).
-    await screen.findByRole("option", { name: "PostToolUse" });
-    expect(screen.getByRole("option", { name: "Evidence" })).toBeInTheDocument();
+    // Recorded data only (no invented static kinds): the counted list is complete, so it is
+    // offered exactly, with each count hidden from the option's name.
+    const decision = await screen.findByRole("option", { name: "Decision" });
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByRole("option", { name: "Handoff" })).toBeInTheDocument();
+    expect(decision.querySelector(".suggest-option-count")).toHaveAttribute("aria-hidden", "true");
+    expect(decision.querySelector(".suggest-option-count")?.textContent).toBe("12");
+    expect(decision.querySelector(".suggest-option-detail")?.textContent).toBe(
+      "in current results",
+    );
+    expect(searchValues).not.toHaveBeenCalled();
     expect(input).toHaveAttribute("aria-expanded", "true");
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(input).toHaveAttribute("aria-activedescendant", "stream-suggest-option-0");
-    expect(screen.getByRole("option", { name: "Decision" })).toHaveAttribute(
-      "aria-selected",
-      "true",
+    expect(decision).toHaveAttribute("aria-selected", "true");
+    // The polite region announces the hidden count.
+    expect(document.getElementById("stream-suggest-status")?.textContent).toBe(
+      "Decision: 12 in current results",
     );
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -1281,17 +1353,24 @@ describe("StreamPage", () => {
     expect(input).toHaveValue("kind:Decision ");
   });
 
-  it("suggests recent sessions for the session: token", async () => {
+  it("suggests recent sessions by title and inserts the server id", async () => {
+    vi.mocked(getSessions).mockClear();
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });
 
     const input = screen.getByLabelText("Stream query");
+    fireEvent.input(input, { target: { value: "session:x" } });
+    fireEvent.input(input, { target: { value: "session:xy" } });
     fireEvent.input(input, { target: { value: "session:xyz" } });
-    const option = await screen.findByRole("option", { name: "client-xyz" });
-    expect(screen.queryByRole("option", { name: "client-abc" })).not.toBeInTheDocument();
+    const option = await screen.findByRole("option", { name: "Browse fix" });
+    expect(screen.queryByRole("option", { name: "Stream work" })).not.toBeInTheDocument();
+    // An unknown last-seen time is omitted, never shown as "now".
+    expect(option.querySelector(".suggest-option-detail")?.textContent).toBe("session-2");
+    // Fetched once per popover opening, then filtered locally.
+    expect(getSessions).toHaveBeenCalledTimes(1);
 
     fireEvent.click(option);
-    expect(input).toHaveValue("session:client-xyz ");
+    expect(input).toHaveValue("session:session-2 ");
   });
 
   it("closes the popover on Escape without accepting", async () => {
@@ -1525,8 +1604,11 @@ describe("StreamPage", () => {
 
     const input = screen.getByLabelText("Stream query");
     fireEvent.input(input, { target: { value: "tool:" } });
-    const option = await screen.findByRole("option", { name: "Bash 500" });
-    expect(option.querySelector(".suggest-option-count")?.textContent).toBe("500");
+    // The count is context, not part of the option's accessible name.
+    const option = await screen.findByRole("option", { name: "Bash" });
+    const count = option.querySelector(".suggest-option-count");
+    expect(count?.textContent).toBe("500");
+    expect(count).toHaveAttribute("aria-hidden", "true");
 
     fireEvent.click(option);
     expect(input).toHaveValue("tool:Bash ");
@@ -1553,7 +1635,8 @@ describe("StreamPage", () => {
       [/Decisions this week/, "kind:Decision last:7d"],
       [/Handoffs/, "kind:Handoff last:7d"],
       [/Codex right now/, "source:codex last:2h"],
-      [/Prompts today/, "kind:UserPromptSubmit last:24h"],
+      // Prompts are not meaningful-filter rows: the preset carries is:all to show any.
+      [/Prompts today/, "kind:UserPromptSubmit last:24h is:all"],
     ];
     for (const [name, q] of presets) {
       fireEvent.click(screen.getByRole("button", { name: "Views" }));
@@ -1571,13 +1654,13 @@ describe("StreamPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Views" }));
     fireEvent.click(screen.getByRole("button", { name: /Codex right now/ }));
 
-    // With a pinned project the slice-6 project-strip effect round-trips q through the parser,
-    // normalizing last:2h to its equivalent since-duration token (same semantics, D7).
-    await waitFor(() => expect(params.q).toBe("source:codex since:2h"));
+    // The pinned-project strip removes project tokens by span and never re-serializes, so the
+    // view's q stays exactly as written (no last:2h -> since:2h rewrite).
+    await waitFor(() => expect(params.q).toBe("source:codex last:2h"));
     await waitFor(() =>
       expect(getEventFeed).toHaveBeenLastCalledWith({
         limit: 100,
-        q: "source:codex since:2h project_group:/Users/nathan/Developer/proj/sba-agentic",
+        q: "source:codex last:2h project_group:/Users/nathan/Developer/proj/sba-agentic",
         meaningful: true,
       }),
     );
@@ -1698,9 +1781,520 @@ describe("StreamPage", () => {
   });
 });
 
+describe("StreamPage query composition", () => {
+  it("completes the token at the caret mid-string and keeps the rest byte-identical", async () => {
+    vi.mocked(searchValues).mockClear();
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = queryInput();
+    typeAtCaret(input, "kind:Dec| source:claude");
+    const option = await screen.findByRole("option", { name: "Decision" });
+    // The token under the caret drives the lookup, not the last token.
+    expect(searchValues).toHaveBeenLastCalledWith("event_type", "Dec", 20, expect.any(AbortSignal));
+
+    fireEvent.click(option);
+    expect(input).toHaveValue("kind:Decision source:claude");
+    expect(input.selectionStart).toBe(13);
+    // Accepting a value closes the popover until the next input.
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("completes a quoted project path with a space, closing the quote before the rest", async () => {
+    const harbor: ProjectSummary = {
+      ...selectedProject,
+      projectKey: "harbor",
+      canonicalKey: "/tmp/x/harbor notes",
+      label: "harbor notes",
+    };
+    render(() => <StreamPage projects={[selectedProject, harbor]} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = queryInput();
+    typeAtCaret(input, 'project:"/tmp/x/harb| kind:Decision');
+    await screen.findByRole("option", { name: "/tmp/x/harbor notes" });
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input).toHaveValue('project:"/tmp/x/harbor notes" kind:Decision');
+    expect(input.selectionStart).toBe(29);
+
+    // Mid-word inside an unclosed quote the value's end is unknown: nothing is offered, and Tab
+    // leaves the text alone rather than closing the quote inside the word.
+    typeAtCaret(input, 'project:"/tmp/x/harb|xyz kind:Decision');
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue('project:"/tmp/x/harbxyz kind:Decision');
+  });
+
+  it("completes negated tokens and keeps the negation as typed", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = queryInput();
+    fireEvent.input(input, { target: { value: "-kind:Obs" } });
+    fireEvent.click(await screen.findByRole("option", { name: "Observation" }));
+    expect(input).toHaveValue("-kind:Observation ");
+
+    fireEvent.input(input, { target: { value: "NOT kind:Obs" } });
+    fireEvent.click(await screen.findByRole("option", { name: "Observation" }));
+    expect(input).toHaveValue("NOT kind:Observation ");
+  });
+
+  it("completes a field name without a space and opens its values", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const input = queryInput();
+    fireEvent.input(input, { target: { value: "ki" } });
+    const field = await screen.findByRole("option", { name: "kind:" });
+    expect(field.querySelector(".suggest-option-detail")?.textContent).toContain("Event kind");
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(input).toHaveValue("kind:");
+    expect(input.selectionStart).toBe(5);
+    expect(await screen.findByRole("option", { name: "Decision" })).toBeInTheDocument();
+  });
+
+  it("accepts on Tab only with a typed prefix, never with a modifier, mid-IME or when empty", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    await screen.findByRole("option", { name: "Decision" });
+    expect(fireEvent.keyDown(input, { key: "Tab", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Tab", shiftKey: true })).toBe(true);
+    expect(input).toHaveValue("kind:Dec");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    await screen.findByRole("option", { name: "Decision" });
+    // fireEvent returns false when the handler prevented the default (focus stays put).
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveValue("kind:Decision ");
+
+    // An empty value prefix and no highlight: Tab closes the list and focus moves on.
+    fireEvent.input(input, { target: { value: "kind:" } });
+    await screen.findByRole("option", { name: "Decision" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue("kind:");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.input(input, { target: { value: "" } });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue("");
+  });
+
+  it("keeps a fully typed value on Tab instead of a longer, more frequent one", async () => {
+    mocks.getEventFacets.mockResolvedValue({
+      total: 13,
+      fields: {
+        source: [],
+        kind: [],
+        tool: [
+          { value: "TaskUpdate", count: 10 },
+          { value: "Task", count: 3 },
+        ],
+        project: [],
+      },
+      reason: null,
+    });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "13 matches" });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "tool:Task" } });
+    await screen.findByRole("option", { name: "TaskUpdate" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveValue("tool:Task ");
+  });
+
+  it("leaves a typed word that names a field to a highlighted Tab", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    // "session" may be a search word: Tab closes the list and focus moves on.
+    fireEvent.input(input, { target: { value: "fix session" } });
+    await screen.findByRole("option", { name: "session:" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue("fix session");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    // Highlighted, it completes.
+    fireEvent.input(input, { target: { value: "fix session" } });
+    await screen.findByRole("option", { name: "session:" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveValue("fix session:");
+  });
+
+  it("submits the raw text on Enter without a highlight and closes the popover", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    await screen.findByRole("option", { name: "Decision" });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(true);
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
+    await waitFor(() => expect(params.q).toBe("kind:Dec"));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("moves the caret to the end and closes suggestions when the applied query resets the draft", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(1204));
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "1,204 matches" });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    await screen.findByRole("option", { name: "Decision" });
+    // Back/forward (or a fix) applies another query while the list is open.
+    setParams({ q: "source:codex" });
+    expect(input).toHaveValue("source:codex");
+    // Once the new query's counts arrive there would be values to offer again.
+    await screen.findByRole("button", { name: "1,204 matches" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    // The list completes at the end of the new text, not at the old caret (source:c|odex).
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      screen
+        .getAllByRole("option")
+        .map((option) => option.querySelector(".suggest-option-value")?.textContent),
+    ).toEqual(["codex"]);
+  });
+
+  it("shows counts only while the draft's other filters match the applied query", async () => {
+    mocks.getEventFacets.mockResolvedValue(kindCounts(15));
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "15 matches" });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "kind:" } });
+    const counted = await screen.findByRole("option", { name: "Decision" });
+    expect(counted.querySelector(".suggest-option-count")?.textContent).toBe("12");
+
+    // Another field changed: the numbers would describe a different query, so they go.
+    fireEvent.input(input, { target: { value: "source:cursor kind:" } });
+    const uncounted = await screen.findByRole("option", { name: "Decision" });
+    expect(uncounted.querySelector(".suggest-option-count")).toBeNull();
+    expect(uncounted.querySelector(".suggest-option-detail")?.textContent).toBe(
+      "in current results",
+    );
+  });
+
+  it("debounces and aborts value-index lookups", async () => {
+    const pending: AbortSignal[] = [];
+    vi.mocked(searchValues).mockClear();
+    vi.mocked(searchValues).mockImplementation((_field, _prefix, _limit, signal) => {
+      if (signal) pending.push(signal);
+      return new Promise<string[]>(() => undefined);
+    });
+    try {
+      vi.useFakeTimers();
+      render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      const input = queryInput();
+      fireEvent.input(input, { target: { value: "kind:D" } });
+      await vi.advanceTimersByTimeAsync(100);
+      fireEvent.input(input, { target: { value: "kind:De" } });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(searchValues).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(searchValues).toHaveBeenCalledTimes(1);
+      expect(searchValues).toHaveBeenLastCalledWith(
+        "event_type",
+        "De",
+        20,
+        expect.any(AbortSignal),
+      );
+
+      fireEvent.input(input, { target: { value: "kind:Dec" } });
+      expect(pending[0].aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(searchValues).mockImplementation(mocks.recordedValues);
+    }
+  });
+
+  it("cancels value-index lookups when the page unmounts", async () => {
+    const pending: AbortSignal[] = [];
+    vi.mocked(searchValues).mockClear();
+    vi.mocked(searchValues).mockImplementation((_field, _prefix, _limit, signal) => {
+      if (signal) pending.push(signal);
+      return new Promise<string[]>(() => undefined);
+    });
+    try {
+      vi.useFakeTimers();
+      // A lookup in flight is aborted.
+      const inFlight = render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      fireEvent.input(queryInput(), { target: { value: "kind:D" } });
+      await vi.advanceTimersByTimeAsync(150);
+      expect(pending).toHaveLength(1);
+      inFlight.unmount();
+      expect(pending[0].aborted).toBe(true);
+
+      // A lookup still waiting out its debounce never starts.
+      const waiting = render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      fireEvent.input(queryInput(), { target: { value: "kind:D" } });
+      await vi.advanceTimersByTimeAsync(100);
+      waiting.unmount();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(searchValues).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(searchValues).mockImplementation(mocks.recordedValues);
+    }
+  });
+
+  it("keeps the keyboard highlight when more values arrive", async () => {
+    mocks.getEventFacets.mockResolvedValue(kindCounts(15));
+    vi.mocked(searchValues).mockClear();
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "15 matches" });
+    const input = queryInput();
+
+    // Counted values show at once; the value index answers after its debounce.
+    fireEvent.input(input, { target: { value: "kind:D" } });
+    const decision = await screen.findByRole("option", { name: "Decision" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(decision).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(searchValues).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole("option", { name: "Decision" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("kind:Decision ");
+  });
+
+  it("keeps an option's row when counts arrive, so a press that began on it still lands", async () => {
+    const counted = deferred<EventFacetCounts>();
+    mocks.getEventFacets.mockReturnValue(counted.promise);
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    // Before counts arrive, the value index offers Decision.
+    fireEvent.input(input, { target: { value: "kind:D" } });
+    const pressed = await screen.findByRole("option", { name: "Decision" });
+    expect(pressed.querySelector(".suggest-option-detail")?.textContent).toBe("recorded");
+    expect(fireEvent.pointerDown(pressed)).toBe(false);
+
+    // Counts land between the press and the click: the same row updates in place.
+    counted.resolve(kindCounts(15));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Decision" }).querySelector(".suggest-option-count")
+          ?.textContent,
+      ).toBe("12"),
+    );
+    expect(screen.getByRole("option", { name: "Decision" })).toBe(pressed);
+    expect(pressed.querySelector(".suggest-option-detail")?.textContent).toBe("in current results");
+    fireEvent.click(pressed);
+    expect(input).toHaveValue("kind:Decision ");
+  });
+
+  it("opens field names on ArrowDown before anything is typed", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "" } });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "source:" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("keeps the listbox mounted but hidden and sets input hints", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    const list = document.getElementById("stream-suggest-list");
+    expect(input).toHaveAttribute("aria-controls", "stream-suggest-list");
+    expect(list).toBeInTheDocument();
+    expect(list).toHaveAttribute("hidden");
+    expect(input).toHaveAttribute("autocapitalize", "off");
+    expect(input).toHaveAttribute("autocorrect", "off");
+    expect(input).toHaveAttribute("spellcheck", "false");
+    expect(input).toHaveAttribute("enterkeyhint", "search");
+  });
+
+  it("keeps focus in the query when an option is pressed", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    const option = await screen.findByRole("option", { name: "Decision" });
+    expect(fireEvent.pointerDown(option)).toBe(false);
+    expect(fireEvent.mouseDown(option)).toBe(false);
+  });
+
+  it("shows a note instead of project values while a project is pinned", async () => {
+    render(() => <StreamPage project={selectedProject} projects={[selectedProject]} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "project:" } });
+    const note = await screen.findByRole("option", { name: /pinned to sba-agentic/ });
+    expect(note).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.click(note);
+    expect(input).toHaveValue("project:");
+
+    // Submitting one anyway: the strip removes it and says so.
+    fireEvent.input(input, { target: { value: "project:cockpit kind:Decision" } });
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    expect(
+      await screen.findByText(/was removed: the pinned project sba-agentic sets the scope/),
+    ).toBeInTheDocument();
+  });
+
+  it("retires the stripped-project note once another query or pinned project applies", async () => {
+    const [project, setProject] = createSignal<ProjectSummary | null>(selectedProject);
+    render(() => <StreamPage project={project()} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+    const form = document.querySelector(".stream-filter-bar") as HTMLFormElement;
+    const note = /was removed: the pinned project/;
+    const submitQuery = async (typed: string, applied: string) => {
+      fireEvent.input(input, { target: { value: typed } });
+      fireEvent.submit(form);
+      await waitFor(() => expect(params.q).toBe(applied));
+    };
+
+    await submitQuery("project:cockpit kind:Decision", "kind:Decision");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    await submitQuery("kind:Decision source:codex", "kind:Decision source:codex");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    // The same applied query again, but nothing was removed from it this time.
+    await submitQuery("kind:Decision", "kind:Decision");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+
+    // Unpinning retires the note, so pinning again does not bring it back.
+    await submitQuery("project:cockpit kind:Decision source:codex", "kind:Decision source:codex");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    setProject(null);
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    setProject(selectedProject);
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+
+    // Another pinned project did not remove the token.
+    await submitQuery("project:cockpit kind:Decision", "kind:Decision");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    setProject({ ...selectedProject, projectKey: "other-key", canonicalKey: "/tmp/other" });
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+  });
+
+  it("explains how the applied query was read", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "knd:Decision recall last:7" });
+    render(() => <StreamPage />);
+
+    const notes = await screen.findByRole("list", { name: "How the query was read" });
+    expect(within(notes).getByText(/there is no knd: field/)).toBeInTheDocument();
+    expect(within(notes).getByRole("button", { name: "Use kind:Decision" })).toBeInTheDocument();
+    expect(within(notes).getByText(/A duration needs a unit/)).toBeInTheDocument();
+  });
+
+  it("offers a did-you-mean fix from the counted values and runs it", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    // What the server returns here: kind:Hand matches nothing (total 0), but each field's list
+    // drops only its own values, so the kind list still holds the kinds within last:7d.
+    mocks.getEventFacets.mockResolvedValue(kindCounts(0));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Hand last:7d" });
+    render(() => <StreamPage />);
+
+    // The did-you-mean waits for complete counts; it renders with the empty-state recovery.
+    const fix = await screen.findByRole("button", { name: "Use kind:Handoff" });
+    expect(screen.getByRole("list", { name: "Ways to widen the query" })).toContainElement(fix);
+    fireEvent.click(fix);
+    await waitFor(() => expect(params.q).toBe("kind:Handoff last:7d"));
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "kind:Handoff last:7d",
+        meaningful: true,
+      }),
+    );
+  });
+
+  it("offers no did-you-mean while counts are unavailable", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Hand" });
+    render(() => <StreamPage />);
+    await screen.findByText("No stream events match the current filters.");
+    await waitFor(() => expect(mocks.getEventFacets).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /Use kind:/ })).not.toBeInTheDocument();
+  });
+
+  it("offers is:all when nothing matched under the meaningful filter", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:UserPromptSubmit last:24h" });
+    render(() => <StreamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Include all events" }));
+    await waitFor(() => expect(params.q).toBe("kind:UserPromptSubmit last:24h is:all"));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Include all events" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("names the session chip from the loaded rows' session title", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "session:session-1" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const chip = screen.getByRole("button", { name: "session: Activity stream work x" });
+    expect(chip).toHaveAttribute("title", "session:session-1");
+  });
+});
+
 function resetStream() {
   mocks.setLiveEvents([]);
   for (const listener of mocks.resetListeners) listener();
+}
+
+// A complete (under the server's 25-row cap) kind list, for exact-list and did-you-mean cases.
+function kindCounts(total: number): EventFacetCounts {
+  return {
+    total,
+    fields: {
+      source: [],
+      kind: [
+        { value: "Decision", count: 12 },
+        { value: "Handoff", count: 3 },
+      ],
+      tool: [],
+      project: [],
+    },
+    reason: null,
+  };
+}
+
+function queryInput(): HTMLInputElement {
+  return screen.getByLabelText("Stream query") as HTMLInputElement;
+}
+
+// Types `marked` into the query with the caret at `|`, as a browser input event would report it.
+function typeAtCaret(input: HTMLInputElement, marked: string) {
+  input.value = marked.replace("|", "");
+  const caret = marked.indexOf("|");
+  input.setSelectionRange(caret, caret);
+  fireEvent.input(input);
 }
 
 function countsPayload(total: number): EventFacetCounts {
