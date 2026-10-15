@@ -277,3 +277,7 @@ cd .. && git diff --check
   Still open: the Search page's find mode appends the hidden `project_group` scope after the
   query, so an unclosed quote or a trailing `NOT` can swallow or negate it there, and
   `quoteHiddenFacet` on both pages escapes `"` as `\"`, which the grammar cannot read back.
+- Outcome, 2026-10-15: merged to `main` as PR #131. With the continuation slice (PR #132) on the same tree, the full
+  backend suite passed 1,294 tests (0 failures, 83 PostgreSQL-gated skips) and the packaged browser suite 99
+  journeys (1 opt-in skip). No running service was redeployed; the live UI changes only after a deliberate
+  deployment of `main`.

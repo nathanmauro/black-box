@@ -345,3 +345,7 @@ Both remain visible in Recall.
   `EvidenceService.linkedTo` still reads every stored Evidence row and filters it in memory on each
   continuation request, so it should become a project- and target-scoped query if Evidence volume
   makes that cost measurable.
+- Outcome, 2026-10-15: shipped as PR #132 after `main` (with PR #131) was merged in and the static UI rebuilt. On
+  that combined tree the full backend suite passed 1,294 tests (0 failures, 83 PostgreSQL-gated skips) and the
+  packaged browser suite 99 journeys (1 opt-in skip). Synthesis stays off by default. No running service was
+  redeployed.
