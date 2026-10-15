@@ -26,9 +26,15 @@ public final class ContinuationText {
     public static final String CLIPPED = "[clipped]";
     public static final String ID_PREFIX = "bbc1-";
 
-    /** Same alternatives as {@code NO_ACTION} in {@code blackbox_linear.py}, applied at the start of the text. */
+    /**
+     * The phrases of {@code NO_ACTION} in {@code blackbox_linear.py}, plus a "needed" or "required"
+     * after "no action" and a "to do", "further" or "left" after "nothing". Unlike that prefix match,
+     * the phrase must be the whole text, optionally followed by punctuation, so text that goes on to
+     * name work ("Done with the parser; next write the docs") is kept.
+     */
     private static final Pattern NO_ACTION = Pattern.compile(
-            "^(?:none|n/?a|no (?:further )?(?:action|open loops?)|nothing|done|completed)(?:$|[.\\s—–:-])",
+            "(?:none|n/?a|no (?:further )?(?:action|open loops?)(?: (?:needed|required))?"
+                    + "|nothing(?: (?:to do|further|left))?|done|completed)[\\p{P}\\s]*",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Pattern BACKTICK_RUN = Pattern.compile("`+");
@@ -66,10 +72,10 @@ public final class ContinuationText {
         return out.toString();
     }
 
-    /** True when collapsed text says there is nothing to do ("none", "n/a", "done", ...). */
+    /** True when the whole collapsed text says there is nothing to do ("none", "N/A", "done.", ...). */
     public static boolean noAction(String collapsed) {
 
-        return collapsed != null && NO_ACTION.matcher(collapsed).lookingAt();
+        return collapsed != null && NO_ACTION.matcher(collapsed).matches();
     }
 
     /** Collapsed and case-folded, matching {@code normalized()} in {@code blackbox_linear.py}. */

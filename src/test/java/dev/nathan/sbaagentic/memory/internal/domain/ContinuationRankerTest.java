@@ -157,14 +157,27 @@ class ContinuationRankerTest {
     }
 
     @Test
-    void noActionTextAndBlankLoopsAreDropped() {
-        var handoff = handoff("h1", "s1", hours(1), "None", "n/a", "Done.", "   ", "Re-run the flaky suite");
+    void noActionTextAndBlankLoopsAreDroppedButWorkAfterANoActionWordIsKept() {
+        var handoff = handoff(
+                "h1",
+                "s1",
+                hours(1),
+                "None",
+                "n/a",
+                "Done.",
+                "   ",
+                "Re-run the flaky suite",
+                "Done with the parser; next write the docs",
+                "None of the tests cover the importer; add coverage");
 
         var frontier = ContinuationRanker.rank(ROOT, List.of(handoff), List.of(), NOW);
 
         assertThat(frontier.candidates())
                 .extracting(ContinuationCandidate::text)
-                .containsExactly("Re-run the flaky suite");
+                .containsExactly(
+                        "Re-run the flaky suite",
+                        "Done with the parser; next write the docs",
+                        "None of the tests cover the importer; add coverage");
     }
 
     @Test

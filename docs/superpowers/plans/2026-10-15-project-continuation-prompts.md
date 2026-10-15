@@ -85,7 +85,10 @@ Both remain visible in Recall.
       decisions recorded within ±7 days of the head.
 4. **Clean up.**
    - Collapse whitespace.
-   - Drop no-action text, using the same pattern as `scripts/linear/blackbox_linear.py`.
+   - Drop text that is only a no-action phrase: the phrases of `scripts/linear/blackbox_linear.py`
+     (plus "needed"/"required" after "no action" and "to do"/"further"/"left" after "nothing"),
+     matched against the whole text and optionally followed by punctuation. The Python preview
+     still matches a prefix and is unchanged.
    - Merge duplicates: exact normalized text first, then word-token Jaccard ≥ 0.5, where each
      whitespace-delimited word is one token (edge punctuation removed) so a shared identifier or
      path counts once. New text is compared with each group's strongest source only, so

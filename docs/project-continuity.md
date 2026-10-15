@@ -165,7 +165,9 @@ Candidates come from the record in a fixed order:
   14 days marks the response `stale`. A capture dated in the future counts as now, with a caveat.
 - Ranking: at most two recorded next actions from frontier handoffs, then those handoffs' open
   loops, then open loops of current decisions recorded within seven days of the head; newest
-  first within each tier, then event ID. No-action text (none, n/a, done and similar) is dropped.
+  first within each tier, then event ID. Text that is only a no-action phrase (none, n/a, done,
+  no action needed and similar, optionally followed by punctuation) is dropped; text that goes on
+  to name work, such as "Done with the parser; next write the docs", is kept.
   Near-duplicates (exact normalized text, or word overlap of at least 0.5, where each
   whitespace-delimited word counts once so a shared identifier or file path cannot merge different
   actions) merge under their strongest source: the label, text and id describe that source. Text is

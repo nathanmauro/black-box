@@ -26,29 +26,51 @@ class ContinuationTextTest {
                 .isNotEqualTo("bbc1-104d185173789cbe307fcab8");
     }
 
+    /** The whole text is one of the preview's no-action phrases, optionally followed by punctuation. */
     @ParameterizedTest
     @ValueSource(
             strings = {
+                "none",
                 "None",
                 "N/A",
                 "n/a.",
                 "NA",
+                "done.",
+                "Done!",
+                "Completed",
+                "No action",
                 "No action needed",
+                "No further action required.",
                 "no further open loops",
+                "No open loop",
                 "nothing",
-                "Done.",
-                "done—see PR",
-                "Completed: x",
-                "None of the above is done",
-                "No open loop"
+                "Nothing to do.",
+                "  none  —  ",
+                "None)."
             })
-    void noActionMatchesThePythonPattern(String text) {
+    void aWholeNoActionPhraseIsNoAction(String text) {
         assertThat(ContinuationText.noAction(ContinuationText.collapse(text))).isTrue();
     }
 
+    /** Unlike the preview's prefix match, a no-action word that starts real work keeps it. */
     @ParameterizedTest
-    @ValueSource(strings = {"Donezo", "Nothingness", "no actions", "Reproduce the recovery path", "Ship it"})
-    void ordinaryTextIsNotNoAction(String text) {
+    @ValueSource(
+            strings = {
+                "Done with the parser; next write the docs",
+                "None of the tests cover X; add coverage",
+                "None of the above is done",
+                "done—see PR",
+                "Completed: x",
+                "N/A for prod; verify staging",
+                "No action on the API until the schema lands",
+                "Nothing blocks the release; tag it",
+                "Donezo",
+                "Nothingness",
+                "no actions",
+                "Reproduce the recovery path",
+                "Ship it"
+            })
+    void textThatContinuesPastANoActionWordIsKept(String text) {
         assertThat(ContinuationText.noAction(ContinuationText.collapse(text))).isFalse();
     }
 
