@@ -11,7 +11,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 /** The same continuation checks on a confirmed disposable PostgreSQL schema, never a live namespace. */
 @EnabledIfEnvironmentVariable(named = "SBA_POSTGRES_TEST_URL", matches = "jdbc:postgresql:.+")
 class ContinuationPostgresApiTest extends ContinuationApiTest {
-    private final String schema = "bb_continuation_" + UUID.randomUUID().toString().replace("-", "");
+    private final String schema =
+            "bb_continuation_" + UUID.randomUUID().toString().replace("-", "");
     private boolean created;
 
     private Connection connection() throws Exception {

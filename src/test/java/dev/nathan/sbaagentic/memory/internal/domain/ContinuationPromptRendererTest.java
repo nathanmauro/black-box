@@ -126,8 +126,9 @@ class ContinuationPromptRendererTest {
         assertThat(uncertain)
                 .contains("- Recorded 20 days ago and not verified as current.")
                 .contains("- This record is older than 14 days.")
-                .contains("- The project's newest capture was recorded 20 days ago; nothing newer was recorded in the last 14"
-                        + " days.")
+                .contains(
+                        "- The project's newest capture was recorded 20 days ago; nothing newer was recorded in the last 14"
+                                + " days.")
                 .contains("- The source handoff recorded no open loops.")
                 .contains("- Evidence ev1, recorded 2026-10-14T12:00:00Z, refutes source event h1")
                 .contains("```text\nIt already shipped\n```");
@@ -216,7 +217,8 @@ class ContinuationPromptRendererTest {
         var frontier = ContinuationRanker.rank(ROOT, handoffs, decisions, NOW);
         var candidate = frontier.candidates().getFirst();
         var others = frontier.candidates().stream()
-                .filter(other -> !other.id().equals(candidate.id()) && other.basis().openLoop())
+                .filter(other ->
+                        !other.id().equals(candidate.id()) && other.basis().openLoop())
                 .limit(5)
                 .toList();
 

@@ -18,7 +18,9 @@ public record ContinuationCapture(
         String nextAction) {
 
     public ContinuationCapture {
-        openLoops = openLoops == null ? List.of() : openLoops.stream().filter(loop -> loop != null).toList();
+        openLoops = openLoops == null
+                ? List.of()
+                : openLoops.stream().filter(loop -> loop != null).toList();
     }
 
     public enum Kind {

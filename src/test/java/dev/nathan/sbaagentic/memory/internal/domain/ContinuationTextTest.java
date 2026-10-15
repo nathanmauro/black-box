@@ -3,10 +3,10 @@ package dev.nathan.sbaagentic.memory.internal.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.api.Test;
 
 class ContinuationTextTest {
 
@@ -19,8 +19,7 @@ class ContinuationTextTest {
                 .isEqualTo("bbc1-104d185173789cbe307fcab8");
         assertThat(ContinuationText.candidateId("/repos/café", "Straße prüfen \"quoted\" \\ back 😀"))
                 .isEqualTo("bbc1-c53a44936b1f7656a12b5ff9");
-        assertThat(ContinuationText.candidateId("/r", "x y z\u001cw"))
-                .isEqualTo("bbc1-c8727679f6819a6af06ac952");
+        assertThat(ContinuationText.candidateId("/r", "x y z\u001cw")).isEqualTo("bbc1-c8727679f6819a6af06ac952");
         assertThat(ContinuationText.jsonPair("/repos/café", "a\"b\\c\n😀"))
                 .isEqualTo("[\"/repos/caf\\u00e9\", \"a\\\"b\\\\c\\n\\ud83d\\ude00\"]");
         assertThat(ContinuationText.candidateId("/tmp/other", "Reproduce the recovery path"))
@@ -92,7 +91,8 @@ class ContinuationTextTest {
     @Test
     void agesAreWholeDaysAndNeverNegative() {
         Instant now = Instant.parse("2026-10-15T12:00:00Z");
-        assertThat(ContinuationText.ageDays(Instant.parse("2026-10-13T11:00:00Z"), now)).isEqualTo(2);
+        assertThat(ContinuationText.ageDays(Instant.parse("2026-10-13T11:00:00Z"), now))
+                .isEqualTo(2);
         assertThat(ContinuationText.ageDays(now.plusSeconds(60), now)).isZero();
         assertThat(ContinuationText.ago(0)).isEqualTo("less than a day ago");
         assertThat(ContinuationText.ago(1)).isEqualTo("1 day ago");

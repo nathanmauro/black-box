@@ -110,7 +110,13 @@ class ContinuationApiTest {
         JsonNode aliasHandoff =
                 handoff(alias, "alias", Duration.ofHours(2), "Worktree slice verified", "Merge the worktree slice");
         handoff(other, "other", Duration.ofHours(1), "OTHER-PROJECT summary", "OTHER-PROJECT step", "OTHER loop");
-        decision(root, "root-decision", "Keep SQLite as the local default", "Local-first", null, "Document the backup command");
+        decision(
+                root,
+                "root-decision",
+                "Keep SQLite as the local default",
+                "Local-first",
+                null,
+                "Document the backup command");
 
         HttpResponse<String> response = get("project", root);
         assertThat(response.statusCode()).isEqualTo(200);
@@ -144,14 +150,19 @@ class ContinuationApiTest {
         assertThat(first.path("why").asText())
                 .isEqualTo("Recorded as the next action in the newest handoff of session "
                         + aliasHandoff.path("sessionId").asText() + " on "
-                        + first.path("evidence").path(0).path("observedAt").asText().substring(0, 10) + ".");
+                        + first.path("evidence")
+                                .path(0)
+                                .path("observedAt")
+                                .asText()
+                                .substring(0, 10) + ".");
         JsonNode evidence = first.path("evidence").path(0);
         assertThat(evidence.path("eventId").asText())
                 .isEqualTo(aliasHandoff.path("eventId").asText());
         assertThat(evidence.path("kind").asText()).isEqualTo("handoff");
         assertThat(evidence.path("field").asText()).isEqualTo("nextAction");
         assertThat(evidence.path("href").asText())
-                .isEqualTo("/?view=browse&session=" + aliasHandoff.path("sessionId").asText() + "&event="
+                .isEqualTo("/?view=browse&session="
+                        + aliasHandoff.path("sessionId").asText() + "&event="
                         + aliasHandoff.path("eventId").asText() + "&project=");
         String prompt = candidates.path(1).path("prompt").asText();
         assertThat(prompt)
@@ -248,7 +259,8 @@ class ContinuationApiTest {
 
         assertThat(body.path("candidates").isArray()).isTrue();
         assertThat(body.path("candidates")).isEmpty();
-        assertThat(texts(body.path("warnings"), "code")).containsExactly("historical_evidence", "insufficient_evidence");
+        assertThat(texts(body.path("warnings"), "code"))
+                .containsExactly("historical_evidence", "insufficient_evidence");
         assertThat(body.path("headAt").isNull()).isTrue();
         assertThat(body.path("newestEvidenceAt").isNull()).isTrue();
         assertThat(body.path("stale").asBoolean()).isFalse();
@@ -263,7 +275,8 @@ class ContinuationApiTest {
         JsonNode body = json(get("project", root));
 
         assertThat(body.path("candidates")).isEmpty();
-        assertThat(texts(body.path("warnings"), "code")).containsExactly("historical_evidence", "insufficient_evidence");
+        assertThat(texts(body.path("warnings"), "code"))
+                .containsExactly("historical_evidence", "insufficient_evidence");
     }
 
     @Test
@@ -283,7 +296,8 @@ class ContinuationApiTest {
         assertThat(candidate.path("ageDays").asInt()).isZero();
         assertThat(texts(candidate.path("caveats"), "code")).containsExactly("future_dated");
         assertThat(texts(ahead.path("warnings"), "code")).containsExactly("historical_evidence", "future_dated");
-        assertThat(Instant.parse(candidate.path("evidence").path(0).path("observedAt").asText()))
+        assertThat(Instant.parse(
+                        candidate.path("evidence").path(0).path("observedAt").asText()))
                 .isAfter(Instant.parse(ahead.path("generatedAt").asText()));
     }
 
@@ -334,7 +348,8 @@ class ContinuationApiTest {
     }
 
     /** Through {@code POST /api/events} in the structured-capture shape, so the time can be relative. */
-    private JsonNode handoff(String repo, String client, Duration age, String summary, String nextAction, String... loops)
+    private JsonNode handoff(
+            String repo, String client, Duration age, String summary, String nextAction, String... loops)
             throws Exception {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("kind", "handoff");

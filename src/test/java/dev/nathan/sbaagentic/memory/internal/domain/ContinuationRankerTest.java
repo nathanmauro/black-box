@@ -58,7 +58,9 @@ class ContinuationRankerTest {
         assertThat(frontier.candidates())
                 .extracting(candidate -> candidate.basis().wire())
                 .containsOnly("handoff.nextAction");
-        assertThat(frontier.candidates()).extracting(ContinuationCandidate::rank).containsExactly(1, 2);
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::rank)
+                .containsExactly(1, 2);
     }
 
     @Test
@@ -68,8 +70,12 @@ class ContinuationRankerTest {
 
         var frontier = ContinuationRanker.rank(ROOT, List.of(earlier, later), List.of(), NOW);
 
-        assertThat(frontier.frontierHandoffs()).extracting(ContinuationCapture::eventId).containsExactly("h-b");
-        assertThat(frontier.candidates()).extracting(ContinuationCandidate::text).containsExactly("Later step");
+        assertThat(frontier.frontierHandoffs())
+                .extracting(ContinuationCapture::eventId)
+                .containsExactly("h-b");
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::text)
+                .containsExactly("Later step");
     }
 
     @Test
@@ -89,8 +95,8 @@ class ContinuationRankerTest {
 
     @Test
     void staleWhenTheHeadIsOlderThanFourteenDays() {
-        var frontier =
-                ContinuationRanker.rank(ROOT, List.of(handoff("h1", "s1", days(20), "Resume the migration")), List.of(), NOW);
+        var frontier = ContinuationRanker.rank(
+                ROOT, List.of(handoff("h1", "s1", days(20), "Resume the migration")), List.of(), NOW);
 
         assertThat(frontier.stale()).isTrue();
         assertThat(frontier.candidates()).singleElement().satisfies(candidate -> {
@@ -141,8 +147,12 @@ class ContinuationRankerTest {
 
         var frontier = ContinuationRanker.rank(ROOT, List.of(head), List.of(oldDecision), NOW);
 
-        assertThat(frontier.candidates()).extracting(ContinuationCandidate::text).containsExactly("Ship the parser");
-        assertThat(frontier.decisions()).extracting(ContinuationCapture::eventId).containsExactly("d-old");
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::text)
+                .containsExactly("Ship the parser");
+        assertThat(frontier.decisions())
+                .extracting(ContinuationCapture::eventId)
+                .containsExactly("d-old");
     }
 
     @Test
@@ -151,7 +161,9 @@ class ContinuationRankerTest {
 
         var frontier = ContinuationRanker.rank(ROOT, List.of(handoff), List.of(), NOW);
 
-        assertThat(frontier.candidates()).extracting(ContinuationCandidate::text).containsExactly("Re-run the flaky suite");
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::text)
+                .containsExactly("Re-run the flaky suite");
     }
 
     @Test
@@ -183,7 +195,9 @@ class ContinuationRankerTest {
 
         assertThat(frontier.candidates()).singleElement().satisfies(candidate -> {
             assertThat(candidate.basis()).isEqualTo(ContinuationBasis.HANDOFF_NEXT_ACTION);
-            assertThat(candidate.sources()).extracting(ContinuationSource::field).containsExactly("nextAction", "openLoops");
+            assertThat(candidate.sources())
+                    .extracting(ContinuationSource::field)
+                    .containsExactly("nextAction", "openLoops");
         });
     }
 
@@ -205,7 +219,10 @@ class ContinuationRankerTest {
 
         var first = ContinuationRanker.rank(ROOT, captures, List.of(decision("d1", hours(2), "Pick a license")), NOW);
         var second = ContinuationRanker.rank(
-                ROOT, List.of(captures.get(1), captures.get(0)), List.of(decision("d1", hours(2), "Pick a license")), NOW);
+                ROOT,
+                List.of(captures.get(1), captures.get(0)),
+                List.of(decision("d1", hours(2), "Pick a license")),
+                NOW);
 
         assertThat(second).isEqualTo(first);
         // Equal timestamps break ties by event id, newest first, mirroring the trajectory sort.

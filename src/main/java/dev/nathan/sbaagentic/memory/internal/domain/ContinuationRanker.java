@@ -99,7 +99,8 @@ public final class ContinuationRanker {
                                 candidate.basis().tier())
                         .thenComparing(ContinuationCandidate::recordedAt, Comparator.reverseOrder())
                         .thenComparing(
-                                candidate -> candidate.sources().getFirst().capture().eventId(),
+                                candidate ->
+                                        candidate.sources().getFirst().capture().eventId(),
                                 Comparator.reverseOrder()))
                 .toList();
         List<ContinuationCandidate> ranked = new ArrayList<>(ordered.size());
@@ -148,7 +149,8 @@ public final class ContinuationRanker {
                     boolean future = capture.observedAt().isAfter(now);
                     timeline.add(new Timed(capture, future ? now : capture.observedAt(), future));
                 });
-        timeline.sort(Comparator.comparing(Timed::at).thenComparing(timed -> timed.capture().eventId()));
+        timeline.sort(Comparator.comparing(Timed::at)
+                .thenComparing(timed -> timed.capture().eventId()));
 
         return timeline;
     }

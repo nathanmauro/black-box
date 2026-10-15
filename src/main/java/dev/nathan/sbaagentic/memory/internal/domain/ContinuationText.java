@@ -204,7 +204,8 @@ public final class ContinuationText {
             return 0;
         }
 
-        return (int) Math.min(Integer.MAX_VALUE, Duration.between(recordedAt, now).toDays());
+        return (int)
+                Math.min(Integer.MAX_VALUE, Duration.between(recordedAt, now).toDays());
     }
 
     public static String ago(int days) {

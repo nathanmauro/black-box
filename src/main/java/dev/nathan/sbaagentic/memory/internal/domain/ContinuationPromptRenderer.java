@@ -1,8 +1,8 @@
 package dev.nathan.sbaagentic.memory.internal.domain;
 
 import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.CLIPPED;
-import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.ago;
 import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.ageDays;
+import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.ago;
 import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.clip;
 import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.day;
 import static dev.nathan.sbaagentic.memory.internal.domain.ContinuationText.literal;
@@ -57,8 +57,8 @@ public final class ContinuationPromptRenderer {
         String sentence =
                 switch (primary.basis()) {
                     case HANDOFF_NEXT_ACTION ->
-                        "Recorded as the next action in the newest handoff of session " + capture.sessionId()
-                                + " on " + recorded;
+                        "Recorded as the next action in the newest handoff of session " + capture.sessionId() + " on "
+                                + recorded;
                     case HANDOFF_OPEN_LOOP ->
                         "Recorded as an open loop in the newest handoff of session " + capture.sessionId() + " on "
                                 + recorded;
@@ -106,13 +106,10 @@ public final class ContinuationPromptRenderer {
         }
         String marker = "\n" + CLIPPED + " Recorded state shortened to fit the " + BUDGET_LABEL
                 + "-character budget; read event " + input.state().eventId() + " for the full handoff.";
-        int keep = parts.stateText.length()
-                - (parts.compose(0, 0, parts.state).length() - BUDGET)
-                - marker.length();
+        int keep = parts.stateText.length() - (parts.compose(0, 0, parts.state).length() - BUDGET) - marker.length();
         for (int attempts = 0; keep > 0 && attempts < 8; attempts++) {
             String shortened = clip(parts.stateText, keep);
-            String attempt =
-                    parts.compose(0, 0, parts.stateLabel + "\n" + literal(shortened.stripTrailing()) + marker);
+            String attempt = parts.compose(0, 0, parts.stateLabel + "\n" + literal(shortened.stripTrailing()) + marker);
             if (attempt.length() <= BUDGET) {
 
                 return attempt;
@@ -154,8 +151,8 @@ public final class ContinuationPromptRenderer {
 
         Parts(ContinuationPromptInput input) {
             ContinuationCandidate candidate = input.candidate();
-            header = "Black Box continuation prompt — built from records captured " + day(candidate.recordedAt())
-                    + " (" + ago(candidate.ageDays()) + "); recorded, not verified as current.\n" + BOUNDARY;
+            header = "Black Box continuation prompt — built from records captured " + day(candidate.recordedAt()) + " ("
+                    + ago(candidate.ageDays()) + "); recorded, not verified as current.\n" + BOUNDARY;
             String goalText = clip(candidate.text(), GOAL_MAX);
             goal = goalText.length() == candidate.text().length()
                     ? literal(candidate.text())
