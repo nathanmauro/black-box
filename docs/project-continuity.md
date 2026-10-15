@@ -203,9 +203,11 @@ An optional, separate restatement is off by default. With
 `SBA_CONTINUATION_SYNTHESIS_ENABLED=true` and a loopback local model, the response reports
 `synthesisAvailable: true` and each card offers **Restate with local model**. That sends
 `POST /api/continuations/synthesize` with `{project, withinHours, candidateId}`, which recomputes the
-candidates and makes one model call. The reply is shown as an unverified model restatement with its
-cited records; it never replaces the prompt, which is still what **Copy prompt** copies. A rejected
-or failed reply returns `synthesized: null` and a fixed reason. See
+candidates and makes one model call. A `candidateId` that is not among the recomputed candidates
+returns a typed 404 `request_failed` envelope, without a model call; build the prompts again. The
+reply is shown as an unverified model restatement with its cited records; it never replaces the
+prompt, which is still what **Copy prompt** copies. A rejected or failed reply returns
+`synthesized: null` and a fixed reason. See
 [Continuation restatement](operations.md#continuation-restatement-optional) for flags and validation.
 
 `ContinuationApiTest`, and `ContinuationPostgresApiTest` on a disposable PostgreSQL schema,

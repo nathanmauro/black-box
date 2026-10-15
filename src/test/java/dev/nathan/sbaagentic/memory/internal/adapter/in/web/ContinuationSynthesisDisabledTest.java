@@ -77,14 +77,16 @@ class ContinuationSynthesisDisabledTest {
         assertThat(restated.path("candidate").path("prompt").asText())
                 .isEqualTo(candidate.path("prompt").asText());
 
-        assertThat(ContinuationSynthesisFixture.synthesize(
-                                http,
-                                mapper,
-                                Map.of("project", project, "candidateId", "bbc1-000000000000000000000000"),
-                                status().isNotFound())
-                        .path("error")
-                        .path("message")
-                        .asText())
+        // The same typed envelope as other unknown-record 404s, such as an unknown idea key.
+        JsonNode missing = ContinuationSynthesisFixture.synthesize(
+                        http,
+                        mapper,
+                        Map.of("project", project, "candidateId", "bbc1-000000000000000000000000"),
+                        status().isNotFound())
+                .path("error");
+        assertThat(missing.path("status").asInt()).isEqualTo(404);
+        assertThat(missing.path("type").asText()).isEqualTo("request_failed");
+        assertThat(missing.path("message").asText())
                 .isEqualTo("Candidate not found in the current record; build prompts again.");
         assertThat(ContinuationSynthesisFixture.synthesize(
                                 http, mapper, Map.of("project", project, "candidateId", " "), status().isBadRequest())
