@@ -32,6 +32,7 @@ import { humanOnly, withHumanText } from "../lib/humanOnly";
 import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../lib/projects";
 import { listSavedViews, removeSavedView, saveSavedView } from "../lib/savedViews";
 import {
+  appendQueryToken,
   describeTimeSpec,
   FACET_FIELDS,
   parseQuery,
@@ -41,7 +42,6 @@ import {
   serializeQuery,
   setFacet,
   stripProjectIncludes,
-  tokenizeSpans,
   type FacetField,
   type FacetKey,
   type FacetMode,
@@ -1406,13 +1406,10 @@ function formatMatchCount(total: number): string {
   return `${total.toLocaleString("en-US")} ${total === 1 ? "match" : "matches"}`;
 }
 
+// The hidden scope goes first when the visible query ends in an unclosed quote or a bare NOT:
+// the quote would swallow it, and both parsers read a negated project_group as free text.
 function appendProjectGroupScope(query: string, canonicalKey: string): string {
-  const scope = `project_group:${quoteHiddenFacet(canonicalKey)}`;
-  const visible = query.trim();
-  // An unclosed quote swallows everything after it, so there the hidden scope goes first rather
-  // than vanishing into the quoted text.
-  if (tokenizeSpans(visible).at(-1)?.unclosedQuote) return `${scope} ${visible}`;
-  return [visible, scope].filter(Boolean).join(" ");
+  return appendQueryToken(query, `project_group:${quoteHiddenFacet(canonicalKey)}`);
 }
 
 // Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a

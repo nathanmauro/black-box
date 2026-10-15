@@ -344,6 +344,20 @@ export function stripProjectIncludes(query: string): string {
   return (result + query.slice(cursor)).trim();
 }
 
+/**
+ * Adds one self-contained, positive token (balanced quotes, not NOT) so it reads as itself:
+ * after the trimmed query, unless the query's end would take it over. An unclosed quote swallows
+ * what follows and a trailing NOT negates it, so in those cases the token goes first. Nothing
+ * else moves, so the query's own tokens read exactly as before.
+ */
+export function appendQueryToken(query: string, token: string): string {
+  const visible = query.trim();
+  if (!visible) return token;
+  const reading = readQuery(visible);
+  const absorbed = reading.trailingNot || reading.tokens.at(-1)?.span.unclosedQuote === true;
+  return absorbed ? `${token} ${visible}` : `${visible} ${token}`;
+}
+
 export function serializeQuery(state: QueryState): string {
   const parts: string[] = [];
   for (const key of FACET_ORDER) {

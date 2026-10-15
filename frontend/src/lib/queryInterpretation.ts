@@ -2,7 +2,7 @@
 // offers one-click fixes that rewrite a single token by span. Pure; StreamPage renders the notes.
 
 import type { EventFacetFields, FacetValueCount } from "./api";
-import { parseQuery, QUERY_FIELDS, readQuery, type TokenReading } from "./query";
+import { appendQueryToken, parseQuery, QUERY_FIELDS, readQuery, type TokenReading } from "./query";
 import {
   COUNTED_VALUE_LIMIT,
   isOfferableValue,
@@ -103,7 +103,7 @@ export function meaningfulRecovery(
   return {
     id: "recovery:is-all",
     text: "The meaningful filter hides some kinds of events, such as prompts.",
-    fix: { label: "Include all events", query: appendToken(query, "is:all") },
+    fix: { label: "Include all events", query: appendQueryToken(query, "is:all") },
     recovery: true,
   };
 }
@@ -320,15 +320,6 @@ export function editDistance(left: string, right: string): number {
     }
   }
   return table[left.length][right.length];
-}
-
-// An unclosed quote would swallow a token appended after it, so it goes first in that case.
-function appendToken(query: string, token: string): string {
-  const visible = query.trim();
-  if (!visible) return token;
-  const reading = readQuery(visible);
-  const last = reading.tokens[reading.tokens.length - 1];
-  return last?.span.unclosedQuote ? `${token} ${visible}` : `${visible} ${token}`;
 }
 
 function rawValue(tokenText: string): string {

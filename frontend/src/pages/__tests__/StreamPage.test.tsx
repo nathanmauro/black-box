@@ -332,6 +332,25 @@ describe("StreamPage", () => {
     expect(screen.getByText(/unclosed quote/)).toBeInTheDocument();
   });
 
+  it("keeps the hidden scope when the query ends in a bare NOT", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:x NOT" });
+    render(() => <StreamPage project={selectedProject} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    // After the NOT, the scope would be negated, and the parsers read a negated
+    // project_group as text, so the scope goes first.
+    expect(params.q).toBe("kind:x NOT");
+    const scoped = "project_group:/Users/nathan/Developer/proj/sba-agentic kind:x NOT";
+    expect(getEventFeed).toHaveBeenLastCalledWith({ limit: 100, q: scoped, meaningful: true });
+    await waitFor(() =>
+      expect(mocks.getEventFacets).toHaveBeenLastCalledWith(
+        { q: scoped, meaningful: true },
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(screen.getByText(/has nothing after it to negate/)).toBeInTheDocument();
+  });
+
   it("narrows the URL query by picking a quick value from the popover", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });

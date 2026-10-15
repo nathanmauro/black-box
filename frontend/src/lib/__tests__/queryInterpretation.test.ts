@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EventFacetFields, FacetValueCount } from "../api";
+import { parseQuery } from "../query";
 import {
   editDistance,
   interpretQuery,
@@ -219,6 +220,17 @@ describe("meaningfulRecovery", () => {
     expect(
       meaningfulRecovery('kind:x "ask', { zeroResults: true, humanOnly: false })?.fix?.query,
     ).toBe('is:all kind:x "ask');
+  });
+
+  it("puts is:all first when a trailing NOT would negate it", () => {
+    for (const [query, expected] of [
+      ["kind:x NOT", "is:all kind:x NOT"],
+      ["kind:x not", "is:all kind:x not"],
+    ]) {
+      const fixed = meaningfulRecovery(query, { zeroResults: true, humanOnly: false })?.fix?.query;
+      expect(fixed).toBe(expected);
+      expect(parseQuery(fixed ?? "").isAll).toBe(true);
+    }
   });
 
   it("stays away when rows exist, is:all is already there, or My turns replaces the filter", () => {

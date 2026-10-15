@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import cases from "../../../../src/main/resources/query/grammar-cases.json";
 import {
+  appendQueryToken,
   parseQuery,
   projectIncludeSpans,
   QUERY_FIELDS,
@@ -194,6 +195,47 @@ describe("stripProjectIncludes", () => {
       delete expected.facets.project;
       expect(parseQuery(stripProjectIncludes(input)), input).toEqual(expected);
       expect(projectIncludeSpans(stripProjectIncludes(input))).toEqual([]);
+    }
+  });
+});
+
+describe("appendQueryToken", () => {
+  it("appends after the query, trimmed, and stands alone on an empty one", () => {
+    expect(appendQueryToken("", "is:all")).toBe("is:all");
+    expect(appendQueryToken("   ", "is:all")).toBe("is:all");
+    expect(appendQueryToken("  kind:x  ", "is:all")).toBe("kind:x is:all");
+    expect(appendQueryToken('kind:x "a  b"', "is:all")).toBe('kind:x "a  b" is:all');
+    expect(appendQueryToken("kind:x -", "is:all")).toBe("kind:x - is:all");
+  });
+
+  it("goes first when an unclosed quote would swallow it or a trailing NOT would negate it", () => {
+    expect(appendQueryToken('kind:x "ask', "is:all")).toBe('is:all kind:x "ask');
+    expect(appendQueryToken("kind:x NOT", "is:all")).toBe("is:all kind:x NOT");
+    expect(appendQueryToken("kind:x not", "project_group:/p")).toBe("project_group:/p kind:x not");
+    expect(appendQueryToken("NOT NOT", "is:all")).toBe("is:all NOT NOT");
+  });
+
+  it("adds exactly its own reading and leaves the query's reading unchanged", () => {
+    const inputs = [
+      ...fixtureInputs,
+      ...stripCases,
+      "kind:x NOT",
+      "kind:x not",
+      "NOT",
+      "NOT NOT",
+      'kind:x NOT "ask',
+    ];
+    for (const input of inputs) {
+      const expected = parseQuery(input);
+      expect(parseQuery(appendQueryToken(input, "is:all")), input).toEqual({
+        ...expected,
+        isAll: true,
+      });
+      const scoped = parseQuery(appendQueryToken(input, "project_group:/p"));
+      expect([...scoped.projectGroups].sort(), input).toEqual(
+        [...expected.projectGroups, "/p"].sort(),
+      );
+      expect({ ...scoped, projectGroups: [] }, input).toEqual({ ...expected, projectGroups: [] });
     }
   });
 });
