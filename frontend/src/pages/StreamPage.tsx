@@ -318,7 +318,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
         projectKey: project.projectKey,
         tokens: projectIncludeSpans(raw).map((span) => span.text),
       });
-      setParams({ q: visible || undefined });
+      // Replace, never push: Back would land on the unnormalized URL and come straight forward.
+      setParams({ q: visible || undefined }, { replace: true });
       return;
     }
     const record = untrack(strippedProject);

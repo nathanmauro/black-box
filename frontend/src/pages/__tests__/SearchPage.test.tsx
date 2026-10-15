@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   askStatus: vi.fn(),
   openInEditor: vi.fn(),
   search: vi.fn(),
+  // Every search-params navigation, with whether it replaced the history entry.
+  navigations: [] as Array<{ q?: string; replace: boolean }>,
 }));
 
 const search = mocks.search;
@@ -39,7 +41,14 @@ vi.mock("@solidjs/router", async (importOriginal) => {
         {props.children}
       </a>
     ),
-    useSearchParams: () => [params, setParams],
+    // Like the router's setter, this takes navigation options; it records them and updates q.
+    useSearchParams: () => [
+      params,
+      (next: { q?: string }, options?: { replace?: boolean }) => {
+        mocks.navigations.push({ q: next.q, replace: options?.replace === true });
+        setParams(next);
+      },
+    ],
   };
 });
 
@@ -60,6 +69,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
 
 beforeEach(() => {
   [params, setParams] = createStore<{ q?: string }>({});
+  mocks.navigations.length = 0;
   mocks.askStatus.mockReset();
   mocks.askStatus.mockResolvedValue({
     chat: { enabled: false, available: false },
@@ -187,6 +197,21 @@ describe("SearchPage", () => {
       "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
       120,
     );
+  });
+
+  it("replaces the history entry when the pinned project normalizes the URL", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+    render(() => <SearchPage project={selectedProject} />);
+
+    // A pushed entry would trap Back: the previous URL normalizes forward again.
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    expect(mocks.navigations).toEqual([{ q: "kind:Decision", replace: true }]);
+
+    // A submitted search is still a new history entry.
+    fireEvent.input(screen.getByLabelText("Search query"), { target: { value: "kind:Handoff" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(params.q).toBe("kind:Handoff"));
+    expect(mocks.navigations.at(-1)).toEqual({ q: "kind:Handoff", replace: false });
   });
 
   it("settles the pinned-project URL without rewriting other text", async () => {

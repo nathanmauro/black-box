@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   liveStatus: (): LiveStatus => "live",
   setLiveStatus: (_status: LiveStatus) => undefined,
   resetListeners: new Set<() => void>(),
+  // Every search-params navigation, with whether it replaced the history entry.
+  navigations: [] as Array<{ q?: string; replace: boolean }>,
 }));
 
 const getEventFeed = mocks.getEventFeed;
@@ -51,7 +53,14 @@ vi.mock("@solidjs/router", async (importOriginal) => {
         {props.children}
       </a>
     ),
-    useSearchParams: () => [params, setParams],
+    // Like the router's setter, this takes navigation options; it records them and updates q.
+    useSearchParams: () => [
+      params,
+      (next: { q?: string }, options?: { replace?: boolean }) => {
+        mocks.navigations.push({ q: next.q, replace: options?.replace === true });
+        setParams(next);
+      },
+    ],
   };
 });
 
@@ -112,6 +121,7 @@ beforeEach(() => {
   mocks.liveStatus = liveStatus;
   mocks.setLiveStatus = setLiveStatus;
   mocks.resetListeners.clear();
+  mocks.navigations.length = 0;
   getEventFeed.mockReset();
   getEventFeed.mockResolvedValue(feed([eventItem("event-1", "Make stream default")]));
   mocks.getEventFacets.mockReset();
@@ -316,6 +326,21 @@ describe("StreamPage", () => {
       q: "kind:Decision project_group:/Users/nathan/Developer/proj/sba-agentic",
       meaningful: true,
     });
+  });
+
+  it("replaces the history entry when the pinned project normalizes the URL", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "project:cockpit kind:Decision" });
+    render(() => <StreamPage project={selectedProject} />);
+
+    // A pushed entry would trap Back: the previous URL normalizes forward again.
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    expect(mocks.navigations).toEqual([{ q: "kind:Decision", replace: true }]);
+
+    // A submitted query is still a new history entry.
+    fireEvent.input(queryInput(), { target: { value: "kind:Handoff" } });
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
+    await waitFor(() => expect(params.q).toBe("kind:Handoff"));
+    expect(mocks.navigations.at(-1)).toEqual({ q: "kind:Handoff", replace: false });
   });
 
   it("keeps the hidden scope and a settled URL when the query ends in an unclosed quote", async () => {

@@ -88,7 +88,8 @@ export default function SearchPage(props: SearchPageProps = {}) {
   createEffect(() => {
     const visible = visibleSubmitted();
     if (props.project && visible !== submitted()) {
-      setParams({ q: visible || undefined });
+      // Replace, never push: Back would land on the unnormalized URL and come straight forward.
+      setParams({ q: visible || undefined }, { replace: true });
     }
   });
   createEffect(() => {
