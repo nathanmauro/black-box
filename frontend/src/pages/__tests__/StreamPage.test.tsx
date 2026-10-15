@@ -1942,6 +1942,31 @@ describe("StreamPage query composition", () => {
     expect(input).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("moves the caret to the end and closes suggestions when the applied query resets the draft", async () => {
+    mocks.getEventFacets.mockResolvedValue(countsPayload(1204));
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "1,204 matches" });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "kind:Dec" } });
+    await screen.findByRole("option", { name: "Decision" });
+    // Back/forward (or a fix) applies another query while the list is open.
+    setParams({ q: "source:codex" });
+    expect(input).toHaveValue("source:codex");
+    // Once the new query's counts arrive there would be values to offer again.
+    await screen.findByRole("button", { name: "1,204 matches" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    // The list completes at the end of the new text, not at the old caret (source:c|odex).
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(
+      screen
+        .getAllByRole("option")
+        .map((option) => option.querySelector(".suggest-option-value")?.textContent),
+    ).toEqual(["codex"]);
+  });
+
   it("shows counts only while the draft's other filters match the applied query", async () => {
     mocks.getEventFacets.mockResolvedValue(kindCounts(15));
     render(() => <StreamPage />);

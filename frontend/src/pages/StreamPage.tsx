@@ -298,7 +298,18 @@ export default function StreamPage(props: StreamPageProps = {}) {
     return lastSegments;
   });
 
-  createEffect(() => setDraft(visibleSubmitted()));
+  // The applied query replaced the text (back/forward, a fix, a chip, a view, the pinned project):
+  // the caret moves to its end, where the input's own caret lands, and suggestions for the old
+  // text close. An unchanged draft keeps its caret.
+  createEffect(() => {
+    const next = visibleSubmitted();
+    if (untrack(draft) === next) return;
+    batch(() => {
+      setDraft(next);
+      setCaret(next.length);
+      dismissSuggestions();
+    });
+  });
 
   // The tokens the pinned-project strip removed, kept for a note while the query they were
   // stripped from stays applied under the same pinned project. Any later submission, or another
