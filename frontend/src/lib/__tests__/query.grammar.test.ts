@@ -35,7 +35,7 @@ function expectedState(expected: FixtureExpected): QueryState {
 
 describe("grammar fixture parity", () => {
   it("covers the full shared fixture", () => {
-    expect(fixtureCases.length).toBe(57);
+    expect(fixtureCases.length).toBe(61);
   });
 
   for (const testCase of fixtureCases) {
