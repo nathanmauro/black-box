@@ -2074,6 +2074,33 @@ describe("StreamPage query composition", () => {
     expect(input).toHaveValue("kind:Decision ");
   });
 
+  it("keeps an option's row when counts arrive, so a press that began on it still lands", async () => {
+    const counted = deferred<EventFacetCounts>();
+    mocks.getEventFacets.mockReturnValue(counted.promise);
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    // Before counts arrive, the value index offers Decision.
+    fireEvent.input(input, { target: { value: "kind:D" } });
+    const pressed = await screen.findByRole("option", { name: "Decision" });
+    expect(pressed.querySelector(".suggest-option-detail")?.textContent).toBe("recorded");
+    expect(fireEvent.pointerDown(pressed)).toBe(false);
+
+    // Counts land between the press and the click: the same row updates in place.
+    counted.resolve(kindCounts(15));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "Decision" }).querySelector(".suggest-option-count")
+          ?.textContent,
+      ).toBe("12"),
+    );
+    expect(screen.getByRole("option", { name: "Decision" })).toBe(pressed);
+    expect(pressed.querySelector(".suggest-option-detail")?.textContent).toBe("in current results");
+    fireEvent.click(pressed);
+    expect(input).toHaveValue("kind:Decision ");
+  });
+
   it("opens field names on ArrowDown before anything is typed", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });

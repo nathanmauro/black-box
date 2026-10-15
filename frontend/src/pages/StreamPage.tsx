@@ -531,6 +531,13 @@ export default function StreamPage(props: StreamPageProps = {}) {
       index: option.kind === "note" ? -1 : ++selectable,
     }));
   });
+  // Rows are keyed by option id and read their option by id, so a recompute (counts, the value
+  // index or sessions arriving) updates a row in place instead of replacing its element: a press
+  // that began on an option still lands on it.
+  const renderedIds = createMemo(() => renderedOptions().map((entry) => entry.option.id));
+  const renderedById = createMemo(
+    () => new Map(renderedOptions().map((entry) => [entry.option.id, entry])),
+  );
   // Keyboard highlight, held by option id so values that arrive later (counts, the value index,
   // sessions) never move it to a different option; -1 means "typing, nothing highlighted".
   const [activeSuggestionId, setActiveSuggestionId] = createSignal<string | null>(null);
@@ -908,53 +915,59 @@ export default function StreamPage(props: StreamPageProps = {}) {
               aria-label="Query suggestions"
               hidden={!showSuggestions()}
             >
-              <For each={renderedOptions()}>
-                {(entry) => (
-                  <Show
-                    when={entry.index >= 0}
-                    fallback={
-                      <li
-                        role="option"
-                        aria-disabled="true"
-                        aria-selected="false"
-                        class="suggest-option suggest-option--note"
+              <For each={renderedIds()}>
+                {(id) => (
+                  <Show when={renderedById().get(id)}>
+                    {(entry) => (
+                      <Show
+                        when={entry().index >= 0}
+                        fallback={
+                          <li
+                            role="option"
+                            aria-disabled="true"
+                            aria-selected="false"
+                            class="suggest-option suggest-option--note"
+                          >
+                            {entry().option.label}
+                          </li>
+                        }
                       >
-                        {entry.option.label}
-                      </li>
-                    }
-                  >
-                    <li
-                      role="option"
-                      id={`stream-suggest-option-${entry.index}`}
-                      aria-selected={entry.index === activeSuggestion()}
-                      aria-describedby={
-                        entry.option.detail ? `stream-suggest-detail-${entry.index}` : undefined
-                      }
-                      classList={{
-                        "suggest-option": true,
-                        "suggest-option--active": entry.index === activeSuggestion(),
-                      }}
-                      // Keep focus (and the caret) in the query while choosing with a pointer.
-                      onPointerDown={(event) => event.preventDefault()}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => acceptSuggestion(entry.option)}
-                    >
-                      <span class="suggest-option-value">{entry.option.label}</span>
-                      <Show when={entry.option.count !== undefined}>
-                        <span class="suggest-option-count" aria-hidden="true">
-                          {entry.option.count}
-                        </span>
-                      </Show>
-                      <Show when={entry.option.detail}>
-                        <span
-                          id={`stream-suggest-detail-${entry.index}`}
-                          class="suggest-option-detail"
-                          aria-hidden="true"
+                        <li
+                          role="option"
+                          id={`stream-suggest-option-${entry().index}`}
+                          aria-selected={entry().index === activeSuggestion()}
+                          aria-describedby={
+                            entry().option.detail
+                              ? `stream-suggest-detail-${entry().index}`
+                              : undefined
+                          }
+                          classList={{
+                            "suggest-option": true,
+                            "suggest-option--active": entry().index === activeSuggestion(),
+                          }}
+                          // Keep focus (and the caret) in the query while choosing with a pointer.
+                          onPointerDown={(event) => event.preventDefault()}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => acceptSuggestion(entry().option)}
                         >
-                          {entry.option.detail}
-                        </span>
+                          <span class="suggest-option-value">{entry().option.label}</span>
+                          <Show when={entry().option.count !== undefined}>
+                            <span class="suggest-option-count" aria-hidden="true">
+                              {entry().option.count}
+                            </span>
+                          </Show>
+                          <Show when={entry().option.detail}>
+                            <span
+                              id={`stream-suggest-detail-${entry().index}`}
+                              class="suggest-option-detail"
+                              aria-hidden="true"
+                            >
+                              {entry().option.detail}
+                            </span>
+                          </Show>
+                        </li>
                       </Show>
-                    </li>
+                    )}
                   </Show>
                 )}
               </For>
