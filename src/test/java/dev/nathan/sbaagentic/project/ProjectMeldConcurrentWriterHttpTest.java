@@ -89,6 +89,7 @@ class ProjectMeldConcurrentWriterHttpTest {
         int melds = count("session_melds");
 
         HttpResponse<String> response;
+        long sentAt;
         long answeredAt;
         long writerCommitStartedAt;
         try (Connection writer = DriverManager.getConnection("jdbc:sqlite:" + database());
@@ -111,12 +112,16 @@ class ProjectMeldConcurrentWriterHttpTest {
                 }
             });
 
+            sentAt = System.nanoTime();
             response = send("POST", "/api/melds", braid(sessions));
             answeredAt = System.nanoTime();
             writerCommitStartedAt = committed.get(10, TimeUnit.SECONDS);
         }
 
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
+        assertThat(sentAt)
+                .as("the save is sent while the other writer still holds the lock, or nothing contended")
+                .isLessThan(writerCommitStartedAt);
         assertThat(answeredAt)
                 .as("the save waits for the other writer's commit")
                 .isGreaterThan(writerCommitStartedAt);

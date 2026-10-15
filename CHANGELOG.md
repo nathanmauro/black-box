@@ -7,7 +7,8 @@ All notable changes to this project will be documented in this file.
 - SQLite read-write transactions begin `IMMEDIATE`. A save that reads before it writes, such as a
   saved braid or meld, now waits up to the 5-second `busy_timeout` for a concurrent capture or
   summary instead of failing at once with `SQLITE_BUSY`. Read-only transactions stay deferred, and
-  PostgreSQL is unchanged.
+  PostgreSQL is unchanged. Because a read-write transaction now holds the writer lock from its
+  begin, [docs/architecture.md](docs/architecture.md) lists what code inside one must not do.
 - Prompts from the record: `GET /api/continuations` builds up to three deterministic starting
   prompts from one project's recorded handoffs and current decisions (exact project and alias
   scope, replaced decisions excluded, trajectory frontier, stale and future-dated labels, explicit

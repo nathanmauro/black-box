@@ -233,6 +233,13 @@ that still fails the waiting request. Read-only transactions keep a deferred beg
 writers. Code that builds its own `DataSourceTransactionManager` bypasses this and must write before
 it reads, as the startup stream-position and sqlite-vec steps do.
 
+A read-write transaction holds the writer lock from its first statement until it commits, so code
+inside one must never write through another connection (a `REQUIRES_NEW` transaction, a raw
+`dataSource.getConnection()`, a second `DataSource`) and must never block on another thread that
+writes. That writer waits for the transaction's own lock, so the request stalls for the full
+`busy_timeout` and then fails. Mark a unit that only reads `@Transactional(readOnly = true)`: an
+unmarked one takes the writer lock at its begin and holds it for its whole duration.
+
 | Table | Owner | Purpose |
 | --- | --- | --- |
 | `agent_sessions` | recording | Canonical agent session identity, title, working directory, summary, and activity counters |

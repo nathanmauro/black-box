@@ -18,6 +18,13 @@ import org.springframework.transaction.TransactionDefinition;
  * since that read, without calling the busy handler. Read-only transactions keep the deferred
  * begin and never block writers.
  *
+ * <p>A read-write transaction therefore holds the writer lock from begin to commit. Code inside one
+ * must never write through another connection ({@code REQUIRES_NEW}, a raw
+ * {@code DataSource.getConnection()}, a second {@code DataSource}) and must never block on another
+ * thread that writes: that writer waits for this transaction's lock, so the request stalls for the
+ * full {@code busy_timeout} and then fails. Mark a unit that only reads {@code readOnly = true};
+ * an unmarked one holds the writer lock for its whole duration.
+ *
  * <p>The driver's {@code transaction_mode=IMMEDIATE} property is deliberately not used. Its
  * {@code commit()} re-begins IMMEDIATE at once, taking the writer lock again until the pool
  * restores auto-commit, and a begin that times out leaves the driver reporting an open
