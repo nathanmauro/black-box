@@ -323,3 +323,25 @@ Both remain visible in Recall.
     - Non-loopback URL: `remote_model_not_allowed` in 0.1 s, so no network attempt.
   - **Browser:** build, inspect and copy at desktop and phone width, including a `projectKey` deep link.
     The copied prompt has absolute source links, and no exception text leaked anywhere.
+- 2026-10-15 final-review follow-ups: the restatement validator rejects any case-insensitive
+  `E<digits>` token outside an event ID that is not a known handle, so `(E9)`, `[E9; E1]`,
+  `[E9 and E1]` and `[e9]` fail; the loopback rule checks `SummaryModelProperties.chatUri()`, the
+  chat path resolved against the base URL exactly as the local client now posts, so an absolute
+  `chat-path` (`http://…` or `//…`) naming another host is `remote_model_not_allowed` unless
+  non-loopback is allowed; `evidence[]`, Sources and the restatement's goal handles list the primary
+  source first, then the newest others within the cap of five; Recall hides the panel when the
+  project canonicalizes to `__no_project__` or `/`; new text merges only with a group's primary, so
+  near-duplicates cannot chain; a no-action phrase must be the whole text apart from punctuation, so
+  "Done with the parser; next write the docs" is kept while `blackbox_linear.py` keeps its prefix
+  rule; the First step says "the repository and any linked issue tracker"; the docs say at most one
+  model call; and the `ContinuationText` and `ContinuationCandidate` Javadocs match the code.
+  Verification: each fix began with a failing test (`ContinuationSynthesisValidatorTest`,
+  `LocalContinuationSynthesizerTest`, `LocalAiClientCompletionTest`, the new
+  `ContinuationServiceTest`, `ContinuationRankerTest`, `ContinuationTextTest`,
+  `ContinuationPromptRendererTest` and `RecallPage.test.tsx`); `mvn -o test` ran 1,290 tests with 0
+  failures and 83 skipped (PostgreSQL-gated); `npx vitest run` passed 836; `npm run check` reported
+  0 errors (68 existing warnings); `npm run build` regenerated the static bundle; `git diff --check`
+  is clean; the packaged browser suite is left to the integration run. Follow-up, not done here:
+  `EvidenceService.linkedTo` still reads every stored Evidence row and filters it in memory on each
+  continuation request, so it should become a project- and target-scoped query if Evidence volume
+  makes that cost measurable.
