@@ -134,7 +134,8 @@ result from a failed write.
 
 ## Prompts from the record
 
-With a project selected, **Recall** shows **Prompts from the record**. **Build prompts** requests
+With a project selected, **Recall** shows **Prompts from the record**; it is hidden for the
+no-project scope and `/`, which the API rejects. **Build prompts** requests
 `GET /api/continuations` and shows up to three starting prompts a fresh agent could use. They restate
 the project's recorded handoffs and decisions; they are proposals from the record, not a judgement
 of what is current. Nothing is launched, executed, captured or cached, and no generation model is

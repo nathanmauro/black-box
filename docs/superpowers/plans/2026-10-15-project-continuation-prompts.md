@@ -177,7 +177,8 @@ Both remain visible in Recall.
 ## UI
 
 **Placement and labels**
-- Recall, with a project selected, gets a **Prompts from the record** panel.
+- Recall, with a project selected, gets a **Prompts from the record** panel, except for a
+  project that canonicalizes to the no-project scope or `/`, which the API rejects.
 - **Build prompts** fetches the candidates.
 
 **Cards**

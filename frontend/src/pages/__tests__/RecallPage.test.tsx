@@ -1034,6 +1034,48 @@ describe("RecallPage", () => {
       expect(screen.queryByRole("region", { name: "Prompts from the record" })).toBeNull();
     });
 
+    // The server rejects these with 400, so the panel must not offer a build that cannot succeed.
+    it("is absent for the no-project scope and the root path, by path or catalog key", async () => {
+      const catalogEntry = (projectKey: string, canonicalKey: string) => ({
+        projectKey,
+        canonicalKey,
+        label: canonicalKey,
+        sessionCount: 1,
+        eventCount: 1,
+        savedMeldCount: 0,
+        lastSeenAt: "2026-10-01T18:00:00Z",
+      });
+      vi.mocked(getProjects).mockResolvedValue([
+        catalogEntry("alpha-key", "/repos/alpha"),
+        catalogEntry("no-project-key", "__no_project__"),
+        catalogEntry("root-key", "/"),
+      ]);
+      for (const project of [
+        "__no_project__",
+        " __no_project__/ ",
+        "/",
+        "///",
+        "no-project-key",
+        "root-key",
+      ]) {
+        [params, updateParams] = createStore<Params>({ project });
+        const view = render(() => <RecallPage />);
+        await waitFor(() =>
+          expect(screen.queryByRole("region", { name: "Prompts from the record" })).toBeNull(),
+        );
+        await waitFor(() => expect(getProjects).toHaveBeenCalled());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(screen.queryByRole("region", { name: "Prompts from the record" })).toBeNull();
+        view.unmount();
+        vi.mocked(getProjects).mockClear();
+      }
+      expect(getContinuations).not.toHaveBeenCalled();
+
+      [params, updateParams] = createStore<Params>({ project: "alpha-key" });
+      render(() => <RecallPage />);
+      expect(await enabledBuild()).toBeInTheDocument();
+    });
+
     it("offers a local-model restatement only when available and labels it as unverified", async () => {
       updateParams({ project: "/repos/alpha" });
       const view = render(() => <RecallPage />);
