@@ -1852,6 +1852,50 @@ describe("StreamPage query composition", () => {
     expect(input).toHaveValue("");
   });
 
+  it("keeps a fully typed value on Tab instead of a longer, more frequent one", async () => {
+    mocks.getEventFacets.mockResolvedValue({
+      total: 13,
+      fields: {
+        source: [],
+        kind: [],
+        tool: [
+          { value: "TaskUpdate", count: 10 },
+          { value: "Task", count: 3 },
+        ],
+        project: [],
+      },
+      reason: null,
+    });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: "13 matches" });
+    const input = queryInput();
+
+    fireEvent.input(input, { target: { value: "tool:Task" } });
+    await screen.findByRole("option", { name: "TaskUpdate" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveValue("tool:Task ");
+  });
+
+  it("leaves a typed word that names a field to a highlighted Tab", async () => {
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+
+    // "session" may be a search word: Tab closes the list and focus moves on.
+    fireEvent.input(input, { target: { value: "fix session" } });
+    await screen.findByRole("option", { name: "session:" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(input).toHaveValue("fix session");
+    expect(input).toHaveAttribute("aria-expanded", "false");
+
+    // Highlighted, it completes.
+    fireEvent.input(input, { target: { value: "fix session" } });
+    await screen.findByRole("option", { name: "session:" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveValue("fix session:");
+  });
+
   it("submits the raw text on Enter without a highlight and closes the popover", async () => {
     render(() => <StreamPage />);
     await screen.findByRole("button", { name: /Make stream default/ });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSession, EventFacetFields, ProjectSummary } from "../api";
-import { parseQuery, readQuery, type QueryState } from "../query";
+import { parseQuery, QUERY_FIELDS, readQuery, type QueryState } from "../query";
 import {
   applyCompletion,
   completionAt,
@@ -10,6 +10,8 @@ import {
   mergeCaseVariants,
   needsRecordedValues,
   quoteCompletionValue,
+  SUGGESTION_LIMIT,
+  tabAcceptsFirstOption,
   valueOptions,
   type CompletionContext,
   type FieldNameCompletion,
@@ -550,6 +552,95 @@ describe("valueOptions", () => {
         (option) => option.insert,
       ),
     ).toEqual(["session-1"]);
+  });
+});
+
+describe("a fully typed value or field name is listed first", () => {
+  const tools = counts({
+    tool: [
+      { value: "TaskUpdate", count: 10 },
+      { value: "Task", count: 3 },
+    ],
+  });
+  const inserts = (marked: string, overrides: Partial<ValueSources>) =>
+    valueOptions(valueAt(marked), sources(overrides)).map((option) => option.insert);
+
+  it("lists an exact counted value first, whatever its count", () => {
+    expect(inserts("tool:Task|", { counts: tools, showCounts: true })).toEqual([
+      "Task",
+      "TaskUpdate",
+    ]);
+    // Case-insensitive: the recorded spelling is what gets inserted.
+    expect(inserts("tool:task|", { counts: tools })).toEqual(["Task", "TaskUpdate"]);
+  });
+
+  it("compares the whole value under the caret, not only the text before it", () => {
+    expect(inserts("tool:Ta|sk kind:x", { counts: tools })).toEqual(["Task", "TaskUpdate"]);
+    expect(inserts("tool:Task|Update", { counts: tools })).toEqual(["TaskUpdate", "Task"]);
+  });
+
+  it("promotes an exact value before the list is cut to the limit", () => {
+    const longer = Array.from({ length: SUGGESTION_LIMIT + 1 }, (_, index) => ({
+      value: `Task${index}`,
+      count: 100 - index,
+    }));
+    const options = inserts("tool:Task|", {
+      counts: counts({ tool: [...longer, { value: "Task", count: 1 }] }),
+    });
+    expect(options).toHaveLength(SUGGESTION_LIMIT);
+    expect(options[0]).toBe("Task");
+  });
+
+  it("promotes exact recorded, project and session values too", () => {
+    expect(inserts("tool:Task|", { recorded: ["TaskUpdate", "Task"] })).toEqual([
+      "Task",
+      "TaskUpdate",
+    ]);
+    const catalog = [
+      project("/tmp/app-server", { lastSeenAt: "2026-10-15T00:00:00Z" }),
+      project("/tmp/app"),
+    ];
+    expect(inserts("project:/tmp/app|", { projects: catalog })).toEqual([
+      "/tmp/app",
+      "/tmp/app-server",
+    ]);
+    expect(inserts("project_exact:/tmp/app|", { projects: catalog })).toEqual([
+      "/tmp/app",
+      "/tmp/app-server",
+    ]);
+    // A typed server id or client session id puts its session first.
+    const sessions = [session("abc-2", { title: "abc-1 follow-up" }), session("abc-1")];
+    expect(inserts("session:abc-1|", { sessions })).toEqual(["abc-1", "abc-2"]);
+    const titled = [session("s-2", { title: "client-s-1 notes" }), session("s-1")];
+    expect(inserts("session:client-s-1|", { sessions: titled })).toEqual(["s-1", "s-2"]);
+  });
+
+  it("lists a fully typed field name first, judged by the whole name", () => {
+    for (const field of QUERY_FIELDS) {
+      expect(fieldOptions(fieldAt(`${field.name}|`))[0].insert, field.name).toBe(`${field.name}:`);
+    }
+    expect(fieldOptions(fieldAt("to|ol_name:Bash"))[0].insert).toBe("tool_name:");
+    expect(fieldOptions(fieldAt("CW|D_EXACT:/tmp"))[0].insert).toBe("cwd_exact:");
+  });
+});
+
+describe("tabAcceptsFirstOption", () => {
+  it("needs a typed prefix", () => {
+    expect(tabAcceptsFirstOption(valueAt("kind:|"))).toBe(false);
+    expect(tabAcceptsFirstOption(valueAt("kind:D|"))).toBe(true);
+    expect(tabAcceptsFirstOption(valueAt("tool:Task|"))).toBe(true);
+    expect(tabAcceptsFirstOption(fieldAt("ki|"))).toBe(true);
+    expect(tabAcceptsFirstOption(fieldAt("sess|"))).toBe(true);
+    expect(tabAcceptsFirstOption(fieldAt("a |recall"))).toBe(false);
+  });
+
+  it("leaves a whole word that already names a field to a highlight", () => {
+    // It may be a search word, so Tab moves on unless the field is highlighted.
+    expect(tabAcceptsFirstOption(fieldAt("fix session|"))).toBe(false);
+    expect(tabAcceptsFirstOption(fieldAt("this is| a bug"))).toBe(false);
+    expect(tabAcceptsFirstOption(fieldAt("Project|"))).toBe(false);
+    expect(tabAcceptsFirstOption(fieldAt("ki|nd recall"))).toBe(false);
+    expect(tabAcceptsFirstOption(fieldAt("kind|:Decision"))).toBe(false);
   });
 });
 

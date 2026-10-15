@@ -55,6 +55,7 @@ import {
   fieldOptions,
   needsRecordedValues,
   recordedValueField,
+  tabAcceptsFirstOption,
   valueOptions,
   type CompletionOption,
 } from "../lib/queryCompletion";
@@ -712,13 +713,16 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   // Tab accepts the highlighted option, or the first one once the edited token has a typed
   // prefix — a documented deviation from the APG combobox, which accepts on Tab only after a
-  // selection. Never with a modifier or on an empty draft; otherwise focus simply moves on.
+  // selection. A value typed in full is listed first, so Tab keeps it; a whole word that names a
+  // field is left as typed unless highlighted. Never with a modifier or on an empty draft;
+  // otherwise focus simply moves on.
   function handleTab(event: KeyboardEvent) {
     const modified = event.shiftKey || event.ctrlKey || event.altKey || event.metaKey;
     const context = completion();
     if (!modified && draft().trim() && showSuggestions() && context) {
       const options = selectableOptions();
-      const target = options[activeSuggestion()] ?? (context.prefix ? options[0] : undefined);
+      const target =
+        options[activeSuggestion()] ?? (tabAcceptsFirstOption(context) ? options[0] : undefined);
       if (target) {
         event.preventDefault();
         acceptSuggestion(target);

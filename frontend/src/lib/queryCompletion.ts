@@ -30,6 +30,8 @@ export type FieldNameCompletion = {
   kind: "field";
   /** The field-name text typed before the caret (may be empty). */
   prefix: string;
+  /** The whole name on both sides of the caret: a bare word, or the name before its colon. */
+  word: string;
   /** Replaced on accept: the typed name plus its colon when the token already has one. */
   range: [number, number];
   /** The parser would negate this token; operators cannot be negated, so only facets apply. */
@@ -46,6 +48,11 @@ export type ValueCompletion = {
   name: string;
   /** The unquoted value text from the start of the edited segment up to the caret. */
   prefix: string;
+  /**
+   * The edited segment's whole value as the parser reads it (unquoted, trimmed), on both sides
+   * of the caret; for an unclosed quote, the text up to the caret.
+   */
+  value: string;
   /**
    * Replaced on accept: [token start, segment end), or [token start, caret) when the segment's
    * quote never closed, so everything after the caret stays byte-identical.
@@ -101,6 +108,7 @@ export function completionAt(input: string, caret: number): CompletionContext | 
     return {
       kind: "field",
       prefix: "",
+      word: "",
       range: [position, position],
       negated: next ? next.negateBefore : reading.trailingNot,
       explicitOnly: true,
@@ -122,6 +130,7 @@ export function completionAt(input: string, caret: number): CompletionContext | 
   return {
     kind: "field",
     prefix: typed,
+    word: named ? named[1] : input.slice(nameStart, end),
     range: [nameStart, named ? nameStart + named[0].length : end],
     negated,
     explicitOnly: typed === "",
@@ -180,6 +189,7 @@ function valueCompletion(
     field: info.target,
     name: input.slice(nameStart, nameStart + name.length),
     prefix,
+    value: open ? prefix : unquote(segment.raw).trim(),
     range: [tokenStart, open ? position : segment.end],
     head: input.slice(tokenStart, segment.start),
     negated,
@@ -237,15 +247,41 @@ export function isOfferableValue(value: string): boolean {
 /** Field and operator names for a field-name position. Negated tokens only take facets. */
 export function fieldOptions(context: FieldNameCompletion): CompletionOption[] {
   const prefix = context.prefix.toLowerCase();
-  return QUERY_FIELDS.filter(
+  const options = QUERY_FIELDS.filter(
     (field) => field.name.startsWith(prefix) && (!context.negated || field.kind === "facet"),
-  ).map((field) => ({
+  ).map((field): CompletionOption => ({
     id: `field:${field.name}`,
     kind: "field",
     label: `${field.name}:`,
     insert: `${field.name}:`,
     detail: field.help,
   }));
+  return context.word ? promoteExact(options, `${context.word}:`) : options;
+}
+
+/**
+ * Whether Tab may accept the first option with nothing highlighted: only once the edited token
+ * has a typed prefix. A whole word that already names a field may be a search word (`fix
+ * session`), so Tab turns it into a field only when that option is highlighted.
+ */
+export function tabAcceptsFirstOption(context: CompletionContext): boolean {
+  if (!context.prefix) return false;
+  if (context.kind === "value") return true;
+  const word = context.word.toLowerCase();
+  return !QUERY_FIELDS.some((field) => field.name === word);
+}
+
+/**
+ * Tab accepts the first option, so a value typed in full goes first (its exact spelling, else a
+ * case-insensitive match) and is never swapped for a longer or more frequent one.
+ */
+function promoteExact(options: CompletionOption[], typed: string): CompletionOption[] {
+  if (!typed) return options;
+  const lower = typed.toLowerCase();
+  let index = options.findIndex((option) => option.insert === typed);
+  if (index < 0) index = options.findIndex((option) => option.insert.toLowerCase() === lower);
+  if (index <= 0) return options;
+  return [options[index], ...options.slice(0, index), ...options.slice(index + 1)];
 }
 
 export type ValueSources = {
@@ -262,8 +298,15 @@ export type ValueSources = {
   now?: number;
 };
 
-/** Values for a value position, grounded in recorded data and labelled with where they came from. */
+/**
+ * Values for a value position, grounded in recorded data and labelled with where they came from.
+ * A value typed in full is listed first, before the list is cut to the limit.
+ */
 export function valueOptions(context: ValueCompletion, sources: ValueSources): CompletionOption[] {
+  return promoteExact(valueCandidates(context, sources), context.value).slice(0, SUGGESTION_LIMIT);
+}
+
+function valueCandidates(context: ValueCompletion, sources: ValueSources): CompletionOption[] {
   switch (context.field) {
     case "session":
       return sessionOptions(context, sources);
@@ -411,7 +454,7 @@ function facetOptions(
       });
     }
   }
-  return options.slice(0, SUGGESTION_LIMIT);
+  return options;
 }
 
 function projectOptions(
@@ -451,7 +494,7 @@ function projectOptions(
   for (const project of catalog) {
     for (const scope of projectScopes(project)) add(scope.canonicalKey, PROVENANCE_RECORDED);
   }
-  return options.slice(0, SUGGESTION_LIMIT);
+  return options;
 }
 
 function pinnedProjectNote(sources: ValueSources): CompletionOption {
@@ -466,19 +509,20 @@ function pinnedProjectNote(sources: ValueSources): CompletionOption {
 
 function sessionOptions(context: ValueCompletion, sources: ValueSources): CompletionOption[] {
   const needle = context.prefix.toLowerCase();
+  const typed = context.value.toLowerCase();
   const pinned = sources.pinnedProject;
   const now = sources.now ?? Date.now();
-  const options: CompletionOption[] = [];
+  const exact: CompletionOption[] = [];
+  const others: CompletionOption[] = [];
   const seen = new Set<string>();
   for (const session of sources.sessions ?? []) {
-    if (options.length >= SUGGESTION_LIMIT) break;
     if (seen.has(session.id) || !isOfferableValue(session.id)) continue;
     if (pinned && !projectMatchesSession(pinned, session)) continue;
     const haystacks = [session.id, session.clientSessionId ?? "", session.title ?? ""];
     if (needle && !haystacks.some((value) => value.toLowerCase().includes(needle))) continue;
     seen.add(session.id);
     const age = knownAge(session.lastSeenAt, now);
-    options.push({
+    const option: CompletionOption = {
       id: `session:${session.id}`,
       kind: "value",
       label: session.title?.trim() || session.clientSessionId || session.id,
@@ -487,9 +531,12 @@ function sessionOptions(context: ValueCompletion, sources: ValueSources): Comple
       detail: [age ? `last seen ${age} ago` : null, shortId(session.id)]
         .filter(Boolean)
         .join(" · "),
-    });
+    };
+    // A typed server id or client session id names its session, so that one goes first.
+    const ids = [session.id, session.clientSessionId ?? ""];
+    (typed && ids.some((id) => id.toLowerCase() === typed) ? exact : others).push(option);
   }
-  return options;
+  return [...exact, ...others];
 }
 
 function timeOptions(field: "since" | "until" | "last", prefix: string): CompletionOption[] {
