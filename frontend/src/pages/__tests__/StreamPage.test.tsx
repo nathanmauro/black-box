@@ -2003,6 +2003,42 @@ describe("StreamPage query composition", () => {
     ).toBeInTheDocument();
   });
 
+  it("retires the stripped-project note once another query or pinned project applies", async () => {
+    const [project, setProject] = createSignal<ProjectSummary | null>(selectedProject);
+    render(() => <StreamPage project={project()} />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+    const input = queryInput();
+    const form = document.querySelector(".stream-filter-bar") as HTMLFormElement;
+    const note = /was removed: the pinned project/;
+    const submitQuery = async (typed: string, applied: string) => {
+      fireEvent.input(input, { target: { value: typed } });
+      fireEvent.submit(form);
+      await waitFor(() => expect(params.q).toBe(applied));
+    };
+
+    await submitQuery("project:cockpit kind:Decision", "kind:Decision");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    await submitQuery("kind:Decision source:codex", "kind:Decision source:codex");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    // The same applied query again, but nothing was removed from it this time.
+    await submitQuery("kind:Decision", "kind:Decision");
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+
+    // Unpinning retires the note, so pinning again does not bring it back.
+    await submitQuery("project:cockpit kind:Decision source:codex", "kind:Decision source:codex");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    setProject(null);
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+    setProject(selectedProject);
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+
+    // Another pinned project did not remove the token.
+    await submitQuery("project:cockpit kind:Decision", "kind:Decision");
+    expect(screen.getByText(note)).toBeInTheDocument();
+    setProject({ ...selectedProject, projectKey: "other-key", canonicalKey: "/tmp/other" });
+    expect(screen.queryByText(note)).not.toBeInTheDocument();
+  });
+
   it("explains the applied query and offers a did-you-mean fix that runs it", async () => {
     getEventFeed.mockResolvedValue(feed([]));
     mocks.getEventFacets.mockResolvedValue(kindCounts(0));

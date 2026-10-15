@@ -10,6 +10,7 @@ import {
   on,
   Show,
   Switch,
+  untrack,
 } from "solid-js";
 import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
@@ -299,25 +300,35 @@ export default function StreamPage(props: StreamPageProps = {}) {
   createEffect(() => setDraft(visibleSubmitted()));
 
   // The tokens the pinned-project strip removed, kept for a note while the query they were
-  // stripped from stays applied.
+  // stripped from stays applied under the same pinned project. Any later submission, or another
+  // pinned project, retires the record, so the note never returns for a query that lost nothing.
   const [strippedProject, setStrippedProject] = createSignal<{
     query: string;
+    projectKey: string;
     tokens: string[];
   } | null>(null);
   createEffect(() => {
     const raw = submitted();
     const visible = visibleSubmitted();
-    if (props.project && visible !== raw) {
+    const project = props.project;
+    if (project && visible !== raw) {
       setStrippedProject({
         query: visible,
+        projectKey: project.projectKey,
         tokens: projectIncludeSpans(raw).map((span) => span.text),
       });
       setParams({ q: visible || undefined });
+      return;
+    }
+    const record = untrack(strippedProject);
+    if (record && (raw !== record.query || project?.projectKey !== record.projectKey)) {
+      setStrippedProject(null);
     }
   });
   const strippedProjectTokens = createMemo(() => {
     const record = strippedProject();
-    return props.project && record && record.query === visibleSubmitted() ? record.tokens : [];
+    if (!record || record.query !== visibleSubmitted()) return [];
+    return record.projectKey === props.project?.projectKey ? record.tokens : [];
   });
 
   createEffect(() => {
