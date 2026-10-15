@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- The SQLite snapshot in `scripts/storage/blackbox_backup.py` works while the service is running.
+  It copied 256 pages per step, and every commit by another connection restarted the copy from the
+  first page, so against the live service it never finished and failed with
+  `sqlite_backup_timeout` after five minutes. It now copies the whole database in one step under
+  one read snapshot. In WAL mode the service keeps committing meanwhile, and its `-wal` file grows
+  until the copy ends. The five-minute limit now applies only while waiting for a busy or locked
+  source; see [docs/database-recovery.md](docs/database-recovery.md).
 - Saved meld and braid reads no longer lock up the connection pool. Each read resolved its project
   and loaded its source sessions with a query per row while the row query still held its pooled
   connection, so four concurrent braid lists could take all four SQLite connections and wait on
