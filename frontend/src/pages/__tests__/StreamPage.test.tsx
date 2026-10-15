@@ -329,6 +329,7 @@ describe("StreamPage", () => {
       q: 'project_group:/Users/nathan/Developer/proj/sba-agentic "ask history',
       meaningful: true,
     });
+    expect(screen.getByText(/unclosed quote/)).toBeInTheDocument();
   });
 
   it("narrows the URL query by picking a quick value from the popover", async () => {
@@ -1590,7 +1591,8 @@ describe("StreamPage", () => {
       [/Decisions this week/, "kind:Decision last:7d"],
       [/Handoffs/, "kind:Handoff last:7d"],
       [/Codex right now/, "source:codex last:2h"],
-      [/Prompts today/, "kind:UserPromptSubmit last:24h"],
+      // Prompts are not meaningful-filter rows: the preset carries is:all to show any.
+      [/Prompts today/, "kind:UserPromptSubmit last:24h is:all"],
     ];
     for (const [name, q] of presets) {
       fireEvent.click(screen.getByRole("button", { name: "Views" }));
@@ -1972,6 +1974,69 @@ describe("StreamPage query composition", () => {
     expect(input).not.toHaveAttribute("aria-activedescendant");
     fireEvent.click(note);
     expect(input).toHaveValue("project:");
+
+    // Submitting one anyway: the strip removes it and says so.
+    fireEvent.input(input, { target: { value: "project:cockpit kind:Decision" } });
+    fireEvent.submit(document.querySelector(".stream-filter-bar") as HTMLFormElement);
+    await waitFor(() => expect(params.q).toBe("kind:Decision"));
+    expect(
+      await screen.findByText(/was removed: the pinned project sba-agentic sets the scope/),
+    ).toBeInTheDocument();
+  });
+
+  it("explains the applied query and offers a did-you-mean fix that runs it", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    mocks.getEventFacets.mockResolvedValue(kindCounts(0));
+    [params, setParams] = createStore<{ q?: string }>({
+      q: "knd:Decision kind:Hand recall last:7",
+    });
+    render(() => <StreamPage />);
+
+    const notes = await screen.findByRole("list", { name: "How the query was read" });
+    expect(within(notes).getByText(/there is no knd: field/)).toBeInTheDocument();
+    expect(within(notes).getByText(/A duration needs a unit/)).toBeInTheDocument();
+    // The did-you-mean waits for complete counts; it renders with the empty-state recovery.
+    const fix = await screen.findByRole("button", { name: "Use kind:Handoff" });
+    expect(screen.getByRole("list", { name: "Ways to widen the query" })).toContainElement(fix);
+    fireEvent.click(fix);
+    await waitFor(() => expect(params.q).toBe("knd:Decision kind:Handoff recall last:7"));
+    await waitFor(() =>
+      expect(getEventFeed).toHaveBeenLastCalledWith({
+        limit: 100,
+        q: "knd:Decision kind:Handoff recall last:7",
+        meaningful: true,
+      }),
+    );
+  });
+
+  it("offers no did-you-mean while counts are unavailable", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:Hand" });
+    render(() => <StreamPage />);
+    await screen.findByText("No stream events match the current filters.");
+    await waitFor(() => expect(mocks.getEventFacets).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /Use kind:/ })).not.toBeInTheDocument();
+  });
+
+  it("offers is:all when nothing matched under the meaningful filter", async () => {
+    getEventFeed.mockResolvedValue(feed([]));
+    [params, setParams] = createStore<{ q?: string }>({ q: "kind:UserPromptSubmit last:24h" });
+    render(() => <StreamPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Include all events" }));
+    await waitFor(() => expect(params.q).toBe("kind:UserPromptSubmit last:24h is:all"));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Include all events" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("names the session chip from the loaded rows' session title", async () => {
+    [params, setParams] = createStore<{ q?: string }>({ q: "session:session-1" });
+    render(() => <StreamPage />);
+    await screen.findByRole("button", { name: /Make stream default/ });
+
+    const chip = screen.getByRole("button", { name: "session: Activity stream work x" });
+    expect(chip).toHaveAttribute("title", "session:session-1");
   });
 });
 

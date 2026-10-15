@@ -2708,6 +2708,44 @@ a {
   white-space: normal;
   cursor: default;
 }
+/* How the applied query was read, under the chip rail and in the empty state (plan 2026-10-15
+   §Slice 2). Quiet text; a fix rewrites one token and runs the query. */
+.stream-query-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.stream-query-note {
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.stream-query-note code {
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+}
+.stream-query-fix {
+  margin-left: 8px;
+  padding: 1px 9px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.stream-query-fix:hover {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+/* In the empty state the fixes sit under the empty-state line, on its inset. */
+.stream-feed .stream-query-notes {
+  margin: 0 2px 14px;
+}
 .facet-rail {
   display: flex;
   flex-wrap: wrap;

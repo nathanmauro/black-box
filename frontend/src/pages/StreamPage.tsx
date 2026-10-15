@@ -35,6 +35,7 @@ import {
   describeTimeSpec,
   FACET_FIELDS,
   parseQuery,
+  projectIncludeSpans,
   removeFacetValue,
   resolvesToPastInstant,
   serializeQuery,
@@ -56,6 +57,7 @@ import {
   valueOptions,
   type CompletionOption,
 } from "../lib/queryCompletion";
+import { interpretQuery, meaningfulRecovery, type QueryNote } from "../lib/queryInterpretation";
 import { useLiveStore } from "../lib/sse";
 import { loadStreamDensity, saveStreamDensity, type StreamDensity } from "../lib/streamDensity";
 import { reconcileSegments, segmentStream, type FoldRow, type Segment } from "../lib/streamGroups";
@@ -69,6 +71,7 @@ const VALUES_DEBOUNCE_MS = 150;
 const RECORDED_VALUE_LIMIT = 20;
 // Recent sessions for session: completion, fetched once per popover opening.
 const SESSION_SUGGESTION_LIMIT = 100;
+const SESSION_CHIP_TITLE_LIMIT = 40;
 
 // Built-in view presets (spec §8, D13): each is just a q string in the locked grammar, doubling
 // as documentation of it. An "Errors today" preset is NOT shippable — zero error-shaped
@@ -78,7 +81,8 @@ const VIEW_PRESETS: Array<{ name: string; q: string }> = [
   { name: "Decisions this week", q: "kind:Decision last:7d" },
   { name: "Handoffs", q: "kind:Handoff last:7d" },
   { name: "Codex right now", q: "source:codex last:2h" },
-  { name: "Prompts today", q: "kind:UserPromptSubmit last:24h" },
+  // Prompts are not meaningful-filter rows, so this view needs is:all to show anything.
+  { name: "Prompts today", q: "kind:UserPromptSubmit last:24h is:all" },
 ];
 
 // The expanded landmark cards that earn a "Trajectory →" link (spec §9, D14).
@@ -294,11 +298,26 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   createEffect(() => setDraft(visibleSubmitted()));
 
+  // The tokens the pinned-project strip removed, kept for a note while the query they were
+  // stripped from stays applied.
+  const [strippedProject, setStrippedProject] = createSignal<{
+    query: string;
+    tokens: string[];
+  } | null>(null);
   createEffect(() => {
+    const raw = submitted();
     const visible = visibleSubmitted();
-    if (props.project && visible !== submitted()) {
+    if (props.project && visible !== raw) {
+      setStrippedProject({
+        query: visible,
+        tokens: projectIncludeSpans(raw).map((span) => span.text),
+      });
       setParams({ q: visible || undefined });
     }
+  });
+  const strippedProjectTokens = createMemo(() => {
+    const record = strippedProject();
+    return props.project && record && record.query === visibleSubmitted() ? record.tokens : [];
   });
 
   createEffect(() => {
@@ -505,6 +524,29 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (active?.count !== undefined) return `${active.label}: ${active.count} in current results`;
     if (!options.length) return "";
     return `${options.length} ${options.length === 1 ? "suggestion" : "suggestions"}`;
+  });
+
+  // ---- Interpretation (plan 2026-10-15 §Slice 2): what the applied query did, and how to widen
+  // it when nothing matched. Notes describe the applied query, never the unsubmitted draft.
+  const zeroResults = createMemo(
+    () => !loading() && !error() && !props.projectScopePending && items().length === 0,
+  );
+  const interpretation = createMemo(() =>
+    interpretQuery(visibleSubmitted(), {
+      zeroResults: zeroResults(),
+      counts: countedFields(),
+      strippedProjectTokens: strippedProjectTokens(),
+      pinnedProjectName: props.project ? projectShortName(props.project) : null,
+    }),
+  );
+  const queryNotes = createMemo(() => interpretation().filter((note) => !note.recovery));
+  const recoveryNotes = createMemo(() => {
+    const notes = interpretation().filter((note) => note.recovery);
+    const widen = meaningfulRecovery(visibleSubmitted(), {
+      zeroResults: zeroResults(),
+      humanOnly: humanOnly(),
+    });
+    return widen ? [...notes, widen] : notes;
   });
 
   function refreshCanonicalSnapshot() {
@@ -1091,7 +1133,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   title={`session:${sessionRef()}`}
                   onClick={() => patchQuery((state) => (state.session = null))}
                 >
-                  session: {shortSessionRef(sessionRef())} x
+                  session: {sessionChipLabel(sessionRef(), items())} x
                 </button>
               )}
             </Show>
@@ -1134,6 +1176,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
               </button>
             </Show>
           </div>
+        </Show>
+        {/* How the applied query was read (plan 2026-10-15 §Slice 2): tokens searched as text,
+            grammar limits and stripped project filters, each fix rewriting one token by span. */}
+        <Show when={queryNotes().length}>
+          <QueryNoteList notes={queryNotes()} label="How the query was read" onFix={run} />
         </Show>
       </form>
 
@@ -1314,6 +1361,9 @@ export default function StreamPage(props: StreamPageProps = {}) {
                     ? "No events recorded yet."
                     : "No meaningful events recorded yet."}
             </p>
+            <Show when={recoveryNotes().length}>
+              <QueryNoteList notes={recoveryNotes()} label="Ways to widen the query" onFix={run} />
+            </Show>
           </Show>
         </Show>
       </div>
@@ -1391,6 +1441,58 @@ function sessionStreamLink(visibleQuery: string, sessionId: string, projectKey: 
 
 function shortSessionRef(value: string): string {
   return value.length > 14 ? `${value.slice(0, 12)}…` : value;
+}
+
+// A session chip names the session when a loaded row carries its title; otherwise a short ref.
+function sessionChipLabel(sessionRef: string, rows: EventFeedItem[]): string {
+  const title = rows
+    .find(
+      (row) =>
+        (row.sessionId === sessionRef || row.clientSessionId === sessionRef) &&
+        row.sessionTitle?.trim(),
+    )
+    ?.sessionTitle?.trim();
+  if (!title) return shortSessionRef(sessionRef);
+  return title.length > SESSION_CHIP_TITLE_LIMIT
+    ? `${title.slice(0, SESSION_CHIP_TITLE_LIMIT - 1)}…`
+    : title;
+}
+
+// Interpretation notes and zero-result fixes; a fix rewrites one token and runs the query.
+function QueryNoteList(props: {
+  notes: QueryNote[];
+  label: string;
+  onFix: (query: string) => void;
+}) {
+  return (
+    <ul class="stream-query-notes" aria-label={props.label}>
+      <For each={props.notes}>
+        {(note) => (
+          <li class="stream-query-note">
+            <Show when={note.token}>
+              {(token) => (
+                <>
+                  <code>{token()}</code>{" "}
+                </>
+              )}
+            </Show>
+            <span>{note.text}</span>
+            <Show when={note.fix}>
+              {(fix) => (
+                <button
+                  type="button"
+                  class="stream-query-fix"
+                  onClick={() => props.onFix(fix().query)}
+                >
+                  {fix().label}
+                </button>
+              )}
+            </Show>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
 }
 
 // Per-event position link ("Open at this event →", spec §4.3/§9): view=browse&session=&event=.
