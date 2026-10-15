@@ -55,7 +55,10 @@ or live services.
    - For risky changes, write down the safety contract before changing code.
 
 3. Plan
-   - For substantial work, write or update a plan under `docs/superpowers/plans/`.
+   - For substantial work, publish the spec and its tickets to Linear (see
+     [Issue tracker](#issue-tracker) below). An agent whose harness still uses a plan-file workflow may
+     write the plan under `docs/superpowers/plans/` instead; the plans and specs already there
+     stay as history.
    - Keep tasks independently verifiable.
    - Record observed results when they differ from expectations.
 
@@ -147,6 +150,23 @@ Eclipse or regex rewrites over Java source. Scope routine formatting with `spotl
 absolute-path regex), preserve unrelated dirty work, and reserve a whole-project apply for an
 explicit formatting pass. See [Java formatting](docs/java-formatting.md) for exact commands and
 disposable verification. Normal Maven builds intentionally have no formatting gate.
+
+## Agent skills
+
+The workflow skills (`/grill-with-docs`, `/to-spec`, `/to-tickets`, `tdd`, `diagnosing-bugs`,
+`domain-modeling` and the rest) come from the Cockpit-owned pack in
+`~/Developer/proj/cockpit/agents/shared/skills/`, which carries its own Linear and Black Box
+rules. This repo adds only what is specific to it.
+
+### Issue tracker
+
+Linear, project `Black Box` in team `Nathanmauro` (`NAT-<n>`); the pack resolves it from the repo
+name. Specs are `Spec: <name>` issues with sub-issue tickets. Roles are statuses, not labels.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. See
+`docs/agents/domain.md`.
 
 ## Docs routing
 
