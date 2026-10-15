@@ -97,10 +97,10 @@ cmp "$test_dir/before.txt" "$test_dir/after.txt"
 if BLACKBOX_URL='http://user:fixture-secret@localhost:8766/' "$repo_dir/scripts/install-menubar.sh" > "$test_dir/invalid.txt" 2>&1; then
   echo 'Installer accepted a credential URL' >&2; exit 1
 fi
-if rg -q 'fixture-secret' "$test_dir/invalid.txt"; then
+if grep -q 'fixture-secret' "$test_dir/invalid.txt"; then
   echo 'Installer exposed rejected credentials' >&2; exit 1
 fi
-rg -q '^Dry run: no files or services changed\.' "$test_dir/dry-run.txt"
+grep -q '^Dry run: no files or services changed\.' "$test_dir/dry-run.txt"
 echo 'Build, URL fixtures, shell syntax, and installer dry run passed'
 
 "$repo_dir/scripts/test-jev-trace.sh"

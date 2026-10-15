@@ -76,7 +76,7 @@ come from recorded captures under the selected project, time and kind filters. K
 Enter select evidence; its source link opens the owning session at the exact event. Suggestions
 require no additional generation model. Selecting another suggestion refreshes the retained card's
 alternatives and open loops, including showing or hiding each section as the recorded lists change.
-Legacy `scope` links and the menu-bar launcher's `run=1` flag remain supported.
+Legacy `scope` links and the [menu-bar launcher](macos-quick-recall.md)'s `run=1` flag remain supported.
 
 After following a recall result into Browse, Back shows the last completed recall again without a
 new request when the project, question, window, kinds and history setting match exactly. The page
