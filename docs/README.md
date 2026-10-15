@@ -45,6 +45,7 @@ automatically synchronize a local SQLite database with a cloud database.
 | [Architecture](architecture.md) and [package conventions](architecture/package-conventions.md) | Module ownership and enforced dependency boundaries. |
 | [Frontend standards](frontend-standards.md) | TypeScript, lint, formatting, and UI test conventions. |
 | [Java formatting](java-formatting.md) | The opt-in formatter and scoped verification. |
+| [Java test stories](java-tests.md) | A reading order for the capability tests and which suite owns each guarantee. |
 | [Recall observability](recall-observability.md) | What recall telemetry measures, and what it cannot establish. |
 | [Showcase](showcase.md) | Reproduce the synthetic demo and README images. |
 | [Building Black Box with Black Box](building-black-box.md) | A dated example of using captured context during development. |
