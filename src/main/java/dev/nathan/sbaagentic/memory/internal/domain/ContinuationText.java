@@ -32,7 +32,8 @@ public final class ContinuationText {
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE | Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Pattern BACKTICK_RUN = Pattern.compile("`+");
-    private static final Pattern TOKEN_SEPARATOR = Pattern.compile("[^a-z0-9]+");
+    private static final Pattern WORD_SEPARATOR = Pattern.compile("\\s+");
+    private static final Pattern EDGE_PUNCTUATION = Pattern.compile("^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$");
     private static final DateTimeFormatter DAY = DateTimeFormatter.ISO_LOCAL_DATE.withZone(ZoneOffset.UTC);
 
     private ContinuationText() {}
@@ -97,7 +98,11 @@ public final class ContinuationText {
         return "[" + jsonString(first) + ", " + jsonString(second) + "]";
     }
 
-    /** Token Jaccard similarity with the trajectory tokenizer ({@code [^a-z0-9]+} over lower case). */
+    /**
+     * Token Jaccard similarity over lower-case words. Each whitespace-delimited word is one token with
+     * its edge punctuation removed, so a shared identifier, ticket number or file path counts once
+     * instead of splitting into many shared fragments that would merge different actions.
+     */
     public static double jaccard(String left, String right) {
         Set<String> leftTokens = tokens(left);
         Set<String> rightTokens = tokens(right);
@@ -123,9 +128,10 @@ public final class ContinuationText {
 
             return tokens;
         }
-        for (String part : TOKEN_SEPARATOR.split(value.toLowerCase(Locale.ROOT))) {
-            if (!part.isEmpty()) {
-                tokens.add(part);
+        for (String word : WORD_SEPARATOR.split(value.toLowerCase(Locale.ROOT))) {
+            String token = EDGE_PUNCTUATION.matcher(word).replaceAll("");
+            if (!token.isEmpty()) {
+                tokens.add(token);
             }
         }
 

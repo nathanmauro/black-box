@@ -63,9 +63,14 @@ class ContinuationTextTest {
         "Verify recovery before shared access, verify RECOVERY before shared access!, 1.0",
         "Reproduce the recovery path, Reproduce the recovery path before shared access, 0.5714285714285714",
         "Ship the parser, Write the docs, 0.2",
-        "Ship parser, Write docs, 0.0"
+        "Ship parser, Write docs, 0.0",
+        "Close NAT-231, Close NAT-232, 0.3333333333333333",
+        "Merge the worktree slice 93cb26eb-b67d-48e7-bb68-16733cdad90d, "
+                + "Reproduce the recovery path 93cb26eb-b67d-48e7-bb68-16733cdad90d, 0.25",
+        "Add tests for src/main/java/dev/app/RecallService.java, "
+                + "Refactor src/main/java/dev/app/RecallService.java, 0.2"
     })
-    void jaccardUsesTheTrajectoryTokenizer(String left, String right, double expected) {
+    void jaccardCountsEachWordOnceSoSharedIdentifiersDoNotMergeActions(String left, String right, double expected) {
         assertThat(ContinuationText.jaccard(left, right)).isEqualTo(expected);
     }
 

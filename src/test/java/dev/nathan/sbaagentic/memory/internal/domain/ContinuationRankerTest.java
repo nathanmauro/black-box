@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.memory.internal.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import dev.nathan.sbaagentic.memory.internal.domain.ContinuationCapture.Kind;
 import java.time.Duration;
@@ -167,7 +168,7 @@ class ContinuationRankerTest {
     }
 
     @Test
-    void duplicatesMergeKeepingTheNewestTextAndTheUnionOfEvidence() {
+    void duplicatesMergeUnderTheStrongestSourceWithTheUnionOfEvidence() {
         var first = handoff("h1", "s1", hours(3), null, "Verify recovery before shared access");
         var second = handoff("h2", "s2", hours(2), null, "verify   RECOVERY before shared access");
         var decision = decision("d1", hours(1), "Verify the recovery path before shared access");
@@ -175,7 +176,9 @@ class ContinuationRankerTest {
         var frontier = ContinuationRanker.rank(ROOT, List.of(first, second), List.of(decision), NOW);
 
         assertThat(frontier.candidates()).singleElement().satisfies(candidate -> {
-            assertThat(candidate.text()).isEqualTo("Verify the recovery path before shared access");
+            // The label, text and id all describe the strongest source; the newer decision loop stays
+            // in the evidence instead of renaming a handoff loop.
+            assertThat(candidate.text()).isEqualTo("verify RECOVERY before shared access");
             assertThat(candidate.basis()).isEqualTo(ContinuationBasis.HANDOFF_OPEN_LOOP);
             assertThat(candidate.primary().capture().eventId()).isEqualTo("h2");
             assertThat(candidate.sources())
@@ -183,8 +186,27 @@ class ContinuationRankerTest {
                     .containsExactly("d1", "h2", "h1");
             assertThat(candidate.recordedAt()).isEqualTo(NOW.minus(hours(1)));
             assertThat(candidate.id())
-                    .isEqualTo(ContinuationText.candidateId(ROOT, "Verify the recovery path before shared access"));
+                    .isEqualTo(ContinuationText.candidateId(ROOT, "verify RECOVERY before shared access"));
         });
+    }
+
+    @Test
+    void distinctActionsThatShareAnIdentifierStaySeparate() {
+        var marker = "93cb26eb-b67d-48e7-bb68-16733cdad90d";
+        var root = handoff(
+                "h1", "s1", hours(2), "Reproduce the recovery path " + marker, "Verify recovery before shared access");
+        var alias = handoff("h2", "s2", hours(1), "Merge the worktree slice " + marker);
+        var decision = decision("d1", hours(0), "Measure the restore drill " + marker);
+
+        var frontier = ContinuationRanker.rank(ROOT, List.of(root, alias), List.of(decision), NOW);
+
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::basis, ContinuationCandidate::text)
+                .containsExactly(
+                        tuple(ContinuationBasis.HANDOFF_NEXT_ACTION, "Merge the worktree slice " + marker),
+                        tuple(ContinuationBasis.HANDOFF_NEXT_ACTION, "Reproduce the recovery path " + marker),
+                        tuple(ContinuationBasis.HANDOFF_OPEN_LOOP, "Verify recovery before shared access"),
+                        tuple(ContinuationBasis.DECISION_OPEN_LOOP, "Measure the restore drill " + marker));
     }
 
     @Test

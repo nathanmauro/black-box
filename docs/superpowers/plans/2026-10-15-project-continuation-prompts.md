@@ -86,8 +86,10 @@ Both remain visible in Recall.
 4. **Clean up.**
    - Collapse whitespace.
    - Drop no-action text, using the same pattern as `scripts/linear/blackbox_linear.py`.
-   - Merge duplicates: exact normalized text first, then token Jaccard ≥ 0.5 with the trajectory
-     tokenizer. Merged candidates keep the newest one's text and the union of evidence.
+   - Merge duplicates: exact normalized text first, then word-token Jaccard ≥ 0.5, where each
+     whitespace-delimited word is one token (edge punctuation removed) so a shared identifier or
+     path counts once. A merged candidate takes its label, text and id from its strongest source
+     (tier, then newest) and keeps the union of evidence.
 5. **Explicit evidence relations only.**
    - Recorded Evidence that supports or refutes a candidate's source event becomes a caveat with
      its link.
@@ -280,3 +282,12 @@ Both remain visible in Recall.
     with synthesis on and a loopback fake model: `synthesisAvailable: true`, zero model requests on
     GET, exactly one on POST, `synthesis: ok` with a validated `[E1]` citation and the
     deterministic prompt unchanged.
+- 2026-10-15 integration (orchestrator): the packaged browser spec failed (2 cards instead of 3).
+  Its seeded actions shared a UUID suffix, which the trajectory `[^a-z0-9]+` tokenizer split into
+  five shared fragments, so three different actions merged at Jaccard 0.5; the merged card then
+  showed a decision's open loop under the "Recorded next step" label because its text came from the
+  newest source while its label came from the strongest. Fixed: similarity counts each
+  whitespace-delimited word once, and a merged candidate takes label, text and id from its strongest
+  source. New tests: shared UUID, ticket id and file path cases in `ContinuationTextTest`, and
+  `distinctActionsThatShareAnIdentifierStaySeparate` in `ContinuationRankerTest`. This deliberately
+  differs from the Projects trajectory display, which still uses the original tokenizer.

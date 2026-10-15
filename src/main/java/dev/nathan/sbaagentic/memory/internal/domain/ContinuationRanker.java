@@ -276,10 +276,10 @@ public final class ContinuationRanker {
             Instant recordedAt = newest.effectiveAt();
 
             return new ContinuationCandidate(
-                    ContinuationText.candidateId(root, newest.text()),
+                    ContinuationText.candidateId(root, primary.text()),
                     0,
                     primary.basis(),
-                    newest.text(),
+                    primary.text(),
                     recordedAt,
                     ContinuationText.ageDays(recordedAt, now),
                     Duration.between(recordedAt, now).compareTo(STALE_AFTER) > 0,

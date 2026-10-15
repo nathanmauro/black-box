@@ -166,8 +166,11 @@ Candidates come from the record in a fixed order:
 - Ranking: at most two recorded next actions from frontier handoffs, then those handoffs' open
   loops, then open loops of current decisions recorded within seven days of the head; newest
   first within each tier, then event ID. No-action text (none, n/a, done and similar) is dropped.
-  Near-duplicates (exact normalized text, or token overlap of at least 0.5) merge, keeping the
-  newest text and every source. When nothing qualifies, the response says so; it never pads.
+  Near-duplicates (exact normalized text, or word overlap of at least 0.5, where each
+  whitespace-delimited word counts once so a shared identifier or file path cannot merge different
+  actions) merge under their strongest source: the label, text and id describe that source, and
+  every matching source stays in the evidence. When nothing qualifies, the response says so; it
+  never pads.
 - Recorded Evidence that explicitly supports or refutes a source event becomes a caveat with its
   link. It never changes rank, and nothing is inferred from overlapping text.
 - Ideas and Projections are never candidates. Idea keys can be shared by checkouts with the same
