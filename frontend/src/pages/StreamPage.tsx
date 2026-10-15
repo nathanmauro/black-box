@@ -848,6 +848,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
     if (liveTimer) clearTimeout(liveTimer);
     if (facetsTimer) clearTimeout(facetsTimer);
     facetsAbort?.abort();
+    if (recordedTimer) clearTimeout(recordedTimer);
+    recordedAbort?.abort();
   });
 
   return (

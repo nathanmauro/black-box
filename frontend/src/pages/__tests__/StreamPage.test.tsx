@@ -1919,6 +1919,38 @@ describe("StreamPage query composition", () => {
     }
   });
 
+  it("cancels value-index lookups when the page unmounts", async () => {
+    const pending: AbortSignal[] = [];
+    vi.mocked(searchValues).mockClear();
+    vi.mocked(searchValues).mockImplementation((_field, _prefix, _limit, signal) => {
+      if (signal) pending.push(signal);
+      return new Promise<string[]>(() => undefined);
+    });
+    try {
+      vi.useFakeTimers();
+      // A lookup in flight is aborted.
+      const inFlight = render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      fireEvent.input(queryInput(), { target: { value: "kind:D" } });
+      await vi.advanceTimersByTimeAsync(150);
+      expect(pending).toHaveLength(1);
+      inFlight.unmount();
+      expect(pending[0].aborted).toBe(true);
+
+      // A lookup still waiting out its debounce never starts.
+      const waiting = render(() => <StreamPage />);
+      await vi.advanceTimersByTimeAsync(0);
+      fireEvent.input(queryInput(), { target: { value: "kind:D" } });
+      await vi.advanceTimersByTimeAsync(100);
+      waiting.unmount();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(searchValues).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.mocked(searchValues).mockImplementation(mocks.recordedValues);
+    }
+  });
+
   it("keeps the keyboard highlight when more values arrive", async () => {
     mocks.getEventFacets.mockResolvedValue(kindCounts(15));
     vi.mocked(searchValues).mockClear();
