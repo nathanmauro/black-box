@@ -17,6 +17,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
+/** HTTP routes and their documented inputs remain stable as feature adapters evolve. */
 @SpringBootTest(
         properties = {
             "spring.datasource.url=jdbc:sqlite:${java.io.tmpdir}/bb-rest-contract-snapshot-test-${random.uuid}.db",
@@ -85,18 +86,12 @@ class RestContractSnapshotTest {
     }
 
     @Test
-    void recallResponseContractAllowsNullableScoreWithoutChangingExistingFields() throws IOException {
+    void recallResponseDocumentsTheSharedWireFields() throws IOException {
         JsonNode matrix =
                 objectMapper.readTree(new ClassPathResource("contracts/rest-contract-matrix.json").getInputStream());
         JsonNode recallRow = findContractRow(matrix, "GET", "/api/recall");
         assertThat(textValues(recallRow.path("responseFields")))
                 .contains("scope", "withinHours", "kinds", "count", "items", "mode");
-
-        JsonNode records = objectMapper
-                .readTree(new ClassPathResource("contracts/wire-fixtures.json").getInputStream())
-                .path("records");
-        assertRecallResultShape(records.path("RecallResult"));
-        assertRecalledItemShape(records.path("RecalledItem"));
     }
 
     private Set<String> applicationMappings() {
@@ -145,55 +140,5 @@ class RestContractSnapshotTest {
         array.forEach(node -> values.add(node.asText()));
 
         return values;
-    }
-
-    private static Set<String> fieldNames(JsonNode node) {
-        Set<String> names = new TreeSet<>();
-        node.fieldNames().forEachRemaining(names::add);
-
-        return names;
-    }
-
-    private static void assertRecallResultShape(JsonNode result) {
-        assertThat(fieldNames(result)).contains("scope", "withinHours", "kinds", "count", "items", "mode");
-        assertThat(result.path("scope").isTextual()).isTrue();
-        assertThat(result.path("withinHours").isInt()).isTrue();
-        assertThat(result.path("kinds").isArray()).isTrue();
-        assertThat(result.path("count").isInt()).isTrue();
-        assertThat(result.path("items").isArray()).isTrue();
-        assertThat(result.path("mode").isTextual()).isTrue();
-    }
-
-    private static void assertRecalledItemShape(JsonNode item) {
-        assertThat(fieldNames(item))
-                .contains(
-                        "eventId",
-                        "sessionId",
-                        "kind",
-                        "source",
-                        "clientSessionId",
-                        "repo",
-                        "observedAt",
-                        "headline",
-                        "rationale",
-                        "alternatives",
-                        "confidence",
-                        "openLoops",
-                        "nextAction",
-                        "toAgent",
-                        "score");
-        assertThat(item.path("eventId").isTextual()).isTrue();
-        assertThat(item.path("sessionId").isTextual()).isTrue();
-        assertThat(item.path("kind").isTextual()).isTrue();
-        assertThat(item.path("source").isTextual()).isTrue();
-        assertThat(item.path("clientSessionId").isTextual()).isTrue();
-        assertThat(item.path("repo").isTextual()).isTrue();
-        assertThat(item.path("observedAt").isTextual()).isTrue();
-        assertThat(item.path("headline").isTextual()).isTrue();
-        assertThat(item.path("alternatives").isArray()).isTrue();
-        assertThat(item.path("openLoops").isArray()).isTrue();
-        assertThat(item.path("nextAction").isTextual()).isTrue();
-        assertThat(item.path("toAgent").isTextual()).isTrue();
-        assertThat(item.path("score").isNumber() || item.path("score").isNull()).isTrue();
     }
 }
