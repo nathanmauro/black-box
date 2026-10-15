@@ -168,7 +168,8 @@ Candidates come from the record in a fixed order:
   first within each tier, then event ID. No-action text (none, n/a, done and similar) is dropped.
   Near-duplicates (exact normalized text, or word overlap of at least 0.5, where each
   whitespace-delimited word counts once so a shared identifier or file path cannot merge different
-  actions) merge under their strongest source: the label, text and id describe that source.
+  actions) merge under their strongest source: the label, text and id describe that source. Text is
+  compared with that source's text only, so a chain of similar texts cannot merge two that are not.
   `evidence[]` and the prompt's Sources always list that source first, then up to four other
   matching sources, newest first; the prompt notes how many older matching captures are not
   listed. When nothing qualifies, the response says so; it never pads.

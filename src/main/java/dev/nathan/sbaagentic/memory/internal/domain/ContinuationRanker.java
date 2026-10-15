@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +35,11 @@ public final class ContinuationRanker {
     private static final Comparator<Timed> NEWEST_FIRST = Comparator.comparing(Timed::at)
             .thenComparing(timed -> timed.capture().eventId())
             .reversed();
+    /** Best tier, then newest, then event ID descending: the source a merged candidate is named after. */
+    private static final Comparator<ContinuationSource> STRONGEST_FIRST = Comparator.comparingInt(
+                    (ContinuationSource source) -> source.basis().tier())
+            .thenComparing(ContinuationSource::effectiveAt, Comparator.reverseOrder())
+            .thenComparing(source -> source.capture().eventId(), Comparator.reverseOrder());
 
     private ContinuationRanker() {}
 
@@ -205,21 +209,22 @@ public final class ContinuationRanker {
         }
     }
 
-    /** Exact normalized text first, then token Jaccard at or above the trajectory threshold. */
+    /**
+     * Exact normalized text first, then token Jaccard at or above the threshold, each compared with a
+     * group's primary text only, so a chain of near-duplicates cannot pull in text unlike the primary.
+     */
     private static Group matching(List<Group> groups, String text) {
         String normalized = normalized(text);
         for (Group group : groups) {
-            if (group.normalizedTexts.contains(normalized)) {
+            if (group.primaryNormalized.equals(normalized)) {
 
                 return group;
             }
         }
         for (Group group : groups) {
-            for (ContinuationSource source : group.sources) {
-                if (jaccard(source.text(), text) >= DUPLICATE_SIMILARITY) {
+            if (jaccard(group.primary.text(), text) >= DUPLICATE_SIMILARITY) {
 
-                    return group;
-                }
+                return group;
             }
         }
 
@@ -244,19 +249,29 @@ public final class ContinuationRanker {
         }
     }
 
+    /**
+     * Sources merged under one primary. Sources arrive tier by tier, newest first, so the first source
+     * is already the strongest; the primary is still kept by comparison rather than arrival order.
+     */
     private static final class Group {
         private final List<ContinuationSource> sources = new ArrayList<>();
-        private final Set<String> normalizedTexts = new LinkedHashSet<>();
         private final Set<String> fields = new HashSet<>();
+        private ContinuationSource primary;
+        private String primaryNormalized;
 
         Group(ContinuationSource first) {
             add(first);
         }
 
         void add(ContinuationSource source) {
-            normalizedTexts.add(normalized(source.text()));
-            if (fields.add(source.capture().eventId() + "\n" + source.field())) {
-                sources.add(source);
+            if (!fields.add(source.capture().eventId() + "\n" + source.field())) {
+
+                return;
+            }
+            sources.add(source);
+            if (primary == null || STRONGEST_FIRST.compare(source, primary) < 0) {
+                primary = source;
+                primaryNormalized = normalized(source.text());
             }
         }
 
@@ -266,14 +281,7 @@ public final class ContinuationRanker {
                             .thenComparingInt(source -> source.basis().tier())
                             .thenComparing(source -> source.capture().eventId(), Comparator.reverseOrder()))
                     .toList();
-            ContinuationSource newest = newestFirst.getFirst();
-            ContinuationSource primary = newestFirst.stream()
-                    .min(Comparator.comparingInt((ContinuationSource source) ->
-                                    source.basis().tier())
-                            .thenComparing(ContinuationSource::effectiveAt, Comparator.reverseOrder())
-                            .thenComparing(source -> source.capture().eventId(), Comparator.reverseOrder()))
-                    .orElse(newest);
-            Instant recordedAt = newest.effectiveAt();
+            Instant recordedAt = newestFirst.getFirst().effectiveAt();
 
             return new ContinuationCandidate(
                     ContinuationText.candidateId(root, primary.text()),

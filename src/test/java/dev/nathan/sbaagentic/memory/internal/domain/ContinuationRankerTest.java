@@ -210,6 +210,29 @@ class ContinuationRankerTest {
     }
 
     @Test
+    void nearDuplicatesAreComparedWithEachGroupsPrimaryTextSoTheyCannotChain() {
+        String a = "Reproduce the recovery path today";
+        String b = "Reproduce the recovery path tomorrow";
+        String c = "Document the recovery path tomorrow";
+        assertThat(ContinuationText.jaccard(a, b)).isGreaterThanOrEqualTo(ContinuationRanker.DUPLICATE_SIMILARITY);
+        assertThat(ContinuationText.jaccard(b, c)).isGreaterThanOrEqualTo(ContinuationRanker.DUPLICATE_SIMILARITY);
+        assertThat(ContinuationText.jaccard(a, c)).isLessThan(ContinuationRanker.DUPLICATE_SIMILARITY);
+        var newer = handoff("h1", "s1", hours(1), a, b);
+        var older = handoff("h2", "s2", hours(2), null, c);
+
+        var frontier = ContinuationRanker.rank(ROOT, List.of(newer, older), List.of(), NOW);
+
+        // B joins A's group; C resembles only B, so it stays a candidate of its own.
+        assertThat(frontier.candidates())
+                .extracting(ContinuationCandidate::basis, ContinuationCandidate::text)
+                .containsExactly(
+                        tuple(ContinuationBasis.HANDOFF_NEXT_ACTION, a), tuple(ContinuationBasis.HANDOFF_OPEN_LOOP, c));
+        assertThat(frontier.candidates().getFirst().sources())
+                .extracting(source -> source.capture().eventId() + ":" + source.field())
+                .containsExactly("h1:nextAction", "h1:openLoops");
+    }
+
+    @Test
     void aMatchingOpenLoopMergesIntoTheRecordedNextStep() {
         var handoff = handoff("h1", "s1", hours(1), "Reproduce the recovery path", "reproduce the recovery path");
 
