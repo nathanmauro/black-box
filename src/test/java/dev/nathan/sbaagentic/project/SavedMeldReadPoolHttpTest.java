@@ -36,6 +36,7 @@ import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -213,15 +214,17 @@ class SavedMeldReadPoolHttpTest {
         }
     }
 
-    @Test
-    void projectMeldsSpanningSeveralInputBatchesKeepTheirOwnOrderedSources() throws Exception {
+    /** Exactly one full input batch, one meld past it, and several batches ending in a partial one. */
+    @ParameterizedTest(name = "{0} melds")
+    @ValueSource(ints = {500, 501, 1001})
+    void projectMeldsKeepTheirOwnOrderedSourcesAcrossInputBatches(int meldCount) throws Exception {
         String project = "/fixture/meld-batches-" + UUID.randomUUID();
         List<String> forward = List.of(seed(project), seed(project));
         Map<String, List<String>> expected = new LinkedHashMap<>();
         List<Object[]> melds = new ArrayList<>();
         List<Object[]> inputs = new ArrayList<>();
-        // More melds than two input batches hold; stored directly so the fixture stays fast.
-        for (int i = 0; i < 1001; i++) {
+        // Stored directly so the fixture stays fast.
+        for (int i = 0; i < meldCount; i++) {
             String id = "batched-" + i + "-" + UUID.randomUUID();
             List<String> order = i % 2 == 0 ? forward : forward.reversed();
             expected.put(id, order);
@@ -250,6 +253,38 @@ class SavedMeldReadPoolHttpTest {
         for (JsonNode meld : get("/api/projects/" + ProjectKey.of(project).encoded() + "/melds"))
             listed.put(meld.path("id").asText(), ids(meld.path("sessions"), "id"));
         assertThat(listed).isEqualTo(expected);
+    }
+
+    /**
+     * SQLite accepts a NULL text primary key, so hand-edited data can hold a meld without an id.
+     * The reads list such a row without sources instead of failing.
+     */
+    @Test
+    void readsKeepWorkingWithAStoredMeldWithoutAnId() throws Exception {
+        String project = "/fixture/meld-without-id-" + UUID.randomUUID();
+        seed(project);
+        String key = ProjectKey.of(project).encoded();
+        JdbcTemplate jdbc = app.getBean(JdbcTemplate.class);
+        String insert = "INSERT INTO session_melds (id, project_key, artifact_kind, title, body, provider, model,"
+                + " prompt_version, execution_mode, saved_from_preview, metadata_json, created_at)"
+                + " VALUES (NULL, ?, ?, 'Without an id', 'Body', 'local', 'none', 'v1', 'export_bundle', 0, NULL,"
+                + " '2026-01-01T00:00:00Z')";
+        jdbc.update(insert, project, "meld");
+        jdbc.update(insert, null, "braid");
+        try {
+            for (String path : List.of(
+                    "/api/melds?kind=braid&scope=unassigned&limit=100",
+                    "/api/projects/" + key + "/melds",
+                    "/api/projects/" + key + "/timeline",
+                    "/api/projects/" + key + "/graph")) {
+                HttpResponse<String> response = send("GET", path, null);
+                assertThat(response.statusCode())
+                        .as(path + " " + response.body())
+                        .isEqualTo(200);
+            }
+        } finally {
+            jdbc.update("DELETE FROM session_melds WHERE id IS NULL");
+        }
     }
 
     private String seed(String project) throws Exception {

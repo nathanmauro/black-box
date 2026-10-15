@@ -17,4 +17,8 @@ class SavedMeldReadPoolPostgresHttpTest extends SavedMeldReadPoolHttpTest {
     protected void cleanupDatabase() throws Exception {
         fixture.close();
     }
+
+    /** PostgreSQL rejects a NULL primary key, so only SQLite data can hold a meld without an id. */
+    @Override
+    void readsKeepWorkingWithAStoredMeldWithoutAnId() {}
 }

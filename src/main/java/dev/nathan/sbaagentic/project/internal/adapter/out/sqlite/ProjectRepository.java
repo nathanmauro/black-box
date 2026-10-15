@@ -27,7 +27,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -723,9 +722,12 @@ public class ProjectRepository implements ProjectCatalogStore, ProjectGraphStore
         return storedKeys.stream().anyMatch(Objects::nonNull) ? aliasService.snapshot() : null;
     }
 
-    /** Loads the ordered inputs of the given melds, keyed by meld id, in batched queries. */
+    /**
+     * Loads the ordered inputs of the given melds, keyed by meld id, in batched queries. A NULL id,
+     * which only hand-edited SQLite data can hold, has no inputs and keeps its row readable.
+     */
     private <T> Map<String, List<T>> meldInputs(Collection<String> meldIds, RowMapper<T> mapper) {
-        List<String> ids = List.copyOf(new LinkedHashSet<>(meldIds));
+        List<String> ids = meldIds.stream().filter(Objects::nonNull).distinct().toList();
         Map<String, List<T>> inputs = new HashMap<>();
         for (int from = 0; from < ids.size(); from += MELD_INPUT_BATCH) {
             List<String> batch = ids.subList(from, Math.min(ids.size(), from + MELD_INPUT_BATCH));

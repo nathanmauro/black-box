@@ -7,9 +7,10 @@ All notable changes to this project will be documented in this file.
 - Saved meld and braid reads no longer lock up the connection pool. Each read resolved its project
   and loaded its source sessions with a query per row while the row query still held its pooled
   connection, so four concurrent braid lists could take all four SQLite connections and wait on
-  each other; every request, captures included, then failed with a 500 after 30 seconds. Meld by
-  ID, the unassigned braid list, project melds, timeline and graph, and `findBraids` now map their
-  rows first and load sources in batched queries, one connection at a time, on both backends.
+  each other; requests, captures included, then stalled for 30 seconds or more, and most failed
+  with a 500. Meld by ID, the unassigned braid list, project melds, timeline and graph, and
+  `findBraids` now map their rows first and load sources in batched queries, one connection at a
+  time, on both backends.
 - SQLite read-write transactions begin `IMMEDIATE`. A save that reads before it writes, such as a
   saved braid or meld, now waits up to the 5-second `busy_timeout` for a concurrent capture or
   summary instead of failing at once with `SQLITE_BUSY`. Read-only transactions stay deferred, and

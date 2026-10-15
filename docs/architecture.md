@@ -243,9 +243,10 @@ unmarked one takes the writer lock at its begin and holds it for its whole durat
 On both backends, a query outside a transaction borrows its own pooled connection, so a row mapper
 or result-set callback never queries. A lookup per row holds the outer query's connection while it
 waits for another one. Once concurrent readers hold every connection that way (four on SQLite; on
-PostgreSQL `SBA_DATASOURCE_POOL_SIZE`, default eight), they wait on each other, and every request
-fails after the pool's 30-second connection timeout. Map the rows first, then load related rows in
-batched `IN` queries, as the saved meld and braid reads do for their source sessions.
+PostgreSQL `SBA_DATASOURCE_POOL_SIZE`, default eight), they wait on each other until the pool's
+30-second connection timeout fails them, while every other request, captures included, stalls
+behind them and most fail with a 500. Map the rows first, then load related rows in batched `IN`
+queries, as the saved meld and braid reads do for their source sessions.
 
 | Table | Owner | Purpose |
 | --- | --- | --- |
