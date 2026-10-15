@@ -210,8 +210,9 @@ sources, reserved SQLite sidecar destinations (including source-parent aliases),
 remain unchanged after later source commits, output symlinks/collisions including publication races, connection-override rejection,
 credential-safe errors, and truncated archive rejection. It also snapshots a multi-megabyte WAL
 source while another connection keeps committing, and checks that the result is one consistent
-point in time. A locked source must stop at the wait limit without publishing, while a finished copy
-is never discarded. The fake PostgreSQL tools check subprocess boundaries; native PostgreSQL restore
+point in time: every table, including rows on pages copied long before the end, shows the same
+commit. A locked source must stop at the wait limit without publishing, while a finished copy is
+never discarded. The fake PostgreSQL tools check subprocess boundaries; native PostgreSQL restore
 evidence is a separate integration check.
 
 The companion `DatabaseRestoreContractTest` rehearses real SQLite/WAL and optional PostgreSQL

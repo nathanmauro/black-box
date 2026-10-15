@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import random
 from pathlib import Path
 import sqlite3
 import stat
@@ -443,10 +444,12 @@ if os.environ.get('FAKE_MODE') == 'truncated':
         # restarts the copy from page 1. One row per 4 KiB page makes a ~16 MB source.
         with closing(self.seed(wal=True)) as db:
             db.executescript("""
-                CREATE TABLE bulk(id INTEGER PRIMARY KEY, payload BLOB);
+                CREATE TABLE bulk(id INTEGER PRIMARY KEY, payload BLOB, tag INTEGER NOT NULL DEFAULT 0);
                 WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 4096)
                 INSERT INTO bulk(payload) SELECT randomblob(3000) FROM n;
                 CREATE TABLE live_writes(seq INTEGER PRIMARY KEY, payload BLOB);
+                CREATE TABLE commits(n INTEGER NOT NULL);
+                INSERT INTO commits VALUES (0);
             """)
         self.assertGreater(self.source.stat().st_size, 8 * 1024 * 1024)
         writing, stop, failures = threading.Event(), threading.Event(), []
@@ -457,7 +460,13 @@ if os.environ.get('FAKE_MODE') == 'truncated':
             try:
                 with closing(sqlite3.connect(self.source)) as writer:
                     while not stop.is_set():
+                        # One transaction touches three tables, and rewrites a random bulk row
+                        # that may sit on a page the copy has already passed.
                         writer.execute("INSERT INTO live_writes(payload) VALUES (randomblob(64))")
+                        writer.execute("UPDATE commits SET n = n + 1")
+                        writer.execute(
+                            "UPDATE bulk SET payload = randomblob(3000), tag = (SELECT n FROM commits)"
+                            " WHERE id = ?", (random.randint(1, 4096),))
                         writer.commit()
                         commits += 1
                         if commits == 20:
@@ -491,7 +500,11 @@ if os.environ.get('FAKE_MODE') == 'truncated':
             # One read snapshot: a gap-free prefix of the writer's commits, never a torn mix.
             count, last = snapshot.execute(
                 "SELECT count(*), coalesce(max(seq), 0) FROM live_writes").fetchone()
+            # Every table shows the same commit, including bulk pages copied long before the end.
+            counted, tagged = snapshot.execute(
+                "SELECT (SELECT n FROM commits), (SELECT max(tag) FROM bulk)").fetchone()
         self.assertEqual(count, last)
+        self.assertEqual((counted, tagged), (count, count))
         self.assertTrue(before <= count <= commits, (before, count, commits))
         self.assertFalse(Path(str(self.output) + "-wal").exists())
 
@@ -500,11 +513,23 @@ if os.environ.get('FAKE_MODE') == 'truncated':
         plan = self.sqlite()
         with mock.patch.object(BACKUP, "SQLITE_BUSY_WAIT_SECONDS", 0):
             # A rollback-journal writer holding its exclusive lock keeps every reader out.
-            with closing(sqlite3.connect(self.source, isolation_level=None)) as holder:
+            with closing(sqlite3.connect(self.source, isolation_level=None,
+                                         check_same_thread=False)) as holder:
                 holder.execute("BEGIN EXCLUSIVE")
-                with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_backup_timeout$"):
-                    BACKUP.execute(plan)
-                holder.execute("ROLLBACK")
+                # Without the bound the copy would wait for this lock forever. Releasing it after
+                # 15 s turns that regression into a failure here instead of a hung suite.
+                release = threading.Timer(15, holder.execute, ("ROLLBACK",))
+                release.start()
+                try:
+                    with self.assertRaisesRegex(BACKUP.BackupError, "^sqlite_backup_timeout$"):
+                        BACKUP.execute(plan)
+                    self.assertTrue(release.is_alive(),
+                                    "the copy stopped only once the lock was released")
+                finally:
+                    release.cancel()
+                    release.join()
+                if holder.in_transaction:
+                    holder.execute("ROLLBACK")
             self.assertFalse(self.output.exists())
             self.assertEqual(list(self.root.glob(".blackbox-backup-*")), [])
             # The bound has already passed when this copy starts; the finished step still counts.
