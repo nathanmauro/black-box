@@ -319,5 +319,25 @@
       "projectGroups": ["/tmp/p"],
       "freeTerms": ["exact phrase", "loose"]
     }
+  },
+  {
+    "name": "constructor is an unknown field, not an inherited object member",
+    "input": "constructor:x",
+    "expected": { "freeTerms": ["constructor:x"] }
+  },
+  {
+    "name": "__proto__ is an unknown field, not an inherited object member",
+    "input": "__proto__:y",
+    "expected": { "freeTerms": ["__proto__:y"] }
+  },
+  {
+    "name": "toString is an unknown field and keeps its case as free text",
+    "input": "toString:z kind:Decision",
+    "expected": { "facets": { "kind": ["Decision"] }, "freeTerms": ["toString:z"] }
+  },
+  {
+    "name": "negated inherited object member names stay free text",
+    "input": "-constructor:x NOT __proto__:y",
+    "expected": { "freeTerms": ["-constructor:x", "NOT", "__proto__:y"] }
   }
 ]

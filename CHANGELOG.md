@@ -13,6 +13,16 @@ All notable changes to this project will be documented in this file.
   loopback local model (`SBA_CONTINUATION_SYNTHESIS_ENABLED`) to restate one prompt with `[E#]`
   evidence handles and redacted, fenced input, validates the whole reply, and returns
   `synthesized: null` with a fixed reason on any failure. The deterministic prompt never changes.
+- Stream query composition: completion follows the caret, including negated, quoted and
+  comma-listed tokens. It offers recorded values for facets, labelled with where they came from
+  (counts appear only when they describe the query being composed), and grammar values for time
+  operators. Tab accepts and keeps a value typed in full, field names complete, and session
+  suggestions show titles. Submitted queries explain what was searched as text, and empty results
+  offer one-click fixes. The "Prompts today" view now includes `is:all`. With a pinned project,
+  the URL normalization no longer re-serializes the query: it only removes positive
+  `project:`/`cwd:` includes, with a note naming each one it removed, and it replaces the history
+  entry, so Back is not trapped. An unclosed quote no longer keeps the URL changing or swallows
+  the project scope, and a trailing bare `NOT` no longer negates that scope.
 - Optional macOS menu-bar quick recall helper (`macos/BlackBoxRecall`) with its build, install and
   hermetic test scripts and an opt-in Trace with Jev action; see
   [docs/macos-quick-recall.md](docs/macos-quick-recall.md).

@@ -940,9 +940,14 @@ export function searchFields(): Promise<FieldInfo[]> {
   return getJson("/api/search/fields");
 }
 
-export function searchValues(field: string, prefix = "", limit = 20): Promise<string[]> {
+export function searchValues(
+  field: string,
+  prefix = "",
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<string[]> {
   const params = new URLSearchParams({ field, prefix, limit: String(limit) });
-  return getJson(`/api/search/values?${params.toString()}`);
+  return getJson(`/api/search/values?${params.toString()}`, signal);
 }
 
 export function askStatus(): Promise<AskStatus> {

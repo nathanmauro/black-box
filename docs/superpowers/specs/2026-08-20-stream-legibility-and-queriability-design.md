@@ -200,6 +200,16 @@ prefix shows the static values; `tool:`/`project:`/`session:` suggest live value
 popover gains ArrowUp/Down/Enter keyboard support. An "Options" disclosure holds the density
 toggle and the meaningful toggle (§5 `is:all`).
 
+> **Amended 2026-10-15** ([query composition plan](../plans/2026-10-15-stream-query-composition.md)):
+> the static quick values are replaced by recorded values. `source:`, `kind:` and `tool:` offer
+> the counted values of the applied query, labelled "in current results". The number is shown
+> only while the draft's other filters match the applied query; otherwise the same values are
+> still offered, without numbers. The value index, labelled "recorded", fills in only when counts
+> are unavailable or leave room. Nothing is offered that no event carries. Completion edits the
+> token at the caret (including negated, quoted and comma-listed values) instead of the last
+> token, and Tab accepts. Submitted queries are explained under the chip rail, and an empty result
+> offers one-click fixes (a close value, `is:all`).
+
 The result-header line reads `1,204 matches · meaningful · past 2 hours` — count from §6.5,
 the standing "meaningful" word whenever the default filter is active (its visible
 representation under P3), scope phrase from parsed time tokens. When counts are unavailable
@@ -368,6 +378,15 @@ suggestions (`last:1h`, `last:24h`, `last:7d`, `since:today`, `since:yesterday`)
 (falling back to `/api/search/values` prefix lookup); `session:` suggests recent sessions
 (title + relative time) from the existing sessions listing.
 
+> **Amended 2026-10-15** ([query composition plan](../plans/2026-10-15-stream-query-composition.md)):
+> delivered. Field and operator names complete from their first letter (`project_group` is never
+> offered). Time operators offer grammar values only (`last:` durations; `since:`/`until:` also
+> `today` and `yesterday`), and `is:` offers `all`. `session:` lists recent sessions by title with
+> their last-seen age (omitted when unknown) and inserts the server id. `project:` and
+> `project_exact:` complete from the current results' paths and the project catalog, by
+> substring and by exact prefix (counts only for `project_exact:`, since they count exact paths);
+> a pinned project shows a note instead, because its scope replaces `project:` filters.
+
 ### 6.5 Query-scoped facet counts
 
 `GET /api/events/facets?q=&meaningful=` (recording, EventController sibling), reusing the
@@ -412,7 +431,8 @@ RecallPage, GraphPage, SourceChips, `createSessionsResource`, plus two test file
 - Built-in presets in a "Views" dropdown beside the input — expressible in the locked grammar
   and doubling as documentation: `Decisions this week` (`kind:Decision last:7d`), `Handoffs`
   (`kind:Handoff last:7d`), `Codex right now` (`source:codex last:2h`), `Prompts today`
-  (`kind:UserPromptSubmit last:24h`). (An "Errors today" preset is **not** shippable: zero
+  (`kind:UserPromptSubmit last:24h`; amended 2026-10-15 to add `is:all`, because the meaningful
+  filter hides prompts). (An "Errors today" preset is **not** shippable: zero
   error-shaped event_types exist and failure-ness is payload-derived client-side (§4.3). A
   server-side derived error flag/facet is a recorded follow-up, out of scope, §12.)
 - User views: localStorage `blackbox.savedViews` `[{name, q, createdAt}]`, "Save current

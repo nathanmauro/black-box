@@ -284,3 +284,67 @@ Empty copy distinguishes an unfiltered recorder, meaningful-only results, My tur
 project/query/source filtering. Loading and failed requests must not claim the recorder is empty.
 The packaged `stream-controls.spec.ts` journey covers the controls at desktop, narrow portrait and
 landscape sizes; intercepted empty/error responses supplement real capture and navigation checks.
+
+## Stream query composition
+
+The query box completes the token under the caret, not the last token, and accepting replaces
+only that token, or one comma value of it. Negated (`-kind:`, `NOT kind:`), quoted and aliased
+tokens complete as typed. Field and operator names complete from their first letter; the hidden
+`project_group:` is never offered. Time operators offer grammar values only, and `is:` offers
+`all`.
+
+Values come from recorded data only:
+
+- `source:`, `kind:` and `tool:` list the applied query's counted values, labelled "in current
+  results". The number is shown only while the draft's other filters match the applied query
+  (otherwise the values stay, without numbers), and it stays out of the option's accessible name;
+  a polite live region announces it.
+- When counts are unavailable or leave room, the value index fills in, labelled "recorded" (it is
+  global and ignores the current filters).
+- `project:` and `project_exact:` complete from the current results' project paths and the
+  project catalog, by substring and by exact prefix; only `project_exact:` shows counts, because
+  they count exact paths. While a project is pinned, `project:` shows a note instead, because the
+  pinned scope replaces project filters.
+- `session:` lists recent top-level sessions (subagent sessions are not listed), filtered to the
+  pinned project, by title and last-seen age, and inserts the server id.
+
+Values containing a quote or a control character are never offered; values with whitespace or
+commas are quoted, never escaped. Inside an unclosed quote the value has no known end, so
+completion waits until whitespace or the end of the query follows the caret, and nothing after
+the caret is replaced.
+
+Up and Down move the highlight. Enter accepts a highlighted option and otherwise submits the raw
+text. Tab accepts the highlighted option, or the first one once the token has a typed prefix; it
+never accepts with a modifier, during IME composition, or on an empty draft, and otherwise moves
+focus. This is a deliberate deviation from the ARIA combobox pattern. A value or field name typed
+in full is listed first, so Tab keeps it rather than a longer or more frequent one, and a whole
+word that already names a field (`fix session`) becomes a field only when highlighted. Accepting
+a value closes the list until the next keystroke; accepting a field name opens its values.
+Options keep their elements while counts or values arrive, so a press that began on one still
+accepts it. When the applied query replaces the draft (Back, Forward, a fix), the caret moves to
+the end of the new text and the list closes.
+
+After a query runs, notes under the chips explain what the parser did not apply as a filter: an
+unknown field (suggesting a field only for a unique close match, and never for a name with
+nothing after its colon, such as `TODO:`), a time value the grammar rejects (date-shaped values
+excepted, because the server parses more date-time forms), a negated operator or excluded free
+text, an unclosed quote, a lowercase `not` that negated the next filter, or a project token the
+pinned project removed. An empty result offers one-click fixes that each change one token and run
+the query:
+
+- A close value for an exact `source:`, `kind:` or `tool:` value, when that field's counted list
+  is complete and the rest of the query still matches rows. Each field's counts drop only that
+  field's own values, while free text, other filters and time bounds still apply, so free text or
+  another filter that matches nothing leaves no value to offer.
+- `is:all` when the meaningful filter may be hiding rows (not under My turns, which replaces that
+  filter).
+
+`is:all`, like the pinned project's hidden scope, goes first when the query ends in an unclosed
+quote or a bare `NOT`, which would otherwise swallow or negate it.
+
+A pinned project removes positive `project:`/`cwd:` includes from the URL's `q` by span, leaving
+every other byte as typed, and replaces the history entry instead of pushing one, so Back never
+lands on a URL that normalizes forward again.
+
+The packaged `stream-compose.spec.ts` journey covers keyboard-only composition, a mid-string edit
+and a quoted project path at desktop and phone widths.
