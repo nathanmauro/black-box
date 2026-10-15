@@ -240,3 +240,19 @@ cd .. && git diff --check
     warnings), `npm run build` (reproduces the committed bundle), `mvn -q test` (1086 tests, 0
     failures, 74 skipped) and `git diff --check`. Each new test failed before its fix. The packaged
     e2e suite was not run.
+- 2026-10-15 integration, after rebasing onto `main` with the macOS helper and Java test PRs:
+  - **Packaged browser suite:** `npm run e2e`, 97 passed and 1 skipped (the opt-in showcase), including the 6
+    `stream-compose.spec.ts` journeys at 1440 and 390 px.
+  - **After behaviour**, from the same isolated fixture and probe scripts as the "Before" table:
+    - Editing the middle token `kind:Dec|i source:claude` completes it in place: `kind:Decision source:claude`, caret
+      13.
+    - `project:"/tmp/…/harb` completes to the quoted path with a space.
+    - `-kind:Obs` gives `-kind:Observation`.
+    - `ki` offers `kind:` with help text, then counted values.
+    - Tab accepts.
+    - Session options show titles and last-seen ages, and the session chip shows the title.
+    - `kind:Hand` returns 0 rows plus "Did you mean Handoff?" and a one-click fix (4 rows).
+    - `knd:` and `last:7` are explained.
+    - `kind:UserPromptSubmit` offers "Include all events" (16 rows).
+    - An unclosed quote is flagged.
+    - On a phone viewport, tapping a field then a value keeps focus.
