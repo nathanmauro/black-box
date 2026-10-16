@@ -323,7 +323,10 @@ The same names also match displayed service configuration:
   tab-indented are the rest of a value that holds line breaks; they are taken when another
   tab-indented line follows them.
 - `plutil -p` does not escape quotes inside a value, so a quoted value after a quoted name that
-  starts its line ends at the last quote on that line. A `plutil -p` data value
+  starts its line ends at the last quote on that line. When its first quoted part is already a
+  `[REDACTED]` marker, such as an AWS access key ID that an earlier rule replaced, it ends right
+  after that marker instead, and the rest of the line is kept
+  (`"SBA_DB_PASSWORD" => "AKIA…" …"` keeps the text after the key). A `plutil -p` data value
   (`{length = 16, bytes = 0x…}`) is removed whole.
 - `PlistBuddy -c Print` shows an entry as `NAME = value` through the end of its line: an
   environment-style name with a credential word followed by ` = ` at the start of a line
@@ -419,8 +422,13 @@ bound, including PlistBuddy, `launchctl setenv` and `defaults write` commands fo
 on JSON-escaped lines, and near misses that one escaped markup character sends through the second,
 decoded scan. That second scan reads the whole scalar again, so a scalar that holds such an escape
 costs about twice as much as one that does not. These bounds cover each scanned scalar, not a
-capture, whose cost still grows with its size and number of strings. This is a small assignment
-grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled secrets.
+capture, whose cost still grows with its size and number of strings: a crafted capture of about
+20 MB of escaped near misses can take longer than the default capture hook's 3 seconds
+(`curl --max-time 3` in `scripts/hooks/sba-agent-hook.sh`). The hook then gives up and returns
+without failing the agent's turn, and the server still stores the event when it finishes. Durable
+capture reads at most 1 MiB of hook input, so it drops such a capture before queueing it
+(`invalid_capture`). This is a small assignment grammar, not a shell parser, JSON decoder, or
+general detector for encoded or unlabelled secrets.
 Known limits:
 
 - A credential shown without its name is not recognized, such as `echo "$TOKEN"`,
@@ -430,6 +438,10 @@ Known limits:
   `env` or `printenv`, or a YAML value with spaces, keeps everything after its first space. Only
   `=>` values, `NAME = value` with an environment-style name, and flags alone on their line run to
   the end of the line, and only when the name starts its line.
+- An assignment whose value starts another credential shape hides that shape, whatever the length
+  of its name: `SBA_DB_PASSWORD=--db-password …`, `SBA_API_TOKEN:--api-key …`,
+  `SBA_API_TOKEN=""Bearer …` and `SBA_API_TOKEN=apiKey: …` lose only the flag, `""Bearer` or
+  `apiKey:` as the value and keep the credential after it.
 - A `name => value` whose name has lowercase letters is kept when the name does not start its
   line, and when the value opens a block or parenthesis or uses the name itself.
 - An environment-style `_KEY` or `CREDENTIAL` name assigned with `=` or `:` to a value that reads
@@ -441,10 +453,12 @@ Known limits:
   after a quoted flag, as `defaults read` prints an alphanumeric string, is kept.
 - Flags: single-dash flags (`-p`, and `-w` outside `security add-…-password`), an argument on the
   line after a shell `\` continuation, whether or not the flag starts its line, an argument that
-  starts with `-`, an unquoted list element (code such as `["--api-key", key]`), and the argument of
-  `--secret-key`, `--access-key` or `--signing-key`, whose names end with `key` rather than a
-  credential word, are kept. An argument that only names where the credential is or a documentation
-  placeholder (`--api-key env:NAME`, `--secret xxx`) is replaced anyway.
+  starts with `-`, an unquoted list element (code such as `["--api-key", key]`), a YAML
+  block-sequence item after a flag item (`- --api-key` and then `- …` on the next line, quoted or
+  not, as Kubernetes `args`, Docker Compose `command` lists and `kubectl get -o yaml` print them),
+  and the argument of `--secret-key`, `--access-key` or `--signing-key`, whose names end with `key`
+  rather than a credential word, are kept. An argument that only names where the credential is or a
+  documentation placeholder (`--api-key env:NAME`, `--secret xxx`) is replaced anyway.
 - Help layouts and prose words are recognized by shape, not by content, so an argument laid out
   like them is kept. The open layouts, all for a flag that starts its line unless noted:
   - after two or more spaces or a tab, a word that could start a sentence followed by another word
@@ -467,23 +481,32 @@ Known limits:
   (`--secret   Secret (required)`), a description after a lone colon, which reads as a
   `name : value` pair (`--federated-token : Federated token …` loses `Federated`), a placeholder
   (`--password password`, `--change-passphrase user-id`), a GNU `--password=PASS` metavar, which is
-  an assignment, and prose that puts any other word after a flag (`Added the --api-key parameter`,
-  `--token now reads …`, `Make --api-key required.`).
+  an assignment, a synopsis metavar that holds `=` (`[--api-key PROVIDER=KEY]`), the type of an AWS
+  CLI option entry whose description is on the next line (`--password (string)` loses `(string)`),
+  and prose that puts any other word after a flag (`Added the --api-key parameter`,
+  `--token now reads …`, `Make --api-key required.`), including a listed word glued to `/`, an
+  apostrophe, a hyphen, an em dash, an ellipsis or `!` (`--api-key and/or --token`,
+  `--token that's all`).
 - Names: a quoted name with dots is not matched (`"sba.judge.password" => …`,
   `{"sba.judge.password": …}`, `defaults read`'s `"sync.auth.token" = …;`), nor is a lowercase or
   mixed-case name that ends with `key` but holds no credential word (`jev_key`, `JevKey`), a name
   written as a code subscript or argument (`plist['EnvironmentVariables']['SBA_DB_PASSWORD'] = …`,
   `os.environ["SBA_X_TOKEN"] = …`, `System.setProperty("sba.judge.password", …)`), or a run of more
-  than 256 name characters. A list or object written in text under a credential name is not
-  removed whole: only its text up to the first delimiter goes, so `"api_tokens": ["…", "…"]` keeps
-  its second element and `"SBA_SECRETS": {"db": "…"}` keeps its values; a structured JSON member
-  still loses its whole value.
+  than 256 name characters. A property-list `<key>` and the name that `launchctl setenv`,
+  PlistBuddy `Set`/`Add` or `defaults write` writes are read only up to 128 characters, so a longer
+  name keeps its value there (`launchctl setenv` with a 129-character `…_PASSWORD` name). A list
+  or object written in text under a credential name is not removed whole: only its text up to the
+  first delimiter goes, so `"api_tokens": ["…", "…"]` keeps its second element and
+  `"SBA_SECRETS": {"db": "…"}` keeps its values; a structured JSON member still loses its whole
+  value.
 - Displays and restatements: `launchctl list` prints `ProgramArguments` as a `;`-separated list,
   whose element after a credential flag is kept; `defaults write … -dict` and `-dict-add NAME value`
   keep the value; Markdown restatements (`` `NAME` => `value` ``, `**NAME**: value`, a table row)
   keep it; a `launchctl print` value that starts with a quote loses only the quoted part, and the
-  rest of its line is kept; a property-list pair in a `diff` normal-format listing (`<` and `>`
-  lines) is kept, while unified, context and side-by-side listings are covered.
+  rest of its line is kept; so is the rest of a `plutil -p` line whose value's first quoted part is
+  an AWS access key ID (`"SBA_DB_PASSWORD" => "AKIA…" …"`, see above); a property-list value on
+  the `<` lines of a `diff` normal-format listing is kept (its `>` lines are covered), while
+  unified, context and side-by-side listings are covered.
 - Gutters and colors: only the `cat -n`, file-view arrow and `grep -n`/`rg` gutters described above
   are recognized. Behind another prefix, such as `path:line:column:`, a `grep` path with spaces,
   `less -N` or `awk` line numbers, `bat`'s grid, `cat -A`'s `^I`, a timestamp or ANSI color codes,
@@ -491,17 +514,26 @@ Known limits:
   at whitespace.
 - A multi-line `launchctl print` value keeps a later line that starts with a tab, and all of its
   later lines when no tab-indented line follows them (the end of the text or a blank line comes
-  first).
+  first). In raw text, a value whose first line is empty (`NAME => ` and a line break) is instead
+  taken from the next line that holds text, even when that line is the next entry.
 - A property-list value is missed when a merge-conflict marker or other markup stands between it
   and its key, when more than 1,024 characters do, or when an XML comment between them contains
   `>`. HTML-entity-escaped markup (`&lt;key&gt;`) and percent-encoded assignments are not decoded.
+- Other formats keep their credential: a private key block without its END line (`head -4 tls.key`;
+  durable capture's local sanitizer removes it), Maven `settings.xml` `<password>…</password>`, .NET
+  `<add key="DbPassword" value="…" />`, `aws configure set aws_secret_access_key …`,
+  `gh secret set NAME --body …`, Makefile `DB_PASSWORD := …` and `API_TOKEN ?= …`, a `.netrc`
+  `password …`, a password in a URL (`postgres://app:…@db.internal/app`) and an em-dash flag
+  (`—password …`). In `Authorization: Basic …` and `Authorization: Token …` the scheme word is
+  taken as the value, so the credential after it is kept.
 - Code is redacted too when it assigns to a credential name: `passphrase: cert.passphrase`,
   `privateKeyLoc = null` and `PrivateKeyword = 123` lose their values, as `password: …` and
   `token = …` already did, and an environment-style `_KEY` code followed by a colon loses the next
   word (`INVALID_DOTENV_KEY: [REDACTED] key part`). An environment-style credential name followed by
   ` = ` at the start of a line loses the rest of that line (`SECRET_KEY = os.environ.get(…)`), and a
-  quoted `=>` key at the start of a line loses its line through the last quote, including later
-  pairs on a one-line Ruby or PHP hash. A long name holds a credential word more often by chance:
+  double-quoted `=>` key at the start of a line loses its line through the last quote, including
+  later pairs on a one-line Ruby or PHP hash (`"password" => "…", "user" => "me"`); a single-quoted
+  or symbol key keeps them. A long name holds a credential word more often by chance:
   the localized TypeScript message key
   `The_parser_expected_to_find_a_1_to_match_the_0_token_here_1007` loses its message, and the GNU
   help metavar in `--authentication-openid-connect-client-id-token-file=name` is replaced.
@@ -532,24 +564,34 @@ string, member names included, is redacted the same way, and a member whose name
 loses its whole value: a string that ends with a name and separator (a Grep pattern `password:`) or
 with a value ingestion replaced never runs on into the JSON after it, and a tool input or output
 that holds no recognized credential reaches the backend exactly as stored. Like any stored text, it
-is read up to the scan budget: in document order, the members and elements that start within its
-first 50,000 characters of names, strings and other values are read and each string is redacted
-whole, and one `…[truncated]` marker stands in for the rest (a member keeps its name), so the
-backend still receives valid JSON and the work stays within the budget and the one string that
-crosses it. A direct meld preview reads each stored tool input and output only as far as its bundle
-shows (900 characters), so the bundle it sends for an ordinary session is still the one it returns
-locally. Across the strings of a list, the element after a credential flag that is a whole element
-(`["--api-key", "…"]`) and a private key whose lines are separate elements, as in an Edit's
-`structuredPatch`, are replaced too, although ingestion keeps them; when the budget cuts such a key
-before its END line, it is replaced from its BEGIN line through the last line read. A name and
-separator that end one string are not read with the next string, here or at ingestion, so
-`["password:", "…"]` keeps its second element. Stored text that is not JSON is redacted whole. A stored string that ingestion
-clipped keeps its one truncation marker; if replacements grew it past the scan budget, it is clipped
-there again, still with one marker. A direct meld preview redacts each piece (session title,
-summary, evidence text, tool input and output) before it is clipped into the bundle, so no piece
-costs the bundle its later sessions; the bundle the preview returns locally is built from stored
-text, as before. The summary and title that come back are redacted with the ingestion rules before
-they are stored.
+is read up to the scan budget: in document order, members and elements are read until 50,000
+characters of names, strings and other values have been read, each member, value, array and object
+counting as at least one character, so JSON made of empty strings, names or containers is cut like
+any other. Each string read is redacted whole, and one `…[truncated]` marker stands in for the rest
+(a member keeps its name), so the backend still receives valid JSON and the work stays within the
+budget and the one string that crosses it. A direct meld preview reads each stored tool input and
+output the same way with a budget of 900 characters, only as far as its bundle shows, so the bundle
+it sends for an ordinary session is still the one it returns locally. Across the strings of a list,
+the element after a credential flag that is a whole element (`["--api-key", "…"]`) and a private key
+whose lines are separate elements, as in an Edit's `structuredPatch`, are replaced too, although
+ingestion keeps them; when the budget cuts such a key before its END line, it is replaced from its
+BEGIN line through the last line read. Any other credential that ingestion kept in a stored tool
+input or output reaches the backend and a direct meld preview as stored: one that spans two JSON
+strings or a shell line continuation, such as the string after a name and separator
+(`["password:", "…"]`) or a `-w` password on the line after a continuation
+(`security add-generic-password -a ci -s svc \` and then `-w …`), and one the rules miss within a
+string, such as a quoted argument that runs into a literal `\n` after a flag that starts its string
+(`--token "…\n`) or a `"AUTHORIZATION"=>` value after an escaped line break
+(`"AUTHORIZATION"=>\n…`). Stored text that is not JSON is redacted whole. A stored string that
+ingestion clipped keeps its one truncation marker; if replacements grew it past the scan budget, it
+is clipped there again, still with one marker. A direct meld preview redacts each piece (session
+title, summary, evidence text, tool input and output) before it is clipped into the bundle, so no
+piece costs the bundle its later sessions; the bundle the preview returns locally is built from
+stored text, as before. The summary and title that come back are redacted with the ingestion rules
+before they are stored. The scan budget bounds each piece, not a summary: requested or in the
+background, a summary redacts up to 2,000 events before it calls the backend, so its cost grows with
+the number of events (about 15 seconds for 2,000 Bash commands of 49,000 characters of dense escaped
+near misses each).
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination

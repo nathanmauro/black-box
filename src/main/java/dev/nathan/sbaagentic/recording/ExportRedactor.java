@@ -28,10 +28,12 @@ public interface ExportRedactor {
 
     /**
      * {@link #redactJsonForSummary(String)} for a reader that shows at most {@code maxChars} characters
-     * of the JSON: in document order, the members and elements that start within the first
-     * {@code maxChars} characters of names, strings and other values are read and redacted whole, and
-     * the marker {@code …[truncated]} stands in for the rest, so the JSON stays valid and the work stays
-     * within that budget plus one string, however long the stored JSON is.
+     * of the JSON: in document order, members and elements are read until {@code maxChars} characters
+     * of names, strings and other values have been read, each member, value, array and object counting
+     * as at least one, so JSON made of empty strings, names or containers is cut like any other. Each
+     * string read is redacted whole, and the marker {@code …[truncated]} stands in for the rest, so the
+     * JSON stays valid and the work stays within that budget plus one string, however long the stored
+     * JSON is.
      */
     default String redactJsonForSummary(String json, int maxChars) {
 
