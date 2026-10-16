@@ -260,40 +260,70 @@ No existing saved artifacts or captures are scrubbed by this write policy.
 
 With the default patterns, nested JSON member names are matched case-insensitively after removing
 non-alphanumeric separators. Names containing `apikey`, `secret`, `token`, `passwd`, `password`,
-`authorization`, `credential`, or `privatekey` replace the **entire value** with `[REDACTED]`,
-including short strings, numbers, nulls, lists, and objects. This changes the JSON type for numeric
-fields such as `tokenCount` or `inputTokens`: `1234` becomes the string `"[REDACTED]"`, including
-in saved meld metadata. This conservative policy matches the
-[durable hook](durable-capture.md#privacy-and-limits). Ordinary identity and metadata fields keep
-their structure.
+`passphrase`, `authorization`, `credential`, or `privatekey`, and environment-style names (capital
+letters, digits and underscores) ending in `_KEY` such as `STRIPE_KEY`, replace the **entire value**
+with `[REDACTED]`, including short strings, numbers, nulls, lists, and objects. This changes the
+JSON type for numeric fields such as `tokenCount` or `inputTokens`: `1234` becomes the string
+`"[REDACTED]"`, including in saved meld metadata. The
+[durable hook](durable-capture.md#privacy-and-limits) applies the same policy without `passphrase`
+and the `_KEY` names. Ordinary identity and metadata fields keep their structure.
 
 Default text rules also scan named assignments inside string leaves, including JSON text returned
-by tools. Existing secret-name spellings (such as `password`, `api_key`, `client_secret` and
-`access_token`, including their existing prefixes/suffixes) accept `=`, `:` or `=>`, bare or matching
-single/double quoted keys, and values of any length. Quoted values can contain whitespace and
-backslash-escaped quotes; bare values end at whitespace or a JSON comma/closing bracket/brace.
-Complete `[REDACTED]` markers inside a bare credential are consumed as whole spans, so repeated
-markers cannot expose a trailing credential suffix. Genuine closing delimiters still end the value.
-Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned
-scalar. Characters glued to a closing quote, as in the shell word `"abc"def`, are redacted with
-the value; a delimiter, another quote or a JSON escape after the quote ends it.
+by tools. A name is a credential name in every text form when it contains `password`, `passwd`,
+`passphrase`, `secret`, `token`, `authorization`, `api_key`/`apikey` or `private_key`/`privatekey`
+in any letter case and with any prefix or suffix, so `client_secret`, `access_token` and
+`privateKey` count. Two weaker signals count only in configuration forms, because ordinary code uses
+them too:
+
+- An environment-style name ending in `_KEY` or containing `CREDENTIAL` (`STRIPE_KEY`,
+  `SBA_DB_CREDENTIAL`) counts in `=>` pairs, as a quoted key (`"STRIPE_KEY": …`), and in
+  `NAME=value` or `NAME: value` with the value on the same line. A spaced code assignment
+  (`ENTER_KEY = 13`), a value on the next line (a block colon such as `!= FAKE_KEY:`) and a shell
+  expansion (`EVENT_KEY="$(…)"`) are kept.
+- A name with lowercase letters that contains `credential` counts only in `=>` pairs, so
+  `credentials: 'include'` and `"credential-management":` are kept. Structured JSON members and
+  property-list keys still use the full policy above.
+
+Assignments accept `=`, `:` or `=>`, bare or matching single/double quoted keys, and values of any
+length. Quoted values can contain whitespace and backslash-escaped quotes; bare values end at
+whitespace, a JSON comma/closing bracket/brace, or a JSON-escaped line break or tab at any
+encoding level (`\n`, `\t`, `\\n`). Complete `[REDACTED]` markers inside a bare credential are
+consumed as whole spans, so repeated markers cannot expose a trailing credential suffix. Genuine
+closing delimiters still end the value. Other text is preserved. An unclosed quoted credential
+consumes the remainder of the scanned scalar. Characters glued to a closing quote, as in the shell
+word `"abc"def`, are redacted with the value; a delimiter, another quote or a JSON escape after the
+quote ends it.
 
 The same names also match displayed service configuration:
 
 - `=>` pairs, as printed by `plutil -p` (`"SBA_JUDGE_API_KEY" => "…"`), `launchctl print`
-  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP. A spaced `name => expression` with a bare name
-  containing lowercase letters and an unquoted value is treated as a lambda or arrow-function
-  parameter, such as `token => token.trim()`, and is kept.
-- JSON-encoded text, such as a tool result the capture hook stored as JSON: backslash-escaped key
-  and value quotes (`\"api_key\": \"…\"`, up to three encoding levels) are matched like ordinary
-  quotes, and a value ends at the matching escaped quote.
-- Property-list XML: a `<key>` whose name contains one of the structured secret words listed
-  above keeps its tags but has the following `<string>` or `<data>` value replaced, whether the
-  value is on the same line, on a later line (raw or JSON-escaped whitespace), or behind a
-  `cat -n`, `grep -n` or line-numbered file-view gutter.
+  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP. An unquoted value after an environment-style name that
+  starts its line, as in `launchctl print`, runs to the end of that line, so its spaces, commas and
+  brackets go too; the same name inline in prose keeps the rest of its line. A `plutil -p` data
+  value (`{length = 16, bytes = 0x…}`) is removed whole. A spaced `name => expression` with a bare
+  name containing lowercase letters and an unquoted value is treated as a lambda or
+  arrow-function parameter, such as `token => token.trim()`, and is kept.
+- JSON-encoded text, such as a tool result the capture hook stored with `jq tojson`:
+  backslash-escaped key and value quotes (`\"api_key\": \"…\"`, up to four encoding levels) are
+  matched like ordinary quotes, and a value ends at the matching escaped quote. Because an escaped
+  line break ends a bare value, each entry of an escaped `env` or `launchctl print` listing is
+  matched on its own.
+- Property-list XML: a `<key>` (closed by `</key>` or the slash-escaped `<\/key>`) whose name the
+  structured policy above treats as secret keeps its tags but has the next `<string>`, `<data>`,
+  `<integer>` or `<real>` value replaced, when only non-markup text of up to 1,024 characters and
+  at most four XML comments stand between them. Same-line and later-line values, raw or
+  JSON-escaped whitespace, `cat -n` and file-view line numbers, `grep -n`/`rg` gutters with or
+  without a path (`path:12:` and `path-13-`), diff markers, and JSON or Python list separators all
+  fit. A value element directly after a replaced one, such as the old and new lines of a diff, is
+  replaced too. When a key and its value are separate strings of one JSON list, such as the lines
+  of an Edit tool's `structuredPatch`, the value at the start of the next string is replaced. A
+  token count keeps its integer (`<key>tokenCount</key><integer>42</integer>`).
+- HTML-safe JSON escapes for `<` and `>` (`\u003c`, `\u003e`) and unicode-escaped quotes
+  (`\u0022`, `\u0027`) are decoded for a second scan. When that scan finds a credential the encoded
+  text hid, the stored string keeps the decoded characters.
 - The provider key shape `apikey_<hex>[_<hex>…]` with at least 16 hexadecimal digits is replaced
-  wherever it appears, including on its own line. Shorter identifiers such as `apikey_cafe` are
-  kept.
+  wherever it appears, including on its own line and directly after a percent-encoded byte (`%22`,
+  `%3D`) or a `\uXXXX` escape. Shorter identifiers such as `apikey_cafe` are kept.
 
 A token count is not a credential: a name containing `tokens` or `tokenCount` and no other secret
 word (`max_tokens`, `context_tokens`, `promptTokenCount`) keeps an unquoted value of one to twelve
@@ -302,13 +332,27 @@ punctuation not glued to more letters or digits. Other values of those names are
 Structured JSON members named that way are unchanged: their entire value is still replaced.
 
 Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping and the
-existing truncation marker; replacement markers can expand short values. The displayed-configuration
-rules do bounded work per scanned character, so near-miss input cannot stall ingestion. This is a small
-assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled
-secrets. Bare values in JSON-encoded text end only at whitespace or a JSON comma/closing
-bracket/brace, so they can also remove the text that follows them on later lines. Model export
-also applies these default rules independently of ingestion settings and retains its conservative
-fallback for escaped quoted credential keys, which may remove the rest of a text leaf.
+existing truncation marker; replacement markers can expand short values. Every rule does bounded,
+linear work per scanned character, and tests scan 4 MB of near-miss text per rule within a fixed
+time bound, so adversarial input cannot stall ingestion. This is a small assignment grammar, not a
+shell parser, JSON decoder, or general detector for encoded or unlabelled secrets. Known limits:
+
+- A credential shown without its name is not recognized, such as `echo "$TOKEN"`,
+  `launchctl getenv NAME`, or an Edit whose old and new strings hold only a `<string>` line.
+- An unquoted `NAME=value` ends at whitespace, so a value with spaces printed by `env` or
+  `printenv` keeps everything after its first space. Only a `=>` value that follows an
+  environment-style name at the start of a line runs to the end of the line.
+- A property-list value is missed when a merge-conflict marker or other markup stands between it
+  and its key, when more than 1,024 characters do, or when an XML comment between them contains
+  `>`. HTML-entity-escaped markup (`&lt;key&gt;`) and percent-encoded assignments are not decoded.
+- Code is redacted too when it assigns to a credential name: `passphrase: cert.passphrase`,
+  `privateKeyLoc = null` and `PrivateKeyword = 123` lose their values, as `password: …` and
+  `token = …` already did, and an environment-style `_KEY` code followed by a colon loses the next
+  word (`INVALID_DOTENV_KEY: [REDACTED] key part`).
+
+Model export also applies these default rules independently of ingestion settings and retains its
+conservative fallback for escaped quoted credential keys, which may remove the rest of a text leaf;
+that fallback uses the first word list only, not the weaker signals.
 
 String member names are also scanned with the active text-redaction patterns. If redacting a name
 would collide with another member, the changed name gains a ` (redacted key N)` suffix so that the

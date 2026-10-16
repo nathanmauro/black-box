@@ -35,6 +35,8 @@ class QuotedCredentialRedactionTest {
                 Arguments.of("password=\"FAKE CREDENTIAL\\\\\" after", "password=\"[REDACTED]\" after"),
                 Arguments.of("Authorization: Bearer F4KE7 after", "Authorization: Bearer [REDACTED] after"),
                 Arguments.of("MY_SECRET_KEY = 'F4KE7' after", "MY_SECRET_KEY = '[REDACTED]' after"),
+                // Text assignments share the structured word list, so private_key is a credential name too.
+                Arguments.of("private_key=F4KE7 next=readable", "private_key=[REDACTED] next=readable"),
                 Arguments.of("password=\"FAKE unfinished credential", "password=\"[REDACTED]"),
                 Arguments.of("password=\"FAKE CREDENTIAL\\\"", "password=\"[REDACTED]"),
                 Arguments.of(
@@ -64,8 +66,7 @@ class QuotedCredentialRedactionTest {
                 "the token bucket algorithm",
                 "password requirements documented",
                 "note='readable text'",
-                "api.key=F4KE7",
-                "private_key=F4KE7"
+                "api.key=F4KE7"
             })
     void preservesBenignTextAndExistingAssignmentKeyClassification(String text) {
         assertThat(redactor.redact(text)).isEqualTo(text);

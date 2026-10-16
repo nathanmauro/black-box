@@ -4,15 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Redaction now removes credentials from displayed service configuration before storage and
-  export: `=>` pairs from `plutil -p` and `launchctl print`, launchd property-list
-  `<key>`/`<string>` and `<data>` values (raw, JSON-escaped, or behind line-number gutters),
-  backslash-escaped quoted keys and values in JSON-encoded tool results, characters glued to a
-  quoted value, and the bare `apikey_<hex>` key shape. Previously such values reached event text,
-  tool output, metadata, the full-text index and Elasticsearch in plain text. Token counts such as
-  `max_tokens: 4096` in text are no longer redacted, and `token => token.trim()` lambdas are kept.
-  Existing captures are not rewritten; rotate any credential an agent displayed before this
-  change.
+- Redaction recognizes credentials in displayed service configuration before storage and export.
+  Covered: `=>` pairs from `plutil -p`, including `{length = …, bytes = 0x…}` data values, and from
+  `launchctl print`, where an unquoted value at the start of a line is removed to the end of that
+  line; property-list `<string>`, `<data>`, `<integer>` and `<real>` values under a secret `<key>`,
+  raw or JSON-escaped, behind `cat -n` numbers, `grep`/`rg` line-number and path gutters, diff
+  markers or XML comments, both lines of a changed value in a diff, and a key and value split across
+  the lines of an Edit tool's `structuredPatch`; JSON-encoded tool results up to four encoding
+  levels, where an escaped line break now ends a bare value, so adjacent entries of an escaped `env`
+  or `launchctl print` listing are each redacted instead of every other one being stored; the names
+  `passphrase` and `private_key` everywhere, and `credential` and environment-style `_KEY` names
+  such as `STRIPE_KEY` in configuration forms; HTML-safe and unicode-escaped markup; characters
+  glued to a quoted value; and the bare `apikey_<hex>` key shape, also after `%22` or a `\u000a`
+  escape. Previously such values reached event text, tool output, metadata, the full-text index and
+  Elasticsearch in plain text. Token counts such as `max_tokens: 4096` in text are no longer
+  redacted, and `token => token.trim()` lambdas are kept. Not covered: a credential shown without
+  its name, the part after the first space of an `env` value, and property-list pairs split by
+  merge-conflict markers; see [docs/operations.md](docs/operations.md#configuration). Code that
+  assigns to these names, such as `passphrase: cert.passphrase`, loses the value. Existing captures
+  are not rewritten; rotate any credential an agent displayed before this change.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped

@@ -9,11 +9,14 @@ import com.sun.net.httpserver.HttpServer;
 import dev.nathan.sbaagentic.SbaAgenticApplication;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -66,6 +69,39 @@ class ConfigSecretRedactionHttpTest {
             "\tenvironment = {\n\t\tSBA_JUDGE_API_KEY => " + FAKE_KEY + "\n\t}\n\tcontext_tokens: 1234\n";
     private static final String COMMAND = "plutil -p ~/Library/LaunchAgents/com.example.blackbox.plist; "
             + "/usr/bin/env SBA_X_TOKEN=F4KE7_ENV_VALUE /usr/bin/java -jar black-box.jar";
+    // Synthetic values that each index as one full-text token.
+    private static final List<String> HOOK_SECRET_TOKENS = List.of(
+            FAKE_SEGMENT,
+            FAKE_SEGMENT_2,
+            "F4KE7dbPassword",
+            "F4KE7stripeKey",
+            "F4KE7oldDb",
+            "F4KE7newDb",
+            "F4KE7promptPass");
+    private static final String[] HOOK_SECRETS = {FAKE_SEGMENT, FAKE_SEGMENT_2, "F4KE7", "correct horse battery"};
+    private static final String LAUNCHCTL_PRINT = """
+            gui/501/com.example.blackbox = {
+            \tactive count = 1
+            \tpath = /fixture/Library/LaunchAgents/com.example.blackbox.plist
+            \tstate = running
+
+            \tprogram = /usr/bin/java
+            \targuments = {
+            \t\t/usr/bin/java
+            \t\t-jar
+            \t\t/fixture/black-box.jar
+            \t}
+
+            \tenvironment = {
+            \t\tPATH => /usr/bin:/bin
+            \t\tSBA_DB_PASSWORD => F4KE7dbPassword
+            \t\tSBA_JUDGE_API_KEY => %s
+            \t\tSBA_SIGNING_PASSPHRASE => F4KE7 correct horse battery
+            \t\tSTRIPE_KEY => F4KE7stripeKey
+            \t\tSBA_PORT => 8766
+            \t}
+            }
+            """.formatted(FAKE_KEY);
 
     @TempDir
     static Path tempDir;
@@ -219,6 +255,219 @@ class ConfigSecretRedactionHttpTest {
                 .isNotNull()
                 .doesNotContain(FAKE_SEGMENT, FAKE_SEGMENT_2)
                 .contains("is what plutil shows");
+    }
+
+    /**
+     * The real capture hook (bash, jq and curl) posts Claude Code payloads as a live session would.
+     * Its text is jq {@code tojson} of the tool result, so the displayed configuration arrives
+     * JSON-escaped, and the whole hook payload rides along in {@code metadata.rawHook}.
+     */
+    @Test
+    void claudeCodeHookCapturesOfServiceConfigurationStoreNoCredential() throws Exception {
+        String session = "hook-config-redaction-" + UUID.randomUUID();
+        String plist = "/fixture/Library/LaunchAgents/com.example.blackbox.plist";
+        Map<String, String> eventIds = new LinkedHashMap<>();
+        eventIds.put(
+                "UserPromptSubmit",
+                runHook(
+                        session,
+                        null,
+                        Map.of(
+                                "hook_event_name",
+                                "UserPromptSubmit",
+                                "prompt",
+                                "SBA_DB_PASSWORD => F4KE7promptPass is in the plist, so why does launchd fail?\n"
+                                        + LAUNCHCTL_PRINT)));
+        eventIds.put(
+                "Bash",
+                runHook(
+                        session,
+                        "Bash",
+                        Map.of(
+                                "hook_event_name",
+                                "PostToolUse",
+                                "tool_name",
+                                "Bash",
+                                "tool_input",
+                                Map.of(
+                                        "command",
+                                        "launchctl print gui/501/com.example.blackbox",
+                                        "description",
+                                        "Show the service environment"),
+                                "tool_response",
+                                Map.of("stdout", LAUNCHCTL_PRINT, "stderr", "", "interrupted", false, "isImage", false),
+                                "tool_use_id",
+                                "toolu_fixture_launchctl")));
+        eventIds.put(
+                "Grep",
+                runHook(
+                        session,
+                        "Grep",
+                        Map.of(
+                                "hook_event_name",
+                                "PostToolUse",
+                                "tool_name",
+                                "Grep",
+                                "tool_input",
+                                Map.of(
+                                        "pattern",
+                                        "SBA_JUDGE",
+                                        "path",
+                                        "/fixture/Library/LaunchAgents",
+                                        "output_mode",
+                                        "content",
+                                        "-n",
+                                        true,
+                                        "-A",
+                                        1),
+                                "tool_response",
+                                Map.of(
+                                        "mode",
+                                        "content",
+                                        "numFiles",
+                                        0,
+                                        "filenames",
+                                        List.of(),
+                                        "content",
+                                        plist + ":14:    <key>SBA_JUDGE_API_KEY</key>\n" + plist + "-15-    <string>"
+                                                + FAKE_KEY + "</string>",
+                                        "numLines",
+                                        2),
+                                "tool_use_id",
+                                "toolu_fixture_grep")));
+        String oldEntry = "    <key>SBA_DB_PASSWORD</key>\n    <string>F4KE7oldDb</string>";
+        String newEntry = "    <key>SBA_DB_PASSWORD</key>\n    <string>F4KE7newDb</string>";
+        eventIds.put(
+                "Edit",
+                runHook(
+                        session,
+                        "Edit",
+                        Map.of(
+                                "hook_event_name",
+                                "PostToolUse",
+                                "tool_name",
+                                "Edit",
+                                "tool_input",
+                                Map.of("file_path", plist, "old_string", oldEntry, "new_string", newEntry),
+                                "tool_response",
+                                Map.of(
+                                        "filePath",
+                                        plist,
+                                        "oldString",
+                                        oldEntry,
+                                        "newString",
+                                        newEntry,
+                                        "originalFile",
+                                        PLIST.replace(
+                                                "    <key>SBA_PORT</key>", oldEntry + "\n    <key>SBA_PORT</key>"),
+                                        "structuredPatch",
+                                        List.of(Map.of(
+                                                "oldStart",
+                                                11,
+                                                "oldLines",
+                                                4,
+                                                "newStart",
+                                                11,
+                                                "newLines",
+                                                4,
+                                                "lines",
+                                                List.of(
+                                                        "     <key>SBA_DB_PASSWORD</key>",
+                                                        "-    <string>F4KE7oldDb</string>",
+                                                        "+    <string>F4KE7newDb</string>",
+                                                        "     <key>SBA_PORT</key>",
+                                                        "     <string>8766</string>"))),
+                                        "userModified",
+                                        false,
+                                        "replaceAll",
+                                        false),
+                                "tool_use_id",
+                                "toolu_fixture_edit")));
+
+        for (Map.Entry<String, String> captured : eventIds.entrySet()) {
+            String eventId = captured.getValue();
+            Map<String, Object> stored = jdbc.queryForMap(
+                    "SELECT text, tool_input_json, tool_output_json, metadata_json, human_text FROM agent_events"
+                            + " WHERE id = ?",
+                    eventId);
+            assertThat(stored.values().toString()).as(captured.getKey()).doesNotContain(HOOK_SECRETS);
+            assertThat(stored.get("metadata_json").toString())
+                    .as(captured.getKey())
+                    .contains("rawHook");
+            for (String token : HOOK_SECRET_TOKENS) {
+                assertThat(ftsHits(eventId, "\"" + token + "\""))
+                        .as("%s full-text token %s", captured.getKey(), token)
+                        .isZero();
+            }
+            assertThat(http.getForObject(base + "/api/events/" + eventId, String.class))
+                    .as(captured.getKey())
+                    .doesNotContain(HOOK_SECRETS);
+            assertThat(elasticDocuments.get(eventId))
+                    .as(captured.getKey())
+                    .isNotNull()
+                    .doesNotContain(HOOK_SECRETS);
+        }
+        assertThat(jdbc.queryForObject(
+                        "SELECT text FROM agent_events WHERE id = ?", String.class, eventIds.get("Bash")))
+                .contains("PATH => /usr/bin:/bin", "SBA_PORT => 8766", "/fixture/black-box.jar")
+                .contains("SBA_DB_PASSWORD => [REDACTED]\\n", "STRIPE_KEY => [REDACTED]\\n");
+        assertThat(ftsHits(eventIds.get("Bash"), "\"blackbox\"")).isOne();
+        Map<String, Object> sessionRow = jdbc.queryForMap(
+                "SELECT title, first_human_turn, summary FROM agent_sessions WHERE client_session_id = ?", session);
+        assertThat(sessionRow.values().toString()).doesNotContain(HOOK_SECRETS);
+        assertThat(sessionRow.get("title").toString()).startsWith("SBA_DB_PASSWORD => [REDACTED]");
+    }
+
+    /** Runs scripts/hooks/sba-agent-hook.sh on one payload and returns the event it recorded. */
+    private String runHook(String session, String toolName, Map<String, Object> fields) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("session_id", session);
+        payload.put("transcript_path", "/fixture/.claude/projects/fixture/" + session + ".jsonl");
+        payload.put("cwd", "/fixture/config-redaction");
+        payload.put("permission_mode", "default");
+        payload.putAll(fields);
+        Path input = tempDir.resolve("hook-" + UUID.randomUUID() + ".json");
+        Path errors = tempDir.resolve("hook-" + UUID.randomUUID() + ".err");
+        Files.writeString(input, mapper.writeValueAsString(payload));
+        ProcessBuilder builder = new ProcessBuilder(
+                        "bash",
+                        Path.of("scripts/hooks/sba-agent-hook.sh")
+                                .toAbsolutePath()
+                                .toString(),
+                        "claude")
+                .directory(tempDir.toFile())
+                .redirectInput(input.toFile())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(errors.toFile());
+        builder.environment().clear();
+        builder.environment().put("PATH", System.getenv("PATH"));
+        builder.environment().put("HOME", tempDir.toString());
+        builder.environment().put("TMPDIR", tempDir.toString());
+        builder.environment().put("SBA_CAPTURE_DURABLE", "0");
+        builder.environment().put("SBA_AGENTIC_URL", base);
+        Process process = builder.start();
+        try {
+            assertThat(process.waitFor(20, TimeUnit.SECONDS))
+                    .as("hook completes")
+                    .isTrue();
+            assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
+        List<String> ids = jdbc.queryForList(
+                "SELECT e.id FROM agent_events e JOIN agent_sessions s ON s.id = e.session_id"
+                        + " WHERE s.client_session_id = ? AND e.event_type = ? AND coalesce(e.tool_name, '') = ?",
+                String.class,
+                session,
+                fields.get("hook_event_name"),
+                toolName == null ? "" : toolName);
+        assertThat(ids)
+                .as("the hook recorded one %s event (jq and curl are required)", fields.get("hook_event_name"))
+                .hasSize(1);
+
+        return ids.get(0);
     }
 
     private Map<String, Object> event(

@@ -185,10 +185,12 @@ tail is dropped, and truncation is marked. Deep or excessively complex structure
 Unknown secrets may remain, benign text may be redacted, and redacted JSON key collisions can lose
 fields. Custom server redaction rules are not available to this local sanitizer and cannot protect
 the local queue before delivery. Neither are the server's displayed-configuration rules
-(`=>` pairs, JSON-escaped quotes, property-list values and the `apikey_<hex>` key shape; see the
+(`=>` pairs, JSON-escaped quotes and line breaks, property-list values, decoded HTML-safe escapes
+and the `apikey_<hex>` key shape) or its `passphrase` and environment-style `_KEY` names (see the
 [redaction policy](operations.md#configuration)): a queued row can hold such a value until it is
-delivered, and the server applies them on receipt. Queue privacy relies on normal local filesystem ownership; it is
-not encryption or protection against another process already running as the same user. Host
+delivered, and the server applies them on receipt. Queue privacy relies on normal local filesystem
+ownership; it is not encryption or protection against another process already running as the same
+user. Host
 clients' own input files, operating-system swap, and external logging are outside this hook's
 storage boundary.
 
