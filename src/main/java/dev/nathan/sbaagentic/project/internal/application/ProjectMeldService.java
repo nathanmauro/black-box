@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 import dev.nathan.sbaagentic.project.internal.domain.MeldCursor;
 import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -48,16 +49,19 @@ public class ProjectMeldService implements ProjectMeldOperations {
     private final ProjectMeldSummarizer summaryBackend;
     private final ProjectAliasService aliasService;
     private final IngestionRedactor redactor;
+    private final ExportRedactor exportRedactor;
 
     public ProjectMeldService(
             ProjectCatalogStore repository,
             ProjectMeldSummarizer summaryBackend,
             ProjectAliasService aliasService,
-            IngestionRedactor redactor) {
+            IngestionRedactor redactor,
+            ExportRedactor exportRedactor) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
         this.aliasService = aliasService;
         this.redactor = redactor;
+        this.exportRedactor = exportRedactor;
     }
 
     public ProjectMeldPreviewResponse preview(String projectKey, ProjectMeldPreviewRequest request) {
@@ -83,7 +87,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         if (DIRECT.equals(executionMode)) {
             try {
-                preview = summaryBackend.summarize(directPrompt(bundle.text()));
+                // The configured summary backend may run outside this machine. The bounded bundle
+                // (48,000 characters) fits one export scan budget, so nothing is clipped.
+                preview = summaryBackend.summarize(exportRedactor.redactForExport(directPrompt(bundle.text())));
                 status = "preview";
             } catch (RuntimeException ex) {
                 throw new ResponseStatusException(

@@ -23,6 +23,10 @@ All notable changes to this project will be documented in this file.
   merge-conflict markers; see [docs/operations.md](docs/operations.md#configuration). Code that
   assigns to these names, such as `passphrase: cert.passphrase`, loses the value. Existing captures
   are not rewritten; rotate any credential an agent displayed before this change.
+- Session summaries and direct meld previews pass stored text through export redaction before the
+  summary backend receives it. Text stored before a redaction rule recognized its credential was
+  sent as stored, by default to the external Codex wrapper; now each piece is redacted first, and
+  the summary and title the backend returns are redacted before they are stored.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped

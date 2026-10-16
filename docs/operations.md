@@ -365,7 +365,11 @@ scan ceiling applies with either default or custom patterns to each meld/braid f
 and each metadata string scalar, with Unicode-safe clipping and a truncation marker; trailing
 unscanned content is discarded. Disabling
 redaction also disables this scan clipping. Event ingestion has separate text-length limits.
-Summary/model export has a separate redaction boundary; configuring ingestion does not replace it.
+Summary/model export has a separate, mandatory redaction boundary; configuring ingestion does not
+replace it. Session summaries and direct meld previews pass each piece of stored text they send to
+the configured summary backend, local or external, through export redaction, so a capture stored
+before a rule existed is not sent as stored. The summary and title that come back are redacted
+with the ingestion rules before they are stored.
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
@@ -409,7 +413,8 @@ Summaries are scheduled automatically in the background when a session records a
 event (`SessionEnd`, `Stop`, or `SubagentStop`) and has no summary yet; `summarize` and
 `summarize-missing` run them explicitly. A restart stops unfinished background summaries; see
 [Stopping and restarting](#stopping-and-restarting). Default external summarization can send transcript text
-through the selected vendor. Both
+through the selected vendor; that text passes export redaction first (see
+[Configuration](#configuration)), which removes recognized credentials but is not a guarantee. Both
 [`summarize-with-codex.sh`](../scripts/summarize-with-codex.sh) and
 [`summarize-with-claude.sh`](../scripts/summarize-with-claude.sh) are supplied. Select the latter
 with `SBA_SUMMARY_EXTERNAL_COMMAND=/path/to/black-box/scripts/summarize-with-claude.sh`.
