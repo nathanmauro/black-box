@@ -223,11 +223,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     private static String redactDefaults(String text, List<RedactionRule> rules) {
-        String clipped = clipScalar(text);
-        boolean truncated = text.length() > MAX_SCAN_CHARS;
+        // A text that already ends with the marker, such as a stored text that ingestion clipped, is
+        // clipped once: its marker stays whole and last, and only the text before it is scanned.
+        boolean marked = text.endsWith(CLIP_MARKER);
+        String body = marked ? text.substring(0, text.length() - CLIP_MARKER.length()) : text;
+        boolean truncated = marked || body.length() > MAX_SCAN_CHARS;
         // The marker is not part of the value. An unclosed quoted credential at the scan
         // boundary must consume the retained value without swallowing that marker.
-        String scanned = truncated ? clipped.substring(0, clipped.length() - CLIP_MARKER.length()) : clipped;
+        String scanned = body.length() > MAX_SCAN_CHARS ? body.substring(0, clipLength(body)) : body;
         String result = applyRules(scanned, rules);
         // HTML-safe JSON escapes for < and > (u003c and u003e after a backslash) and unicode-escaped
         // quotes can hide a whole credential pair. Scan the first result again with those escapes
@@ -305,18 +308,29 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return text;
         }
+
+        return text.substring(0, clipLength(text)) + CLIP_MARKER;
+    }
+
+    // How much of a text longer than the scan budget is kept: the budget, less half a surrogate pair.
+    private static int clipLength(String text) {
         int keep = MAX_SCAN_CHARS;
         if (Character.isHighSurrogate(text.charAt(keep - 1)) && Character.isLowSurrogate(text.charAt(keep))) {
             keep--;
         }
 
-        return text.substring(0, keep) + CLIP_MARKER;
+        return keep;
     }
 
     /** Whether {@link #redact(String)} will clip this scalar before scanning it. */
     public boolean clips(String text) {
+        if (!enabled || text == null) {
 
-        return enabled && text != null && text.length() > MAX_SCAN_CHARS;
+            return false;
+        }
+        int scanned = defaultRules && text.endsWith(CLIP_MARKER) ? text.length() - CLIP_MARKER.length() : text.length();
+
+        return scanned > MAX_SCAN_CHARS;
     }
 
     @Override
@@ -1014,8 +1028,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         int escapedQuote = escapedQuoteLength(text, start);
         if (lastQuote && (quote == '"' || escapedQuote > 0)) {
             // plutil -p prints a string value between quotes without escaping the quotes inside it:
-            // the value closes at the last quote on its line.
+            // the value closes at the last quote on its line. A value already replaced closes right
+            // after its marker, so a later pair on the line is never taken with it.
             String delimiter = escapedQuote > 0 ? text.substring(start, start + escapedQuote) : "\"";
+            if (text.startsWith(REDACTED + delimiter, start + delimiter.length())) {
+
+                return new AssignmentValue(
+                        start + 2 * delimiter.length() + REDACTED.length(), delimiter + REDACTED + delimiter);
+            }
             int stop = lineEnd(text, start + delimiter.length(), level, false);
             int end = lastQuoteBefore(text, start + delimiter.length(), stop, delimiter.length() - 1);
             if (end > 0) {
@@ -1110,26 +1130,59 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         // Treat every marker as an atomic span, including markers inside this value.
         // Its closing bracket must not expose any attached credential suffix.
         int end = start;
+        boolean afterMarker = false;
         while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
             char current = text.charAt(end);
             if (text.startsWith(REDACTED, end)) {
                 end += REDACTED.length();
-            } else if (",}]".indexOf(current) >= 0) {
+                afterMarker = true;
+                continue;
+            }
+            if (",}]".indexOf(current) >= 0) {
                 break;
+            }
+            if (current == '"' || current == '\'') {
+                // A quote right after a marker, or one that a delimiter follows, closes the string that
+                // holds this value, as in {"cmd": "tool --api-key VALUE"}; it stays a delimiter.
+                if (afterMarker || closesString(text, end + 1)) {
+                    break;
+                }
+                end++;
             } else if (current == '\\') {
                 // A JSON-escaped line break or tab, at any encoding level, ends the value as raw
-                // whitespace does; the next entry of an escaped env or launchctl listing follows it.
+                // whitespace does; the next entry of an escaped env or launchctl listing follows it. An
+                // escaped quote ends it as a raw one does.
                 int run = backslashRun(text, end);
-                if (end + run < text.length() && "nrt".indexOf(text.charAt(end + run)) >= 0) {
+                char escaped = end + run < text.length() ? text.charAt(end + run) : 0;
+                if ("nrt".indexOf(escaped) >= 0
+                        || escaped == '"' && (afterMarker || closesString(text, end + run + 1))) {
                     break;
                 }
                 end += run;
             } else {
                 end++;
             }
+            afterMarker = false;
         }
 
         return end;
+    }
+
+    // Whether a quote that ends just before this index closes a string: the end of the text, whitespace,
+    // a JSON or code delimiter, or a JSON-escaped line break or tab follows it.
+    private static boolean closesString(String text, int after) {
+        if (after >= text.length()) {
+
+            return true;
+        }
+        char next = text.charAt(after);
+        if (Character.isWhitespace(next) || ",}]);:".indexOf(next) >= 0) {
+
+            return true;
+        }
+        int run = next == '\\' ? backslashRun(text, after) : 0;
+
+        return run > 0 && after + run < text.length() && "nrt".indexOf(text.charAt(after + run)) >= 0;
     }
 
     /**

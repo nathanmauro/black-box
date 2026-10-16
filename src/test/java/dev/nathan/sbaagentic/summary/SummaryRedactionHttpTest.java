@@ -134,8 +134,9 @@ class SummaryRedactionHttpTest {
     }
 
     /**
-     * A secret-free session whose stored text holds names that only resemble credentials (token
-     * counts, package names) reaches the summary backend as stored: no event loses its text.
+     * A session whose stored text holds names that only resemble credentials (token counts, package
+     * names), and tool inputs whose credential ingestion already replaced, reaches the summary backend
+     * as stored: no event loses its text, and a stored tool input stays valid JSON.
      */
     @Test
     void summaryBackendReceivesTheStoredTextOfAnOrdinarySessionUnchanged() throws Exception {
@@ -170,6 +171,18 @@ class SummaryRedactionHttpTest {
                 "Read",
                 "\"@csstools/css-tokenizer\": \"^3.0.4\",\n\"js-tokens\": \"^4.0.0\",\n\"after\": \"SUMMARY-C-AFTER\"",
                 null);
+        // A PreToolUse event without text: the backend is sent its stored tool input, whose last
+        // value ingestion replaced, so the replacement sits before the quote that closes the string.
+        for (String command : List.of(
+                "defaults write com.apple.screensaver askForPassword -int F4KE7lock",
+                "node server.js --api-key F4KE7flag",
+                "export SBA_DB_PASSWORD=F4KE7env",
+                "mysql --user=root password=F4KE7pw")) {
+            Map<String, Object> input = new LinkedHashMap<>();
+            input.put("command", command);
+            input.put("description", "SUMMARY-C-INPUT");
+            captureInput(client, cwd, "PreToolUse", "Bash", input);
+        }
         String sessionId = sessionId(client);
         Files.deleteIfExists(requests);
 
@@ -184,6 +197,19 @@ class SummaryRedactionHttpTest {
             assertThat(sent).as("the summary request holds the stored text").contains(stored);
         }
         assertThat(sent).contains("\\\"max_tokens\\\": 4096", "SUMMARY-C-BENCH 41 ms", "SUMMARY-C-AFTER");
+        List<String> storedInputs = jdbc.queryForList(
+                "SELECT tool_input_json FROM agent_events WHERE session_id = ? AND event_type = 'PreToolUse'",
+                String.class,
+                sessionId);
+        assertThat(storedInputs).hasSize(4);
+        for (String stored : storedInputs) {
+            assertThat(stored).doesNotContain("F4KE7").contains("[REDACTED]\",\"description\"");
+            assertThat(json.readTree(stored).path("description").asText()).isEqualTo("SUMMARY-C-INPUT");
+            assertThat(sent)
+                    .as("the summary request holds the stored tool input")
+                    .contains(stored);
+        }
+        assertThat(sent).doesNotContain("F4KE7");
     }
 
     /**
@@ -254,6 +280,19 @@ class SummaryRedactionHttpTest {
             }
         }
         throw new AssertionError("no project for " + cwd);
+    }
+
+    private void captureInput(
+            String clientSessionId, String cwd, String eventType, String toolName, Map<String, Object> toolInput) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("source", "claude");
+        event.put("clientSessionId", clientSessionId);
+        event.put("eventType", eventType);
+        event.put("cwd", cwd);
+        event.put("toolName", toolName);
+        event.put("toolInput", toolInput);
+        var captured = http.postForEntity(base + "/api/events", event, JsonNode.class);
+        assertThat(captured.getStatusCode().value()).isEqualTo(200);
     }
 
     private String capture(

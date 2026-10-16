@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -609,7 +610,15 @@ class ConfigSecretRedactionTest {
                         SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET=[REDACTED]
                         {"SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD": "[REDACTED]", "port": 5432}
                             SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD = [REDACTED]
-                        java -jar app.jar --spring-datasource-hikari-data-source-properties-password [REDACTED] --port 8766"""));
+                        java -jar app.jar --spring-datasource-hikari-data-source-properties-password [REDACTED] --port 8766"""),
+                // A bare value inside a JSON string ends before the quote that closes the string.
+                Arguments.of("credential flags and assignments inside JSON strings", """
+                        {"scripts": {"start": "node server.js --api-key F4KE7flag", "dev": "vite"}}
+                        {"env": "export DB_PASSWORD=F4KE7assign", "next": 1}
+                        ["mysql --password F4KE7list"]""", """
+                        {"scripts": {"start": "node server.js --api-key [REDACTED]", "dev": "vite"}}
+                        {"env": "export DB_PASSWORD=[REDACTED]", "next": 1}
+                        ["mysql --password [REDACTED]"]"""));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -727,6 +736,53 @@ class ConfigSecretRedactionTest {
         }
         assertThat(redactor.redactDeep(Map.of("stdout", display, upper, "F4KE7member")))
                 .isEqualTo(Map.of("stdout", expected, upper, "[REDACTED]"));
+    }
+
+    /**
+     * The summary backend is sent each stored piece through the built-in rules: a tool input that
+     * ingestion already redacted reaches it unchanged, still valid JSON, never losing the quote that
+     * closes a replaced value.
+     */
+    static Stream<Arguments> toolInputsRedactedAtIngest() {
+
+        return Stream.of(
+                Arguments.of("defaults write com.apple.screensaver askForPassword -int F4KE7lock"),
+                Arguments.of("node server.js --api-key F4KE7flag"),
+                Arguments.of("export SBA_DB_PASSWORD=F4KE7env"),
+                Arguments.of("mysql --user=root password=F4KE7pw"),
+                Arguments.of("security add-generic-password -a fixture -s jev -w F4KE7sec"),
+                Arguments.of("launchctl setenv SBA_DB_PASSWORD F4KE7setenv"),
+                Arguments.of("/usr/bin/env SBA_X_TOKEN='F4KE7 quoted'"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("toolInputsRedactedAtIngest")
+    void storedToolInputReachesTheSummaryBackendUnchanged(String command) throws Exception {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("command", command);
+        input.put("description", "Run it");
+        String stored = JSON.writeValueAsString(redactor.redactDeep(input));
+        assertThat(stored).doesNotContain("F4KE7").contains("[REDACTED]").endsWith("\",\"description\":\"Run it\"}");
+        assertThat(redactor.redactForSummary(stored)).isEqualTo(stored);
+        assertThat(redactor.redact(stored)).isEqualTo(stored);
+        assertThat(redactor.redactForSummary(jsonEncode(stored))).isEqualTo(jsonEncode(stored));
+        assertThat(JSON.readTree(redactor.redactForSummary(stored))
+                        .path("command")
+                        .asText())
+                .contains("[REDACTED]")
+                .startsWith(command.substring(0, 6));
+    }
+
+    @Test
+    void summaryRedactionKeepsTheClipMarkerOfAStoredText() {
+        // Clipped at 50,000 characters, the replacement shortens the text, and the marker then ends
+        // past the scan budget.
+        String stored = redactor.redact("y".repeat(49_975) + " password=" + "F4KE".repeat(10));
+        assertThat(stored).endsWith("password=[REDACTED] …[truncated]").hasSizeGreaterThan(50_000);
+        assertThat(redactor.redactForSummary(stored)).isEqualTo(stored);
+        assertThat(redactor.redact(stored)).isEqualTo(stored);
+        String longer = redactor.redact("z".repeat(70_000));
+        assertThat(redactor.redactForSummary(longer)).isEqualTo(longer);
     }
 
     /**
