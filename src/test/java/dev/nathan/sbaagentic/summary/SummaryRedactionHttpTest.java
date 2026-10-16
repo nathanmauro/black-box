@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.SbaAgenticApplication;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -247,6 +248,32 @@ class SummaryRedactionHttpTest {
     }
 
     /**
+     * The summary backend reads each stored tool input up to the scan budget, as it reads any stored
+     * text: the strings that start within the first 50,000 characters are sent, and one marker stands
+     * in for the rest.
+     */
+    @Test
+    void summaryBackendReadsEachStoredToolInputUpToTheScanBudget() throws Exception {
+        String cwd = "/fixture/summary-budget";
+        String client = "summary-budget-" + UUID.randomUUID();
+        capture(client, cwd, "UserPromptSubmit", null, "Summarize the long build logs", null);
+        List<String> parts = new ArrayList<>();
+        for (int index = 1; index <= 13; index++) {
+            parts.add("BUDGET-PART-%02d ".formatted(index) + "ordinary build output line\n".repeat(1_800));
+        }
+        captureInput(client, cwd, "PreToolUse", "Task", object("description", "Read the logs", "parts", parts));
+        String sessionId = sessionId(client);
+        Files.deleteIfExists(requests);
+
+        var summarized = http.postForEntity(base + "/api/sessions/" + sessionId + "/summarize", null, String.class);
+        assertThat(summarized.getStatusCode().value()).isEqualTo(200);
+
+        assertThat(Files.readString(requests))
+                .contains("BUDGET-PART-01", "BUDGET-PART-02", "…[truncated]")
+                .doesNotContain("BUDGET-PART-03", "BUDGET-PART-13");
+    }
+
+    /**
      * Token counts and member names that only resemble credentials in one session never cost the
      * model the rest of the bundle: every selected session and its evidence are sent.
      */
@@ -327,6 +354,43 @@ class SummaryRedactionHttpTest {
         assertThat(Files.readString(requests))
                 .as("the backend receives the bundle built from stored text")
                 .contains(bundle);
+    }
+
+    /**
+     * A direct meld preview reads each stored tool input and output only as far as the bundle shows
+     * it, and what it shows is the stored text: a stored output far longer than that still sends the
+     * bundle the preview returns locally.
+     */
+    @Test
+    void directMeldPreviewReadsALongStoredOutputOnlyAsFarAsTheBundleShowsIt() throws Exception {
+        String cwd = "/fixture/meld-long-output";
+        String client = "meld-long-output-" + UUID.randomUUID();
+        capture(client, cwd, "UserPromptSubmit", null, "Summarize the long build logs", null);
+        List<String> parts = new ArrayList<>();
+        for (int index = 1; index <= 13; index++) {
+            parts.add("MELD-PART-%02d ".formatted(index) + "ordinary build output line\n".repeat(1_800));
+        }
+        capture(
+                client,
+                cwd,
+                "PostToolUse",
+                "Bash",
+                null,
+                object("stdout", parts.get(0), "parts", parts.subList(1, parts.size()), "stderr", ""));
+        Files.deleteIfExists(requests);
+
+        var preview = http.postForEntity(
+                base + "/api/projects/" + projectKey(cwd) + "/melds/preview",
+                Map.of("sessionIds", List.of(sessionId(client)), "executionMode", "direct"),
+                JsonNode.class);
+        assertThat(preview.getStatusCode().value()).isEqualTo(200);
+
+        String bundle = preview.getBody().path("bundle").asText();
+        assertThat(bundle).contains("Output: {\"stdout\":\"MELD-PART-01 ordinary", " [clipped]");
+        assertThat(Files.readString(requests))
+                .as("the backend receives the bundle built from stored text")
+                .contains(bundle)
+                .doesNotContain("MELD-PART-02");
     }
 
     private static Map<String, Object> object(Object... namesAndValues) {

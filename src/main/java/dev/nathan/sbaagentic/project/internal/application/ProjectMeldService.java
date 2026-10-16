@@ -91,13 +91,14 @@ public class ProjectMeldService implements ProjectMeldOperations {
             try {
                 // The configured summary backend may run outside this machine, and stored text can
                 // predate a redaction rule: its bundle is built from separately redacted pieces, so a
-                // value cut by a clip or a quoted credential key never costs the rest of the bundle.
+                // value cut by a clip or a quoted credential key never costs the rest of the bundle. A
+                // stored tool input or output is read only as far as the bundle shows it.
                 Bundle outbound = buildBundle(
                         canonicalKey,
                         sessions,
                         evidence,
                         exportRedactor::redactForSummary,
-                        exportRedactor::redactJsonForSummary);
+                        json -> exportRedactor.redactJsonForSummary(json, MAX_JSON_CHARS));
                 preview = summaryBackend.summarize(directPrompt(outbound.text()));
                 status = "preview";
             } catch (RuntimeException ex) {

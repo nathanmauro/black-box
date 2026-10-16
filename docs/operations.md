@@ -531,12 +531,19 @@ tool input or output is JSON whose strings ingestion redacted one by one, so it 
 string, member names included, is redacted the same way, and a member whose name is a secret key
 loses its whole value: a string that ends with a name and separator (a Grep pattern `password:`) or
 with a value ingestion replaced never runs on into the JSON after it, and a tool input or output
-that holds no recognized credential reaches the backend exactly as stored, valid JSON at any length.
-Across the strings of a list, the element after a credential flag that is a whole element
+that holds no recognized credential reaches the backend exactly as stored. Like any stored text, it
+is read up to the scan budget: in document order, the members and elements that start within its
+first 50,000 characters of names, strings and other values are read and each string is redacted
+whole, and one `…[truncated]` marker stands in for the rest (a member keeps its name), so the
+backend still receives valid JSON and the work stays within the budget and the one string that
+crosses it. A direct meld preview reads each stored tool input and output only as far as its bundle
+shows (900 characters), so the bundle it sends for an ordinary session is still the one it returns
+locally. Across the strings of a list, the element after a credential flag that is a whole element
 (`["--api-key", "…"]`) and a private key whose lines are separate elements, as in an Edit's
-`structuredPatch`, are replaced too, although ingestion keeps them. A name and separator that end
-one string are not read with the next string, here or at ingestion, so `["password:", "…"]` keeps its
-second element. Stored text that is not JSON is redacted whole. A stored string that ingestion
+`structuredPatch`, are replaced too, although ingestion keeps them; when the budget cuts such a key
+before its END line, it is replaced from its BEGIN line through the last line read. A name and
+separator that end one string are not read with the next string, here or at ingestion, so
+`["password:", "…"]` keeps its second element. Stored text that is not JSON is redacted whole. A stored string that ingestion
 clipped keeps its one truncation marker; if replacements grew it past the scan budget, it is clipped
 there again, still with one marker. A direct meld preview redacts each piece (session title,
 summary, evidence text, tool input and output) before it is clipped into the bundle, so no piece

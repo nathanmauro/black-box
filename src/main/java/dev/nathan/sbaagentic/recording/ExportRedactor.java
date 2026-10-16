@@ -18,10 +18,23 @@ public interface ExportRedactor {
      * {@link #redactForSummary} for a stored tool input or output, which ingestion stored as JSON after
      * redacting each of its strings on its own: each string is redacted the same way here, so a value
      * never runs on into the JSON around it, and JSON that holds no recognized credential is sent as
-     * stored. Text that is not JSON is redacted whole.
+     * stored. Like any stored text, it is read up to the scan budget: see
+     * {@link #redactJsonForSummary(String, int)}. Text that is not JSON is redacted whole.
      */
     default String redactJsonForSummary(String json) {
 
         return redactForSummary(json);
+    }
+
+    /**
+     * {@link #redactJsonForSummary(String)} for a reader that shows at most {@code maxChars} characters
+     * of the JSON: in document order, the members and elements that start within the first
+     * {@code maxChars} characters of names, strings and other values are read and redacted whole, and
+     * the marker {@code …[truncated]} stands in for the rest, so the JSON stays valid and the work stays
+     * within that budget plus one string, however long the stored JSON is.
+     */
+    default String redactJsonForSummary(String json, int maxChars) {
+
+        return redactJsonForSummary(json);
     }
 }

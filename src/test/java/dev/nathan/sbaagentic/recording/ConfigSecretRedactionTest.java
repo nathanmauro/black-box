@@ -1028,9 +1028,100 @@ class ConfigSecretRedactionTest {
         }
         String stored = JSON.writeValueAsString(Map.of("structuredPatch", List.of(Map.of("lines", lines))));
 
+        // Read whole, past the scan budget, so every element is searched.
         assertTimeoutPreemptively(
                 Duration.ofSeconds(4),
-                () -> assertThat(redactor.redactJsonForSummary(stored)).isEqualTo(stored));
+                () -> assertThat(redactor.redactJsonForSummary(stored, Integer.MAX_VALUE))
+                        .isEqualTo(stored));
+    }
+
+    /**
+     * A summary backend reads a stored tool JSON up to the scan budget, as it reads any stored text:
+     * the members and elements that start within the first 50,000 characters are kept, each redacted
+     * whole, and one marker stands in for the rest, so the JSON stays valid.
+     */
+    @Test
+    void summaryReadsAStoredToolJsonUpToTheScanBudget() throws Exception {
+        List<String> parts = longParts("PART");
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("stdout", parts.get(0));
+        output.put("parts", parts.subList(1, parts.size()));
+        output.put("stderr", "");
+        String stored = JSON.writeValueAsString(redactor.redactDeep(output));
+
+        String sent = redactor.redactJsonForSummary(stored);
+
+        var tree = JSON.readTree(sent);
+        assertThat(tree.path("stdout").asText()).isEqualTo(parts.get(0));
+        assertThat(tree.path("parts").toString())
+                .isEqualTo(JSON.writeValueAsString(List.of(parts.get(1), "…[truncated]")));
+        assertThat(tree.has("stderr")).isFalse();
+        assertThat(sent).hasSizeLessThan(110_000);
+
+        // A meld preview shows 900 characters of each stored tool JSON: it reads the first string and
+        // the next member's name, and what it shows is the stored text.
+        String shown = redactor.redactJsonForSummary(stored, 900);
+        assertThat(shown).startsWith(stored.substring(0, 900)).doesNotContain("PART-02");
+        assertThat(JSON.readTree(shown).path("parts").asText()).isEqualTo("…[truncated]");
+        assertThat(redactor.redactJsonForSummary("{\"a\":\"short\",\"b\":[1,2.5,true,null]}", 900))
+                .isEqualTo("{\"a\":\"short\",\"b\":[1,2.5,true,null]}");
+    }
+
+    /**
+     * Each string read before the budget is redacted whole, and a private key whose lines are list
+     * elements loses every line read when the budget falls inside the block.
+     */
+    @Test
+    void storedToolJsonCutAtItsBudgetKeepsNoCredentialItRead() throws Exception {
+        List<String> lines = new ArrayList<>(List.of("+port: 8766", "+-----BEGIN RSA PRIVATE KEY-----"));
+        for (int index = 0; index < 40; index++) {
+            lines.add("+MIIF4KE7keyBody" + "A".repeat(60));
+        }
+        lines.add("+-----END RSA PRIVATE KEY-----");
+        String stored = JSON.writeValueAsString(
+                object("command", "mycli --api-key F4KE7inline " + "x".repeat(300), "lines", lines));
+
+        String sent = redactor.redactJsonForSummary(stored, 1_000);
+
+        assertThat(sent).doesNotContain("F4KE7");
+        var tree = JSON.readTree(sent);
+        assertThat(tree.path("command").asText()).startsWith("mycli --api-key [REDACTED] x");
+        var shownLines = tree.path("lines");
+        assertThat(shownLines.get(0).asText()).isEqualTo("+port: 8766");
+        assertThat(shownLines.get(1).asText()).isEqualTo("+[REDACTED]");
+        assertThat(shownLines.get(shownLines.size() - 1).asText()).isEqualTo("…[truncated]");
+        for (int index = 2; index < shownLines.size() - 1; index++) {
+            assertThat(shownLines.get(index).asText()).isEqualTo("[REDACTED]");
+        }
+        assertThat(shownLines.size()).isLessThan(lines.size());
+    }
+
+    @Test
+    void summaryWorkOnAStoredToolJsonStopsAtTheScanBudget() throws Exception {
+        // 400 strings of about 49,000 characters: a summary reads the first two, a meld preview one.
+        List<String> parts = new ArrayList<>();
+        for (int index = 0; index < 400; index++) {
+            parts.add("tokens.map(token => token.trim()) --api-key-file key.txt password_hint: x\n".repeat(660));
+        }
+        String stored = JSON.writeValueAsString(Map.of("parts", parts));
+
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+            for (int call = 0; call < 20; call++) {
+                // Each string read grows by its replacements; the stored JSON holds about 20 million.
+                assertThat(redactor.redactJsonForSummary(stored)).hasSizeLessThan(150_000);
+                assertThat(redactor.redactJsonForSummary(stored, 900)).hasSizeLessThan(80_000);
+            }
+        });
+    }
+
+    // Thirteen strings of about 48,600 characters, each starting with its own marker.
+    private static List<String> longParts(String marker) {
+        List<String> parts = new ArrayList<>();
+        for (int index = 1; index <= 13; index++) {
+            parts.add("%s-%02d ".formatted(marker, index) + "ordinary build output line\n".repeat(1_800));
+        }
+
+        return parts;
     }
 
     @Test

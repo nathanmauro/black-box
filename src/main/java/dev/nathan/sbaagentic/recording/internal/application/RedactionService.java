@@ -1,11 +1,18 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.JsonSerializable;
+import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -170,10 +177,23 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // Text after an arrow that is searched for a lambda's own parameter name.
     private static final int MAX_ARROW_BODY_CHARS = 256;
 
-    // Reads a stored tool input or output: one JSON value, and nothing after it.
-    private static final JsonMapper STORED_JSON = JsonMapper.builder()
-            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-            .build();
+    // Parses a stored tool input or output (see readStoredJson) and writes a redacted one.
+    private static final JsonMapper STORED_JSON = new JsonMapper();
+    // Stands in for the members and elements of a stored tool JSON after its budget, written as the
+    // clip marker without its leading space.
+    private static final Object CUT = new JsonSerializable.Base() {
+        @Override
+        public void serialize(JsonGenerator generator, SerializerProvider provider) throws IOException {
+            generator.writeString(CLIP_MARKER.strip());
+        }
+
+        @Override
+        public void serializeWithType(
+                JsonGenerator generator, SerializerProvider provider, TypeSerializer typeSerializer)
+                throws IOException {
+            serialize(generator, provider);
+        }
+    };
 
     private static final List<RedactionRule> BUILT_IN_RULES = builtInRules();
     private final List<RedactionRule> exportRules = exportRules();
@@ -389,20 +409,25 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     @Override
     public String redactJsonForSummary(String json) {
+
+        // The scan budget of one stored text.
+        return redactJsonForSummary(json, MAX_SCAN_CHARS);
+    }
+
+    @Override
+    public String redactJsonForSummary(String json, int maxChars) {
         if (json == null) {
 
             return null;
         }
-        Object stored;
-        try {
-            stored = STORED_JSON.readValue(json, Object.class);
-        } catch (JsonProcessingException ex) {
+        StoredJson stored = readStoredJson(json, maxChars);
+        if (stored == null) {
 
             // Not one JSON value, such as text stored before tool payloads were JSON.
             return redactForSummary(json);
         }
-        Object redacted = redactTree(stored, RedactionService::redactStoredText, true, true);
-        if (Objects.equals(redacted, stored)) {
+        Object redacted = redactTree(stored.value(), RedactionService::redactStoredText, true, true);
+        if (!stored.cut() && Objects.equals(redacted, stored.value())) {
 
             return json;
         }
@@ -418,6 +443,135 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static String redactStoredText(String text) {
 
         return redactDefaults(text, BUILT_IN_RULES);
+    }
+
+    /** A stored JSON value as Jackson reads one, and whether it was cut at its budget. */
+    private record StoredJson(Object value, boolean cut) {}
+
+    /**
+     * Reads stored JSON as Jackson reads an untyped value, in document order, until {@code maxChars}
+     * characters of names, strings and other values have been read: a member or element that starts
+     * after that is not read, and {@link #CUT} stands in for it and for everything after it, a member
+     * keeping its name. Nothing after a cut is parsed, so the work stays within the budget and the one
+     * string that crosses it. Null when the text is not one JSON value.
+     */
+    private static StoredJson readStoredJson(String json, int maxChars) {
+        try (JsonParser parser = STORED_JSON.createParser(json)) {
+            if (parser.nextToken() == null) {
+
+                return null;
+            }
+            JsonBudget budget = new JsonBudget(maxChars);
+            Object value = readJsonValue(parser, budget);
+            if (!budget.cut && parser.nextToken() != null) {
+
+                return null;
+            }
+
+            return new StoredJson(value, budget.cut);
+        } catch (IOException ex) {
+
+            return null;
+        }
+    }
+
+    private static final class JsonBudget {
+        private final long max;
+        private long read;
+        private boolean cut;
+
+        JsonBudget(int max) {
+            this.max = max;
+        }
+
+        // Whether the next member or element starts after the budget; it is then cut.
+        boolean cuts() {
+            cut = read >= max;
+
+            return cut;
+        }
+
+        void read(int chars) {
+            read += chars;
+        }
+    }
+
+    private static Object readJsonValue(JsonParser parser, JsonBudget budget) throws IOException {
+        JsonToken token = parser.currentToken();
+        if (token == JsonToken.START_OBJECT) {
+            Map<String, Object> members = new LinkedHashMap<>();
+            for (String name = parser.nextFieldName(); name != null; name = parser.nextFieldName()) {
+                if (budget.cuts()) {
+                    members.put(name, CUT);
+
+                    return members;
+                }
+                budget.read(name.length());
+                parser.nextToken();
+                members.put(name, readJsonValue(parser, budget));
+                if (budget.cut) {
+
+                    return members;
+                }
+            }
+            requireToken(parser, JsonToken.END_OBJECT);
+
+            return members;
+        }
+        if (token == JsonToken.START_ARRAY) {
+            List<Object> elements = new ArrayList<>();
+            for (JsonToken next = parser.nextToken(); next != JsonToken.END_ARRAY; next = parser.nextToken()) {
+                requireValue(parser, next);
+                if (budget.cuts()) {
+                    elements.add(CUT);
+
+                    return elements;
+                }
+                elements.add(readJsonValue(parser, budget));
+                if (budget.cut) {
+
+                    return elements;
+                }
+            }
+
+            return elements;
+        }
+        requireValue(parser, token);
+        budget.read(parser.getTextLength());
+
+        // The values Jackson's untyped reader builds.
+        return switch (token) {
+            case VALUE_STRING -> parser.getText();
+            case VALUE_NUMBER_INT -> parser.getNumberValue();
+            case VALUE_NUMBER_FLOAT -> floatingPoint(parser);
+            case VALUE_TRUE -> Boolean.TRUE;
+            case VALUE_FALSE -> Boolean.FALSE;
+            default -> null;
+        };
+    }
+
+    private static Object floatingPoint(JsonParser parser) throws IOException {
+        JsonParser.NumberTypeFP type = parser.getNumberTypeFP();
+        if (type == JsonParser.NumberTypeFP.BIG_DECIMAL) {
+
+            return parser.getDecimalValue();
+        }
+
+        return type == JsonParser.NumberTypeFP.FLOAT32 ? (Object) parser.getFloatValue() : parser.getDoubleValue();
+    }
+
+    private static void requireToken(JsonParser parser, JsonToken expected) throws IOException {
+        if (parser.currentToken() != expected) {
+            throw new JsonParseException(parser, "Expected " + expected);
+        }
+    }
+
+    private static void requireValue(JsonParser parser, JsonToken token) throws IOException {
+        if (token == null
+                || !token.isScalarValue() && !token.isStructStart()
+                || token == JsonToken.VALUE_EMBEDDED_OBJECT) {
+            throw new JsonParseException(parser, "Expected a JSON value");
+        }
     }
 
     /**
@@ -493,8 +647,9 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * What a list shows only across its string elements: a credential flag that is a whole element
      * takes the next element as its argument ({@code ["--api-key", "…"]}) unless that is another
      * flag, and a private key block can span consecutive string elements, as the lines of a patch do,
-     * from the element that holds its BEGIN line through the one that holds its END line. Each search
-     * for an END line covers elements no earlier search did, so the work stays linear.
+     * from the element that holds its BEGIN line through the one that holds its END line, or through
+     * the last element read when the list was cut at its budget before an END line. Each search for an
+     * END line covers elements no earlier search did, so the work stays linear.
      */
     private static void redactAcrossElements(List<Object> items) {
         // No END line that a BEGIN line before this element could reach.
@@ -523,6 +678,15 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 Matcher candidate = PRIVATE_KEY_END.matcher(line);
                 end = candidate.find() ? candidate : null;
                 last += end == null ? 1 : 0;
+            }
+            if (end == null && last < items.size() && items.get(last) == CUT) {
+                // The block runs on past the budget: what was read of it is replaced.
+                items.set(index, element.substring(0, begin.start()) + REDACTED);
+                for (int inside = index + 1; inside < last; inside++) {
+                    items.set(inside, REDACTED);
+                }
+
+                return;
             }
             if (end == null) {
                 searchedThrough = last;

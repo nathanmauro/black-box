@@ -65,10 +65,12 @@ All notable changes to this project will be documented in this file.
   redacted first, without export's whole-leaf fallback, so text holding no recognized credential
   (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend. A stored tool
   input or output is redacted string by string, as ingestion stored it, so one that holds no
-  recognized credential reaches the backend exactly as stored, valid JSON at any length, while a
-  flag's argument in the next list element and a private key split across list elements are still
-  replaced. A clipped stored text keeps one truncation marker. The summary and title the backend
-  returns are redacted before they are stored.
+  recognized credential reaches the backend exactly as stored, while a flag's argument in the next
+  list element and a private key split across list elements are still replaced. Like any stored
+  text, it is read up to the 50,000-character scan budget: a longer one is cut between its members
+  or elements, with one `…[truncated]` marker, and stays valid JSON, and a meld preview reads it
+  only as far as its bundle shows. A clipped stored text keeps one truncation marker. The summary and
+  title the backend returns are redacted before they are stored.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped
