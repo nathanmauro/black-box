@@ -16,35 +16,51 @@ All notable changes to this project will be documented in this file.
   both lines of a changed value in a diff, and a key and value split across the lines of an Edit
   tool's `structuredPatch`; the argument of a flag that ends with a credential word (`--api-key`,
   `--db-password`), on a command line, in a quoted argument list or plist array, or on the line after
-  it in `launchctl print` and PlistBuddy output; `launchctl setenv`, PlistBuddy `Set`/`Add`,
+  it in `launchctl print` and PlistBuddy output, while help output, manual pages and prose that only
+  name such a flag keep their text; `launchctl setenv`, PlistBuddy `Set`/`Add`,
   `plutil -replace`/`-insert`, `defaults write` and `security add-generic-password -w`;
   `PlistBuddy -c Print` lines for environment-style names (`SBA_DB_PASSWORD = …`); JSON-encoded tool
   results up to four encoding levels, where each displayed line keeps its own encoding level, so an
-  escaped line break ends a value but a quote or backslash inside it does not; the names
-  `passphrase` and `private_key` everywhere, and `credential` and environment-style `_KEY` names
-  such as `STRIPE_KEY` in configuration forms; HTML-safe and unicode-escaped markup, scanned again
-  after decoding without undoing what the first scan replaced; characters glued to a quoted value;
-  and the bare `apikey_<hex>` key shape where a token starts, and with at least 32 hexadecimal
-  digits wherever it starts, as after a binary property list's length byte. Previously such values
-  reached event text, tool output, metadata, the full-text index and Elasticsearch in plain text.
+  escaped line break ends a value but a quote or backslash inside it does not; a credential word
+  anywhere in a name of up to 256 characters
+  (`SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD`) or in a flag of up to 130, where at
+  most 40 characters could precede it before; the names `passphrase` and `private_key` everywhere,
+  and `credential` and environment-style `_KEY` names such as `STRIPE_KEY` in configuration forms; a
+  bare value now ends before the quote that closes the JSON string holding it, which it used to
+  swallow (`{"cmd": "… --api-key …"}` stays valid JSON); HTML-safe and unicode-escaped markup,
+  scanned again after decoding without undoing what the first scan replaced; characters glued to a
+  quoted value; and the bare `apikey_<hex>` key shape where a token starts, and with at least 32
+  hexadecimal digits wherever it starts, as after a binary property list's length byte. Previously
+  such values reached event text, tool output, metadata, the full-text index and Elasticsearch in
+  plain text.
   Durable capture's local sanitizer no longer splits `=>` into `=` and a value `>`, which hid the
   pair from these rules: `=>` pairs reach the server whole, and a queued row holds them until
   delivery. Token counts such as `max_tokens: 4096` in text are no longer redacted, and
   `token => token.trim()` lambdas are kept. Not covered: a credential shown without its name, an
   unquoted `NAME=value` or YAML value after its first space, a lowercase `name => value` inline in
-  prose, a `_KEY` name assigned a `$NAME` reference with `=` (an `env` listing), PlistBuddy Print
-  lines for `_KEY` or lowercase names, an unquoted list element after a flag (`defaults read`),
-  single-dash flags, and property-list pairs split by merge-conflict markers; see
-  [docs/operations.md](docs/operations.md#configuration). Code that assigns to these names, such as
-  `passphrase: cert.passphrase` or `SECRET_KEY = os.environ.get(…)` at the start of a line, loses
-  the value, and so does a documentation placeholder after a credential flag. Existing captures are
-  not rewritten; rotate any credential an agent displayed before this change.
+  prose or behind an unrecognized gutter, timestamp or ANSI color codes, a `_KEY` name assigned a
+  `$NAME` reference with `=` (an `env` listing), PlistBuddy Print and `defaults read` lines for
+  `_KEY` names (and lowercase names after the value's first word), quoted dotted names
+  (`"sba.judge.password"`), mixed-case names that end with `key` without a credential word
+  (`JevKey`), names in code subscripts (`os.environ["SBA_X_TOKEN"] = …`), a list or object written
+  in text after its first delimiter, an unquoted list element after a flag (`defaults read`), the
+  `;`-separated `launchctl list` arguments, `defaults write … -dict-add`, Markdown restatements
+  (`` `NAME` => `value` ``, table rows), a `launchctl print` value after its leading quoted part,
+  property-list pairs in normal-format `diff` output or split by merge-conflict markers, single-dash
+  flags, `--secret-key`-style flags, arguments that start with `-` or follow a shell continuation,
+  and an argument shaped like help output (a metavar-like word before a description column, or a
+  line indented deeper than its flag); see [docs/operations.md](docs/operations.md#configuration).
+  Code that assigns to these names, such as `passphrase: cert.passphrase` or
+  `SECRET_KEY = os.environ.get(…)` at the start of a line, loses the value, and so does a
+  documentation placeholder after a credential flag. Existing captures are not rewritten; rotate any
+  credential an agent displayed before this change.
 - Session summaries and direct meld previews pass stored text through the built-in credential rules
   before the summary backend receives it. Text stored before a redaction rule recognized its
   credential was sent as stored, by default to the external Codex wrapper; now each piece is
   redacted first, without export's whole-leaf fallback, so text holding no recognized credential
-  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend. The summary
-  and title the backend returns are redacted before they are stored.
+  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend, and so does
+  a stored tool input whose value ingestion replaced, as valid JSON. A clipped stored text keeps one
+  truncation marker. The summary and title the backend returns are redacted before they are stored.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped
