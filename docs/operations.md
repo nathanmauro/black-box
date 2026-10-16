@@ -310,13 +310,15 @@ The same names also match displayed service configuration:
   `db_password => …`, `sba.judge.password => …`). It starts its line when only indentation stands
   before it, optionally after a `cat -n`, file-view or `grep -n`/`rg` gutter with or without a path
   (`24:`, `path:12:`, `path-13-`), quote marks, a Markdown heading, a list or diff marker, an
-  opening code span or bold marker, or the dotted prefix of the name. An unquoted value after such a
-  name runs to the end of its line, so its spaces, commas, quotes and backslashes go too; inside a
-  code span or bold text that opened before the name it ends at the closer, so
-  `` `JevApiKey => …` is shown`` keeps the prose after it. A spaced `name => value` whose name has
-  lowercase letters is kept as a lambda or arrow-function parameter when the name does not start
-  its line (`tokens.map(token => …)`) or when the value opens a block or parenthesis or uses the
-  name itself (`token => token.trim()`). The same name inline in prose keeps the rest of its line.
+  opening code span or bold marker, or the dotted prefix of the name when it holds up to 128
+  characters (a longer one counts only when a single segment takes it past 128, and never past 256).
+  An unquoted value after such a name runs to the end of its line, so its spaces, commas, quotes and
+  backslashes go too; inside a code span or bold text that opened before the name it ends at the
+  closer, so `` `JevApiKey => …` is shown`` keeps the prose after it. A spaced `name => value` whose
+  name has lowercase letters is kept as a lambda or arrow-function parameter when the name does not
+  start its line (`tokens.map(token => …)`) or when the value opens a block or parenthesis or uses
+  the name itself (`token => token.trim()`). The same name inline in prose keeps the rest of its
+  line.
 - `launchctl print` indents its entries with tabs, so lines after an entry that are not
   tab-indented are the rest of a value that holds line breaks; they are taken when another
   tab-indented line follows them.
