@@ -370,20 +370,20 @@ The same names also match displayed service configuration:
     `|` after it (`[--api-key API_KEY]`, `[--token TOKEN | --token-file PATH]`). An argument slice
     such as Go prints for `os.Args` (`[--api-key F4KE… --port 8080]`) is taken.
   - A help entry's metavar and description. A help entry starts its line with the flag, after any
-    short alias (`-p, --password`, `-k API_KEY, --api-key`), and follows it with a description in
-    a column after two or more spaces or a tab, or with a metavar after one space (an upper-case word
-    without digits such as `API_KEY`, a bracketed name such as `<token>`, or a type name such as
-    `string` or `stringArray`) and then a description in a column, or on the next line indented at
-    least two columns deeper than the entry, after the same kind of line-number or path gutter. A
-    description reads as prose: its first word is up to 20 letters, optionally followed by one of
-    `.`, `,`, `:` and `;`, and another word follows that opens neither a `#` comment nor a
-    parenthesized note. Where the description stands right after the flag, its first word must also
-    be lower case, capitalized or an acronym of up to five capitals
-    (`Read token from standard input`, `prompt for passwords`, `API key for the service`). A line
-    that ends with a shell continuation (`\`, or a `` ` `` or `^` after a blank) is a command. So an
-    aligned argument with digits or symbols (`--api-key   F4KE…   prod key`), one that a comment or
-    note follows (`--db-password    hunter2   (from file)`) and one on a continued line
-    (`--api-key   VALUE \`) are still taken.
+    short alias (`-p, --password`, `-k API_KEY, --api-key`), and follows it with an optional metavar
+    after one space (an upper-case word without digits such as `API_KEY`, a bracketed name such as
+    `<token>`, or a type name such as `string` or `stringArray`) and then a description, either in a
+    column after two or more spaces or a tab, or on the next line indented at least two columns
+    deeper than the entry, after the same kind of line-number or path gutter. A description reads as
+    prose: its first word is up to 20 letters, optionally followed by one of `.`, `,`, `:` and `;`,
+    and another word follows that opens neither a `#` comment nor a parenthesized note. Where the
+    description stands right after the flag, its first word must also be lower case, capitalized or
+    an acronym of up to five capitals (`Read token from standard input`, `prompt for passwords`,
+    `API key for the service`). A line that ends with a shell continuation (`\`, or a `` ` `` or `^`
+    after a blank) is a command. So an aligned argument with digits or symbols
+    (`--api-key   F4KE…   prod key`), one that a comment or note follows
+    (`--db-password    hunter2   (from file)`) and one on a continued line (`--api-key   VALUE \`)
+    are still taken.
 - Commands that write a credential: `launchctl setenv NAME value`, PlistBuddy `Set :…:NAME value`
   and `Add :…:NAME type value` (through the end of the `-c` argument), `plutil -replace` or
   `-insert` with a key path ending in the name and a type, `defaults write domain NAME [-type]
@@ -529,13 +529,15 @@ with a value ingestion replaced never runs on into the JSON after it, and a tool
 that holds no recognized credential reaches the backend exactly as stored, valid JSON at any length.
 Across the strings of a list, the element after a credential flag that is a whole element
 (`["--api-key", "…"]`) and a private key whose lines are separate elements, as in an Edit's
-`structuredPatch`, are replaced too, although ingestion keeps them. Stored text that is not JSON is
-redacted whole. A stored string that ingestion clipped keeps its one truncation marker; if
-replacements grew it past the scan budget, it is clipped there again, still with one marker. A
-direct meld preview redacts each piece (session title, summary, evidence text, tool input and
-output) before it is clipped into the bundle, so no piece costs the bundle its later sessions; the
-bundle the preview returns locally is built from stored text, as before. The summary and title
-that come back are redacted with the ingestion rules before they are stored.
+`structuredPatch`, are replaced too, although ingestion keeps them. A name and separator that end
+one string are not read with the next string, here or at ingestion, so `["password:", "…"]` keeps its
+second element. Stored text that is not JSON is redacted whole. A stored string that ingestion
+clipped keeps its one truncation marker; if replacements grew it past the scan budget, it is clipped
+there again, still with one marker. A direct meld preview redacts each piece (session title,
+summary, evidence text, tool input and output) before it is clipped into the bundle, so no piece
+costs the bundle its later sessions; the bundle the preview returns locally is built from stored
+text, as before. The summary and title that come back are redacted with the ingestion rules before
+they are stored.
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
