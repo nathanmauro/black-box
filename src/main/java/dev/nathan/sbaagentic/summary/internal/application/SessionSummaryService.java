@@ -51,8 +51,8 @@ public class SessionSummaryService implements SummaryOperations {
         Collections.reverse(events);
 
         // The backend may be an external command or a remote model, and stored text can predate a
-        // redaction rule. Export redaction runs on each piece, so a long transcript is not clipped
-        // to one scan budget.
+        // redaction rule. The built-in credential rules run on each piece, so a long transcript is not
+        // clipped to one scan budget, and text without a recognized credential is sent as stored.
         StringBuilder transcript = new StringBuilder();
         transcript.append("Session: ").append(outbound(session.title())).append('\n');
         transcript.append("Source: ").append(outbound(session.source())).append('\n');
@@ -111,7 +111,7 @@ public class SessionSummaryService implements SummaryOperations {
 
     private String outbound(String text) {
 
-        return exportRedactor.redactForExport(text);
+        return exportRedactor.redactForSummary(text);
     }
 
     private static int summaryEventLimit(AgentSession session) {

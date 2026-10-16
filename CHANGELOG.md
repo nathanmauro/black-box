@@ -39,10 +39,12 @@ All notable changes to this project will be documented in this file.
   `passphrase: cert.passphrase` or `SECRET_KEY = os.environ.get(…)` at the start of a line, loses
   the value, and so does a documentation placeholder after a credential flag. Existing captures are
   not rewritten; rotate any credential an agent displayed before this change.
-- Session summaries and direct meld previews pass stored text through export redaction before the
-  summary backend receives it. Text stored before a redaction rule recognized its credential was
-  sent as stored, by default to the external Codex wrapper; now each piece is redacted first, and
-  the summary and title the backend returns are redacted before they are stored.
+- Session summaries and direct meld previews pass stored text through the built-in credential rules
+  before the summary backend receives it. Text stored before a redaction rule recognized its
+  credential was sent as stored, by default to the external Codex wrapper; now each piece is
+  redacted first, without export's whole-leaf fallback, so text holding no recognized credential
+  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend. The summary
+  and title the backend returns are redacted before they are stored.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped

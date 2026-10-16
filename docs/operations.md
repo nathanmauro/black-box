@@ -428,9 +428,14 @@ unscanned content is discarded. Disabling
 redaction also disables this scan clipping. Event ingestion has separate text-length limits.
 Summary/model export has a separate, mandatory redaction boundary; configuring ingestion does not
 replace it. Session summaries and direct meld previews pass each piece of stored text they send to
-the configured summary backend, local or external, through export redaction, so a capture stored
-before a rule existed is not sent as stored. The summary and title that come back are redacted
-with the ingestion rules before they are stored.
+the configured summary backend, local or external, through the default credential rules above,
+independently of ingestion settings, so a capture stored before a rule existed is not sent as
+stored. They do not use export's whole-leaf fallback, so stored text that holds no recognized
+credential, such as a JSON token count (`"max_tokens": 4096`), reaches the backend unchanged. A
+direct meld preview redacts each piece (session title, summary, evidence text, tool input and
+output) before it is clipped into the bundle, so no piece costs the bundle its later sessions; the
+bundle the preview returns locally is built from stored text, as before. The summary and title
+that come back are redacted with the ingestion rules before they are stored.
 
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination

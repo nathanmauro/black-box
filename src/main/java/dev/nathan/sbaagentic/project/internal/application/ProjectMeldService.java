@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -76,7 +77,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         Map<String, List<ProjectTimelineBlock>> evidence = evidenceBySession(canonicalKey, sessions);
-        Bundle bundle = buildBundle(canonicalKey, sessions, evidence);
+        Bundle bundle = buildBundle(canonicalKey, sessions, evidence, UnaryOperator.identity());
         String executionMode = executionMode(request.executionMode());
         String provider =
                 firstNonBlank(request.provider(), executionMode.equals(DIRECT) ? "configured-summary" : "local");
@@ -87,9 +88,11 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         if (DIRECT.equals(executionMode)) {
             try {
-                // The configured summary backend may run outside this machine. The bounded bundle
-                // (48,000 characters) fits one export scan budget, so nothing is clipped.
-                preview = summaryBackend.summarize(exportRedactor.redactForExport(directPrompt(bundle.text())));
+                // The configured summary backend may run outside this machine, and stored text can
+                // predate a redaction rule: its bundle is built from separately redacted pieces, so a
+                // value cut by a clip or a quoted credential key never costs the rest of the bundle.
+                Bundle outbound = buildBundle(canonicalKey, sessions, evidence, exportRedactor::redactForSummary);
+                preview = summaryBackend.summarize(directPrompt(outbound.text()));
                 status = "preview";
             } catch (RuntimeException ex) {
                 throw new ResponseStatusException(
@@ -240,15 +243,19 @@ public class ProjectMeldService implements ProjectMeldOperations {
         return evidence;
     }
 
+    // Each stored piece passes through stored before it is clipped and appended.
     private Bundle buildBundle(
-            String canonicalKey, List<AgentSession> sessions, Map<String, List<ProjectTimelineBlock>> evidence) {
+            String canonicalKey,
+            List<AgentSession> sessions,
+            Map<String, List<ProjectTimelineBlock>> evidence,
+            UnaryOperator<String> stored) {
         List<String> degradationNotes = new ArrayList<>();
         StringBuilder builder = new StringBuilder();
         builder.append("# Project Meld Bundle\n\n");
         builder.append("- Project: ")
-                .append(ProjectKeyCodec.labelFor(canonicalKey))
+                .append(stored.apply(ProjectKeyCodec.labelFor(canonicalKey)))
                 .append('\n');
-        builder.append("- Canonical key: ").append(canonicalKey).append('\n');
+        builder.append("- Canonical key: ").append(stored.apply(canonicalKey)).append('\n');
         builder.append("- Selected sessions: ").append(sessions.size()).append('\n');
         builder.append("- Bundle policy: summaries first, then bounded high-signal evidence.\n\n");
 
@@ -260,15 +267,15 @@ public class ProjectMeldService implements ProjectMeldOperations {
             builder.append("## Session ")
                     .append(index++)
                     .append(": ")
-                    .append(firstNonBlank(session.title(), session.clientSessionId()))
+                    .append(stored.apply(firstNonBlank(session.title(), session.clientSessionId())))
                     .append("\n\n");
             builder.append("- Session id: ").append(session.id()).append('\n');
             builder.append("- Client session id: ")
-                    .append(session.clientSessionId())
+                    .append(stored.apply(session.clientSessionId()))
                     .append('\n');
-            builder.append("- Source: ").append(session.source()).append('\n');
+            builder.append("- Source: ").append(stored.apply(session.source())).append('\n');
             builder.append("- CWD: ")
-                    .append(firstNonBlank(session.cwd(), "(none)"))
+                    .append(stored.apply(firstNonBlank(session.cwd(), "(none)")))
                     .append('\n');
             builder.append("- Started: ").append(session.startedAt()).append('\n');
             builder.append("- Last seen: ").append(session.lastSeenAt()).append('\n');
@@ -280,7 +287,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 degradationNotes.add("Missing summary for " + session.clientSessionId());
             } else {
                 builder.append("### Summary\n\n");
-                appendClipped(builder, session.summary().strip(), MAX_TEXT_CHARS);
+                appendClipped(builder, stored.apply(session.summary().strip()), MAX_TEXT_CHARS);
                 builder.append("\n\n");
             }
 
@@ -291,7 +298,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 continue;
             }
             for (ProjectTimelineBlock block : blocks) {
-                appendEvidence(builder, block);
+                appendEvidence(builder, block, stored);
             }
             builder.append('\n');
         }
@@ -306,34 +313,35 @@ public class ProjectMeldService implements ProjectMeldOperations {
         return new Bundle(text, List.copyOf(degradationNotes));
     }
 
-    private static void appendEvidence(StringBuilder builder, ProjectTimelineBlock block) {
+    private static void appendEvidence(
+            StringBuilder builder, ProjectTimelineBlock block, UnaryOperator<String> stored) {
         builder.append("- [")
                 .append(block.observedAt())
                 .append("] ")
                 .append(block.blockType())
                 .append(" / ")
-                .append(firstNonBlank(block.eventType(), "event"))
+                .append(stored.apply(firstNonBlank(block.eventType(), "event")))
                 .append(" / ")
-                .append(firstNonBlank(block.source(), "unknown"))
+                .append(stored.apply(firstNonBlank(block.source(), "unknown")))
                 .append(": ")
-                .append(firstNonBlank(block.headline(), "(untitled evidence)"))
+                .append(stored.apply(firstNonBlank(block.headline(), "(untitled evidence)")))
                 .append('\n');
         if (block.text() != null && !block.text().isBlank()) {
             builder.append("  Text: ");
-            appendClipped(builder, block.text().strip(), MAX_TEXT_CHARS);
+            appendClipped(builder, stored.apply(block.text().strip()), MAX_TEXT_CHARS);
             builder.append('\n');
         }
         if (block.toolName() != null && !block.toolName().isBlank()) {
-            builder.append("  Tool: ").append(block.toolName()).append('\n');
+            builder.append("  Tool: ").append(stored.apply(block.toolName())).append('\n');
         }
         if (block.toolInputJson() != null && !block.toolInputJson().isBlank()) {
             builder.append("  Input: ");
-            appendClipped(builder, block.toolInputJson().strip(), MAX_JSON_CHARS);
+            appendClipped(builder, stored.apply(block.toolInputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
         if (block.toolOutputJson() != null && !block.toolOutputJson().isBlank()) {
             builder.append("  Output: ");
-            appendClipped(builder, block.toolOutputJson().strip(), MAX_JSON_CHARS);
+            appendClipped(builder, stored.apply(block.toolOutputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
     }
