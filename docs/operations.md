@@ -411,12 +411,17 @@ Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe c
 existing truncation marker; replacement markers can expand short values. A text that already ends
 with that marker, such as stored text redacted again for a summary backend, keeps a single marker:
 only the text before it is scanned, and clipped if it is longer than the budget. The rules are
-written so that their work grows linearly with the text they scan, and tests scan 4 MB of near-miss
-text for each rule, including PlistBuddy, `launchctl setenv` and `defaults write` commands for
-credential names on JSON-escaped lines, within a fixed time bound. That bounds the cost of each
-scanned scalar, not of a capture, whose cost still grows with its size and number of strings. This
-is a small assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or
-unlabelled secrets. Known limits:
+written so that their work grows linearly with the text they scan: the rules for names and write
+commands try their patterns only where a match can start, the flag rule reads each run of flag
+characters once, and a run of backslashes or the stretch before a line's start is read once, however
+many names or flags it holds. Tests scan 4 MB of near-miss text for each rule within a fixed time
+bound, including PlistBuddy, `launchctl setenv` and `defaults write` commands for credential names
+on JSON-escaped lines, and near misses that one escaped markup character sends through the second,
+decoded scan. That second scan reads the whole scalar again, so a scalar that holds such an escape
+costs about twice as much as one that does not. These bounds cover each scanned scalar, not a
+capture, whose cost still grows with its size and number of strings. This is a small assignment
+grammar, not a shell parser, JSON decoder, or general detector for encoded or unlabelled secrets.
+Known limits:
 
 - A credential shown without its name is not recognized, such as `echo "$TOKEN"`,
   `launchctl getenv NAME`, the output of `security find-generic-password -w`, a positional

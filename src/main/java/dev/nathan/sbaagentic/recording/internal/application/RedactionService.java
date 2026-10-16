@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,6 +34,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final Pattern ENV_KEY_NAME = Pattern.compile("(?:[A-Z0-9]++_)++KEY");
     // The longest name the text rules read: a longer run of name characters is not a name.
     private static final int MAX_NAME_CHARS = 256;
+    // The shortest name that holds a credential word (token) or is an environment-style _KEY name (A_KEY).
+    private static final int MIN_SECRET_NAME_CHARS = 5;
     // A name in text: the whole run of name characters that starts a token, after a non-name character
     // or a unicode-escaped quote (\\u0022, as System.Text.Json writes one), with the letter of a JSON
     // escape glued before it (the t of \tSBA_DB_PASSWORD) counted as one more character. The run is
@@ -49,11 +52,12 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final int MAX_ESCAPE_RUN = 15;
     // Bare, quoted, JSON-escaped quoted (\" through four encoding levels) or unicode-escaped quoted
     // names followed by a separator. "=>" joins plutil -p, launchctl print, Ruby and PHP pairs, also
-    // with its > written as an HTML-safe escape (=\\u003e). Each run is bounded or possessive, so a near
-    // miss costs constant work per start, and only a credential name's pair is redacted.
-    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)(\\\\{1," + MAX_ESCAPE_RUN + "}\"|\\\\{1,"
-            + MAX_ESCAPE_RUN + "}u00(?:22|27)|[\"']|)(" + NAME + ")\\1(\\s*+(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
-            + "}u003e|[=:])\\s*+)");
+    // with its > written as an HTML-safe escape (=\\u003e). Each run is bounded and possessive (a longer
+    // backslash run never ends in the quote), so a near miss costs constant work per start, and only a
+    // credential name's pair is redacted.
+    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)(\\\\{1," + MAX_ESCAPE_RUN
+            + "}+(?:\"|u00(?:22|27))|[\"']|)(" + NAME + ")\\1(\\s*+(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
+            + "}+u003e|[=:])\\s*+)");
     // Export's whole-leaf fallback starts at a quoted name, raw or JSON-escaped, and its colon.
     private static final Pattern QUOTED_NAME_COLON =
             Pattern.compile("(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{1," + (MAX_NAME_CHARS + 1) + "}+)\\\\*+[\"']\\s*+:");
@@ -79,8 +83,9 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             + "}/(?:string|data|integer|real)>)" + PLIST_GAP + "\\z");
     // Longer text that starts with -- is not a flag.
     private static final int MAX_FLAG_CHARS = 130;
-    // A command-line flag of at most MAX_FLAG_CHARS characters, read as one possessive run, so a near
-    // miss stays linear; isSecretFlag decides whether its argument is a credential.
+    // A command-line flag of at most MAX_FLAG_CHARS characters, read as one possessive run; isSecretFlag
+    // decides whether its argument is a credential. Text is searched for flags with FlagFinder, which
+    // finds the same flags reading each run of flag characters once.
     private static final Pattern FLAG = Pattern.compile(
             "(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{1," + (MAX_FLAG_CHARS - 2) + "}+(?![A-Za-z0-9._-])");
     // Words that prose and help text put after a flag they name ("--api-key or --token", "the
@@ -112,10 +117,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final Pattern SECRET_FLAG_NAME = Pattern.compile("(?i)--(?:[a-z0-9]+[._-])*"
             + "(?<!page[._-]|next[._-]|continuation[._-]|starting[._-]|sync[._-])"
             + "(?:api[_-]?key|private[_-]?key|token|secret|passwd|password|passphrase|authorization)");
+    // The words a credential flag can end with: only a flag that ends with one is matched against the
+    // flag name pattern.
+    private static final List<String> SECRET_FLAG_ENDINGS =
+            List.of("key", "token", "secret", "passwd", "password", "passphrase", "authorization");
     // Commands that write a credential into launchd's environment or a property list, followed by the
     // whitespace before the value: launchctl setenv NAME VALUE, PlistBuddy Set or Add :path:NAME
-    // [type] VALUE, plutil -replace or -insert keypath -type VALUE, defaults write domain NAME [-type]
-    // VALUE, and security add-generic-password ... -w VALUE.
+    // [type] VALUE, plutil -replace or -insert keypath -type VALUE, and defaults write domain NAME
+    // [-type] VALUE.
     private static final Pattern WRITE_COMMAND = Pattern.compile("(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))(?:"
             + "setenv[ \\t]++(?<setenv>[A-Za-z0-9_.-]{1,128}+)"
             + "|(?i:set|add)[ \\t]++:(?<buddy>(?:[^:\\s\"'\\\\]{1,128}+:){0,16}+[^:\\s\"'\\\\]{1,128}+)"
@@ -124,8 +133,12 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             + "[ \\t]++-(?:string|data|integer|float|bool|date|json|xml)(?![A-Za-z0-9_-])"
             + "|defaults[ \\t]++write[ \\t]++[^\\s\"'\\\\]{1,256}+[ \\t]++(?<defaults>[^\\s\"'\\\\-][^\\s\"'\\\\]{0,127}+)"
             + "(?:[ \\t]++-(?:string|data|int|integer|float|bool|boolean|date)(?![A-Za-z0-9_-]))?+"
-            + "|add-(?:generic|internet)-password(?<security>)[^\\r\\n]{0,512}?[ \\t]-w"
             + ")[ \\t]++");
+    // security add-generic-password (or add-internet-password) ... -w VALUE: the names of the command,
+    // where a name cannot continue before it; PasswordOptions finds its -w option.
+    private static final List<String> SECURITY_COMMANDS = List.of("add-generic-password", "add-internet-password");
+    // How far into its line after the command's name a security command's -w option may start.
+    private static final int MAX_SECURITY_OPTIONS_CHARS = 512;
     // The lines that open and close a private key block, in any letter case.
     private static final Pattern PRIVATE_KEY_BEGIN =
             Pattern.compile("-----BEGIN [^-\\r\\n]*PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
@@ -538,7 +551,20 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // (--next-token) does not, and neither does a token limit (--max-tokens).
     private static boolean isSecretFlag(String flag) {
 
-        return flag.length() <= MAX_FLAG_CHARS && SECRET_FLAG_NAME.matcher(flag).matches();
+        return flag.length() <= MAX_FLAG_CHARS
+                && endsWithSecretWord(flag)
+                && SECRET_FLAG_NAME.matcher(flag).matches();
+    }
+
+    private static boolean endsWithSecretWord(String flag) {
+        for (String ending : SECRET_FLAG_ENDINGS) {
+            if (flag.regionMatches(true, flag.length() - ending.length(), ending, 0, ending.length())) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static boolean isFlag(String name) {
@@ -557,16 +583,18 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
         return List.of(
                 RedactionService::redactPrivateKeyBlocks,
-                literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
+                literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", "AKIA", "ASIA", "A3T"),
                 RedactionService::redactPropertyListValues,
                 RedactionService::redactAssignments,
                 RedactionService::redactSecretFlags,
                 RedactionService::redactWriteCommands,
                 new RegexRule(
-                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"), matcher -> "Bearer " + REDACTED),
-                literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
-                literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", 0),
-                literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", 0));
+                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"),
+                        matcher -> "Bearer " + REDACTED,
+                        text -> containsIgnoreCase(text, "bearer")),
+                literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
+                literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", "sk-"),
+                literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", "xox"));
     }
 
     /**
@@ -835,25 +863,52 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static List<RedactionRule> customRules(List<String> patterns) {
         List<RedactionRule> customRules = new ArrayList<>(patterns.size());
         for (String pattern : patterns) {
-            customRules.add(literal(pattern, 0));
+            customRules.add(new RegexRule(Pattern.compile(pattern), matcher -> REDACTED, text -> true));
         }
 
         return customRules;
     }
 
-    private static RedactionRule literal(String pattern, int flags) {
+    // A pattern whose every match holds one of these strings: text without any of them is left as it is
+    // without being searched.
+    private static RedactionRule literal(String pattern, String... required) {
 
-        return new RegexRule(Pattern.compile(pattern, flags), matcher -> REDACTED);
+        return new RegexRule(Pattern.compile(pattern), matcher -> REDACTED, text -> {
+            for (String literal : required) {
+                if (text.contains(literal)) {
+
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }
+
+    // Whether the word stands in the text in any letter case; its first letter is compared first.
+    private static boolean containsIgnoreCase(String text, String word) {
+        char lower = Character.toLowerCase(word.charAt(0));
+        char upper = Character.toUpperCase(lower);
+        for (int at = 0; at + word.length() <= text.length(); at++) {
+            char current = text.charAt(at);
+            if ((current == lower || current == upper) && text.regionMatches(true, at, word, 0, word.length())) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static String redactAssignments(String text) {
-        Matcher matcher = ASSIGNMENT.matcher(text);
+        Matcher matcher = scanner(ASSIGNMENT, text);
+        Lines lines = new Lines(text);
         StringBuilder redacted = new StringBuilder();
         int copiedThrough = 0;
         int searchFrom = 0;
         // Advance beyond each selected value before looking for another key. Quoted
         // values may contain spaces, escaped quotes or text that resembles another key.
-        while (matcher.find(searchFrom)) {
+        while (findAssignment(matcher, text, searchFrom)) {
             int valueStart = matcher.end();
             if (valueStart == text.length()) {
                 break;
@@ -862,9 +917,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             String separator = matcher.group(3);
             boolean arrow = separator.contains("=>")
                     || separator.toLowerCase(Locale.ROOT).contains("u003e");
-            boolean strong = name.length() <= MAX_NAME_CHARS
-                    && STRONG_SECRET_NAME.matcher(name).find();
-            boolean weak = !strong && name.length() <= MAX_NAME_CHARS && weakSecretName(name);
+            // The shortest credential names are token and A_KEY.
+            boolean sized = name.length() >= MIN_SECRET_NAME_CHARS && name.length() <= MAX_NAME_CHARS;
+            boolean strong = sized && STRONG_SECRET_NAME.matcher(name).find();
+            boolean weak = !strong && sized && weakSecretName(name);
             if (!strong && !(weak && weakNameCounts(text, name, matcher, arrow))) {
                 // Ordinary code, such as credentials: 'include' or ENTER_KEY = 13.
                 searchFrom = valueStart;
@@ -878,7 +934,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     && bareKey
                     && isEnvironmentName(name)
                     && SPACED_EQUALS.matcher(separator).matches();
-            LineStart line = arrow || spaced ? lineStart(text, keyStart(text, matcher)) : LineStart.NONE;
+            LineStart line = arrow || spaced ? lineStart(text, keyStart(text, matcher), lines) : LineStart.NONE;
             if (arrow && !arrowPair(text, matcher, valueStart, name, line)) {
                 // A lambda or arrow-function parameter such as token => token.trim().
                 searchFrom = valueStart;
@@ -1016,7 +1072,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * marker, and by the dotted prefix of the name itself ({@code sba.judge.password}). A name inline
      * in prose ({@code see `SBA_X_TOKEN => …`}) does not.
      */
-    private static LineStart lineStart(String text, int nameStart) {
+    private static LineStart lineStart(String text, int nameStart, Lines lines) {
         int at = nameStart;
         while (at > 1 && text.charAt(at - 1) == '.' && nameStart - at < 128) {
             int segment = at - 1;
@@ -1033,41 +1089,34 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             }
             at = segment;
         }
-        int lineStart = at;
-        int level = -1;
-        while (level < 0) {
-            if (lineStart == 0) {
-                level = 0;
-                break;
-            }
-            if (at - lineStart > MAX_LINE_PREFIX) {
+        // The line starts after the nearest raw line break, opening quote or escaped line break within
+        // MAX_LINE_PREFIX characters, or at the start of the text when that is as close.
+        int stop = lines.stopBefore(at);
+        if (stop == Lines.FAR || stop == Lines.NO_STOP && at > MAX_LINE_PREFIX + 1) {
 
-                return LineStart.NONE;
-            }
-            char previous = text.charAt(lineStart - 1);
-            if (previous == '\n' || previous == '\r') {
-                level = 0;
-            } else if (previous == '"') {
-                // The quote that opens the JSON string holding this line: its contents are one level deeper.
-                level = backslashRunBefore(text, lineStart - 1) + 1;
-            } else if ((previous == 'n' || previous == 'r') && backslashRunBefore(text, lineStart - 1) > 0) {
-                level = backslashRunBefore(text, lineStart - 1);
-            } else {
-                lineStart--;
-            }
+            return LineStart.NONE;
         }
+        int lineStart = stop + 1;
+        int level = stop == Lines.NO_STOP ? 0 : lines.levelAfter(stop);
         boolean escaped = level > 0;
         int tabLevel = 0;
         StringBuilder prefix = new StringBuilder(at - lineStart);
+        // 0 in the leading blanks, 1 in the first word, which may be a gutter or a marker, and 2 after the
+        // blank that ends it, where LINE_PREFIX reads only blanks, markers and an opening code span or
+        // bold marker: anything else there means the name does not start its line.
+        int part = 0;
         for (int index = lineStart; index < at; index++) {
             char current = text.charAt(index);
             int run = current == '\\' ? backslashRun(text, index) : 0;
+            char shown = current;
             if (run > 0 && index + run < at && text.charAt(index + run) == 't') {
                 tabLevel = tabLevel == 0 ? run : tabLevel;
-                prefix.append('\t');
+                shown = '\t';
+                prefix.append(shown);
                 index += run;
             } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= at) {
-                prefix.append('→');
+                shown = '→';
+                prefix.append(shown);
                 index += run + 4;
             } else if (run > 0) {
                 // Backslashes that escape nothing shown here read as themselves, the whole run at once.
@@ -1076,6 +1125,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 index = end - 1;
             } else {
                 prefix.append(current);
+            }
+            if (shown == ' ' || shown == '\t') {
+                part = part == 1 ? 2 : part;
+            } else if (part == 2 && "#>0123456789.)-+*`_".indexOf(shown) < 0) {
+
+                return LineStart.NONE;
+            } else {
+                part = Math.max(part, 1);
             }
         }
         Matcher gutter = LINE_PREFIX.matcher(prefix);
@@ -1436,6 +1493,23 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return after;
     }
 
+    // Whether the end of the text, a raw line break, a quote, or backslashes before n, r or a quote stand
+    // here: what atLineBreak can find at some encoding level, so that other text skips the search for
+    // its level.
+    private static boolean mayEndLine(String text, int at) {
+        if (at == text.length()) {
+
+            return true;
+        }
+        char current = text.charAt(at);
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+
+        return current == '\n'
+                || current == '\r'
+                || current == '"'
+                || run > 0 && at + run < text.length() && "nr\"".indexOf(text.charAt(at + run)) >= 0;
+    }
+
     private static boolean atLineBreak(String text, int at, int level) {
         char current = text.charAt(at);
         if (current == '\n' || current == '\r' || current == '"' && level > 0) {
@@ -1604,16 +1678,17 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * {@code --api-key=VALUE} form is an assignment.
      */
     private static String redactSecretFlags(String text) {
-        Matcher matcher = FLAG.matcher(text);
+        FlagFinder flags = new FlagFinder(text);
+        Lines lines = new Lines(text);
         StringBuilder redacted = null;
         int copiedThrough = 0;
         int searchFrom = 0;
-        while (searchFrom < text.length() && matcher.find(searchFrom)) {
-            searchFrom = matcher.end();
-            if (!isSecretFlag(matcher.group())) {
+        while (searchFrom < text.length() && flags.find(searchFrom)) {
+            searchFrom = flags.end();
+            if (!isSecretFlag(text.substring(flags.start(), flags.end()))) {
                 continue;
             }
-            Span value = flagValue(text, matcher.start(), matcher.end());
+            Span value = flagValue(text, flags.start(), flags.end(), lines);
             if (value == null) {
                 continue;
             }
@@ -1630,8 +1705,137 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 : redacted.append(text, copiedThrough, text.length()).toString();
     }
 
+    /**
+     * Finds the flags that {@link #FLAG} matches, in one forward pass: "--" where a name cannot
+     * continue before it, or after a JSON escape letter, and the whole run of flag characters from
+     * there, when that run holds at most MAX_FLAG_CHARS characters. Each run's end is found once for
+     * every "--" inside it, and a "--" too far from that end is skipped, so a near miss such as a long
+     * run of ".--" costs constant work per character rather than a capped run per "--".
+     */
+    private static final class FlagFinder {
+        private final String text;
+        // [runStart, runEnd): flag characters that run to their end, holding the last "--" read.
+        private int runStart = -1;
+        private int runEnd = -1;
+        private int start;
+        private int end;
+
+        FlagFinder(String text) {
+            this.text = text;
+        }
+
+        // Whether a flag starts at or after from; it is then [start(), end()).
+        boolean find(int from) {
+            int at = text.indexOf("--", from);
+            while (at >= 0) {
+                if (at < runStart || at >= runEnd) {
+                    runStart = at;
+                    runEnd = at;
+                    while (runEnd < text.length() && isFlagChar(text.charAt(runEnd))) {
+                        runEnd++;
+                    }
+                }
+                int length = runEnd - at;
+                if (length > MAX_FLAG_CHARS) {
+                    // Every "--" before runEnd - MAX_FLAG_CHARS starts a run too long to be a flag.
+                    at = text.indexOf("--", Math.max(at + 1, runEnd - MAX_FLAG_CHARS));
+                    continue;
+                }
+                if (length > 2 && (at == 0 || !isNameChar(text.charAt(at - 1)) || escapeLetter(text, at - 1))) {
+                    start = at;
+                    end = runEnd;
+
+                    return true;
+                }
+                at = text.indexOf("--", at + 1);
+            }
+
+            return false;
+        }
+
+        int start() {
+
+            return start;
+        }
+
+        int end() {
+
+            return end;
+        }
+
+        private static boolean isFlagChar(char value) {
+
+            return isNameChar(value) || value == '.';
+        }
+    }
+
+    /**
+     * What one rule learns about displayed lines while it reads a text from start to end, so that names
+     * and flags looked up in that order cost constant work per character: a lookup walks back only over
+     * text the previous one did not, and the level of a line, which can follow a long backslash run, is
+     * counted once for every name on it. A lookup before the previous one walks back in full.
+     */
+    private static final class Lines {
+        // What lies before lastAt: the index of the nearest character that ends a line, NO_STOP when no
+        // character before it does, or FAR when none of the MAX_LINE_PREFIX + 1 characters before it does.
+        private static final int NO_STOP = -1;
+        private static final int FAR = -2;
+        private final String text;
+        private int lastAt = -1;
+        private int lastStop;
+        private int levelStop = -1;
+        private int level;
+
+        Lines(String text) {
+            this.text = text;
+        }
+
+        // The nearest character before at that ends a line (a raw line break, a quote, or the n or r of a
+        // JSON-escaped line break), NO_STOP or FAR, as for lastStop.
+        int stopBefore(int at) {
+            int floor = Math.max(0, at - MAX_LINE_PREFIX - 1);
+            boolean continues = lastAt >= 0 && at >= lastAt && lastAt >= floor;
+            int from = continues ? lastAt : floor;
+            int stop = Integer.MIN_VALUE;
+            for (int index = at - 1; index >= from && stop == Integer.MIN_VALUE; index--) {
+                stop = endsLine(index) ? index : stop;
+            }
+            if (stop == Integer.MIN_VALUE) {
+                stop = continues ? lastStop : floor == 0 ? NO_STOP : FAR;
+                stop = stop >= 0 && stop < floor ? FAR : stop;
+            }
+            lastAt = at;
+            lastStop = stop;
+
+            return stop;
+        }
+
+        private boolean endsLine(int index) {
+            char current = text.charAt(index);
+
+            return current == '\n'
+                    || current == '\r'
+                    || current == '"'
+                    || (current == 'n' || current == 'r') && index > 0 && text.charAt(index - 1) == '\\';
+        }
+
+        // The encoding level of the line that starts after this stop: 0 after a raw line break, the
+        // backslashes in an escaped one, and one more than the backslashes before the quote that opens
+        // the JSON string holding the line.
+        int levelAfter(int stop) {
+            if (stop != levelStop) {
+                char current = text.charAt(stop);
+                int run = backslashRunBefore(text, stop);
+                level = current == '"' ? run + 1 : current == 'n' || current == 'r' ? run : 0;
+                levelStop = stop;
+            }
+
+            return level;
+        }
+    }
+
     // The argument of the flag in [flagStart, flagEnd), or null when none follows.
-    private static Span flagValue(String text, int flagStart, int flagEnd) {
+    private static Span flagValue(String text, int flagStart, int flagEnd, Lines lines) {
         if (flagEnd >= text.length()) {
 
             return null;
@@ -1647,10 +1851,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return null;
         }
         int at = blankEnd(text, flagEnd);
-        if (at == text.length() || "\n\r\\\"".indexOf(text.charAt(at)) >= 0) {
+        if (mayEndLine(text, at)) {
             // Alone on its line, the flag takes the next line, as launchctl print and PlistBuddy show,
             // unless that line is a description indented under the flag, as help output shows.
-            LineStart line = lineStart(text, flagStart);
+            LineStart line = lineStart(text, flagStart, lines);
             if (line.starts() && (at == text.length() || atLineBreak(text, at, line.level()))) {
 
                 return describedBelow(text, line, flagStart, at) ? null : nextLineAfter(text, at, line.level());
@@ -1661,7 +1865,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 || !startsArgument(text, at)
                 || proseWord(text, at)
                 || separatorWord(text, at)
-                || documented(text, flagStart, flagEnd)) {
+                || documented(text, flagStart, flagEnd, lines)) {
 
             return null;
         }
@@ -1776,9 +1980,9 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * note follows, and one on a line that a shell continuation ends ({@code --api-key   VALUE \}) are
      * still taken.
      */
-    private static boolean documented(String text, int flagStart, int flagEnd) {
+    private static boolean documented(String text, int flagStart, int flagEnd, Lines lines) {
         int entry = optionListStart(text, flagStart);
-        LineStart line = lineStart(text, entry);
+        LineStart line = lineStart(text, entry, lines);
         if (!line.starts()) {
 
             return false;
@@ -2179,22 +2383,50 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * defaults write, and the -w password of security add-generic-password.
      */
     private static String redactWriteCommands(String text) {
-        Matcher matcher = WRITE_COMMAND.matcher(text);
+        Matcher matcher = scanner(WRITE_COMMAND, text);
+        PasswordOptions options = new PasswordOptions(text);
         StringBuilder redacted = null;
         int copiedThrough = 0;
         int searchFrom = 0;
-        while (searchFrom < text.length() && matcher.find(searchFrom)) {
-            searchFrom = matcher.end();
-            if (matcher.end() == text.length()) {
+        // The next command of each kind at or after searchFrom (Integer.MAX_VALUE when none is left),
+        // kept until searchFrom passes its start; the earlier one is read first.
+        int writeStart = -1;
+        int securityStart = -1;
+        int securityEnd = -1;
+        while (searchFrom < text.length()) {
+            if (writeStart < searchFrom) {
+                writeStart = findFrom(matcher, text, searchFrom, RedactionService::writeCommandStart)
+                        ? matcher.start()
+                        : Integer.MAX_VALUE;
+            }
+            if (securityStart < searchFrom) {
+                securityStart = Integer.MAX_VALUE;
+                for (int at = text.indexOf("add-", searchFrom); at >= 0; at = text.indexOf("add-", at + 1)) {
+                    int nameEnd = securityCommandEnd(text, at);
+                    int end = nameEnd < 0 ? -1 : options.endAfter(nameEnd);
+                    if (end >= 0) {
+                        securityStart = at;
+                        securityEnd = end;
+                        break;
+                    }
+                }
+            }
+            boolean securityFirst = securityStart < writeStart;
+            if ((securityFirst ? securityStart : writeStart) == Integer.MAX_VALUE) {
                 break;
             }
-            String name = writtenName(matcher);
+            int commandEnd = securityFirst ? securityEnd : matcher.end();
+            searchFrom = commandEnd;
+            if (commandEnd == text.length()) {
+                break;
+            }
+            String name = securityFirst ? null : writtenName(matcher);
             if (name != null && (!isSecretKey(name) || countsTokens(name))) {
                 continue;
             }
-            Span value = matcher.group("buddy") != null
+            Span value = !securityFirst && matcher.group("buddy") != null
                     ? buddyValue(text, matcher.start(), matcher.end())
-                    : startsArgument(text, matcher.end()) ? shellWord(text, matcher.end()) : null;
+                    : startsArgument(text, commandEnd) ? shellWord(text, commandEnd) : null;
             if (value == null) {
                 continue;
             }
@@ -2209,6 +2441,213 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return redacted == null
                 ? text
                 : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    /**
+     * Finds the -w option of each security command: the first blank, "-w" and blank that starts within
+     * MAX_SECURITY_OPTIONS_CHARS characters after the command's name with no line break before it, and
+     * the blanks after it. The next option and the next line break are each searched for once and kept
+     * while the commands before them are read, so dense commands without one cost constant work per
+     * character rather than a window each.
+     */
+    private static final class PasswordOptions {
+        private final String text;
+        // The first option at or after optionFrom (text.length() when none), and the same for line breaks.
+        private int optionFrom = -1;
+        private int option = -1;
+        private int lineBreakFrom = -1;
+        private int lineBreak = -1;
+
+        PasswordOptions(String text) {
+            this.text = text;
+        }
+
+        // The end of the blanks after the -w option of a command whose name ends here, else -1.
+        int endAfter(int from) {
+            if (from < optionFrom || from > option) {
+                optionFrom = from;
+                option = nextOption(from);
+            }
+            if (from < lineBreakFrom || from > lineBreak) {
+                lineBreakFrom = from;
+                lineBreak = nextLineBreak(from);
+            }
+            if (option == text.length() || option - from > MAX_SECURITY_OPTIONS_CHARS || lineBreak < option) {
+
+                return -1;
+            }
+            int end = option + 3;
+            while (end < text.length() && isBlank(text.charAt(end))) {
+                end++;
+            }
+
+            return end;
+        }
+
+        // The first blank at or after from that "-w" and another blank follow, else text.length().
+        private int nextOption(int from) {
+            for (int dash = text.indexOf("-w", from + 1); dash >= 0; dash = text.indexOf("-w", dash + 1)) {
+                if (isBlank(text.charAt(dash - 1)) && dash + 2 < text.length() && isBlank(text.charAt(dash + 2))) {
+
+                    return dash - 1;
+                }
+            }
+
+            return text.length();
+        }
+
+        private int nextLineBreak(int from) {
+            int at = from;
+            while (at < text.length() && text.charAt(at) != '\n' && text.charAt(at) != '\r') {
+                at++;
+            }
+
+            return at;
+        }
+
+        private static boolean isBlank(char value) {
+
+            return value == ' ' || value == '\t';
+        }
+    }
+
+    // The end of a security add-generic-password or add-internet-password command's name that starts
+    // here where a name cannot continue before it (or after a JSON escape letter), else -1.
+    private static int securityCommandEnd(String text, int at) {
+        if (at > 0 && isNameChar(text.charAt(at - 1)) && !escapeLetter(text, at - 1)) {
+
+            return -1;
+        }
+        for (String command : SECURITY_COMMANDS) {
+            if (text.startsWith(command, at)) {
+
+                return at + command.length();
+            }
+        }
+
+        return -1;
+    }
+
+    // Whether WRITE_COMMAND can match from here: setenv, set or add in any letter case, defaults, -replace
+    // or -insert starts here, where a name cannot continue before it or after a JSON escape letter.
+    private static boolean writeCommandStart(String text, int at) {
+        char current = text.charAt(at);
+        boolean command =
+                switch (current) {
+                    case 's', 'S' -> text.regionMatches(true, at, "set", 0, 3);
+                    case 'a', 'A' -> text.regionMatches(true, at, "add", 0, 3);
+                    case 'd' -> text.startsWith("defaults", at);
+                    case '-' -> text.startsWith("-replace", at) || text.startsWith("-insert", at);
+                    default -> false;
+                };
+
+        return command && (at == 0 || !isNameChar(text.charAt(at - 1)) || escapeLetter(text, at - 1));
+    }
+
+    /**
+     * Finds the leftmost ASSIGNMENT match at or after from, as {@link Matcher#find(int)} does, trying the
+     * pattern only where a match can start and has its shape (see {@link #assignmentShape}): at a quote,
+     * where NAME can start, and in a backslash run at the last MAX_ESCAPE_RUN backslashes before a quote
+     * or a unicode-escaped quote, the only ones that can open an escaped quoted name. Other text costs a
+     * few comparisons per character.
+     */
+    private static boolean findAssignment(Matcher matcher, String text, int from) {
+        int at = from;
+        while (at < text.length()) {
+            char current = text.charAt(at);
+            if (current == '\\') {
+                int runEnd = at + backslashRun(text, at);
+                int quote = runEnd < text.length() && text.charAt(runEnd) == '"'
+                        ? 1
+                        : unicodeQuoteBefore(text, runEnd + 5) ? 5 : 0;
+                for (int start = Math.max(at, runEnd - MAX_ESCAPE_RUN); quote > 0 && start < runEnd; start++) {
+                    if (assignmentShape(text, start, runEnd + quote - start)
+                            && matcher.region(start, text.length()).lookingAt()) {
+
+                        return true;
+                    }
+                }
+                at = runEnd;
+                continue;
+            }
+            int delimiter = current == '"' || current == '\'' ? 1 : 0;
+            boolean starts = delimiter == 1
+                    || isNameChar(current)
+                            && (at == 0 || !isNameChar(text.charAt(at - 1)) || unicodeQuoteBefore(text, at));
+            if (starts
+                    && assignmentShape(text, at, delimiter)
+                    && matcher.region(at, text.length()).lookingAt()) {
+
+                return true;
+            }
+            at++;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the text from here has the shape every ASSIGNMENT match with an opening delimiter of this
+     * length has: a run of at most MAX_NAME_CHARS + 1 name characters, the same delimiter again in any
+     * letter case, then '=' or ':' after any whitespace that {@code \s} matches.
+     */
+    private static boolean assignmentShape(String text, int start, int delimiterLength) {
+        int nameStart = start + delimiterLength;
+        int nameEnd = nameStart;
+        while (nameEnd < text.length() && isNameChar(text.charAt(nameEnd))) {
+            if (nameEnd - nameStart > MAX_NAME_CHARS) {
+
+                return false;
+            }
+            nameEnd++;
+        }
+        if (nameEnd == nameStart || !text.regionMatches(true, nameEnd, text, start, delimiterLength)) {
+
+            return false;
+        }
+        int at = nameEnd + delimiterLength;
+        while (at < text.length() && " \t\n\u000B\f\r".indexOf(text.charAt(at)) >= 0) {
+            at++;
+        }
+
+        return at < text.length() && (text.charAt(at) == '=' || text.charAt(at) == ':');
+    }
+
+    // Whether a unicode-escaped quote, \\u0022 or \\u0027 (either case of u), ends here.
+    private static boolean unicodeQuoteBefore(String text, int at) {
+
+        return at >= 6
+                && at <= text.length()
+                && text.charAt(at - 6) == '\\'
+                && (text.charAt(at - 5) == 'u' || text.charAt(at - 5) == 'U')
+                && text.startsWith("002", at - 4)
+                && (text.charAt(at - 1) == '2' || text.charAt(at - 1) == '7');
+    }
+
+    // A matcher for a pattern tried at single positions: lookbehinds read the text before the position.
+    private static Matcher scanner(Pattern pattern, String text) {
+
+        return pattern.matcher(text).useTransparentBounds(true).useAnchoringBounds(false);
+    }
+
+    /**
+     * Finds the leftmost match at or after from, as {@link Matcher#find(int)} does, but tries the pattern
+     * only where {@code startsHere} allows a match to start: Java code passes over the rest, so text
+     * where no match can start costs a comparison or two per character instead of a pattern attempt.
+     */
+    private static boolean findFrom(Matcher matcher, String text, int from, StartTest startsHere) {
+        for (int at = from; at < text.length(); at++) {
+            if (startsHere.test(text, at) && matcher.region(at, text.length()).lookingAt()) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private interface StartTest {
+        boolean test(String text, int at);
     }
 
     // The name a write command assigns (the last segment of a key path), or null for a password.
@@ -2338,10 +2777,16 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         String redact(String value);
     }
 
-    private record RegexRule(Pattern pattern, Replacement replacement) implements RedactionRule {
+    // A pattern rule that searches only text that may hold a match.
+    private record RegexRule(Pattern pattern, Replacement replacement, Predicate<String> mayMatch)
+            implements RedactionRule {
 
         @Override
         public String redact(String value) {
+            if (!mayMatch.test(value)) {
+
+                return value;
+            }
             Matcher matcher = pattern.matcher(value);
             StringBuilder redacted = new StringBuilder();
             while (matcher.find()) {

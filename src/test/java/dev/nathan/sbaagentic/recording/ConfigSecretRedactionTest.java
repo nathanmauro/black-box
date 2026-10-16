@@ -1267,7 +1267,19 @@ class ConfigSecretRedactionTest {
                             + "a-".repeat(200) + "token v "),
             Arguments.of(
                     "private key BEGIN lines without an END line",
-                    "-----BEGIN RSA PRIVATE KEY-----\n" + "x".repeat(20) + "\n-----END RSA PUBLIC KEY-----\n"));
+                    "-----BEGIN RSA PRIVATE KEY-----\n" + "x".repeat(20) + "\n-----END RSA PUBLIC KEY-----\n"),
+            // Every "--" after a "." starts a run of flag characters too long to be a flag.
+            Arguments.of("flag-shaped runs after dots", ".--"),
+            // One escaped markup character in each unit makes every scalar take the decoded second
+            // scan, so each of these near misses is scanned twice.
+            Arguments.of(
+                    "flag-shaped runs after dots, with an escaped markup character", "\\u003c" + ".--".repeat(333)),
+            Arguments.of(
+                    "security commands without a password option, with an escaped markup character",
+                    "\\u003c" + ".add-generic-password".repeat(48)),
+            Arguments.of(
+                    "names on a line after a long backslash run, with an escaped quote",
+                    "\\u0022" + "\\".repeat(20_000) + "n" + "token => ".repeat(28) + "\n"));
 
     static Stream<Arguments> nearMissShapes() {
 
