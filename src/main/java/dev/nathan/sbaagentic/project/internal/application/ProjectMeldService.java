@@ -77,7 +77,8 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         Map<String, List<ProjectTimelineBlock>> evidence = evidenceBySession(canonicalKey, sessions);
-        Bundle bundle = buildBundle(canonicalKey, sessions, evidence, UnaryOperator.identity());
+        Bundle bundle =
+                buildBundle(canonicalKey, sessions, evidence, UnaryOperator.identity(), UnaryOperator.identity());
         String executionMode = executionMode(request.executionMode());
         String provider =
                 firstNonBlank(request.provider(), executionMode.equals(DIRECT) ? "configured-summary" : "local");
@@ -91,7 +92,12 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 // The configured summary backend may run outside this machine, and stored text can
                 // predate a redaction rule: its bundle is built from separately redacted pieces, so a
                 // value cut by a clip or a quoted credential key never costs the rest of the bundle.
-                Bundle outbound = buildBundle(canonicalKey, sessions, evidence, exportRedactor::redactForSummary);
+                Bundle outbound = buildBundle(
+                        canonicalKey,
+                        sessions,
+                        evidence,
+                        exportRedactor::redactForSummary,
+                        exportRedactor::redactJsonForSummary);
                 preview = summaryBackend.summarize(directPrompt(outbound.text()));
                 status = "preview";
             } catch (RuntimeException ex) {
@@ -243,12 +249,14 @@ public class ProjectMeldService implements ProjectMeldOperations {
         return evidence;
     }
 
-    // Each stored piece passes through stored before it is clipped and appended.
+    // Each stored piece passes through stored, or storedJson for a tool input or output, before it is
+    // clipped and appended.
     private Bundle buildBundle(
             String canonicalKey,
             List<AgentSession> sessions,
             Map<String, List<ProjectTimelineBlock>> evidence,
-            UnaryOperator<String> stored) {
+            UnaryOperator<String> stored,
+            UnaryOperator<String> storedJson) {
         List<String> degradationNotes = new ArrayList<>();
         StringBuilder builder = new StringBuilder();
         builder.append("# Project Meld Bundle\n\n");
@@ -298,7 +306,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 continue;
             }
             for (ProjectTimelineBlock block : blocks) {
-                appendEvidence(builder, block, stored);
+                appendEvidence(builder, block, stored, storedJson);
             }
             builder.append('\n');
         }
@@ -314,7 +322,10 @@ public class ProjectMeldService implements ProjectMeldOperations {
     }
 
     private static void appendEvidence(
-            StringBuilder builder, ProjectTimelineBlock block, UnaryOperator<String> stored) {
+            StringBuilder builder,
+            ProjectTimelineBlock block,
+            UnaryOperator<String> stored,
+            UnaryOperator<String> storedJson) {
         builder.append("- [")
                 .append(block.observedAt())
                 .append("] ")
@@ -336,12 +347,12 @@ public class ProjectMeldService implements ProjectMeldOperations {
         }
         if (block.toolInputJson() != null && !block.toolInputJson().isBlank()) {
             builder.append("  Input: ");
-            appendClipped(builder, stored.apply(block.toolInputJson().strip()), MAX_JSON_CHARS);
+            appendClipped(builder, storedJson.apply(block.toolInputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
         if (block.toolOutputJson() != null && !block.toolOutputJson().isBlank()) {
             builder.append("  Output: ");
-            appendClipped(builder, stored.apply(block.toolOutputJson().strip()), MAX_JSON_CHARS);
+            appendClipped(builder, storedJson.apply(block.toolOutputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
     }

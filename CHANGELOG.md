@@ -63,9 +63,12 @@ All notable changes to this project will be documented in this file.
   before the summary backend receives it. Text stored before a redaction rule recognized its
   credential was sent as stored, by default to the external Codex wrapper; now each piece is
   redacted first, without export's whole-leaf fallback, so text holding no recognized credential
-  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend, and so does
-  a stored tool input whose value ingestion replaced, as valid JSON. A clipped stored text keeps one
-  truncation marker. The summary and title the backend returns are redacted before they are stored.
+  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend. A stored tool
+  input or output is redacted string by string, as ingestion stored it, so one that holds no
+  recognized credential reaches the backend exactly as stored, valid JSON at any length, while a
+  flag's argument in the next list element and a private key split across list elements are still
+  replaced. A clipped stored text keeps one truncation marker. The summary and title the backend
+  returns are redacted before they are stored.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped

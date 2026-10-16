@@ -13,4 +13,15 @@ public interface ExportRedactor {
 
         return redactForExport(text);
     }
+
+    /**
+     * {@link #redactForSummary} for a stored tool input or output, which ingestion stored as JSON after
+     * redacting each of its strings on its own: each string is redacted the same way here, so a value
+     * never runs on into the JSON around it, and JSON that holds no recognized credential is sent as
+     * stored. Text that is not JSON is redacted whole.
+     */
+    default String redactJsonForSummary(String json) {
+
+        return redactForSummary(json);
+    }
 }

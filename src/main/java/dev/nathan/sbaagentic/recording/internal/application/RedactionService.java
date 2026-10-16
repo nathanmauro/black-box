@@ -1,5 +1,8 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
@@ -8,7 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
@@ -151,6 +156,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final int MAX_CONTINUATION_CHARS = 4096;
     // Text after an arrow that is searched for a lambda's own parameter name.
     private static final int MAX_ARROW_BODY_CHARS = 256;
+
+    // Reads a stored tool input or output: one JSON value, and nothing after it.
+    private static final JsonMapper STORED_JSON = JsonMapper.builder()
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .build();
 
     private static final List<RedactionRule> BUILT_IN_RULES = builtInRules();
     private final List<RedactionRule> exportRules = exportRules();
@@ -360,9 +370,55 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return value;
         }
+
+        return redactTree(value, this::redact, defaultRules, false);
+    }
+
+    @Override
+    public String redactJsonForSummary(String json) {
+        if (json == null) {
+
+            return null;
+        }
+        Object stored;
+        try {
+            stored = STORED_JSON.readValue(json, Object.class);
+        } catch (JsonProcessingException ex) {
+
+            // Not one JSON value, such as text stored before tool payloads were JSON.
+            return redactForSummary(json);
+        }
+        Object redacted = redactTree(stored, RedactionService::redactStoredText, true, true);
+        if (Objects.equals(redacted, stored)) {
+
+            return json;
+        }
+        try {
+
+            return STORED_JSON.writeValueAsString(redacted);
+        } catch (JsonProcessingException ex) {
+
+            return redactForSummary(json);
+        }
+    }
+
+    private static String redactStoredText(String text) {
+
+        return redactDefaults(text, BUILT_IN_RULES);
+    }
+
+    /**
+     * Redacts each string of a JSON-shaped value with {@code leaf}, member names included. With
+     * {@code structured}, a member whose name is a secret key loses its whole value, and a
+     * property-list name that one list element leaves open names the value that starts the next. With
+     * {@code acrossElements}, a list is also read across its elements (see
+     * {@link #redactAcrossElements}).
+     */
+    private static Object redactTree(
+            Object value, UnaryOperator<String> leaf, boolean structured, boolean acrossElements) {
         if (value instanceof String text) {
 
-            return redact(text);
+            return leaf.apply(text);
         }
         if (value instanceof Map<?, ?> map) {
             Map<Object, Object> redacted = new LinkedHashMap<>();
@@ -371,8 +427,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 Object key = entry.getKey();
                 boolean secretValue = false;
                 if (key instanceof String name) {
-                    secretValue = defaultRules && isSecretKey(name);
-                    String safeName = redact(name);
+                    secretValue = structured && isSecretKey(name);
+                    String safeName = leaf.apply(name);
                     if (!safeName.equals(name)) {
                         String baseName = safeName;
                         // Reserve original names, including ones not visited yet, so a
@@ -383,7 +439,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     }
                     key = safeName;
                 }
-                redacted.put(key, secretValue ? REDACTED : redactDeep(entry.getValue()));
+                redacted.put(
+                        key, secretValue ? REDACTED : redactTree(entry.getValue(), leaf, structured, acrossElements));
             }
 
             return redacted;
@@ -394,8 +451,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             // lines of an Edit tool's structuredPatch: the open name carries over to the next one.
             String openName = null;
             for (Object item : list) {
-                Object safe = redactDeep(item);
-                if (defaultRules && safe instanceof String line) {
+                Object safe = redactTree(item, leaf, structured, acrossElements);
+                if (structured && safe instanceof String line) {
                     String leading = openName == null ? line : redactLeadingPropertyListValue(line, openName);
                     String tailName = openSecretMember(leading);
                     if ("".equals(tailName) && openName != null && isFlag(openName)) {
@@ -409,11 +466,63 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 }
                 redacted.add(safe);
             }
+            if (acrossElements) {
+                redactAcrossElements(redacted);
+            }
 
             return redacted;
         }
 
         return value;
+    }
+
+    /**
+     * What a list shows only across its string elements: a credential flag that is a whole element
+     * takes the next element as its argument ({@code ["--api-key", "…"]}) unless that is another
+     * flag, and a private key block can span consecutive string elements, as the lines of a patch do,
+     * from the element that holds its BEGIN line through the one that holds its END line. Each search
+     * for an END line covers elements no earlier search did, so the work stays linear.
+     */
+    private static void redactAcrossElements(List<Object> items) {
+        // No END line that a BEGIN line before this element could reach.
+        int searchedThrough = 0;
+        for (int index = 0; index + 1 < items.size(); index++) {
+            if (!(items.get(index) instanceof String element)) {
+                continue;
+            }
+            if (items.get(index + 1) instanceof String next
+                    && isSecretFlag(element)
+                    && FLAG.matcher(element).matches()
+                    && !next.isEmpty()
+                    && !startsFlag(next, 0)) {
+                items.set(++index, REDACTED);
+                continue;
+            }
+            Matcher begin = PRIVATE_KEY_BEGIN.matcher(element);
+            if (index < searchedThrough
+                    || !begin.find()
+                    || PRIVATE_KEY_END.matcher(element).find(begin.end())) {
+                continue;
+            }
+            int last = index + 1;
+            Matcher end = null;
+            while (end == null && last < items.size() && items.get(last) instanceof String line) {
+                Matcher candidate = PRIVATE_KEY_END.matcher(line);
+                end = candidate.find() ? candidate : null;
+                last += end == null ? 1 : 0;
+            }
+            if (end == null) {
+                searchedThrough = last;
+                continue;
+            }
+            items.set(index, element.substring(0, begin.start()) + REDACTED);
+            for (int inside = index + 1; inside < last; inside++) {
+                items.set(inside, REDACTED);
+            }
+            items.set(last, REDACTED + ((String) items.get(last)).substring(end.end()));
+            // The element that holds the END line may open another block.
+            index = last - 1;
+        }
     }
 
     private static boolean isSecretKey(String key) {

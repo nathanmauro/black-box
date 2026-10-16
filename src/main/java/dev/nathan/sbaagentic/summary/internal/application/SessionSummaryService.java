@@ -68,7 +68,8 @@ public class SessionSummaryService implements SummaryOperations {
             if (event.text() != null) {
                 transcript.append(outbound(event.text()));
             } else if (event.toolInputJson() != null) {
-                transcript.append(outbound(event.toolInputJson()));
+                // Stored JSON whose strings ingestion redacted one by one: redacted the same way.
+                transcript.append(exportRedactor.redactJsonForSummary(event.toolInputJson()));
             }
             transcript.append("\n\n");
         }

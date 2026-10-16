@@ -521,9 +521,17 @@ replace it. Session summaries and direct meld previews pass each piece of stored
 the configured summary backend, local or external, through the default credential rules above,
 independently of ingestion settings, so a capture stored before a rule existed is not sent as
 stored. They do not use export's whole-leaf fallback, so stored text that holds no recognized
-credential, such as a JSON token count (`"max_tokens": 4096`), reaches the backend unchanged, and so
-does a stored tool input whose value ingestion replaced (`{"command":"… --api-key [REDACTED]"}`),
-which stays valid JSON. A stored text that ingestion clipped keeps its one truncation marker. A
+credential, such as a JSON token count (`"max_tokens": 4096`), reaches the backend unchanged. A stored
+tool input or output is JSON whose strings ingestion redacted one by one, so it is parsed and each
+string, member names included, is redacted the same way, and a member whose name is a secret key
+loses its whole value: a string that ends with a name and separator (a Grep pattern `password:`) or
+with a value ingestion replaced never runs on into the JSON after it, and a tool input or output
+that holds no recognized credential reaches the backend exactly as stored, valid JSON at any length.
+Across the strings of a list, the element after a credential flag that is a whole element
+(`["--api-key", "…"]`) and a private key whose lines are separate elements, as in an Edit's
+`structuredPatch`, are replaced too, although ingestion keeps them. Stored text that is not JSON is
+redacted whole. A stored string that ingestion clipped keeps its one truncation marker; if
+replacements grew it past the scan budget, it is clipped there again, still with one marker. A
 direct meld preview redacts each piece (session title, summary, evidence text, tool input and
 output) before it is clipped into the bundle, so no piece costs the bundle its later sessions; the
 bundle the preview returns locally is built from stored text, as before. The summary and title

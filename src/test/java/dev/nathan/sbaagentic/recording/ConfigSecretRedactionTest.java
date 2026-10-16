@@ -916,6 +916,123 @@ class ConfigSecretRedactionTest {
                 .startsWith(command.substring(0, 6));
     }
 
+    /**
+     * Ingestion redacts each string of a tool input or output on its own and stores the whole as
+     * JSON. The summary path reads that JSON string by string too, so a string that ends with a name
+     * and separator, or with a value ingestion replaced, never runs on into the JSON after it, and a
+     * clipped string is not clipped again: the backend receives the stored, valid JSON.
+     */
+    static Stream<Arguments> storedToolJson() {
+
+        return Stream.of(
+                Arguments.of("Grep for a name and colon", object("pattern", "password:", "path", "config")),
+                Arguments.of("Grep for a name and equals sign", object("pattern", "api_key=", "glob", "*.env")),
+                Arguments.of("Grep for a spaced assignment", object("pattern", "token =", "path", "src")),
+                Arguments.of(
+                        "Edit of a class name and colon",
+                        object(
+                                "file_path",
+                                "/fixture/app/queue.py",
+                                "old_string",
+                                "class TokenQueue:",
+                                "new_string",
+                                "class TokenQueue(Queue):",
+                                "replace_all",
+                                false)),
+                Arguments.of(
+                        "Bash grep whose quoted name ingestion read a value after",
+                        object("command", "grep -rn \"token:\" config/app.yml", "description", "Find token keys")),
+                Arguments.of(
+                        "Bash output that ends with a name and colon",
+                        object(
+                                "stdout",
+                                "config/app.yml:3:  token:\nconfig/app.yml:4:  password:",
+                                "stderr",
+                                "",
+                                "interrupted",
+                                false)),
+                Arguments.of(
+                        "Write of a file longer than the scan budget",
+                        object(
+                                "file_path",
+                                "/fixture/docs/notes.md",
+                                "content",
+                                "- Note: the release checklist covers build, smoke test and rollback steps.\n"
+                                        .repeat(800))),
+                Arguments.of(
+                        "Codex command whose credential ingestion replaced",
+                        object("command", List.of("bash", "-lc", "mycli --password F4KE7argv --port 1"))));
+    }
+
+    private static Map<String, Object> object(Object... namesAndValues) {
+        Map<String, Object> object = new LinkedHashMap<>();
+        for (int index = 0; index < namesAndValues.length; index += 2) {
+            object.put((String) namesAndValues[index], namesAndValues[index + 1]);
+        }
+
+        return object;
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("storedToolJson")
+    void storedToolJsonReachesTheSummaryBackendAsStored(String tool, Map<String, Object> input) throws Exception {
+        String stored = JSON.writeValueAsString(redactor.redactDeep(input));
+
+        String sent = redactor.redactJsonForSummary(stored);
+
+        assertThat(sent).isEqualTo(stored).doesNotContain("F4KE7");
+        assertThat(JSON.readTree(sent).size()).isEqualTo(input.size());
+    }
+
+    /**
+     * Stored JSON can predate a rule, or hold what ingestion reads in one string only: the summary
+     * path redacts each string, a credential member's whole value, a flag's argument in the next
+     * element of a list and a private key whose lines are separate elements, and keeps valid JSON.
+     */
+    @Test
+    void summaryRedactsAStoredToolJsonThatHoldsACredential() throws Exception {
+        String stored = "{\"command\":\"mycli --api-key F4KE7inline --port 1\","
+                + "\"argv\":[\"mycli\",\"--token\",\"F4KE7element\",\"--port\",\"1\"],"
+                + "\"env\":{\"SBA_DB_PASSWORD\":\"F4KE7member\",\"PATH\":\"/usr/bin\"},"
+                + "\"structuredPatch\":[{\"oldStart\":1,\"lines\":[\" port: 8766\","
+                + "\"+-----BEGIN RSA PRIVATE KEY-----\",\"+MIIF4KE7keyBody\",\"+F4KE7keyBody2\","
+                + "\"+-----END RSA PRIVATE KEY-----\",\"+name: ci\"]}]}";
+
+        String sent = redactor.redactJsonForSummary(stored);
+
+        assertThat(sent).doesNotContain("F4KE7");
+        var tree = JSON.readTree(sent);
+        assertThat(tree.path("command").asText()).isEqualTo("mycli --api-key [REDACTED] --port 1");
+        assertThat(tree.path("argv").toString()).isEqualTo("[\"mycli\",\"--token\",\"[REDACTED]\",\"--port\",\"1\"]");
+        assertThat(tree.path("env").path("SBA_DB_PASSWORD").asText()).isEqualTo("[REDACTED]");
+        assertThat(tree.path("env").path("PATH").asText()).isEqualTo("/usr/bin");
+        assertThat(tree.path("structuredPatch").get(0).path("lines").toString())
+                .isEqualTo(
+                        "[\" port: 8766\",\"+[REDACTED]\",\"[REDACTED]\",\"[REDACTED]\",\"[REDACTED]\",\"+name: ci\"]");
+        assertThat(redactor.redactJsonForSummary("mycli --api-key F4KE7text"))
+                .as("text that is not JSON is redacted whole")
+                .isEqualTo("mycli --api-key [REDACTED]");
+        assertThat(redactor.redactJsonForSummary("{\"a\":1} --api-key F4KE7trailing"))
+                .doesNotContain("F4KE7");
+        assertThat(redactor.redactJsonForSummary(
+                        "[\"-----BEGIN PRIVATE KEY-----\",42,\"--api-key\",\"F4KE7afterNumber\",\"--port\",\"1\"]"))
+                .as("a key block never spans a number, and a flag after an open block keeps losing its argument")
+                .isEqualTo("[\"-----BEGIN PRIVATE KEY-----\",42,\"--api-key\",\"[REDACTED]\",\"--port\",\"1\"]");
+    }
+
+    @Test
+    void storedToolJsonWithManyOpenPrivateKeyLinesHasBoundedScanWork() throws Exception {
+        List<String> lines = new ArrayList<>();
+        for (int index = 0; lines.size() < 60_000; index++) {
+            lines.add(index % 2 == 0 ? "+-----BEGIN RSA PRIVATE KEY-----" : "+--api-key");
+        }
+        String stored = JSON.writeValueAsString(Map.of("structuredPatch", List.of(Map.of("lines", lines))));
+
+        assertTimeoutPreemptively(
+                Duration.ofSeconds(4),
+                () -> assertThat(redactor.redactJsonForSummary(stored)).isEqualTo(stored));
+    }
+
     @Test
     void summaryRedactionKeepsTheClipMarkerOfAStoredText() {
         // Clipped at 50,000 characters, the replacement shortens the text, and the marker then ends

@@ -49,6 +49,18 @@ class SummaryRedactionHttpTest {
             <string>F4KE7legacyStripe</string>
             Hapikey_0123456789abcdef0123456789abcdef_fedcba9876543210fedcba9876543210PID""".formatted(FAKE_KEY);
     private static final String CWD = "/fixture/summary-redaction";
+    // Tool inputs that hold no credential but whose strings end with a name and separator.
+    private static final Map<String, Object> TOKEN_QUEUE_EDIT = object(
+            "file_path",
+            "/fixture/app/queue.py",
+            "old_string",
+            "class TokenQueue:",
+            "new_string",
+            "class TokenQueue(Queue):",
+            "replace_all",
+            false);
+    private static final Map<String, Object> TOKEN_GREP =
+            object("command", "grep -rn \"token:\" config/app.yml", "description", "Find token keys");
 
     @TempDir
     static Path tempDir;
@@ -183,6 +195,24 @@ class SummaryRedactionHttpTest {
             input.put("description", "SUMMARY-C-INPUT");
             captureInput(client, cwd, "PreToolUse", "Bash", input);
         }
+        // Tool inputs that hold no credential: strings that end with a name and separator, a quoted
+        // name after which ingestion replaced the rest of its string, and a file longer than the scan
+        // budget, which ingestion clipped. Each reaches the backend as stored, as valid JSON.
+        captureInput(client, cwd, "PreToolUse", "Grep", object("pattern", "password:", "path", "config"));
+        captureInput(client, cwd, "PreToolUse", "Grep", object("pattern", "api_key=", "glob", "*.env"));
+        captureInput(client, cwd, "PreToolUse", "Grep", object("pattern", "token =", "path", "src"));
+        captureInput(client, cwd, "PreToolUse", "Edit", TOKEN_QUEUE_EDIT);
+        captureInput(client, cwd, "PreToolUse", "Bash", TOKEN_GREP);
+        captureInput(
+                client,
+                cwd,
+                "PreToolUse",
+                "Write",
+                object(
+                        "file_path",
+                        "/fixture/docs/notes.md",
+                        "content",
+                        "- Note: the release checklist covers build, smoke test and rollback steps.\n".repeat(800)));
         String sessionId = sessionId(client);
         Files.deleteIfExists(requests);
 
@@ -201,10 +231,14 @@ class SummaryRedactionHttpTest {
                 "SELECT tool_input_json FROM agent_events WHERE session_id = ? AND event_type = 'PreToolUse'",
                 String.class,
                 sessionId);
-        assertThat(storedInputs).hasSize(4);
+        assertThat(storedInputs).hasSize(10);
+        assertThat(storedInputs.stream().filter(stored -> stored.contains("SUMMARY-C-INPUT")))
+                .hasSize(4)
+                .allSatisfy(
+                        stored -> assertThat(stored).doesNotContain("F4KE7").contains("[REDACTED]\",\"description\""));
+        assertThat(storedInputs).anySatisfy(stored -> assertThat(stored).hasSizeGreaterThan(50_000));
         for (String stored : storedInputs) {
-            assertThat(stored).doesNotContain("F4KE7").contains("[REDACTED]\",\"description\"");
-            assertThat(json.readTree(stored).path("description").asText()).isEqualTo("SUMMARY-C-INPUT");
+            assertThat(json.readTree(stored).size()).isGreaterThan(1);
             assertThat(sent)
                     .as("the summary request holds the stored tool input")
                     .contains(stored);
@@ -252,6 +286,56 @@ class SummaryRedactionHttpTest {
 
         assertThat(Files.readString(requests))
                 .contains("\"max_tokens\": 4096", "SESSION-A-TASK-RESULT", "## Session 2", "SESSION-B-MARKER");
+    }
+
+    /**
+     * A direct meld preview sends the bundle it returns locally when the session holds no credential:
+     * stored tool inputs and outputs whose strings end with a name and separator stay as stored.
+     */
+    @Test
+    void directMeldPreviewSendsStoredToolJsonAsStored() throws Exception {
+        String cwd = "/fixture/meld-tool-json";
+        String client = "meld-tool-json-" + UUID.randomUUID();
+        capture(client, cwd, "UserPromptSubmit", null, "Where are the token keys configured?", null);
+        captureInput(client, cwd, "PreToolUse", "Grep", object("pattern", "password:", "path", "config"));
+        captureInput(client, cwd, "PreToolUse", "Grep", object("pattern", "token =", "path", "src"));
+        captureInput(client, cwd, "PreToolUse", "Edit", TOKEN_QUEUE_EDIT);
+        captureInput(client, cwd, "PreToolUse", "Bash", TOKEN_GREP);
+        capture(
+                client,
+                cwd,
+                "PostToolUse",
+                "Bash",
+                null,
+                object(
+                        "stdout",
+                        "config/app.yml:3:  token:\nconfig/app.yml:4:  password:",
+                        "stderr",
+                        "",
+                        "interrupted",
+                        false));
+        Files.deleteIfExists(requests);
+
+        var preview = http.postForEntity(
+                base + "/api/projects/" + projectKey(cwd) + "/melds/preview",
+                Map.of("sessionIds", List.of(sessionId(client)), "executionMode", "direct"),
+                JsonNode.class);
+        assertThat(preview.getStatusCode().value()).isEqualTo(200);
+
+        String bundle = preview.getBody().path("bundle").asText();
+        assertThat(bundle).contains("Input: {\"pattern\":\"password:\",\"path\":\"config\"}", "Output: {\"stdout\"");
+        assertThat(Files.readString(requests))
+                .as("the backend receives the bundle built from stored text")
+                .contains(bundle);
+    }
+
+    private static Map<String, Object> object(Object... namesAndValues) {
+        Map<String, Object> object = new LinkedHashMap<>();
+        for (int index = 0; index < namesAndValues.length; index += 2) {
+            object.put((String) namesAndValues[index], namesAndValues[index + 1]);
+        }
+
+        return object;
     }
 
     /** A session whose tool event text was stored before any rule recognized its credentials. */
