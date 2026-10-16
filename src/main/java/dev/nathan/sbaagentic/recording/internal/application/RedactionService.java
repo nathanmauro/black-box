@@ -2008,7 +2008,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         String delimiter = quoteBefore(text, commandStart);
         int end;
         if (delimiter.isEmpty()) {
-            end = bareLineEnd(text, valueStart, lineEnd(text, valueStart, 0, false));
+            end = commandLineEnd(text, valueStart);
         } else if (delimiter.length() == 1) {
             end = quotedEnd(text, valueStart, delimiter.charAt(0));
             end = end < 0 ? text.length() : end - 1;
@@ -2020,20 +2020,41 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return end > valueStart ? new Span(valueStart, end, REDACTED) : null;
     }
 
-    // The first JSON-escaped line break in [from, stop), else stop.
-    private static int bareLineEnd(String text, int from, int stop) {
-        for (int at = from; at < stop; at++) {
-            if (text.charAt(at) == '\\') {
-                int run = backslashRun(text, at);
-                if (at + run < stop && "nr".indexOf(text.charAt(at + run)) >= 0) {
+    /**
+     * The end of a command's line from here: the first raw line break, which keeps backslashes that
+     * end the line (a shell continuation), or the first JSON-escaped line break at any encoding level.
+     * One forward pass that stops at the first of them, so a command costs only its own line.
+     */
+    private static int commandLineEnd(String text, int from) {
+        int end = from;
+        while (end < text.length()) {
+            char current = text.charAt(end);
+            if (current == '\n' || current == '\r') {
 
-                    return at;
-                }
-                at += run;
+                return end;
             }
+            if (current != '\\') {
+                end++;
+                continue;
+            }
+            int run = backslashRun(text, end);
+            if (end + run >= text.length()) {
+
+                return text.length();
+            }
+            char escaped = text.charAt(end + run);
+            if (escaped == '\n' || escaped == '\r') {
+
+                return end + run;
+            }
+            if (escaped == 'n' || escaped == 'r') {
+
+                return end;
+            }
+            end += run + 1;
         }
 
-        return stop;
+        return end;
     }
 
     /**

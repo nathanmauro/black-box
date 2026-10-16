@@ -1051,6 +1051,10 @@ class ConfigSecretRedactionTest {
                             + "k.".repeat(300) + " -string x defaults write " + "d".repeat(300) + " Key x "
                             + "add-generic-password " + "y".repeat(520) + " -w\n"),
             Arguments.of(
+                    "PlistBuddy writes of credential names on JSON-escaped lines",
+                    "set :token v\\nAdd :a:b:password string v\\r\\nSet :SBA_X_TOKEN v\\\\n"
+                            + "setenv SBA_TOKEN v\\ndefaults write d SBA_TOKEN v\\n"),
+            Arguments.of(
                     "long flag-shaped words", " --api-key" + "-a".repeat(2_000) + " value --token" + ".x".repeat(900)),
             Arguments.of(
                     "provider keys glued to short hexadecimal runs",

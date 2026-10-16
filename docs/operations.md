@@ -393,11 +393,13 @@ Structured JSON members named that way are unchanged: their entire value is stil
 Input is clipped before scanning at 50,000 UTF-16 code units with Unicode-safe clipping and the
 existing truncation marker; replacement markers can expand short values. A text that already ends
 with that marker, such as stored text redacted again for a summary backend, keeps a single marker:
-only the text before it is scanned, and clipped if it is longer than the budget. Every rule does
-bounded, linear work per scanned character, and tests scan 4 MB of near-miss text per rule within a
-fixed time bound, so adversarial input cannot stall ingestion. This is a small assignment grammar,
-not a shell parser, JSON decoder, or general detector for encoded or unlabelled secrets. Known
-limits:
+only the text before it is scanned, and clipped if it is longer than the budget. The rules are
+written so that their work grows linearly with the text they scan, and tests scan 4 MB of near-miss
+text for each rule, including PlistBuddy, `launchctl setenv` and `defaults write` commands for
+credential names on JSON-escaped lines, within a fixed time bound. That bounds the cost of each
+scanned scalar, not of a capture, whose cost still grows with its size and number of strings. This
+is a small assignment grammar, not a shell parser, JSON decoder, or general detector for encoded or
+unlabelled secrets. Known limits:
 
 - A credential shown without its name is not recognized, such as `echo "$TOKEN"`,
   `launchctl getenv NAME`, the output of `security find-generic-password -w`, a positional
