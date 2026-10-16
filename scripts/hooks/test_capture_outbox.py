@@ -405,6 +405,19 @@ class OutboxTest(unittest.TestCase):
             with self.subTest(input=fixture["input"]):
                 self.assertEqual(outbox.redact_text(fixture["input"]), fixture["expected"])
 
+    def test_arrow_pairs_reach_the_server_whole(self):
+        # launchctl print and plutil -p pairs are the server's to redact: splitting "=>" into "=" and a
+        # value ">" would hide the pair from it, and the value after the space would be stored.
+        for text in ("\t\tSBA_DB_PASSWORD => F4KE7durablePw durableTail",
+                     '  "SBA_DB_PASSWORD" => "F4KE7plutilPw tail"',
+                     "password=>F4KE7compact",
+                     '"SBA_X_TOKEN" =\\u003e "F4KE7htmlSafe"',
+                     '{"stdout":"\\t\\tSBA_DB_PASSWORD => F4KE7escaped tail\\n\\t\\tPATH => /usr/bin"}'):
+            with self.subTest(text=text):
+                self.assertEqual(outbox.redact_text(text), text)
+        self.assertEqual(outbox.redact_text("password=F4KE7plain tail"), "password=[REDACTED] tail")
+        self.assertEqual(outbox.redact_text("api_key: F4KE7colon"), "api_key: [REDACTED]")
+
     def test_redaction_marker_does_not_exempt_attached_credential_text(self):
         for value in ("[REDACTED]", "[REDACTED]SYNTHETIC_SUFFIX",
                       "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB.SYNTHETIC_SUFFIX",

@@ -418,8 +418,198 @@ class ConfigSecretRedactionHttpTest {
         assertThat(sessionRow.get("title").toString()).startsWith("SBA_DB_PASSWORD => [REDACTED]");
     }
 
+    // Each synthetic value below indexes as one full-text token, and none may be stored anywhere.
+    private static final List<String> LAUNCHD_SECRETS = List.of(
+            "F4KE7quoteA",
+            "F4KE7quoteTailA",
+            "F4KE7quoteB",
+            "F4KE7quoteTailB",
+            "F4KE7mixedName",
+            "F4KE7lowerName",
+            "F4KE7dottedName",
+            "F4KE7dollar",
+            "F4KE7firstLine",
+            "F4KE7secondLine",
+            "F4KE7gutter",
+            "F4KE7gutterTail",
+            "F4KE7plutilInner",
+            "F4KE7plutilTail",
+            "F4KE7argPlutil",
+            "F4KE7argLaunchctl",
+            "F4KE7replace",
+            "F4KE7setenv",
+            "F4KE7buddySet",
+            "F4KE7buddyPrint",
+            "F4KE7buddyPrintTail",
+            "F4KE7buddyArg",
+            "F4KE7promptTok",
+            "F4KE7stopMixed",
+            FAKE_SEGMENT,
+            FAKE_SEGMENT_2);
+    private static final String LAUNCHCTL_QUOTES_AND_NAMES = """
+            gui/501/com.example.blackbox = {
+            \tprogram = /usr/bin/java
+            \targuments = {
+            \t\t/usr/bin/java
+            \t\t--api-key
+            \t\tF4KE7argLaunchctl
+            \t\t--port
+            \t}
+
+            \tenvironment = {
+            \t\tPATH => /usr/bin:/bin
+            \t\tSBA_DB_PASSWORD => F4KE7quoteA"F4KE7quoteTailA rest
+            \t\tSBA_JUDGE_API_KEY => F4KE7quoteB\\"F4KE7quoteTailB
+            \t\tJevApiKey => F4KE7mixedName
+            \t\tdb_password => F4KE7lowerName two words
+            \t\tsba.judge.password => F4KE7dottedName
+            \t\tSBA_SIGNING_KEY => $F4KE7dollar
+            \t\tSBA_X_TOKEN => F4KE7firstLine
+            F4KE7secondLine
+            \t\tSBA_PORT => 8766
+            \t}
+            }
+            """;
+
+    /**
+     * The launchd displays and writes that stored credentials in review, through the real capture hook
+     * in its default and durable modes: quotes and lowercase names in launchctl print, gutters,
+     * plutil -p, binary property-list bytes, write commands, PlistBuddy, a pasted prompt and a Stop
+     * message. Each lands in its own session, so the session title is checked too.
+     */
+    @ParameterizedTest(name = "durable={0}")
+    @ValueSource(booleans = {false, true})
+    void claudeCodeHookCapturesOfLaunchdDisplaysAndWritesStoreNoCredential(boolean durable) throws Exception {
+        String prefix = "hook-launchd-" + (durable ? "durable-" : "") + UUID.randomUUID();
+        String plist = "/fixture/Library/LaunchAgents/com.example.blackbox.plist";
+        Map<String, Map<String, Object>> payloads = new LinkedHashMap<>();
+        payloads.put(
+                "launchctl print", bash("launchctl print gui/501/com.example.blackbox", LAUNCHCTL_QUOTES_AND_NAMES));
+        payloads.put(
+                "launchctl print | grep -n",
+                bash(
+                        "launchctl print gui/501/com.example.blackbox | grep -n PASSWORD",
+                        "24:\t\tSBA_DB_PASSWORD => F4KE7gutter F4KE7gutterTail\n"));
+        payloads.put("plutil -p", bash("plutil -p " + plist, """
+                        {
+                          "EnvironmentVariables" => {
+                            "SBA_DB_PASSWORD" => "F4KE7plutilInner"F4KE7plutilTail rest"
+                            "SBA_PORT" => "8766"
+                          }
+                          "ProgramArguments" => [
+                            0 => "/usr/bin/java"
+                            1 => "--api-key"
+                            2 => "F4KE7argPlutil"
+                          ]
+                        }
+                        """));
+        payloads.put(
+                "strings and cat of a binary plist",
+                bash(
+                        "strings " + plist + "; cat " + plist,
+                        "EnvironmentVariables\nSBA_JUDGE_API_KEY\nH" + FAKE_KEY + "\nbplist00Ô\u0001\u0002_\u0010H"
+                                + FAKE_KEY + "\u0008\n" + FAKE_KEY + "PID\tStatus\tLabel\n"));
+        payloads.put(
+                "commands that write the credential",
+                bash(
+                        "plutil -replace EnvironmentVariables.SBA_DB_PASSWORD -string 'F4KE7replace' " + plist
+                                + " && launchctl setenv SBA_DB_PASSWORD F4KE7setenv"
+                                + " && /usr/libexec/PlistBuddy -c \"Set :EnvironmentVariables:SBA_JUDGE_API_KEY"
+                                + " F4KE7buddySet\" " + plist + " && /usr/libexec/PlistBuddy -c Print " + plist,
+                        """
+                        Dict {
+                            EnvironmentVariables = Dict {
+                                SBA_DB_PASSWORD = F4KE7buddyPrint F4KE7buddyPrintTail
+                                SBA_PORT = 8766
+                            }
+                            ProgramArguments = Array {
+                                /usr/bin/java
+                                --db-password
+                                F4KE7buddyArg
+                            }
+                        }
+                        """));
+        payloads.put(
+                "pasted prompt",
+                Map.of(
+                        "hook_event_name",
+                        "UserPromptSubmit",
+                        "prompt",
+                        "judgeToken => F4KE7promptTok is set, so why does launchd still fail?"));
+        payloads.put(
+                "Stop message",
+                Map.of(
+                        "hook_event_name",
+                        "Stop",
+                        "stop_hook_active",
+                        false,
+                        "last_assistant_message",
+                        "JevApiKey => F4KE7stopMixed was rotated; launchctl print now shows it."));
+
+        int index = 0;
+        for (Map.Entry<String, Map<String, Object>> payload : payloads.entrySet()) {
+            String session = prefix + "-" + index++;
+            Map<String, Object> fields = payload.getValue();
+            String eventId = runHook(session, (String) fields.get("tool_name"), fields, durable);
+            String what = payload.getKey() + (durable ? " (durable)" : "");
+            Map<String, Object> stored = jdbc.queryForMap(
+                    "SELECT text, tool_input_json, tool_output_json, metadata_json, human_text FROM agent_events"
+                            + " WHERE id = ?",
+                    eventId);
+            assertThat(stored.values().toString()).as(what).doesNotContain(LAUNCHD_SECRETS);
+            for (String token : LAUNCHD_SECRETS) {
+                assertThat(ftsHits(eventId, "\"" + token + "\""))
+                        .as("%s full-text token %s", what, token)
+                        .isZero();
+            }
+            assertThat(http.getForObject(base + "/api/events/" + eventId, String.class))
+                    .as(what)
+                    .doesNotContain(LAUNCHD_SECRETS);
+            assertThat(elasticDocuments.get(eventId)).as(what).isNotNull().doesNotContain(LAUNCHD_SECRETS);
+            Map<String, Object> sessionRow = jdbc.queryForMap(
+                    "SELECT title, first_human_turn, summary FROM agent_sessions WHERE client_session_id = ?", session);
+            assertThat(sessionRow.values().toString()).as(what).doesNotContain(LAUNCHD_SECRETS);
+        }
+        String launchctl = jdbc.queryForObject(
+                "SELECT e.text FROM agent_events e JOIN agent_sessions s ON s.id = e.session_id"
+                        + " WHERE s.client_session_id = ?",
+                String.class,
+                prefix + "-0");
+        assertThat(launchctl)
+                .contains("PATH => /usr/bin:/bin", "SBA_PORT => 8766", "--port")
+                .contains("SBA_DB_PASSWORD => [REDACTED]\\n", "JevApiKey => [REDACTED]\\n");
+        assertThat(jdbc.queryForObject(
+                        "SELECT title FROM agent_sessions WHERE client_session_id = ?", String.class, prefix + "-5"))
+                .startsWith("judgeToken => [REDACTED]");
+    }
+
+    private static Map<String, Object> bash(String command, String stdout) {
+
+        return Map.of(
+                "hook_event_name",
+                "PostToolUse",
+                "tool_name",
+                "Bash",
+                "tool_input",
+                Map.of("command", command, "description", "Inspect the service configuration"),
+                "tool_response",
+                Map.of("stdout", stdout, "stderr", "", "interrupted", false, "isImage", false),
+                "tool_use_id",
+                "toolu_fixture_" + Integer.toHexString(command.hashCode()));
+    }
+
     /** Runs scripts/hooks/sba-agent-hook.sh on one payload and returns the event it recorded. */
     private String runHook(String session, String toolName, Map<String, Object> fields) throws Exception {
+
+        return runHook(session, toolName, fields, false);
+    }
+
+    /**
+     * Runs scripts/hooks/sba-agent-hook.sh on one payload, directly or through its durable outbox in
+     * a private temporary queue, and returns the event it recorded.
+     */
+    private String runHook(String session, String toolName, Map<String, Object> fields, boolean durable)
+            throws Exception {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("session_id", session);
         payload.put("transcript_path", "/fixture/.claude/projects/fixture/" + session + ".jsonl");
@@ -443,8 +633,17 @@ class ConfigSecretRedactionHttpTest {
         builder.environment().put("PATH", System.getenv("PATH"));
         builder.environment().put("HOME", tempDir.toString());
         builder.environment().put("TMPDIR", tempDir.toString());
-        builder.environment().put("SBA_CAPTURE_DURABLE", "0");
+        builder.environment().put("SBA_CAPTURE_DURABLE", durable ? "1" : "0");
         builder.environment().put("SBA_AGENTIC_URL", base);
+        if (durable) {
+            // The outbox refuses a queue path through a symbolic link, such as macOS's /var.
+            builder.environment()
+                    .put(
+                            "SBA_CAPTURE_OUTBOX_DIR",
+                            tempDir.toRealPath()
+                                    .resolve("outbox-" + UUID.randomUUID())
+                                    .toString());
+        }
         Process process = builder.start();
         try {
             assertThat(process.waitFor(20, TimeUnit.SECONDS))
@@ -464,7 +663,9 @@ class ConfigSecretRedactionHttpTest {
                 fields.get("hook_event_name"),
                 toolName == null ? "" : toolName);
         assertThat(ids)
-                .as("the hook recorded one %s event (jq and curl are required)", fields.get("hook_event_name"))
+                .as(
+                        "the hook recorded one %s event (jq, curl and python3 are required): %s",
+                        fields.get("hook_event_name"), Files.readString(errors))
                 .hasSize(1);
 
         return ids.get(0);

@@ -278,36 +278,55 @@ them too:
 - An environment-style name ending in `_KEY` or containing `CREDENTIAL` (`STRIPE_KEY`,
   `SBA_DB_CREDENTIAL`) counts in `=>` pairs, as a quoted key (`"STRIPE_KEY": …`), and in
   `NAME=value` or `NAME: value` with the value on the same line. A spaced code assignment
-  (`ENTER_KEY = 13`), a value on the next line (a block colon such as `!= FAKE_KEY:`) and a shell
-  expansion (`EVENT_KEY="$(…)"`) are kept.
+  (`ENTER_KEY = 13`), a value on the next line (a block colon such as `!= FAKE_KEY:`) and, outside
+  `=>` pairs, a shell reference (`EVENT_KEY="$(…)"`, `SSH_KEY=$HOME/…`, `${NAME}`) are kept. A
+  `$`-prefixed literal such as a bcrypt hash (`$2b$10$…`) is not a reference.
 - A name with lowercase letters that contains `credential` counts only in `=>` pairs, so
   `credentials: 'include'` and `"credential-management":` are kept. Structured JSON members and
   property-list keys still use the full policy above.
 
-Assignments accept `=`, `:` or `=>`, bare or matching single/double quoted keys, and values of any
-length. Quoted values can contain whitespace and backslash-escaped quotes; bare values end at
-whitespace, a JSON comma/closing bracket/brace, or a JSON-escaped line break or tab at any
-encoding level (`\n`, `\t`, `\\n`). Complete `[REDACTED]` markers inside a bare credential are
-consumed as whole spans, so repeated markers cannot expose a trailing credential suffix. Genuine
-closing delimiters still end the value. Other text is preserved. An unclosed quoted credential
-consumes the remainder of the scanned scalar. Characters glued to a closing quote, as in the shell
-word `"abc"def`, are redacted with the value; a delimiter, another quote or a JSON escape after the
-quote ends it.
+Assignments accept `=`, `:` or `=>`, bare, matching single/double quoted, JSON-escaped quoted or
+unicode-escaped quoted (`\u0022`) keys, and values of any length. Quoted values can contain
+whitespace and backslash-escaped quotes; bare values end at whitespace, a JSON comma/closing
+bracket/brace, or a JSON-escaped line break or tab at any encoding level (`\n`, `\t`, `\\n`).
+Complete `[REDACTED]` markers inside a bare credential are consumed as whole spans, so repeated
+markers cannot expose a trailing credential suffix. Genuine closing delimiters still end the value.
+Other text is preserved. An unclosed quoted credential consumes the remainder of the scanned scalar.
+Characters glued to a closing quote, as in the shell word `"abc"def`, are redacted with the value; a
+delimiter, another quote or a JSON escape after the quote ends it.
 
 The same names also match displayed service configuration:
 
 - `=>` pairs, as printed by `plutil -p` (`"SBA_JUDGE_API_KEY" => "…"`), `launchctl print`
-  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP. An unquoted value after an environment-style name that
-  starts its line, as in `launchctl print`, runs to the end of that line, so its spaces, commas and
-  brackets go too; the same name inline in prose keeps the rest of its line. A `plutil -p` data
-  value (`{length = 16, bytes = 0x…}`) is removed whole. A spaced `name => expression` with a bare
-  name containing lowercase letters and an unquoted value is treated as a lambda or
-  arrow-function parameter, such as `token => token.trim()`, and is kept.
+  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP, also with an HTML-safe `=\u003e`. A `=>` value is never
+  read as a shell reference, so `SBA_SIGNING_KEY => $…` loses it.
+- A name that starts its displayed line is a key/value pair in any letter case (`JevApiKey => …`,
+  `db_password => …`, `sba.judge.password => …`). It starts its line when only indentation stands
+  before it, optionally after a `cat -n`, file-view or `grep -n`/`rg` gutter with or without a path
+  (`24:`, `path:12:`, `path-13-`), quote marks, a Markdown heading, a list or diff marker, an
+  opening code span or bold marker, or the dotted prefix of the name. An unquoted value after such a
+  name runs to the end of its line, so its spaces, commas, quotes and backslashes go too; inside a
+  code span or bold text that opened before the name it ends at the closer, so
+  `` `JevApiKey => …` is shown`` keeps the prose after it. A spaced `name => value` whose name has
+  lowercase letters is kept as a lambda or arrow-function parameter when the name does not start
+  its line (`tokens.map(token => …)`) or when the value opens a block or parenthesis or uses the
+  name itself (`token => token.trim()`). The same name inline in prose keeps the rest of its line.
+- `launchctl print` indents its entries with tabs, so lines after an entry that are not
+  tab-indented are the rest of a value that holds line breaks; they are taken when another
+  tab-indented line follows them.
+- `plutil -p` does not escape quotes inside a value, so a quoted value after a quoted name that
+  starts its line ends at the last quote on that line. A `plutil -p` data value
+  (`{length = 16, bytes = 0x…}`) is removed whole.
+- `PlistBuddy -c Print` shows an entry as `NAME = value` through the end of its line: an
+  environment-style name with a credential word followed by ` = ` at the start of a line
+  (`SBA_DB_PASSWORD = …`) loses the rest of the line.
 - JSON-encoded text, such as a tool result the capture hook stored with `jq tojson`:
   backslash-escaped key and value quotes (`\"api_key\": \"…\"`, up to four encoding levels) are
-  matched like ordinary quotes, and a value ends at the matching escaped quote. Because an escaped
-  line break ends a bare value, each entry of an escaped `env` or `launchctl print` listing is
-  matched on its own.
+  matched like ordinary quotes, and a value ends at the matching escaped quote. A displayed line's
+  encoding level is read from the escaped line break, tab or quote that starts it, so a quote or a
+  literal backslash inside a value belongs to it, and the value ends at its own line's escaped line
+  break or at the quote that closes its string. Because an escaped line break ends a bare value,
+  each entry of an escaped `env` or `launchctl print` listing is matched on its own.
 - Property-list XML: a `<key>` (closed by `</key>` or the slash-escaped `<\/key>`) whose name the
   structured policy above treats as secret keeps its tags but has the next `<string>`, `<data>`,
   `<integer>` or `<real>` value replaced, when only non-markup text of up to 1,024 characters and
@@ -317,13 +336,33 @@ The same names also match displayed service configuration:
   fit. A value element directly after a replaced one, such as the old and new lines of a diff, is
   replaced too. When a key and its value are separate strings of one JSON list, such as the lines
   of an Edit tool's `structuredPatch`, the value at the start of the next string is replaced. A
-  token count keeps its integer (`<key>tokenCount</key><integer>42</integer>`).
+  token count keeps its integer (`<key>tokenCount</key><integer>42</integer>`). A `<string>` that
+  holds a credential flag (`<string>--api-key</string>`, see below) names the next `<string>` the
+  same way, and its chain of replaced values stops at the next flag.
+- Credential flags: a flag whose name ends with a credential word (`--api-key`, `--db-password`,
+  `--client-secret`, `--auth-token`) loses its argument: the next word on a command line, quoted or
+  bare (an English function word such as `or` or `to` is not taken, so prose that names a flag
+  keeps its sentence), the next element of a list quoted the same way (`["--api-key", "…"]`,
+  `plutil -p` arguments), or the next line when the flag is alone on its line (`launchctl print`
+  and PlistBuddy arguments). Flags that name where a credential is, read one or page results
+  (`--secret-id`, `--token-file`, `--api-key-env`, `--password-stdin`, `--next-token`) and token
+  limits (`--max-tokens`) keep theirs. `--api-key=value` is an ordinary assignment.
+- Commands that write a credential: `launchctl setenv NAME value`, PlistBuddy `Set :…:NAME value`
+  and `Add :…:NAME type value` (through the end of the `-c` argument), `plutil -replace` or
+  `-insert` with a key path ending in the name and a type, `defaults write domain NAME [-type]
+  value`, and the `-w` password of `security add-generic-password` or `add-internet-password`.
+  The name follows the structured policy above, so `_KEY` names count.
 - HTML-safe JSON escapes for `<` and `>` (`\u003c`, `\u003e`) and unicode-escaped quotes
-  (`\u0022`, `\u0027`) are decoded for a second scan. When that scan finds a credential the encoded
-  text hid, the stored string keeps the decoded characters.
+  (`\u0022`, `\u0027`) are decoded in the first scan's result, which is then scanned again. Values
+  the first scan replaced stay replaced, so the second scan only adds replacements; when it adds
+  one, the stored string keeps the decoded characters. A quoted value that holds its own quote as
+  such an escape (`'don\u0027t …'`, System.Text.Json's `\u0022`) is replaced whole.
 - The provider key shape `apikey_<hex>[_<hex>…]` with at least 16 hexadecimal digits is replaced
-  wherever it appears, including on its own line and directly after a percent-encoded byte (`%22`,
-  `%3D`) or a `\uXXXX` escape. Shorter identifiers such as `apikey_cafe` are kept.
+  where a token starts: after a non-word character, a JSON-escaped line break or tab, a
+  percent-encoded byte (`%22`, `%3D`) or a `\uXXXX` escape. With at least 32 digits it is replaced
+  wherever it starts, such as after the length byte a binary property list stores before a string
+  (`Hapikey_…` in `strings` output). Text glued after the hexadecimal digits stays
+  (`apikey_…PID`). Shorter identifiers such as `apikey_cafe` are kept.
 
 A token count is not a credential: a name containing `tokens` or `tokenCount` and no other secret
 word (`max_tokens`, `context_tokens`, `promptTokenCount`) keeps an unquoted value of one to twelve
@@ -338,17 +377,39 @@ time bound, so adversarial input cannot stall ingestion. This is a small assignm
 shell parser, JSON decoder, or general detector for encoded or unlabelled secrets. Known limits:
 
 - A credential shown without its name is not recognized, such as `echo "$TOKEN"`,
-  `launchctl getenv NAME`, or an Edit whose old and new strings hold only a `<string>` line.
-- An unquoted `NAME=value` ends at whitespace, so a value with spaces printed by `env` or
-  `printenv` keeps everything after its first space. Only a `=>` value that follows an
-  environment-style name at the start of a line runs to the end of the line.
+  `launchctl getenv NAME`, the output of `security find-generic-password -w`, a positional
+  argument, or an Edit whose old and new strings hold only a `<string>` line.
+- An unquoted `NAME=value` or `name: value` ends at whitespace, so a value with spaces printed by
+  `env` or `printenv`, or a YAML value with spaces, keeps everything after its first space. Only
+  `=>` values, `NAME = value` with an environment-style name, and flags alone on their line run to
+  the end of the line, and only when the name starts its line.
+- A `name => value` whose name has lowercase letters is kept when the name does not start its
+  line, and when the value opens a block or parenthesis or uses the name itself.
+- An environment-style `_KEY` or `CREDENTIAL` name assigned with `=` or `:` to a value that reads
+  as a shell reference (`$NAME`, `${…}`, `$(…)`) keeps it, so an `env` listing whose such value
+  starts with `$` and a letter keeps it. With `=>` the value is replaced.
+- `PlistBuddy -c Print` and `defaults read`: a `_KEY` or `CREDENTIAL` name or a name with
+  lowercase letters followed by ` = ` (`STRIPE_KEY = …`, `password = …`) keeps its value, and an
+  unquoted list element after a quoted flag, as `defaults read` prints an alphanumeric string, is
+  kept.
+- Flags: single-dash flags (`-p`, and `-w` outside `security add-…-password`), an argument on the
+  line after a flag that does not start its line (a shell `\` continuation), and an unquoted list
+  element (code such as `["--api-key", key]`) are kept. An argument that only names where the
+  credential is or a documentation placeholder (`--api-key env:NAME`, `--secret xxx`) is replaced
+  anyway.
+- A multi-line `launchctl print` value keeps a later line that starts with a tab, and all of its
+  later lines when no tab-indented line follows them (the end of the text or a blank line comes
+  first).
 - A property-list value is missed when a merge-conflict marker or other markup stands between it
   and its key, when more than 1,024 characters do, or when an XML comment between them contains
   `>`. HTML-entity-escaped markup (`&lt;key&gt;`) and percent-encoded assignments are not decoded.
 - Code is redacted too when it assigns to a credential name: `passphrase: cert.passphrase`,
   `privateKeyLoc = null` and `PrivateKeyword = 123` lose their values, as `password: …` and
   `token = …` already did, and an environment-style `_KEY` code followed by a colon loses the next
-  word (`INVALID_DOTENV_KEY: [REDACTED] key part`).
+  word (`INVALID_DOTENV_KEY: [REDACTED] key part`). An environment-style credential name followed by
+  ` = ` at the start of a line loses the rest of that line (`SECRET_KEY = os.environ.get(…)`), and a
+  quoted `=>` key at the start of a line loses its line through the last quote, including later
+  pairs on a one-line Ruby or PHP hash.
 
 Model export also applies these default rules independently of ingestion settings and retains its
 conservative fallback for escaped quoted credential keys, which may remove the rest of a text leaf;

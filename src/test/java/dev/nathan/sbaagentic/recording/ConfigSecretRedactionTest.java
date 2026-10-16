@@ -203,7 +203,19 @@ class ConfigSecretRedactionTest {
                 "if str(error) == \"credential_unavailable\":\n    return \"paused\"",
                 "Set `SBA_PORT => 8766` in the plist, then restart the service.",
                 "{\"credential-management\":require(\"./features/credential-management\"),\"w-credentialless-x\":o}",
-                "\"WebAuthn.credentialAdded\": WebAuthn.credentialAddedPayload;"
+                "\"WebAuthn.credentialAdded\": WebAuthn.credentialAddedPayload;",
+                "tokens.map(\n    token => token.trim()\n)",
+                "## Mapping\n- `token => token.trim()` drops the padding",
+                "\tpassword => { return check(password); }",
+                "  secret => (secret ?? '').length,",
+                "SSH_KEY=$HOME/.ssh/id_ed25519",
+                "STRIPE_KEY=\"${STRIPE_KEY}\"",
+                "claude --max-tokens 4096 --model local",
+                "sha_apikey_0123456789abcdef is a fixture name",
+                "Pass --api-key or --auth-token to the CLI, and --secret-id with the reference.",
+                "aws secretsmanager get-secret-value --secret-id prod/judge --query SecretString",
+                "command = [\"aws\", \"--next-token\", token, \"--page-token\", \"next\"]",
+                "parser.add_argument(\"--api-key\", help=\"the judge key\", default=None)"
             })
     void preservesBenignCodeConfigurationAndTokenCounts(String text) {
         assertThat(redactor.redact(text)).isEqualTo(text);
@@ -378,7 +390,204 @@ class ConfigSecretRedactionTest {
                         {"env": {"STRIPE_KEY": "[REDACTED]", "SBA_DB_CREDENTIAL": "[REDACTED]", "db_passphrase": "[REDACTED]"}}
                         environment:
                           STRIPE_KEY: [REDACTED]
-                          SBA_PORT: 8766"""));
+                          SBA_PORT: 8766"""),
+                Arguments.of("launchctl print values holding quotes and backslashes", """
+                        \t\tSBA_DB_PASSWORD => F4KE7qa"quoted tail rest
+                        \t\tSBA_JUDGE_API_KEY => F4KE7qb_9x\\"escaped quote tail
+                        \t\tSBA_X_TOKEN => F4KE7qc\\\\"backslash quote tail
+                        \t\tSBA_Y_TOKEN => F4KE7qd\\nliteral escape tail
+                        \t\tSBA_Z_TOKEN => F4KE7qe ends with a backslash \\
+                        \t\tPATH => /usr/bin:/bin""", """
+                        \t\tSBA_DB_PASSWORD => [REDACTED]
+                        \t\tSBA_JUDGE_API_KEY => [REDACTED]
+                        \t\tSBA_X_TOKEN => [REDACTED]
+                        \t\tSBA_Y_TOKEN => [REDACTED]
+                        \t\tSBA_Z_TOKEN => [REDACTED]
+                        \t\tPATH => /usr/bin:/bin"""),
+                Arguments.of("launchctl print entries named in any letter case", """
+                        \t\tJevApiKey => F4KE7mixed
+                        \t\tdb_password => F4KE7lower two words
+                        \t\tjudgeToken => F4KE7camel
+                        \t\tgithub_token => F4KE7gh
+                        \t\tsba.judge.password => F4KE7dots
+                        \t\tdb_credential => F4KE7cred
+                        \t\tPATH => /usr/bin:/bin""", """
+                        \t\tJevApiKey => [REDACTED]
+                        \t\tdb_password => [REDACTED]
+                        \t\tjudgeToken => [REDACTED]
+                        \t\tgithub_token => [REDACTED]
+                        \t\tsba.judge.password => [REDACTED]
+                        \t\tdb_credential => [REDACTED]
+                        \t\tPATH => /usr/bin:/bin"""),
+                Arguments.of("launchctl print behind line gutters and quote marks", """
+                        24:\t\tSBA_DB_PASSWORD => F4KE7gutter tail word
+                        /fixture/launchctl.txt:25:\t\tSBA_X_TOKEN => F4KE7path tail
+                        /fixture/launchctl.txt-26-\t\tSBA_V_TOKEN => F4KE7context tail
+                            27\t\t\tSBA_Y_PASSWORD => F4KE7catn tail
+                            28→\t\tSBA_Z_SECRET => F4KE7read tail
+                        > \t\tSBA_Q_PASSWORD => F4KE7quote tail, and more
+                        29-\t\tSBA_W_PASSWORD => F4KE7ctx tail""", """
+                        24:\t\tSBA_DB_PASSWORD => [REDACTED]
+                        /fixture/launchctl.txt:25:\t\tSBA_X_TOKEN => [REDACTED]
+                        /fixture/launchctl.txt-26-\t\tSBA_V_TOKEN => [REDACTED]
+                            27\t\t\tSBA_Y_PASSWORD => [REDACTED]
+                            28→\t\tSBA_Z_SECRET => [REDACTED]
+                        > \t\tSBA_Q_PASSWORD => [REDACTED]
+                        29-\t\tSBA_W_PASSWORD => [REDACTED]"""),
+                Arguments.of("Markdown before an entry, as a model's summary echoes one", """
+                        ## JevApiKey => F4KE7heading words
+                        - judgeToken => F4KE7bullet words
+                        1. db_password => F4KE7numbered words
+                        > - SBA_V_PASSWORD => F4KE7quoted list words
+                        **SBA_X_TOKEN => F4KE7bold** and the rest of the line
+                        `judgeToken => F4KE7code` is what launchctl print shows""", """
+                        ## JevApiKey => [REDACTED]
+                        - judgeToken => [REDACTED]
+                        1. db_password => [REDACTED]
+                        > - SBA_V_PASSWORD => [REDACTED]
+                        **SBA_X_TOKEN => [REDACTED]** and the rest of the line
+                        `judgeToken => [REDACTED]` is what launchctl print shows"""),
+                Arguments.of("multi-line launchctl print value", """
+                        \tenvironment = {
+                        \t\tSBA_X_TOKEN => F4KE7first line
+                        F4KE7second line
+                        \t\tPATH => /usr/bin:/bin
+                        \t}""", """
+                        \tenvironment = {
+                        \t\tSBA_X_TOKEN => [REDACTED]
+                        \t\tPATH => /usr/bin:/bin
+                        \t}"""),
+                Arguments.of("plutil -p values holding unescaped quotes", """
+                        {
+                          "SBA_DB_PASSWORD" => "F4KE7q1"inner quote tail"
+                          "SBA_X_TOKEN" => "F4KE7q2", "comma tail"
+                          "PATH" => "/usr/bin:/bin"
+                        }""", """
+                        {
+                          "SBA_DB_PASSWORD" => "[REDACTED]"
+                          "SBA_X_TOKEN" => "[REDACTED]"
+                          "PATH" => "/usr/bin:/bin"
+                        }"""),
+                Arguments.of("dollar-sign values in launchd displays and env listings", """
+                        \t\tSBA_SIGNING_KEY => $F4KE7dollar
+                        \t\tSBA_DB_CREDENTIAL => $2b$10$F4KE7bcrypt
+                        \t\tSTRIPE_KEY => ${F4KE7braces}
+                        SBA_HASH_KEY=$2b$10$F4KE7envBcrypt
+                          "SBA_SIGNING_KEY" => "$F4KE7plutil\"""", """
+                        \t\tSBA_SIGNING_KEY => [REDACTED]
+                        \t\tSBA_DB_CREDENTIAL => [REDACTED]
+                        \t\tSTRIPE_KEY => [REDACTED]
+                        SBA_HASH_KEY=[REDACTED]
+                          "SBA_SIGNING_KEY" => "[REDACTED]\""""),
+                Arguments.of("provider keys glued to other text", """
+                        strings output: Hapikey_0123456789abcdef0123456789abcdef_fedcba9876543210fedcba9876543210
+                        apikey_0123456789abcdef0123456789abcdef_fedcba9876543210fedcba9876543210PID\tStatus\tLabel
+                        echoed apikey_0123456789abcdef0123456789abcdefready""", """
+                        strings output: H[REDACTED]
+                        [REDACTED]PID\tStatus\tLabel
+                        echoed [REDACTED]ready"""),
+                Arguments.of(
+                        "provider key inside binary property-list bytes",
+                        "bplist00Ô\u0001\u0002_\u0010H" + FAKE_KEY + "\u0008\u0009",
+                        "bplist00Ô\u0001\u0002_\u0010H[REDACTED]\u0008\u0009"),
+                Arguments.of("credential flags in plist ProgramArguments", """
+                        <key>ProgramArguments</key>
+                        <array>
+                            <string>/usr/bin/java</string>
+                            <string>--api-key</string>
+                            <string>F4KE7argXml</string>
+                            <string>--port</string>
+                            <string>8766</string>
+                        </array>""", """
+                        <key>ProgramArguments</key>
+                        <array>
+                            <string>/usr/bin/java</string>
+                            <string>--api-key</string>
+                            <string>[REDACTED]</string>
+                            <string>--port</string>
+                            <string>8766</string>
+                        </array>"""),
+                Arguments.of("credential flags in plutil -p arguments", """
+                          "ProgramArguments" => [
+                            0 => "/usr/bin/java"
+                            1 => "--api-key"
+                            2 => "F4KE7argPlutil"
+                            3 => "--port"
+                            4 => "8766"
+                          ]""", """
+                          "ProgramArguments" => [
+                            0 => "/usr/bin/java"
+                            1 => "--api-key"
+                            2 => "[REDACTED]"
+                            3 => "--port"
+                            4 => "8766"
+                          ]"""),
+                Arguments.of("credential flags in launchctl print and PlistBuddy arguments", """
+                        \targuments = {
+                        \t\t/usr/bin/java
+                        \t\t--api-key
+                        \t\tF4KE7argLaunchctl
+                        \t\t--port
+                        \t}
+                            ProgramArguments = Array {
+                                --db-password
+                                F4KE7argBuddy two words
+                                --port
+                            }""", """
+                        \targuments = {
+                        \t\t/usr/bin/java
+                        \t\t--api-key
+                        \t\t[REDACTED]
+                        \t\t--port
+                        \t}
+                            ProgramArguments = Array {
+                                --db-password
+                                [REDACTED]
+                                --port
+                            }"""),
+                Arguments.of("credential flags on command lines and in argument lists", """
+                        /usr/bin/java -jar app.jar --api-key F4KE7argCli --db-password 'F4KE7 quoted' --port 8766
+                        {"args":["--client-secret","F4KE7argJson","--port","8766"]}
+                        (
+                            "--auth-token",
+                            "F4KE7 argDefaults",
+                            "--port"
+                        )""", """
+                        /usr/bin/java -jar app.jar --api-key [REDACTED] --db-password '[REDACTED]' --port 8766
+                        {"args":["--client-secret","[REDACTED]","--port","8766"]}
+                        (
+                            "--auth-token",
+                            "[REDACTED]",
+                            "--port"
+                        )"""),
+                Arguments.of("commands that write a launchd credential", """
+                        plutil -replace EnvironmentVariables.SBA_DB_PASSWORD -string 'F4KE7 replace' /fixture/x.plist
+                        /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:SBA_DB_PASSWORD F4KE7 buddy set" /fixture/x.plist
+                        /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:STRIPE_KEY string F4KE7buddyAdd' /fixture/x.plist
+                        launchctl setenv SBA_DB_PASSWORD F4KE7setenv
+                        defaults write com.example.blackbox ApiToken -string F4KE7defaults
+                        security add-generic-password -a fixture -s jev -w F4KE7security -U""", """
+                        plutil -replace EnvironmentVariables.SBA_DB_PASSWORD -string '[REDACTED]' /fixture/x.plist
+                        /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:SBA_DB_PASSWORD [REDACTED]" /fixture/x.plist
+                        /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:STRIPE_KEY string [REDACTED]' /fixture/x.plist
+                        launchctl setenv SBA_DB_PASSWORD [REDACTED]
+                        defaults write com.example.blackbox ApiToken -string [REDACTED]
+                        security add-generic-password -a fixture -s jev -w [REDACTED] -U"""),
+                Arguments.of("PlistBuddy Print values with spaces", """
+                        Dict {
+                            Label = com.example.blackbox
+                            EnvironmentVariables = Dict {
+                                SBA_DB_PASSWORD = F4KE7spaced two words
+                                SBA_PORT = 8766
+                            }
+                        }""", """
+                        Dict {
+                            Label = com.example.blackbox
+                            EnvironmentVariables = Dict {
+                                SBA_DB_PASSWORD = [REDACTED]
+                                SBA_PORT = 8766
+                            }
+                        }"""));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -401,6 +610,76 @@ class ConfigSecretRedactionTest {
                 .isEqualTo(Map.of("stdout", List.of(expected)));
     }
 
+    /**
+     * The same displays as the capture hook stores a Bash result: jq {@code tojson} of the tool
+     * response object, so the display sits inside a JSON string beside other members, then encoded
+     * again up to three more times.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("displaysAtEveryEncodingLevel")
+    void removesCredentialsFromADisplayInsideAToolResultObjectAtEveryLevel(
+            String display, String input, String expected) throws Exception {
+        String encodedInput = toolResult(input);
+        String encodedExpected = toolResult(expected);
+        for (int level = 1; level <= 4; level++) {
+            assertThat(redactor.redact(encodedInput))
+                    .as("%s in a tool result, JSON-encoded %d times", display, level)
+                    .isEqualTo(encodedExpected);
+            assertThat(redactor.redactForExport(encodedInput))
+                    .as("%s in a tool result exported, JSON-encoded %d times", display, level)
+                    .doesNotContain(SYNTHETIC_VALUES);
+            encodedInput = jsonEncode(encodedInput);
+            encodedExpected = jsonEncode(encodedExpected);
+        }
+    }
+
+    private static String toolResult(String stdout) throws Exception {
+
+        return "{\"stdout\":" + JSON.writeValueAsString(stdout) + ",\"stderr\":\"\",\"interrupted\":false}";
+    }
+
+    /**
+     * A quoted value can hold its own quote character as a unicode escape, as JavaScript, Python
+     * and System.Text.Json write it. Decoding that escape for the second scan must never end the
+     * value early and store the rest of it.
+     */
+    static Stream<Arguments> quotedValuesHoldingUnicodeEscapedQuotes() {
+
+        return Stream.of(
+                Arguments.of(
+                        "JavaScript string with an escaped apostrophe",
+                        "const c = {password: 'don\\u0027t F4KE7tell anyone', port: 1};",
+                        "const c = {password: '[REDACTED]', port: 1};"),
+                Arguments.of(
+                        "Python string with an escaped apostrophe",
+                        "DB = {'password': 'it\\u0027s F4KE7a long passphrase', 'port': 5432}",
+                        "DB = {'password': '[REDACTED]', 'port': 5432}"),
+                Arguments.of(
+                        "System.Text.Json value with an escaped quote",
+                        "{\"ConnectionStrings\":{\"DbPassword\":\"pa\\u0022ss F4KE7word here\"},\"Port\":5432}",
+                        "{\"ConnectionStrings\":{\"DbPassword\":\"[REDACTED]\"},\"Port\":5432}"),
+                Arguments.of(
+                        "JSON member with an escaped quote",
+                        "\"client_secret\": \"x\\u0022y F4KE7z\", \"note\": \"kept\"",
+                        "\"client_secret\": \"[REDACTED]\", \"note\": \"kept\""),
+                Arguments.of(
+                        "YAML value with an escaped apostrophe",
+                        "password: 'F4KE7swap\\u0027 swap tail'\nport: 5432",
+                        "password: '[REDACTED]'\nport: 5432"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("quotedValuesHoldingUnicodeEscapedQuotes")
+    void keepsAQuotedValueWholeWhenItHoldsAUnicodeEscapedQuote(String source, String input, String expected)
+            throws Exception {
+        assertThat(redactor.redact(input)).isEqualTo(expected);
+        assertThat(redactor.redact(toolResult(input))).isEqualTo(toolResult(expected));
+        assertThat(redactor.redactDeep(Map.of("content", List.of(input))))
+                .isEqualTo(Map.of("content", List.of(expected)));
+        assertThat(redactor.redactForExport(input)).doesNotContain("F4KE7");
+        assertThat(redactor.redactForExport(toolResult(input))).doesNotContain("F4KE7");
+    }
+
     static Stream<Arguments> encoderEscapes() {
 
         return Stream.of(
@@ -408,7 +687,8 @@ class ConfigSecretRedactionTest {
                         "slash-escaped closing tags",
                         "<key>SBA_JUDGE_API_KEY<\\/key>\\n<string>F4KE7 php<\\/string>",
                         "<key>SBA_JUDGE_API_KEY<\\/key>\\n<string>[REDACTED]<\\/string>"),
-                // A credential found only after decoding HTML-safe escapes keeps the decoded characters.
+                // A credential found only after decoding HTML-safe escapes keeps the decoded characters;
+                // one the escaped text already shows keeps its escapes.
                 Arguments.of(
                         "HTML-safe escapes in plist XML",
                         "\\u003ckey\\u003eSBA_JUDGE_API_KEY\\u003c/key\\u003e\\n\\u003cstring\\u003eF4KE7 go\\u003c/string\\u003e",
@@ -416,11 +696,11 @@ class ConfigSecretRedactionTest {
                 Arguments.of(
                         "unicode-escaped quotes in plutil -p output",
                         "\\u0022SBA_JUDGE_API_KEY\\u0022 => \\u0022F4KE7 quoted\\u0022",
-                        "\"SBA_JUDGE_API_KEY\" => \"[REDACTED]\""),
+                        "\\u0022SBA_JUDGE_API_KEY\\u0022 => \\u0022[REDACTED]\\u0022"),
                 Arguments.of(
                         "HTML-safe escape inside =>",
                         "\\\"SBA_JUDGE_API_KEY\\\" =\\u003e \\\"F4KE7 arrow\\\"",
-                        "\\\"SBA_JUDGE_API_KEY\\\" => \\\"[REDACTED]\\\""),
+                        "\\\"SBA_JUDGE_API_KEY\\\" =\\u003e \\\"[REDACTED]\\\""),
                 Arguments.of(
                         "provider key after a percent-encoded quote", "q=%22" + FAKE_KEY + "%22", "q=%22[REDACTED]%22"),
                 Arguments.of(
@@ -478,6 +758,19 @@ class ConfigSecretRedactionTest {
                 .isEqualTo(List.of("<key>STRIPE_KEY</key>\n", "\n", "<string>[REDACTED]</string>\n"));
         assertThat(redactor.redactDeep(List.of("<key>Label</key>", "<string>com.example.blackbox</string>")))
                 .isEqualTo(List.of("<key>Label</key>", "<string>com.example.blackbox</string>"));
+        // A changed ProgramArguments value: both sides of the diff go, and the chain stops at the next flag.
+        assertThat(redactor.redactDeep(List.of(
+                        "     <string>--api-key</string>",
+                        "-    <string>F4KE7 old</string>",
+                        "+    <string>F4KE7 new</string>",
+                        "     <string>--port</string>",
+                        "     <string>8766</string>")))
+                .isEqualTo(List.of(
+                        "     <string>--api-key</string>",
+                        "-    <string>[REDACTED]</string>",
+                        "+    <string>[REDACTED]</string>",
+                        "     <string>--port</string>",
+                        "     <string>8766</string>"));
     }
 
     // One repeated unit per display rule: each almost matches, so every rule scans as far as it can.
@@ -503,7 +796,32 @@ class ConfigSecretRedactionTest {
                             + "g "),
             Arguments.of(
                     "four-level escaped quotes",
-                    "\\".repeat(15) + "\"token" + "\\".repeat(14) + "\" => " + "\\".repeat(16) + "\" "));
+                    "\\".repeat(15) + "\"token" + "\\".repeat(14) + "\" => " + "\\".repeat(16) + "\" "),
+            Arguments.of(
+                    "names after long line prefixes",
+                    "\n" + "a".repeat(255) + " judgeToken => x \n" + "a-".repeat(100) + "db_token => y\n"
+                            + "x.".repeat(70) + "password => z \\n" + "1:".repeat(120) + "\\tapi_token => w "),
+            Arguments.of(
+                    "lambdas and plutil values that start their lines",
+                    "\n  token => " + "tokens".repeat(40) + "\n  \"SBA_X_TOKEN\" => \"" + "x\\\"".repeat(60) + "\n"
+                            + "  \\\"SBA_Y_TOKEN\\\" => \\\"" + "y\\\\\\\"".repeat(40) + "\\n"),
+            Arguments.of(
+                    "launchctl values followed by unindented lines",
+                    "\t\tSBA_X_TOKEN => v\n" + ("SBA_Y_TOKEN => w " + "x".repeat(60) + "\n").repeat(70) + "\n"),
+            Arguments.of(
+                    "credential flags without arguments",
+                    "--api-key\n--api-key \"--api-key\"" + " ,".repeat(127) + "x \\\"--db-password\\\""
+                            + "\\n".repeat(120) + "\\\\\" --token -x "),
+            Arguments.of(
+                    "write commands without credential names",
+                    "setenv " + "A".repeat(130) + " x Set :" + "a:".repeat(20) + "b".repeat(130) + " x -replace "
+                            + "k.".repeat(300) + " -string x defaults write " + "d".repeat(300) + " Key x "
+                            + "add-generic-password " + "y".repeat(520) + " -w\n"),
+            Arguments.of(
+                    "long flag-shaped words", " --api-key" + "-a".repeat(2_000) + " value --token" + ".x".repeat(900)),
+            Arguments.of(
+                    "provider keys glued to short hexadecimal runs",
+                    "Hapikey_" + "0123456789abcdef" + "f".repeat(15) + "g apikey_apikey_" + "0".repeat(31) + "x "));
 
     static Stream<Arguments> nearMissShapes() {
 

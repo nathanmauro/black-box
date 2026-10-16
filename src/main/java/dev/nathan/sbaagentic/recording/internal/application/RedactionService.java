@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
@@ -27,8 +28,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // Anchored at token starts via lookbehind, with a bounded lazy prefix and a possessive
     // suffix: greedy runs flanking the keyword alternation backtrack quadratically on long
     // keyword-dense inputs (measured seconds of CPU per event), this shape stays linear. The
-    // environment-style alternative is case-sensitive and possessive.
-    private static final String SECRET_KEY = "(?<![A-Za-z0-9_-])(?:[A-Za-z0-9_-]{0,40}?(?:" + STRONG_SECRET_WORDS
+    // environment-style alternative is case-sensitive and possessive. A key may also start directly
+    // after a unicode-escaped quote (\\u0022, as System.Text.Json writes one).
+    private static final String SECRET_KEY = "(?:(?<![A-Za-z0-9_-])|(?<=\\\\u00(?:22|27)))(?:[A-Za-z0-9_-]{0,40}?(?:"
+            + STRONG_SECRET_WORDS
             + "|credential)[A-Za-z0-9_-]*+|(?-i:(?:(?<=\\\\)[nrt])?(?:[A-Z0-9]++_)++KEY)(?![A-Za-z0-9_-]))";
     // The same shape with the strong words only, for export's whole-leaf fallback.
     private static final String STRONG_SECRET_KEY =
@@ -39,37 +42,86 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final String CLIP_MARKER = " …[truncated]";
     // Backslashes before an escaped quote at the fourth JSON encoding level (\\\\\\\\\\\\\\\").
     private static final int MAX_ESCAPE_RUN = 15;
-    // Bare, quoted, or JSON-escaped quoted keys (\" through four encoding levels). "=>" joins
-    // plutil -p, launchctl print, Ruby and PHP pairs. Each run is bounded, so a near miss costs
-    // constant work per start position.
-    private static final Pattern ASSIGNMENT = Pattern.compile(
-            "(?i)(\\\\{1," + MAX_ESCAPE_RUN + "}\"|[\"']|)(" + SECRET_KEY + ")\\1(\\s*(?:=>|[=:])\\s*)");
+    // Bare, quoted, JSON-escaped quoted (\" through four encoding levels) or unicode-escaped quoted
+    // keys. "=>" joins plutil -p, launchctl print, Ruby and PHP pairs, also with its > written as an
+    // HTML-safe escape (=\\u003e). Each run is bounded, so a near miss costs constant work per start.
+    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)(\\\\{1," + MAX_ESCAPE_RUN + "}\"|\\\\{1,"
+            + MAX_ESCAPE_RUN + "}u00(?:22|27)|[\"']|)(" + SECRET_KEY + ")\\1(\\s*(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
+            + "}u003e|[=:])\\s*)");
+    // NAME = value with a space on each side, as PlistBuddy Print shows an environment entry.
+    private static final Pattern SPACED_EQUALS = Pattern.compile("[ \\t]++=[ \\t]++");
     // Text between a property-list key and its value: anything but markup, so raw or JSON-escaped
     // whitespace, JSON array separators, cat -n, grep and rg line-number or path gutters and diff
     // markers all fit, plus up to four XML comments. Bounded and possessive: a near miss scans at
     // most this far, and never past the next tag.
     private static final String PLIST_GAP = "[^<]{0,1024}+(?:<!--[^>]{0,256}-->[^<]{0,1024}+){0,4}+";
     private static final String PLIST_VALUE = "<(string|data|integer|real)>";
-    // A property-list member: <key>NAME</key> (or <\/key>, slash-escaped), then its value element.
-    private static final Pattern PLIST_ENTRY =
-            Pattern.compile("<key>([^<]{1,128})<\\\\{0," + MAX_ESCAPE_RUN + "}/key>" + PLIST_GAP + PLIST_VALUE);
+    // What names a property-list value: <key>NAME</key> (or <\/key>, slash-escaped), or a flag that is
+    // one string of an argument array (<string>--api-key</string>), whose value is the next string.
+    private static final String PLIST_NAME = "(?:<key>([^<]{1,128})<\\\\{0," + MAX_ESCAPE_RUN
+            + "}/key>|<string>(--[A-Za-z0-9][A-Za-z0-9._-]{0,127})<\\\\{0," + MAX_ESCAPE_RUN + "}/string>)";
+    private static final Pattern PLIST_ENTRY = Pattern.compile(PLIST_NAME + PLIST_GAP + PLIST_VALUE);
     // Another value element directly after a replaced one: the old and new lines of a diff.
     private static final Pattern PLIST_NEXT_VALUE = Pattern.compile(PLIST_GAP + PLIST_VALUE);
-    // Text that ends with a key, or with a value this rule replaced, followed only by gap: its
+    // Text that ends with a name, or with a value this rule replaced, followed only by gap: its
     // value may open the next element of the same list (an Edit tool's structuredPatch lines).
-    private static final Pattern PLIST_OPEN_TAIL = Pattern.compile("(?:<key>([^<]{1,128})<\\\\{0," + MAX_ESCAPE_RUN
-            + "}/key>|<(?:string|data|integer|real)>\\[REDACTED]<\\\\{0," + MAX_ESCAPE_RUN
+    private static final Pattern PLIST_OPEN_TAIL = Pattern.compile("(?:" + PLIST_NAME
+            + "|<(?:string|data|integer|real)>\\[REDACTED]<\\\\{0," + MAX_ESCAPE_RUN
             + "}/(?:string|data|integer|real)>)" + PLIST_GAP + "\\z");
-    // Provider keys shaped apikey_<hex>[_<hex>...], also directly after a JSON-escaped newline or
-    // tab, a percent-encoded byte (%22, %3D) or a backslash-u escape (u000a). Possessive runs keep
-    // this linear on long hexadecimal near misses.
-    private static final Pattern HEX_API_KEY = Pattern.compile("(?:(?<![A-Za-z0-9_])|(?<=\\\\[nrt])"
-            + "|(?<=%[0-9A-Fa-f]{2})|(?<=\\\\u[0-9A-Fa-f]{4}))apikey_[0-9a-fA-F]++(?:_[0-9a-fA-F]++)*+(?![A-Za-z0-9])");
+    // A command-line flag that mentions a credential word; isSecretFlag decides whether its argument is
+    // one. A bounded lazy prefix and a possessive suffix keep a near miss linear.
+    private static final Pattern SECRET_FLAG =
+            Pattern.compile("(?i)(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{0,40}?(?:" + STRONG_SECRET_WORDS
+                    + ")[A-Za-z0-9._-]*+");
+    // English function words that prose puts after a flag it names ("--api-key or --token").
+    private static final Set<String> PROSE_WORDS = Set.of(
+            "a", "an", "and", "as", "at", "by", "for", "from", "if", "in", "into", "is", "it", "of", "on", "or", "than",
+            "that", "the", "then", "this", "to", "when", "with");
+    // Matched only against a flag of at most MAX_FLAG_CHARS, so its segment loop may backtrack.
+    private static final Pattern SECRET_FLAG_NAME = Pattern.compile("(?i)--(?:[a-z0-9]+[._-])*"
+            + "(?<!page[._-]|next[._-]|continuation[._-]|starting[._-]|sync[._-])"
+            + "(?:api[_-]?key|private[_-]?key|token|secret|passwd|password|passphrase|authorization)");
+    // Commands that write a credential into launchd's environment or a property list, followed by the
+    // whitespace before the value: launchctl setenv NAME VALUE, PlistBuddy Set or Add :path:NAME
+    // [type] VALUE, plutil -replace or -insert keypath -type VALUE, defaults write domain NAME [-type]
+    // VALUE, and security add-generic-password ... -w VALUE.
+    private static final Pattern WRITE_COMMAND = Pattern.compile("(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))(?:"
+            + "setenv[ \\t]++(?<setenv>[A-Za-z0-9_.-]{1,128}+)"
+            + "|(?i:set|add)[ \\t]++:(?<buddy>(?:[^:\\s\"'\\\\]{1,128}+:){0,16}+[^:\\s\"'\\\\]{1,128}+)"
+            + "(?:[ \\t]++(?:string|data|integer|real|bool|date)(?![A-Za-z0-9_-]))?+"
+            + "|-(?:replace|insert)[ \\t]++(?<plutil>[^\\s\"'\\\\]{1,512}+)"
+            + "[ \\t]++-(?:string|data|integer|float|bool|date|json|xml)(?![A-Za-z0-9_-])"
+            + "|defaults[ \\t]++write[ \\t]++[^\\s\"'\\\\]{1,256}+[ \\t]++(?<defaults>[^\\s\"'\\\\-][^\\s\"'\\\\]{0,127}+)"
+            + "(?:[ \\t]++-(?:string|data|int|integer|float|bool|boolean|date)(?![A-Za-z0-9_-]))?+"
+            + "|add-(?:generic|internet)-password(?<security>)[^\\r\\n]{0,512}?[ \\t]-w"
+            + ")[ \\t]++");
+    // Provider keys shaped apikey_<hex>[_<hex>...]. Possessive runs keep this linear on long
+    // hexadecimal near misses; where a key may start is decided by keyBoundary.
+    private static final Pattern HEX_API_KEY = Pattern.compile("apikey_[0-9a-fA-F]++(?:_[0-9a-fA-F]++)*+");
     // Fewer hexadecimal digits than this is an identifier such as apikey_cafe, not a credential.
     private static final int MIN_API_KEY_HEX_DIGITS = 16;
+    // With this many, the shape is a credential whatever text it is glued to, such as the length byte
+    // that a binary property list stores before a string (Hapikey_...).
+    private static final int GLUED_API_KEY_HEX_DIGITS = 32;
     // A token count, never a credential, has at most this many digits.
     private static final int MAX_TOKEN_COUNT_DIGITS = 12;
+    // Longer text that starts with -- is not a flag.
+    private static final int MAX_FLAG_CHARS = 130;
+    // How far back a key may start its displayed line: indentation plus a line-number or path gutter.
+    private static final int MAX_LINE_PREFIX = 256;
+    // What may stand between the start of a displayed line and a key that starts it, once escaped tabs
+    // read as tabs: indentation after cat -n or file-view line numbers or grep and rg gutters with or
+    // without a path (path:12:, path-13-, 12:), then quote marks, Markdown headings, list or diff
+    // markers, and an opening code span or bold marker, whose closer then ends the value (group 1).
+    private static final Pattern LINE_PREFIX = Pattern.compile("[ \\t]*(?:\\d{1,9}(?:\\t|→)"
+            + "|(?:[^\\s:]{1,200}?[:-])?(?:\\d{1,9}[:-])?)"
+            + "(?:[ \\t]*(?:>|(?:#{1,6}|\\d{1,3}[.)]|[-+*])(?=[ \\t])))*[ \\t]*(`|\\*\\*|__)?");
+    // How far a launchctl print value may continue on following lines before a tab-indented entry.
+    private static final int MAX_CONTINUATION_CHARS = 4096;
+    // Text after an arrow that is searched for a lambda's own parameter name.
+    private static final int MAX_ARROW_BODY_CHARS = 256;
 
+    private static final List<RedactionRule> BUILT_IN_RULES = builtInRules();
     private final List<RedactionRule> exportRules = exportRules();
 
     private static List<RedactionRule> exportRules() {
@@ -81,7 +133,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         // must not cost a model the rest of a document.
         result.add(literal(STRONG_SECRET_KEY + "\\\\*[\"']\\s*:\\s*.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL));
         // Last, so a quoted apikey_<hex> member name still reaches the rule above.
-        result.add(hexApiKeyRule());
+        result.add(RedactionService::redactHexApiKeys);
 
         return result;
     }
@@ -93,6 +145,15 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return null;
 
         return redactDefaults(text, exportRules);
+    }
+
+    @Override
+    public String redactForSummary(String text) {
+        if (text == null)
+
+            return null;
+
+        return redactDefaults(text, BUILT_IN_RULES);
     }
 
     // The structured, separator-insensitive secret-key policy for member names and property-list
@@ -116,7 +177,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         this.enabled = properties.isRedactEnabled();
         List<String> customPatterns = properties.getRedactPatterns();
         this.defaultRules = customPatterns.isEmpty();
-        this.rules = defaultRules ? builtInRules() : customRules(customPatterns);
+        this.rules = defaultRules ? BUILT_IN_RULES : customRules(customPatterns);
     }
 
     @Override
@@ -145,13 +206,13 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         String scanned = truncated ? clipped.substring(0, clipped.length() - CLIP_MARKER.length()) : clipped;
         String result = applyRules(scanned, rules);
         // HTML-safe JSON escapes for < and > (u003c and u003e after a backslash) and unicode-escaped
-        // quotes can hide a whole credential pair. Scan a decoded copy as well; it replaces the
-        // encoded result, decoded, only when it finds something the encoded text hid.
-        String decoded = decodeEscapedMarkup(scanned);
+        // quotes can hide a whole credential pair. Scan the first result again with those escapes
+        // decoded: spans it replaced stay replaced, so this scan can only add replacements, and its
+        // result is kept, decoded, only when it does.
+        String decoded = decodeEscapedMarkup(result);
         if (decoded != null) {
             String decodedResult = applyRules(decoded, rules);
-            String decodedFirstPass = decodeEscapedMarkup(result);
-            if (!decodedResult.equals(decodedFirstPass == null ? result : decodedFirstPass)) {
+            if (!decodedResult.equals(decoded)) {
                 result = decodedResult;
             }
         }
@@ -270,18 +331,22 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
         if (value instanceof List<?> list) {
             List<Object> redacted = new ArrayList<>(list.size());
-            // A property-list key and its value can arrive as separate list elements, such as the
-            // lines of an Edit tool's structuredPatch: the open key carries over to the next one.
-            String openKey = null;
+            // A property-list name and its value can arrive as separate list elements, such as the
+            // lines of an Edit tool's structuredPatch: the open name carries over to the next one.
+            String openName = null;
             for (Object item : list) {
                 Object safe = redactDeep(item);
                 if (defaultRules && safe instanceof String line) {
-                    String leading = openKey == null ? line : redactLeadingPropertyListValue(line, openKey);
-                    String tailKey = openSecretMember(leading);
-                    openKey = tailKey != null ? tailKey : isGapOnly(leading) ? openKey : null;
+                    String leading = openName == null ? line : redactLeadingPropertyListValue(line, openName);
+                    String tailName = openSecretMember(leading);
+                    if ("".equals(tailName) && openName != null && isFlag(openName)) {
+                        // A flag's replaced value: the chain still stops at the next flag.
+                        tailName = openName;
+                    }
+                    openName = tailName != null ? tailName : isGapOnly(leading) ? openName : null;
                     safe = leading;
                 } else {
-                    openKey = null;
+                    openName = null;
                 }
                 redacted.add(safe);
             }
@@ -299,11 +364,25 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 || ENV_KEY_NAME.matcher(key.strip()).matches();
     }
 
+    // A command-line flag that takes a credential: its name ends with a credential word, as in
+    // --api-key, --db-password, --client-secret and --auth-token. A flag that names where a credential
+    // is (--secret-id, --token-file, --api-key-env), reads one (--password-stdin) or pages results
+    // (--next-token) does not, and neither does a token limit (--max-tokens).
+    private static boolean isSecretFlag(String flag) {
+
+        return flag.length() <= MAX_FLAG_CHARS && SECRET_FLAG_NAME.matcher(flag).matches();
+    }
+
+    private static boolean isFlag(String name) {
+
+        return name.startsWith("-");
+    }
+
     private static List<RedactionRule> builtInRules() {
         List<RedactionRule> result = new ArrayList<>(credentialRules());
-        result.add(hexApiKeyRule());
+        result.add(RedactionService::redactHexApiKeys);
 
-        return result;
+        return List.copyOf(result);
     }
 
     private static List<RedactionRule> credentialRules() {
@@ -315,6 +394,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
                 RedactionService::redactPropertyListValues,
                 RedactionService::redactAssignments,
+                RedactionService::redactSecretFlags,
+                RedactionService::redactWriteCommands,
                 new RegexRule(
                         Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"), matcher -> "Bearer " + REDACTED),
                 literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
@@ -322,11 +403,71 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", 0));
     }
 
-    private static RedactionRule hexApiKeyRule() {
+    /**
+     * Replaces each provider key shaped apikey_<hex>[_<hex>...] that has at least 16 hexadecimal
+     * digits and starts a token (see {@link #keyBoundary}), or at least 32 wherever it starts.
+     * Characters glued after the hexadecimal run stay, as in apikey_...PID or apikey_...ready.
+     */
+    private static String redactHexApiKeys(String text) {
+        Matcher matcher = HEX_API_KEY.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && matcher.find(searchFrom)) {
+            int digits = hexDigits(matcher.group());
+            if (digits < GLUED_API_KEY_HEX_DIGITS
+                    && (digits < MIN_API_KEY_HEX_DIGITS || !keyBoundary(text, matcher.start()))) {
+                // Another key may start inside this near miss (apikey_apikey_<hex>).
+                searchFrom = matcher.start() + 1;
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, matcher.start()).append(REDACTED);
+            copiedThrough = matcher.end();
+            searchFrom = matcher.end();
+        }
 
-        return new RegexRule(
-                HEX_API_KEY,
-                matcher -> hexDigits(matcher.group()) >= MIN_API_KEY_HEX_DIGITS ? REDACTED : matcher.group());
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // Whether a key starting here starts a token: after a non-word character, a JSON-escaped line break
+    // or tab (\n), a percent-encoded byte (%22, %3D) or a backslash-u escape (u000a after a backslash).
+    private static boolean keyBoundary(String text, int start) {
+        if (start == 0 || !isWordChar(text.charAt(start - 1))) {
+
+            return true;
+        }
+        char previous = text.charAt(start - 1);
+        if (start >= 2 && text.charAt(start - 2) == '\\' && "nrt".indexOf(previous) >= 0) {
+
+            return true;
+        }
+        if (start >= 3 && text.charAt(start - 3) == '%' && isHexDigit(text.charAt(start - 2)) && isHexDigit(previous)) {
+
+            return true;
+        }
+
+        return start >= 6
+                && text.charAt(start - 6) == '\\'
+                && text.charAt(start - 5) == 'u'
+                && isHexDigit(text.charAt(start - 4))
+                && isHexDigit(text.charAt(start - 3))
+                && isHexDigit(text.charAt(start - 2))
+                && isHexDigit(previous);
+    }
+
+    private static boolean isWordChar(char value) {
+
+        return value == '_' || value < 128 && Character.isLetterOrDigit(value);
+    }
+
+    private static boolean isHexDigit(char value) {
+
+        return Character.digit(value, 16) >= 0 && value < 128;
     }
 
     private static int hexDigits(String apiKey) {
@@ -342,9 +483,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     /**
      * Replaces the {@code <string>}, {@code <data>}, {@code <integer>} or {@code <real>} value of a
-     * property-list member whose key name follows the structured secret-key policy, keeping both
-     * tags, and any value element that directly follows it (the old and new lines of a diff). An
-     * unclosed value consumes the rest of the scanned scalar. A token count keeps its integer.
+     * property-list member whose key name follows the structured secret-key policy, or of a
+     * credential flag's argument, keeping both tags, and any value element that directly follows it
+     * (the old and new lines of a diff; for a flag, up to the next flag). An unclosed value consumes
+     * the rest of the scanned scalar. A token count keeps its integer.
      */
     private static String redactPropertyListValues(String text) {
         Matcher matcher = PLIST_ENTRY.matcher(text);
@@ -352,35 +494,46 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         int copiedThrough = 0;
         int searchFrom = 0;
         while (searchFrom < text.length() && matcher.find(searchFrom)) {
-            searchFrom = matcher.end();
-            String name = matcher.group(1);
-            if (!isSecretKey(name) || keepsTokenCount(text, matcher.end(), name, matcher.group(2))) {
+            String key = matcher.group(1);
+            String name = key != null ? key : matcher.group(2);
+            String tag = matcher.group(3);
+            // The value element may itself name another member, such as the next flag of an array.
+            searchFrom = matcher.start(3) - 1;
+            boolean secret = key != null ? isSecretKey(name) : isSecretFlag(name);
+            if (!secret || keepsTokenCount(text, matcher.end(), name, tag)) {
                 continue;
             }
-            copiedThrough = redactValues(text, matcher.end(), matcher.group(2), redacted, copiedThrough);
+            if (isFlag(name) && startsFlag(text, matcher.end())) {
+                // A flag without an argument, directly followed by the next flag.
+                continue;
+            }
+            copiedThrough = redactValues(text, matcher.end(), tag, isFlag(name), redacted, copiedThrough);
             searchFrom = copiedThrough;
         }
 
         return redacted.append(text, copiedThrough, text.length()).toString();
     }
 
-    /** Replaces a leading value element of a list item whose previous items left this key open. */
-    private static String redactLeadingPropertyListValue(String text, String openKey) {
+    /** Replaces a leading value element of a list item whose previous items left this name open. */
+    private static String redactLeadingPropertyListValue(String text, String openName) {
         Matcher value = PLIST_NEXT_VALUE.matcher(text);
-        if (!value.lookingAt() || keepsTokenCount(text, value.end(), openKey, value.group(1))) {
+        if (!value.lookingAt()
+                || keepsTokenCount(text, value.end(), openName, value.group(1))
+                || isFlag(openName) && startsFlag(text, value.end())) {
 
             return text;
         }
         StringBuilder redacted = new StringBuilder();
-        int copiedThrough = redactValues(text, value.end(), value.group(1), redacted, 0);
+        int copiedThrough = redactValues(text, value.end(), value.group(1), isFlag(openName), redacted, 0);
 
         return redacted.append(text, copiedThrough, text.length()).toString();
     }
 
     // Appends text up to each replaced value, starting with the one at valueStart, and returns
-    // where copying resumes: after the last value replaced.
+    // where copying resumes: after the last value replaced. After a flag, a value that is itself a
+    // flag ends the chain.
     private static int redactValues(
-            String text, int valueStart, String tag, StringBuilder redacted, int copiedThrough) {
+            String text, int valueStart, String tag, boolean flag, StringBuilder redacted, int copiedThrough) {
         int start = valueStart;
         String element = tag;
         while (true) {
@@ -389,7 +542,9 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             copiedThrough = valueEnd;
             int afterTag = afterClosingTag(text, valueEnd, element);
             Matcher next = PLIST_NEXT_VALUE.matcher(text);
-            if (afterTag < 0 || !next.region(afterTag, text.length()).lookingAt()) {
+            if (afterTag < 0
+                    || !next.region(afterTag, text.length()).lookingAt()
+                    || flag && startsFlag(text, next.end())) {
 
                 return copiedThrough;
             }
@@ -398,7 +553,12 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
     }
 
-    // The key, or "" after a replaced value, when text ends with an open secret member; else null.
+    private static boolean startsFlag(String text, int at) {
+
+        return at < text.length() && text.charAt(at) == '-';
+    }
+
+    // The name, or "" after a replaced value, when text ends with an open secret member; else null.
     private static String openSecretMember(String text) {
         if (text.indexOf('<') < 0) {
 
@@ -410,12 +570,13 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return null;
         }
         String key = tail.group(1);
-        if (key == null) {
+        String flag = tail.group(2);
+        if (key == null && flag == null) {
 
             return "";
         }
 
-        return isSecretKey(key) ? key : null;
+        return key != null ? isSecretKey(key) ? key : null : isSecretFlag(flag) ? flag : null;
     }
 
     private static boolean isGapOnly(String text) {
@@ -507,13 +668,25 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 break;
             }
             String name = keyName(text, matcher);
-            boolean arrow = matcher.group(3).contains("=>");
-            if (!STRONG_SECRET_NAME.matcher(name).find() && !weakNameCounts(text, name, matcher, arrow)) {
+            String separator = matcher.group(3);
+            boolean arrow = separator.contains("=>")
+                    || separator.toLowerCase(Locale.ROOT).contains("u003e");
+            boolean strong = STRONG_SECRET_NAME.matcher(name).find();
+            if (!strong && !weakNameCounts(text, name, matcher, arrow)) {
                 // Ordinary code, such as credentials: 'include' or ENTER_KEY = 13.
                 searchFrom = valueStart;
                 continue;
             }
-            if (arrow && !arrowPair(text, matcher, valueStart)) {
+            boolean bareKey = matcher.group(1).isEmpty();
+            // PlistBuddy Print shows an environment entry as NAME = value through the end of its line.
+            // Code assigns lowercase names the same way (token = { value: "" }), so those keep the
+            // bare value.
+            boolean spaced = strong
+                    && bareKey
+                    && isEnvironmentName(name)
+                    && SPACED_EQUALS.matcher(separator).matches();
+            LineStart line = arrow || spaced ? lineStart(text, keyStart(text, matcher)) : LineStart.NONE;
+            if (arrow && !arrowPair(text, matcher, valueStart, name, line)) {
                 // A lambda or arrow-function parameter such as token => token.trim().
                 searchFrom = valueStart;
                 continue;
@@ -524,9 +697,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 searchFrom = countEnd;
                 continue;
             }
-            // launchctl print shows an environment value unquoted, through the end of its line.
-            boolean wholeLine = arrow && isEnvironmentName(name) && startsLine(text, keyStart(text, matcher));
-            AssignmentValue value = assignmentValue(text, valueStart, wholeLine, lineBreakRun(text, matcher));
+            // launchctl print shows an environment value unquoted, through the end of its line, and
+            // plutil -p does not escape a quote inside a quoted value.
+            boolean wholeLine = line.starts() && (spaced || bareKey || isEnvironmentName(name));
+            boolean lastQuote = arrow && line.starts() && !bareKey;
+            boolean continues = arrow && wholeLine && bareKey && line.tabsOnly();
+            int level = line.starts() ? line.level() : lineBreakRun(text, matcher);
+            AssignmentValue value =
+                    assignmentValue(text, valueStart, level, wholeLine, lastQuote, continues, line.closer());
             searchFrom = value.end();
             if (searchFrom == valueStart) {
                 continue;
@@ -541,16 +719,16 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     /**
      * Whether a name that is a credential name only through "credential" or an environment-style
      * {@code _KEY} suffix counts in this text form, with its value on the same line. A {@code =>}
-     * pair (plutil -p, launchctl print) always counts. An environment-style name such as
-     * {@code SBA_DB_CREDENTIAL} or {@code STRIPE_KEY} also counts quoted (JSON) or in
-     * {@code NAME=value} and {@code NAME: value}, but not in a spaced code assignment
-     * ({@code ENTER_KEY = 13}). Ordinary code and data stay: a name with lowercase letters
-     * ({@code credentials: 'include'}, {@code "credential-management":}), a block colon
-     * ({@code != FAKE_KEY:}) and a shell expansion ({@code EVENT_KEY="$(...)"}, a reference).
+     * pair (plutil -p, launchctl print) always counts, since those displays show values, never shell
+     * references. An environment-style name such as {@code SBA_DB_CREDENTIAL} or {@code STRIPE_KEY}
+     * also counts quoted (JSON) or in {@code NAME=value} and {@code NAME: value}, but not in a spaced
+     * code assignment ({@code ENTER_KEY = 13}). Ordinary code and data stay: a name with lowercase
+     * letters ({@code credentials: 'include'}, {@code "credential-management":}), a block colon
+     * ({@code != FAKE_KEY:}) and a shell reference ({@code EVENT_KEY="$(...)"}, {@code $HOME/...}).
      */
     private static boolean weakNameCounts(String text, String name, Matcher matcher, boolean arrow) {
         String separator = matcher.group(3);
-        if (separator.indexOf('\n') >= 0 || separator.indexOf('\r') >= 0 || shellExpansion(text, matcher.end())) {
+        if (separator.indexOf('\n') >= 0 || separator.indexOf('\r') >= 0) {
 
             return false;
         }
@@ -558,7 +736,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return true;
         }
-        if (!isEnvironmentName(name)) {
+        if (!isEnvironmentName(name) || shellExpansion(text, matcher.end())) {
 
             return false;
         }
@@ -568,14 +746,39 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 || !Character.isWhitespace(separator.charAt(0));
     }
 
-    // A value that starts with $ (after an optional plain or escaped quote): $VAR, ${VAR} or $(command).
+    /**
+     * Whether a value (after an optional plain or escaped quote) reads as a shell reference rather than
+     * a literal: $(command), ${NAME...}, or $NAME, $1 and $@ ending where the value, a word or a path
+     * segment does. $2b$10$... (a bcrypt hash) and $argon2id$... are literals.
+     */
     private static boolean shellExpansion(String text, int valueStart) {
-        int at = valueStart + escapedQuoteLength(text, valueStart);
+        int at = valueStart + escapedQuoteLength(text, valueStart) + unicodeQuoteLength(text, valueStart);
         if (at == valueStart && at < text.length() && (text.charAt(at) == '"' || text.charAt(at) == '\'')) {
             at++;
         }
+        if (at + 1 >= text.length() || text.charAt(at) != '$') {
 
-        return at < text.length() && text.charAt(at) == '$';
+            return false;
+        }
+        char first = text.charAt(at + 1);
+        if (first == '(' || first == '{') {
+
+            return true;
+        }
+        int end;
+        if (isAsciiDigit(first) || "@*#?".indexOf(first) >= 0) {
+            end = at + 2;
+        } else if (first == '_' || first < 128 && Character.isLetter(first)) {
+            end = at + 2;
+            while (end < text.length() && isWordChar(text.charAt(end))) {
+                end++;
+            }
+        } else {
+
+            return false;
+        }
+
+        return end == text.length() || !isWordChar(text.charAt(end)) && text.charAt(end) != '$';
     }
 
     private static boolean isEnvironmentName(String name) {
@@ -590,34 +793,124 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     /**
-     * Whether only spaces, tabs and JSON-escaped tabs stand between a key and the start of its
-     * line: a raw or JSON-escaped line break, the start of the text, or the quote that opens a
-     * JSON string. A key named inline in prose ({@code see `SBA_X_TOKEN => …`}) does not start one.
+     * Where a name stands on its displayed line. {@code level} is the number of backslashes in a
+     * JSON-escaped line break at the line's encoding level (0 in raw text), or -1 when other text
+     * precedes the name on its line; {@code tabsOnly} is set when only tabs indent it, as in
+     * launchctl print; {@code closer} closes the code span or bold text the name opens, else null.
      */
-    private static boolean startsLine(String text, int keyStart) {
-        int at = keyStart;
-        for (int steps = 0; steps < 256 && at > 0; steps++) {
-            char previous = text.charAt(at - 1);
-            if (previous == '\n' || previous == '\r' || previous == '"') {
+    private record LineStart(int level, boolean tabsOnly, String closer) {
+        static final LineStart NONE = new LineStart(-1, false, null);
 
-                return true;
+        boolean starts() {
+
+            return level >= 0;
+        }
+    }
+
+    /**
+     * Whether a name starts its displayed line: a raw or JSON-escaped line break, the start of the
+     * text, or the quote that opens a JSON string, followed only by indentation (spaces, tabs,
+     * JSON-escaped tabs), optionally after a line-number or path gutter (cat -n, grep -n, rg, a file
+     * view), quote marks, a Markdown heading, a list or diff marker or an opening code span or bold
+     * marker, and by the dotted prefix of the name itself ({@code sba.judge.password}). A name inline
+     * in prose ({@code see `SBA_X_TOKEN => …`}) does not.
+     */
+    private static LineStart lineStart(String text, int nameStart) {
+        int at = nameStart;
+        while (at > 1 && text.charAt(at - 1) == '.' && nameStart - at < 128) {
+            int segment = at - 1;
+            while (segment > 0 && isNameChar(text.charAt(segment - 1)) && !escapeLetter(text, segment - 1)) {
+                segment--;
             }
-            int run = at >= 2 && "nrt".indexOf(previous) >= 0 ? backslashRunBefore(text, at - 1) : 0;
-            if (run > 0) {
-                if (previous != 't') {
+            if (segment == at - 1) {
+                break;
+            }
+            at = segment;
+        }
+        int lineStart = at;
+        int level = -1;
+        while (level < 0) {
+            if (lineStart == 0) {
+                level = 0;
+                break;
+            }
+            if (at - lineStart > MAX_LINE_PREFIX) {
 
-                    return true;
-                }
-                at -= run + 1;
-            } else if (previous == ' ' || previous == '\t') {
-                at--;
+                return LineStart.NONE;
+            }
+            char previous = text.charAt(lineStart - 1);
+            if (previous == '\n' || previous == '\r') {
+                level = 0;
+            } else if (previous == '"') {
+                // The quote that opens the JSON string holding this line: its contents are one level deeper.
+                level = backslashRunBefore(text, lineStart - 1) + 1;
+            } else if ((previous == 'n' || previous == 'r') && backslashRunBefore(text, lineStart - 1) > 0) {
+                level = backslashRunBefore(text, lineStart - 1);
             } else {
+                lineStart--;
+            }
+        }
+        boolean escaped = level > 0;
+        int tabLevel = 0;
+        StringBuilder prefix = new StringBuilder(at - lineStart);
+        for (int index = lineStart; index < at; index++) {
+            char current = text.charAt(index);
+            int run = current == '\\' ? backslashRun(text, index) : 0;
+            if (run > 0 && index + run < at && text.charAt(index + run) == 't') {
+                tabLevel = tabLevel == 0 ? run : tabLevel;
+                prefix.append('\t');
+                index += run;
+            } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= at) {
+                prefix.append('→');
+                index += run + 4;
+            } else {
+                prefix.append(current);
+            }
+        }
+        Matcher gutter = LINE_PREFIX.matcher(prefix);
+        if (!gutter.matches()) {
 
-                return false;
+            return LineStart.NONE;
+        }
+        boolean tabsOnly = !prefix.isEmpty() && prefix.chars().allMatch(character -> character == '\t');
+        if (!escaped && tabLevel == 0 && lineStart == 0) {
+            // The first line of the text: its own line break, raw or escaped, shows its encoding level.
+            tabLevel = firstLineBreakRun(text, nameStart);
+        }
+
+        return new LineStart(escaped ? level : tabLevel, tabsOnly, gutter.group(1));
+    }
+
+    private static boolean isNameChar(char value) {
+
+        return isWordChar(value) || value == '-';
+    }
+
+    // The backslashes in the first line break after this index when it is JSON-escaped, else 0.
+    private static int firstLineBreakRun(String text, int from) {
+        for (int at = from; at < text.length(); at++) {
+            char current = text.charAt(at);
+            if (current == '\n' || current == '\r') {
+
+                return 0;
+            }
+            if (current == '\\') {
+                int run = backslashRun(text, at);
+                if (at + run < text.length() && "nr".indexOf(text.charAt(at + run)) >= 0) {
+
+                    return run;
+                }
+                at += run;
             }
         }
 
-        return at == 0;
+        return 0;
+    }
+
+    // Whether the character here is the letter of a JSON escape (the t of \t).
+    private static boolean escapeLetter(String text, int at) {
+
+        return at > 0 && text.charAt(at - 1) == '\\' && "nrt".indexOf(text.charAt(at)) >= 0;
     }
 
     private static int backslashRunBefore(String text, int end) {
@@ -632,6 +925,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     /**
      * The backslashes in a JSON-escaped line break at the key's encoding level ({@code \n} is 1,
      * {@code \\n} is 2), read from the escape before the key or from its escaped quote; 0 in raw text.
+     * Used when the key does not start its line.
      */
     private static int lineBreakRun(String text, Matcher matcher) {
         int quote = matcher.group(1).length();
@@ -647,8 +941,21 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return backslashRunBefore(text, matcher.start(2));
     }
 
-    private static AssignmentValue assignmentValue(String text, int start, boolean wholeLine, int lineBreakRun) {
+    private static AssignmentValue assignmentValue(
+            String text, int start, int level, boolean wholeLine, boolean lastQuote, boolean continues, String closer) {
         char quote = text.charAt(start);
+        int escapedQuote = escapedQuoteLength(text, start);
+        if (lastQuote && (quote == '"' || escapedQuote > 0)) {
+            // plutil -p prints a string value between quotes without escaping the quotes inside it:
+            // the value closes at the last quote on its line.
+            String delimiter = escapedQuote > 0 ? text.substring(start, start + escapedQuote) : "\"";
+            int stop = lineEnd(text, start + delimiter.length(), level, false);
+            int end = lastQuoteBefore(text, start + delimiter.length(), stop, delimiter.length() - 1);
+            if (end > 0) {
+
+                return new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
+            }
+        }
         if (quote == '"' || quote == '\'') {
             int end = start + 1;
             boolean closed = false;
@@ -667,7 +974,6 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     closed ? attachedSuffixEnd(text, end) : end,
                     quote + REDACTED + (closed ? Character.toString(quote) : ""));
         }
-        int escapedQuote = escapedQuoteLength(text, start);
         if (escapedQuote > 0) {
             // A value quoted inside JSON-encoded text ends at the same escaped quote. Quotes
             // escaped one level deeper belong to the value; a missing close consumes the rest.
@@ -678,14 +984,31 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     ? new AssignmentValue(text.length(), delimiter + REDACTED)
                     : new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
         }
+        int unicodeQuote = unicodeQuoteLength(text, start);
+        if (unicodeQuote > 0) {
+            // A value between unicode-escaped quotes (\\u0022...\\u0022) ends at the same escape.
+            String delimiter = text.substring(start, start + unicodeQuote);
+            int end = unicodeQuoteEnd(text, start + unicodeQuote, delimiter);
+
+            return end < 0
+                    ? new AssignmentValue(text.length(), delimiter + REDACTED)
+                    : new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
+        }
         if (text.startsWith("{length = ", start)) {
 
             // A plutil -p data value: {length = 16, bytes = 0x0123...}.
-            return new AssignmentValue(lineEnd(text, start, lineBreakRun, true), REDACTED);
+            return new AssignmentValue(lineEnd(text, start, level, true), REDACTED);
         }
         if (wholeLine) {
+            int end = lineEnd(text, start, level, false);
+            int closed = closer == null ? -1 : text.indexOf(closer, start, end);
+            if (closed >= 0) {
 
-            return new AssignmentValue(lineEnd(text, start, lineBreakRun, false), REDACTED);
+                // A code span or bold text that opened before the name ends the value: `NAME => value`.
+                return new AssignmentValue(closed, REDACTED);
+            }
+
+            return new AssignmentValue(continues ? continuationEnd(text, end, level) : end, REDACTED);
         }
         String prefix = "";
         if (text.regionMatches(true, start, "Bearer", 0, 6)
@@ -702,6 +1025,18 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
 
         return new AssignmentValue(bareValueEnd(text, start), prefix + REDACTED);
+    }
+
+    // The end of the last quote in [from, stop) preceded by exactly this many backslashes, else -1.
+    private static int lastQuoteBefore(String text, int from, int stop, int slashes) {
+        for (int quote = text.lastIndexOf('"', stop - 1); quote >= from; quote = text.lastIndexOf('"', quote - 1)) {
+            if (backslashRunBefore(text, quote) == slashes && quote - slashes >= from) {
+
+                return quote + 1;
+            }
+        }
+
+        return -1;
     }
 
     private static int bareValueEnd(String text, int start) {
@@ -731,16 +1066,17 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     /**
-     * The end of a displayed line from start: a raw line break, a JSON-escaped one at any encoding
-     * level or, in JSON-escaped text ({@code lineBreakRun > 0}), the closing quote of the string
-     * that holds the display. With {@code throughBrace}, the first {@code }} on the line ends it too,
+     * The end of a displayed line from start: a raw line break or, in JSON-escaped text displayed at
+     * this level ({@code level} backslashes in its line break), an escaped line break or the quote
+     * that closes the string holding the display. An escaped quote or backslash of the display itself
+     * belongs to the line. With {@code throughBrace}, the first {@code }} on the line ends it too,
      * included.
      */
-    private static int lineEnd(String text, int start, int lineBreakRun, boolean throughBrace) {
+    private static int lineEnd(String text, int start, int level, boolean throughBrace) {
         int end = start;
         while (end < text.length()) {
             char current = text.charAt(end);
-            if (current == '\n' || current == '\r' || current == '"' && lineBreakRun == 1) {
+            if (current == '\n' || current == '\r' || current == '"' && level > 0) {
 
                 return end;
             }
@@ -753,15 +1089,125 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 continue;
             }
             int run = backslashRun(text, end);
-            char next = end + run < text.length() ? text.charAt(end + run) : 0;
-            if (next == 'n' || next == 'r' || next == '"' && run == lineBreakRun - 1) {
+            if (end + run >= text.length()) {
 
-                return end;
+                return text.length();
             }
-            end += run;
+            char escaped = text.charAt(end + run);
+            if (escaped == '\n' || escaped == '\r') {
+
+                // Backslashes that end a raw line, as in a shell continuation, belong to it.
+                return end + run;
+            }
+            int offset = level > 0 ? lineBreakOffset(run, escaped, level) : -1;
+            if (offset >= 0) {
+
+                return end + offset;
+            }
+            // The escaped character belongs to the line, even when it is a quote.
+            end += run + 1;
         }
 
         return end;
+    }
+
+    /**
+     * Where a run of backslashes before this character ends a line displayed at this encoding level,
+     * as an offset into the run, else -1. At level {@code l} (backslashes in its line break), a line
+     * break of the display carries {@code l} backslashes modulo {@code 2l}, the quote that closes its
+     * string {@code l - 1}, a quote of the display {@code 2l - 1} and a literal backslash {@code 2l};
+     * literal backslashes before the break belong to the line. Any other run before a line break or
+     * quote belongs to an enclosing level and ends the line where the run starts.
+     */
+    private static int lineBreakOffset(int run, char next, int level) {
+        int period = 2 * level;
+        int rest = run % period;
+        if (next == 'n' || next == 'r') {
+
+            return rest == 0 ? -1 : rest == level ? run - level : 0;
+        }
+        if (next != '"' || rest == period - 1) {
+
+            return -1;
+        }
+
+        return rest == level - 1 ? run - rest : 0;
+    }
+
+    /**
+     * Where a launchctl print value that holds line breaks ends: its entries are indented with a tab,
+     * so the lines after an entry that are not are the rest of its value. They are taken only when a
+     * tab-indented line follows them; a blank line or the end of the text first means the display
+     * ended and other text follows.
+     */
+    private static int continuationEnd(String text, int lineEnd, int level) {
+        int end = lineEnd;
+        while (end - lineEnd <= MAX_CONTINUATION_CHARS) {
+            int next = afterLineBreak(text, end, level);
+            if (next < 0 || next >= text.length() || atLineBreak(text, next, level)) {
+
+                return lineEnd;
+            }
+            if (startsWithTab(text, next)) {
+
+                return end;
+            }
+            end = lineEnd(text, next, level, false);
+        }
+
+        return lineEnd;
+    }
+
+    // The index after the raw or escaped line break at this index, else -1.
+    private static int afterLineBreak(String text, int at, int level) {
+        if (at >= text.length()) {
+
+            return -1;
+        }
+        char current = text.charAt(at);
+        if (current == '\r') {
+
+            return at + 1 < text.length() && text.charAt(at + 1) == '\n' ? at + 2 : at + 1;
+        }
+        if (current == '\n') {
+
+            return at + 1;
+        }
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+        if (level == 0 || run == 0 || at + run >= text.length() || "nr".indexOf(text.charAt(at + run)) < 0) {
+
+            return -1;
+        }
+        int after = at + run + 1;
+        if (text.charAt(at + run) == 'r' && text.startsWith("n", after + run) && backslashRun(text, after) == run) {
+            after += run + 1;
+        }
+
+        return after;
+    }
+
+    private static boolean atLineBreak(String text, int at, int level) {
+        char current = text.charAt(at);
+        if (current == '\n' || current == '\r' || current == '"' && level > 0) {
+
+            return true;
+        }
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+
+        return level > 0
+                && run > 0
+                && at + run < text.length()
+                && lineBreakOffset(run, text.charAt(at + run), level) == 0;
+    }
+
+    private static boolean startsWithTab(String text, int at) {
+        if (text.charAt(at) == '\t') {
+
+            return true;
+        }
+        int run = text.charAt(at) == '\\' ? backslashRun(text, at) : 0;
+
+        return run > 0 && at + run < text.length() && text.charAt(at + run) == 't';
     }
 
     // Characters glued to a closing quote, as in the shell word "abc"def, continue the value;
@@ -772,8 +1218,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return closedAt;
         }
         char next = text.charAt(closedAt);
+        // A JSON escape at any encoding level (\n, \\\", ...), such as the quote closing the string
+        // that holds this value.
+        int run = next == '\\' ? backslashRun(text, closedAt) : 0;
         boolean escape =
-                next == '\\' && closedAt + 1 < text.length() && "nrt\"'".indexOf(text.charAt(closedAt + 1)) >= 0;
+                run > 0 && closedAt + run < text.length() && "nrt\"'".indexOf(text.charAt(closedAt + run)) >= 0;
         boolean attached = !escape && (Character.isLetterOrDigit(next) || "_-+/=.~%@!#$*?^|\\[".indexOf(next) >= 0);
 
         return attached ? bareValueEnd(text, closedAt) : closedAt;
@@ -787,6 +1236,31 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
 
         return slashes > 0 && start + slashes < text.length() && text.charAt(start + slashes) == '"' ? slashes + 1 : 0;
+    }
+
+    // The length of a unicode-escaped quote (one to fifteen backslashes, then u0022 or u0027) at start,
+    // else 0.
+    private static int unicodeQuoteLength(String text, int start) {
+        int slashes = 0;
+        while (slashes < MAX_ESCAPE_RUN && start + slashes < text.length() && text.charAt(start + slashes) == '\\') {
+            slashes++;
+        }
+        boolean quote =
+                slashes > 0 && (text.startsWith("u0022", start + slashes) || text.startsWith("u0027", start + slashes));
+
+        return quote ? slashes + 5 : 0;
+    }
+
+    // The end of the next delimiter not preceded by another backslash, else -1.
+    private static int unicodeQuoteEnd(String text, int from, String delimiter) {
+        for (int at = text.indexOf(delimiter, from); at >= 0; at = text.indexOf(delimiter, at + 1)) {
+            if (at == from || text.charAt(at - 1) != '\\') {
+
+                return at + delimiter.length();
+            }
+        }
+
+        return -1;
     }
 
     // The end of the first quote preceded by exactly this many backslashes, else -1.
@@ -808,22 +1282,59 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     /**
      * Whether {@code key => value} is a key/value pair rather than a lambda parameter such as
      * {@code token => token.trim()}: a quoted key (plutil -p, PHP, Ruby), a quoted value (Perl,
-     * Ruby), an environment-style name without lowercase letters (launchctl print), or a compact
-     * {@code key=>value}, which stays conservative.
+     * Ruby), an environment-style name without lowercase letters (launchctl print), a compact
+     * {@code key=>value}, which stays conservative, or a name in any letter case that starts its
+     * displayed line, as launchctl print shows {@code JevApiKey => …}, unless the value is an
+     * arrow-function body that uses the parameter or opens a block.
      */
-    private static boolean arrowPair(String text, Matcher matcher, int valueStart) {
+    private static boolean arrowPair(String text, Matcher matcher, int valueStart, String name, LineStart line) {
         char first = text.charAt(valueStart);
         String separator = matcher.group(3);
         if (!matcher.group(1).isEmpty()
                 || first == '"'
                 || first == '\''
                 || escapedQuoteLength(text, valueStart) > 0
-                || !Character.isWhitespace(separator.charAt(separator.length() - 1))) {
+                || unicodeQuoteLength(text, valueStart) > 0
+                || !Character.isWhitespace(separator.charAt(separator.length() - 1))
+                || isEnvironmentName(name)) {
 
             return true;
         }
 
-        return keyName(text, matcher).chars().noneMatch(Character::isLowerCase);
+        return line.starts() && !arrowFunctionBody(text, valueStart, name);
+    }
+
+    // A block or parenthesized body, or an expression that uses the parameter's own name on the same
+    // line: token => token.trim(), password => check(password).
+    private static boolean arrowFunctionBody(String text, int valueStart, String name) {
+        char first = text.charAt(valueStart);
+        if (first == '{' || first == '(') {
+
+            return true;
+        }
+        int stop = valueStart;
+        int limit = Math.min(text.length(), valueStart + MAX_ARROW_BODY_CHARS);
+        while (stop < limit
+                && text.charAt(stop) != '\n'
+                && text.charAt(stop) != '\r'
+                && !(text.charAt(stop) == '\\' && stop + 1 < limit && "nr".indexOf(text.charAt(stop + 1)) >= 0)) {
+            stop++;
+        }
+        for (int at = text.indexOf(name, valueStart, stop); at >= 0; at = text.indexOf(name, at + 1, stop)) {
+            int after = at + name.length();
+            if ((at == 0 || !isIdentifierChar(text.charAt(at - 1)))
+                    && (after >= text.length() || !isIdentifierChar(text.charAt(after)))) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isIdentifierChar(char value) {
+
+        return isWordChar(value) || value == '$';
     }
 
     // A key directly after a JSON-escaped newline or tab starts after its escape letter.
@@ -834,6 +1345,309 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return start > 0 && text.charAt(start - 1) == '\\' && "nrt".indexOf(key.charAt(0)) >= 0
                 ? key.substring(1)
                 : key;
+    }
+
+    /**
+     * Replaces the argument of each credential flag: {@code --api-key VALUE} on a command line, the
+     * next element of a quoted list ({@code ["--api-key", "VALUE"]}, plutil -p, defaults read), or
+     * the next line when the flag is alone on its line (launchctl print, PlistBuddy). The
+     * {@code --api-key=VALUE} form is an assignment.
+     */
+    private static String redactSecretFlags(String text) {
+        Matcher matcher = SECRET_FLAG.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && matcher.find(searchFrom)) {
+            searchFrom = matcher.end();
+            if (!isSecretFlag(matcher.group())) {
+                continue;
+            }
+            Span value = flagValue(text, matcher.start(), matcher.end());
+            if (value == null) {
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, value.start()).append(value.replacement());
+            copiedThrough = value.end();
+            searchFrom = value.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // The argument of the flag in [flagStart, flagEnd), or null when none follows.
+    private static Span flagValue(String text, int flagStart, int flagEnd) {
+        if (flagEnd >= text.length()) {
+
+            return null;
+        }
+        String delimiter = quoteBefore(text, flagStart);
+        if (!delimiter.isEmpty() && text.startsWith(delimiter, flagEnd)) {
+
+            return listElementAfter(text, flagEnd + delimiter.length(), delimiter);
+        }
+        int at = flagEnd;
+        while (at < text.length() && (text.charAt(at) == ' ' || text.charAt(at) == '\t')) {
+            at++;
+        }
+        if (at == text.length() || "\n\r\\\"".indexOf(text.charAt(at)) >= 0) {
+            // Alone on its line, the flag takes the next line, as launchctl print and PlistBuddy show.
+            LineStart line = lineStart(text, flagStart);
+            if (line.starts() && (at == text.length() || atLineBreak(text, at, line.level()))) {
+
+                return nextLineAfter(text, at, line.level());
+            }
+        }
+        if (at == flagEnd || at == text.length() || !startsArgument(text, at) || proseWord(text, at)) {
+
+            return null;
+        }
+
+        return shellWord(text, at);
+    }
+
+    // Prose names a flag too ("pass --api-key or --token to the CLI"): an English function word after
+    // it is not its argument.
+    private static boolean proseWord(String text, int at) {
+        int end = at;
+        while (end < text.length() && end - at <= 4 && text.charAt(end) >= 'a' && text.charAt(end) <= 'z') {
+            end++;
+        }
+        boolean wordEnds = end > at && (end == text.length() || !isWordChar(text.charAt(end)));
+
+        return wordEnds && PROSE_WORDS.contains(text.substring(at, end));
+    }
+
+    // The quote that opens the list element holding a flag at this index ("--api-key" or \"--api-key),
+    // else "".
+    private static String quoteBefore(String text, int flagStart) {
+        if (flagStart == 0) {
+
+            return "";
+        }
+        char quote = text.charAt(flagStart - 1);
+        if (quote == '\'') {
+
+            return "'";
+        }
+        if (quote != '"') {
+
+            return "";
+        }
+
+        return "\\".repeat(Math.min(backslashRunBefore(text, flagStart - 1), MAX_ESCAPE_RUN)) + "\"";
+    }
+
+    // The list element after a flag element that closed at from, quoted the same way: separators, line
+    // breaks, indentation and a plutil -p index (2 => ) may stand between them. An unquoted element,
+    // such as a variable in code ("--api-key", key), is not taken.
+    private static Span listElementAfter(String text, int from, String delimiter) {
+        int at = from;
+        int limit = Math.min(text.length(), from + MAX_LINE_PREFIX);
+        boolean indexed = false;
+        while (at < limit) {
+            char current = text.charAt(at);
+            int run = current == '\\' ? backslashRun(text, at) : 0;
+            if (current == ' ' || current == '\t' || current == ',' || current == '\n' || current == '\r') {
+                at++;
+            } else if (run > 0
+                    && run < delimiter.length()
+                    && at + run < text.length()
+                    && "nrt".indexOf(text.charAt(at + run)) >= 0) {
+                at += run + 1;
+            } else if (!indexed && isAsciiDigit(current)) {
+                int digits = at;
+                while (digits < limit && isAsciiDigit(text.charAt(digits))) {
+                    digits++;
+                }
+                int arrow = digits;
+                while (arrow < limit && text.charAt(arrow) == ' ') {
+                    arrow++;
+                }
+                if (!text.startsWith("=>", arrow)) {
+
+                    return null;
+                }
+                indexed = true;
+                at = arrow + 2;
+            } else {
+                break;
+            }
+        }
+        if (at >= limit) {
+
+            return null;
+        }
+        if (text.startsWith(delimiter, at)) {
+            int contentStart = at + delimiter.length();
+            if (startsFlag(text, contentStart)) {
+
+                return null;
+            }
+            int end = delimiter.length() == 1
+                    ? quotedEnd(text, contentStart, delimiter.charAt(0))
+                    : escapedQuoteEnd(text, contentStart, delimiter.length() - 1);
+
+            return end < 0
+                    ? new Span(at, text.length(), delimiter + REDACTED)
+                    : new Span(at, end, delimiter + REDACTED + delimiter);
+        }
+
+        return null;
+    }
+
+    // The end of a quoted value whose content starts here, with backslash escapes, else -1.
+    private static int quotedEnd(String text, int contentStart, char quote) {
+        int end = contentStart;
+        while (end < text.length()) {
+            char current = text.charAt(end++);
+            if (current == '\\' && end < text.length()) {
+                end++;
+            } else if (current == quote) {
+
+                return end;
+            }
+        }
+
+        return -1;
+    }
+
+    // The line after the line break at this index, after its indentation, through its end; null when
+    // it is blank, holds another flag, or no line follows.
+    private static Span nextLineAfter(String text, int lineBreak, int level) {
+        int at = afterLineBreak(text, lineBreak, level);
+        if (at < 0) {
+
+            return null;
+        }
+        while (at < text.length()) {
+            char current = text.charAt(at);
+            int run = current == '\\' ? backslashRun(text, at) : 0;
+            if (current == ' ' || current == '\t') {
+                at++;
+            } else if (run > 0 && at + run < text.length() && text.charAt(at + run) == 't') {
+                at += run + 1;
+            } else {
+                break;
+            }
+        }
+        if (at >= text.length() || atLineBreak(text, at, level) || startsFlag(text, at)) {
+
+            return null;
+        }
+
+        return new Span(at, lineEnd(text, at, level, false), REDACTED);
+    }
+
+    // Whether an argument starts here rather than another flag, a shell operator or a comment.
+    private static boolean startsArgument(String text, int at) {
+        char first = text.charAt(at);
+
+        return "-<>|&;)#`]}".indexOf(first) < 0 && !Character.isWhitespace(first);
+    }
+
+    // A shell word at this index: a quoted string (plain or JSON-escaped) or a bare word.
+    private static Span shellWord(String text, int at) {
+        AssignmentValue value = assignmentValue(text, at, 0, false, false, false, null);
+
+        return value.end() > at ? new Span(at, value.end(), value.replacement()) : null;
+    }
+
+    /**
+     * Replaces the value that a configuration write command gives a credential name: launchctl setenv,
+     * PlistBuddy Set and Add (through the end of the -c argument), plutil -replace and -insert,
+     * defaults write, and the -w password of security add-generic-password.
+     */
+    private static String redactWriteCommands(String text) {
+        Matcher matcher = WRITE_COMMAND.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && matcher.find(searchFrom)) {
+            searchFrom = matcher.end();
+            if (matcher.end() == text.length()) {
+                break;
+            }
+            String name = writtenName(matcher);
+            if (name != null && (!isSecretKey(name) || countsTokens(name))) {
+                continue;
+            }
+            Span value = matcher.group("buddy") != null
+                    ? buddyValue(text, matcher.start(), matcher.end())
+                    : startsArgument(text, matcher.end()) ? shellWord(text, matcher.end()) : null;
+            if (value == null) {
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, value.start()).append(value.replacement());
+            copiedThrough = value.end();
+            searchFrom = value.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // The name a write command assigns (the last segment of a key path), or null for a password.
+    private static String writtenName(Matcher matcher) {
+        if (matcher.group("setenv") != null) {
+
+            return matcher.group("setenv");
+        }
+        if (matcher.group("buddy") != null) {
+            String path = matcher.group("buddy");
+
+            return path.substring(path.lastIndexOf(':') + 1);
+        }
+        if (matcher.group("plutil") != null) {
+            String path = matcher.group("plutil");
+
+            return path.substring(path.lastIndexOf('.') + 1);
+        }
+
+        return matcher.group("defaults");
+    }
+
+    // A PlistBuddy value runs to the end of its command: the quote that opened the -c argument, else
+    // the end of the line, raw or JSON-escaped.
+    private static Span buddyValue(String text, int commandStart, int valueStart) {
+        String delimiter = quoteBefore(text, commandStart);
+        int end;
+        if (delimiter.isEmpty()) {
+            end = bareLineEnd(text, valueStart, lineEnd(text, valueStart, 0, false));
+        } else if (delimiter.length() == 1) {
+            end = quotedEnd(text, valueStart, delimiter.charAt(0));
+            end = end < 0 ? text.length() : end - 1;
+        } else {
+            end = escapedQuoteEnd(text, valueStart, delimiter.length() - 1);
+            end = end < 0 ? text.length() : end - delimiter.length();
+        }
+
+        return end > valueStart ? new Span(valueStart, end, REDACTED) : null;
+    }
+
+    // The first JSON-escaped line break in [from, stop), else stop.
+    private static int bareLineEnd(String text, int from, int stop) {
+        for (int at = from; at < stop; at++) {
+            if (text.charAt(at) == '\\') {
+                int run = backslashRun(text, at);
+                if (at + run < stop && "nr".indexOf(text.charAt(at + run)) >= 0) {
+
+                    return at;
+                }
+                at += run;
+            }
+        }
+
+        return stop;
     }
 
     /**
@@ -881,6 +1695,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     private record AssignmentValue(int end, String replacement) {}
+
+    private record Span(int start, int end, String replacement) {}
 
     private interface RedactionRule {
         String redact(String value);

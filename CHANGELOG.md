@@ -4,25 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Redaction recognizes credentials in displayed service configuration before storage and export.
-  Covered: `=>` pairs from `plutil -p`, including `{length = …, bytes = 0x…}` data values, and from
-  `launchctl print`, where an unquoted value at the start of a line is removed to the end of that
-  line; property-list `<string>`, `<data>`, `<integer>` and `<real>` values under a secret `<key>`,
-  raw or JSON-escaped, behind `cat -n` numbers, `grep`/`rg` line-number and path gutters, diff
-  markers or XML comments, both lines of a changed value in a diff, and a key and value split across
-  the lines of an Edit tool's `structuredPatch`; JSON-encoded tool results up to four encoding
-  levels, where an escaped line break now ends a bare value, so adjacent entries of an escaped `env`
-  or `launchctl print` listing are each redacted instead of every other one being stored; the names
+- Redaction recognizes credentials in displayed and written service configuration before storage
+  and export. Covered: `=>` pairs from `plutil -p` (also with `=\u003e`), including
+  `{length = …, bytes = 0x…}` data values and quoted values that hold unescaped quotes, and from
+  `launchctl print`, where a name that starts its line is a pair in any letter case
+  (`JevApiKey => …`) and its value is removed to the end of the line, also behind `cat -n`,
+  `grep -n` or `rg` gutters, quote marks, Markdown headings or list markers, with quotes, backslashes
+  or a leading `$` in it, and across the later lines of a value that holds line breaks; property-list
+  `<string>`, `<data>`, `<integer>` and `<real>` values under a secret `<key>`, raw or JSON-escaped,
+  behind `cat -n` numbers, `grep`/`rg` line-number and path gutters, diff markers or XML comments,
+  both lines of a changed value in a diff, and a key and value split across the lines of an Edit
+  tool's `structuredPatch`; the argument of a flag that ends with a credential word (`--api-key`,
+  `--db-password`), on a command line, in a quoted argument list or plist array, or on the line after
+  it in `launchctl print` and PlistBuddy output; `launchctl setenv`, PlistBuddy `Set`/`Add`,
+  `plutil -replace`/`-insert`, `defaults write` and `security add-generic-password -w`;
+  `PlistBuddy -c Print` lines for environment-style names (`SBA_DB_PASSWORD = …`); JSON-encoded tool
+  results up to four encoding levels, where each displayed line keeps its own encoding level, so an
+  escaped line break ends a value but a quote or backslash inside it does not; the names
   `passphrase` and `private_key` everywhere, and `credential` and environment-style `_KEY` names
-  such as `STRIPE_KEY` in configuration forms; HTML-safe and unicode-escaped markup; characters
-  glued to a quoted value; and the bare `apikey_<hex>` key shape, also after `%22` or a `\u000a`
-  escape. Previously such values reached event text, tool output, metadata, the full-text index and
-  Elasticsearch in plain text. Token counts such as `max_tokens: 4096` in text are no longer
-  redacted, and `token => token.trim()` lambdas are kept. Not covered: a credential shown without
-  its name, the part after the first space of an `env` value, and property-list pairs split by
-  merge-conflict markers; see [docs/operations.md](docs/operations.md#configuration). Code that
-  assigns to these names, such as `passphrase: cert.passphrase`, loses the value. Existing captures
-  are not rewritten; rotate any credential an agent displayed before this change.
+  such as `STRIPE_KEY` in configuration forms; HTML-safe and unicode-escaped markup, scanned again
+  after decoding without undoing what the first scan replaced; characters glued to a quoted value;
+  and the bare `apikey_<hex>` key shape where a token starts, and with at least 32 hexadecimal
+  digits wherever it starts, as after a binary property list's length byte. Previously such values
+  reached event text, tool output, metadata, the full-text index and Elasticsearch in plain text.
+  Durable capture's local sanitizer no longer splits `=>` into `=` and a value `>`, which hid the
+  pair from these rules: `=>` pairs reach the server whole, and a queued row holds them until
+  delivery. Token counts such as `max_tokens: 4096` in text are no longer redacted, and
+  `token => token.trim()` lambdas are kept. Not covered: a credential shown without its name, an
+  unquoted `NAME=value` or YAML value after its first space, a lowercase `name => value` inline in
+  prose, a `_KEY` name assigned a `$NAME` reference with `=` (an `env` listing), PlistBuddy Print
+  lines for `_KEY` or lowercase names, an unquoted list element after a flag (`defaults read`),
+  single-dash flags, and property-list pairs split by merge-conflict markers; see
+  [docs/operations.md](docs/operations.md#configuration). Code that assigns to these names, such as
+  `passphrase: cert.passphrase` or `SECRET_KEY = os.environ.get(…)` at the start of a line, loses
+  the value, and so does a documentation placeholder after a credential flag. Existing captures are
+  not rewritten; rotate any credential an agent displayed before this change.
 - Session summaries and direct meld previews pass stored text through export redaction before the
   summary backend receives it. Text stored before a redaction rule recognized its credential was
   sent as stored, by default to the external Codex wrapper; now each piece is redacted first, and

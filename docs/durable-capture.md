@@ -185,14 +185,17 @@ tail is dropped, and truncation is marked. Deep or excessively complex structure
 Unknown secrets may remain, benign text may be redacted, and redacted JSON key collisions can lose
 fields. Custom server redaction rules are not available to this local sanitizer and cannot protect
 the local queue before delivery. Neither are the server's displayed-configuration rules
-(`=>` pairs, JSON-escaped quotes and line breaks, property-list values, decoded HTML-safe escapes
-and the `apikey_<hex>` key shape) or its `passphrase` and environment-style `_KEY` names (see the
-[redaction policy](operations.md#configuration)): a queued row can hold such a value until it is
-delivered, and the server applies them on receipt. Queue privacy relies on normal local filesystem
-ownership; it is not encryption or protection against another process already running as the same
-user. Host
-clients' own input files, operating-system swap, and external logging are outside this hook's
-storage boundary.
+(`=>` pairs, JSON-escaped quotes and line breaks, property-list values, credential flags and write
+commands, decoded HTML-safe escapes and the `apikey_<hex>` key shape) or its `passphrase` and
+environment-style `_KEY` names (see the [redaction policy](operations.md#configuration)): a queued
+row can hold such a value until it is delivered, and the server applies them on receipt. The local
+sanitizer leaves `=>` (also `=\u003e`) alone rather than treating its `=` as an assignment, so a
+`launchctl print` or `plutil -p` pair reaches the server whole. Its own assignment rule can still
+replace part of a value, such as the first word of a `PlistBuddy -c Print` value; the server
+replaces the rest of that line when its rules cover the form. Queue privacy relies
+on normal local filesystem ownership; it is not encryption or protection against another process
+already running as the same user. Host clients' own input files, operating-system swap, and
+external logging are outside this hook's storage boundary.
 
 Input and sanitized HTTP payloads are bounded to 1 MiB. Acceptance stops at 10,000 rows or 64 MiB
 of logical queued data; SQLite page/index/journal overhead is additional. Quota checks and insertion
