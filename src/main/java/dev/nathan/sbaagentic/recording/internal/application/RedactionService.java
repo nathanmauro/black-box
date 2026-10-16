@@ -1,13 +1,27 @@
 package dev.nathan.sbaagentic.recording.internal.application;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParseException;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.JsonSerializable;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
@@ -16,28 +30,202 @@ import org.springframework.stereotype.Service;
 public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     private static final String REDACTED = "[REDACTED]";
-    // Anchored at token starts via lookbehind, with a bounded lazy prefix and a possessive
-    // suffix: greedy runs flanking the keyword alternation backtrack quadratically on long
-    // keyword-dense inputs (measured seconds of CPU per event), this shape stays linear.
-    private static final String SECRET_KEY =
-            "(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,40}?(?:api[_-]?key|secret[_-]?access[_-]?key|secret|token|passwd|password|client[_-]?secret|access[_-]?token|authorization)[A-Za-z0-9_-]*+";
+    // Words that make any name a credential name, in every form and letter case.
+    private static final String STRONG_SECRET_WORDS =
+            "api[_-]?key|secret|token|passwd|password|passphrase|authorization|private[_-]?key";
+    // Weaker signals: names containing "credential", and environment-style names ending in _KEY
+    // (STRIPE_KEY). Ordinary code uses both (credentials: 'include', ENTER_KEY = 13), so in text they
+    // count only in configuration forms; see weakNameCounts.
+    private static final Pattern STRONG_SECRET_NAME = Pattern.compile("(?i)" + STRONG_SECRET_WORDS);
+    private static final Pattern CREDENTIAL_WORD = Pattern.compile("(?i)credential");
+    private static final Pattern ENV_KEY_NAME = Pattern.compile("(?:[A-Z0-9]++_)++KEY");
+    // What a name loses before its credential words are compared (lowercase letters and digits stay).
+    private static final Pattern NOT_NAME_LETTER = Pattern.compile("[^a-z0-9]");
+    // The longest name the text rules read: a longer run of name characters is not a name.
+    private static final int MAX_NAME_CHARS = 256;
+    // The shortest name that holds a credential word (token) or is an environment-style _KEY name (A_KEY).
+    private static final int MIN_SECRET_NAME_CHARS = 5;
+    // A name in text: the whole run of name characters that starts a token, after a non-name character
+    // or a unicode-escaped quote (\\u0022, as System.Text.Json writes one), with the letter of a JSON
+    // escape glued before it (the t of \tSBA_DB_PASSWORD) counted as one more character. The run is
+    // possessive and capped, so a near miss costs one pass over it; which names are credential names is
+    // decided outside the pattern (see redactAssignments), wherever the credential word stands in the
+    // name.
+    private static final String NAME = "(?:(?<![A-Za-z0-9_-])|(?<=\\\\u00(?:22|27)))[A-Za-z0-9_-]{1,"
+            + (MAX_NAME_CHARS + 1) + "}+(?![A-Za-z0-9_-])";
     // Clip oversized unredacted input before applying any rules. Anything past this
     // scan budget is dropped rather than stored unscanned; replacements may expand it.
     private static final int MAX_SCAN_CHARS = 50_000;
     private static final String CLIP_MARKER = " …[truncated]";
-    // Bare or matching quoted keys, using the existing default assignment-name policy.
-    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)([\"']?)(" + SECRET_KEY + ")\\1(\\s*[=:]\\s*)");
+    // Backslashes before an escaped quote at the fourth JSON encoding level (\\\\\\\\\\\\\\\").
+    private static final int MAX_ESCAPE_RUN = 15;
+    // Bare, quoted, JSON-escaped quoted (\" through four encoding levels) or unicode-escaped quoted
+    // names followed by a separator. "=>" joins plutil -p, launchctl print, Ruby and PHP pairs, also
+    // with its > written as an HTML-safe escape (=\\u003e). Each run is bounded and possessive (a longer
+    // backslash run never ends in the quote), so a near miss costs constant work per start, and only a
+    // credential name's pair is redacted.
+    private static final Pattern ASSIGNMENT = Pattern.compile("(?i)(\\\\{1," + MAX_ESCAPE_RUN
+            + "}+(?:\"|u00(?:22|27))|[\"']|)(" + NAME + ")\\1(\\s*+(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
+            + "}+u003e|[=:])\\s*+)");
+    // Export's whole-leaf fallback starts at a quoted name, raw or JSON-escaped, and its colon.
+    private static final Pattern QUOTED_NAME_COLON =
+            Pattern.compile("(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{1," + (MAX_NAME_CHARS + 1) + "}+)\\\\*+[\"']\\s*+:");
+    // NAME = value with a space on each side, as PlistBuddy Print shows an environment entry.
+    private static final Pattern SPACED_EQUALS = Pattern.compile("[ \\t]++=[ \\t]++");
+    // Text between a property-list key and its value: anything but markup, so raw or JSON-escaped
+    // whitespace, JSON array separators, cat -n, grep and rg line-number or path gutters and diff
+    // markers all fit, plus up to four XML comments. Bounded and possessive: a near miss scans at
+    // most this far, and never past the next tag.
+    private static final String PLIST_GAP = "[^<]{0,1024}+(?:<!--[^>]{0,256}-->[^<]{0,1024}+){0,4}+";
+    private static final String PLIST_VALUE = "<(string|data|integer|real)>";
+    // What names a property-list value: <key>NAME</key> (or <\/key>, slash-escaped), or a flag that is
+    // one string of an argument array (<string>--api-key</string>), whose value is the next string.
+    private static final String PLIST_NAME = "(?:<key>([^<]{1,128})<\\\\{0," + MAX_ESCAPE_RUN
+            + "}/key>|<string>(--[A-Za-z0-9][A-Za-z0-9._-]{0,127})<\\\\{0," + MAX_ESCAPE_RUN + "}/string>)";
+    private static final Pattern PLIST_ENTRY = Pattern.compile(PLIST_NAME + PLIST_GAP + PLIST_VALUE);
+    // Another value element directly after a replaced one: the old and new lines of a diff.
+    private static final Pattern PLIST_NEXT_VALUE = Pattern.compile(PLIST_GAP + PLIST_VALUE);
+    // Text that ends with a name, or with a value this rule replaced, followed only by gap: its
+    // value may open the next element of the same list (an Edit tool's structuredPatch lines).
+    private static final Pattern PLIST_OPEN_TAIL = Pattern.compile("(?:" + PLIST_NAME
+            + "|<(?:string|data|integer|real)>\\[REDACTED]<\\\\{0," + MAX_ESCAPE_RUN
+            + "}/(?:string|data|integer|real)>)" + PLIST_GAP + "\\z");
+    // Longer text that starts with -- is not a flag.
+    private static final int MAX_FLAG_CHARS = 130;
+    // A command-line flag of at most MAX_FLAG_CHARS characters, read as one possessive run; isSecretFlag
+    // decides whether its argument is a credential. Text is searched for flags with FlagFinder, which
+    // finds the same flags reading each run of flag characters once.
+    private static final Pattern FLAG = Pattern.compile(
+            "(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{1," + (MAX_FLAG_CHARS - 2) + "}+(?![A-Za-z0-9._-])");
+    // Words that prose and help text put after a flag they name ("--api-key or --token", "the
+    // --token flag", "--api-key support"): English function words and the words that name a flag.
+    // Each counts only standing alone (see proseWord), never as the head of a longer argument.
+    private static final Set<String> PROSE_WORDS = Set.of(
+            "a", "also", "an", "and", "are", "as", "at", "be", "but", "by", "can", "does", "flag", "flags", "for",
+            "from", "has", "if", "in", "into", "is", "it", "must", "not", "of", "on", "option", "options", "or",
+            "prompt", "read", "should", "string", "support", "than", "that", "the", "then", "this", "to", "usage",
+            "value", "was", "when", "which", "will", "with", "without");
+    // The most letters in the word a help description starts with.
+    private static final int MAX_DESCRIPTION_WORD_CHARS = 20;
+    // An all-capital word of up to this many letters starts a description as an acronym (API, JWT).
+    private static final int MAX_ACRONYM_CHARS = 5;
+    // What help output and manual pages print between a flag and its description: an upper-case name
+    // without digits (API_KEY), a bracketed name (<token>, [PASSWORD], {key}) or a type name, as Go's
+    // flag packages print one (string, stringArray).
+    private static final Pattern METAVAR = Pattern.compile("[A-Z][A-Z_-]{0,63}+(?:\\.\\.\\.)?"
+            + "|<[^<>\\s]{1,64}+>(?:\\.\\.\\.)?|\\[[^\\[\\]\\s]{1,64}+]|\\{[^{}\\s]{1,64}+}"
+            + "|string|strings|stringArray|stringSlice|stringToString|int|uint|float|duration|bool|value|file|path"
+            + "|name");
+    // A line-number or path gutter at the start of a displayed line: cat -n, a file view's arrow, and
+    // grep -n or rg with or without a path (12:, path:12:, path-13-).
+    private static final Pattern GUTTER =
+            Pattern.compile("[ \\t]*+\\d{1,9}(?:\\t|→)|(?:[^\\s:]{1,200}?[:-])?\\d{1,9}[:-]");
+    // How much deeper than its flag a help description is indented, at least.
+    private static final int MIN_DESCRIPTION_INDENT = 2;
+    // Matched only against a flag of at most MAX_FLAG_CHARS, so its segment loop may backtrack.
+    private static final Pattern SECRET_FLAG_NAME = Pattern.compile("(?i)--(?:[a-z0-9]+[._-])*"
+            + "(?<!page[._-]|next[._-]|continuation[._-]|starting[._-]|sync[._-])"
+            + "(?:api[_-]?key|private[_-]?key|token|secret|passwd|password|passphrase|authorization)");
+    // The words a credential flag can end with: only a flag that ends with one is matched against the
+    // flag name pattern.
+    private static final List<String> SECRET_FLAG_ENDINGS =
+            List.of("key", "token", "secret", "passwd", "password", "passphrase", "authorization");
+    // Commands that write a credential into launchd's environment or a property list, followed by the
+    // whitespace before the value: launchctl setenv NAME VALUE, PlistBuddy Set or Add :path:NAME
+    // [type] VALUE, plutil -replace or -insert keypath -type VALUE, and defaults write domain NAME
+    // [-type] VALUE.
+    private static final Pattern WRITE_COMMAND = Pattern.compile("(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))(?:"
+            + "setenv[ \\t]++(?<setenv>[A-Za-z0-9_.-]{1,128}+)"
+            + "|(?i:set|add)[ \\t]++:(?<buddy>(?:[^:\\s\"'\\\\]{1,128}+:){0,16}+[^:\\s\"'\\\\]{1,128}+)"
+            + "(?:[ \\t]++(?:string|data|integer|real|bool|date)(?![A-Za-z0-9_-]))?+"
+            + "|-(?:replace|insert)[ \\t]++(?<plutil>[^\\s\"'\\\\]{1,512}+)"
+            + "[ \\t]++-(?:string|data|integer|float|bool|date|json|xml)(?![A-Za-z0-9_-])"
+            + "|defaults[ \\t]++write[ \\t]++[^\\s\"'\\\\]{1,256}+[ \\t]++(?<defaults>[^\\s\"'\\\\-][^\\s\"'\\\\]{0,127}+)"
+            + "(?:[ \\t]++-(?:string|data|int|integer|float|bool|boolean|date)(?![A-Za-z0-9_-]))?+"
+            + ")[ \\t]++");
+    // security add-generic-password (or add-internet-password) ... -w VALUE: the names of the command,
+    // where a name cannot continue before it; PasswordOptions finds its -w option.
+    private static final List<String> SECURITY_COMMANDS = List.of("add-generic-password", "add-internet-password");
+    // How far into its line after the command's name a security command's -w option may start.
+    private static final int MAX_SECURITY_OPTIONS_CHARS = 512;
+    // The lines that open and close a private key block, in any letter case.
+    private static final Pattern PRIVATE_KEY_BEGIN =
+            Pattern.compile("-----BEGIN [^-\\r\\n]*PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PRIVATE_KEY_END =
+            Pattern.compile("-----END [^-\\r\\n]*PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
+    // Provider keys shaped apikey_<hex>[_<hex>...]. Possessive runs keep this linear on long
+    // hexadecimal near misses; where a key may start is decided by keyBoundary.
+    private static final Pattern HEX_API_KEY = Pattern.compile("apikey_[0-9a-fA-F]++(?:_[0-9a-fA-F]++)*+");
+    // Fewer hexadecimal digits than this is an identifier such as apikey_cafe, not a credential.
+    private static final int MIN_API_KEY_HEX_DIGITS = 16;
+    // With this many, the shape is a credential whatever text it is glued to, such as the length byte
+    // that a binary property list stores before a string (Hapikey_...).
+    private static final int GLUED_API_KEY_HEX_DIGITS = 32;
+    // A token count, never a credential, has at most this many digits.
+    private static final int MAX_TOKEN_COUNT_DIGITS = 12;
+    // How far back a key may start its displayed line: indentation plus a line-number or path gutter.
+    private static final int MAX_LINE_PREFIX = 256;
+    // What may stand between the start of a displayed line and a key that starts it, once escaped tabs
+    // read as tabs: indentation after cat -n or file-view line numbers or grep and rg gutters with or
+    // without a path (path:12:, path-13-, 12:), then quote marks, Markdown headings, list or diff
+    // markers, and an opening code span or bold marker, whose closer then ends the value (group 1).
+    // Every blank run is possessive: no part of the pattern after one can start with a blank, and
+    // nested greedy blank runs backtracked quadratically on a long run of blanks before other text.
+    private static final Pattern LINE_PREFIX = Pattern.compile("[ \\t]*+(?:\\d{1,9}(?:\\t|→)"
+            + "|(?:[^\\s:]{1,200}?[:-])?(?:\\d{1,9}[:-])?)"
+            + "(?:[ \\t]*+(?:>|(?:#{1,6}|\\d{1,3}[.)]|[-+*])(?=[ \\t])))*+[ \\t]*+(`|\\*\\*|__)?");
+    // How far a launchctl print value may continue on following lines before a tab-indented entry.
+    private static final int MAX_CONTINUATION_CHARS = 4096;
+    // Text after an arrow that is searched for a lambda's own parameter name.
+    private static final int MAX_ARROW_BODY_CHARS = 256;
 
+    // Parses a stored tool input or output (see readStoredJson) and writes a redacted one.
+    private static final JsonMapper STORED_JSON = new JsonMapper();
+    // Stands in for the members and elements of a stored tool JSON after its budget, written as the
+    // clip marker without its leading space.
+    private static final Object CUT = new JsonSerializable.Base() {
+        @Override
+        public void serialize(JsonGenerator generator, SerializerProvider provider) throws IOException {
+            generator.writeString(CLIP_MARKER.strip());
+        }
+
+        @Override
+        public void serializeWithType(
+                JsonGenerator generator, SerializerProvider provider, TypeSerializer typeSerializer)
+                throws IOException {
+            serialize(generator, provider);
+        }
+    };
+
+    private static final List<RedactionRule> BUILT_IN_RULES = builtInRules();
     private final List<RedactionRule> exportRules = exportRules();
 
     private static List<RedactionRule> exportRules() {
-        List<RedactionRule> result = new ArrayList<>(builtInRules());
+        List<RedactionRule> result = new ArrayList<>(credentialRules());
         // JSON embedded in a text leaf may be escaped more than once. Conservatively
         // remove the rest of that leaf after a quoted credential key; do not guess
-        // nested string boundaries and accidentally retain part of a secret.
-        result.add(literal(SECRET_KEY + "\\\\*[\"']\\s*:\\s*.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL));
+        // nested string boundaries and accidentally retain part of a secret. Weak names
+        // ("credentials", STRIPE_KEY) are left to the exact rules: "WebAuthn.credentialAdded":
+        // must not cost a model the rest of a document.
+        result.add(RedactionService::redactAfterQuotedCredentialName);
+        // Last, so a quoted apikey_<hex> member name still reaches the rule above.
+        result.add(RedactionService::redactHexApiKeys);
 
         return result;
+    }
+
+    // Replaces the rest of the text from the first quoted name that holds a strong credential word and
+    // is followed by a colon, the name included.
+    private static String redactAfterQuotedCredentialName(String text) {
+        Matcher matcher = QUOTED_NAME_COLON.matcher(text);
+        while (matcher.find()) {
+            if (STRONG_SECRET_NAME.matcher(matcher.group(1)).find()) {
+
+                return text.substring(0, matcher.start()) + REDACTED;
+            }
+        }
+
+        return text;
     }
 
     @Override
@@ -49,9 +237,27 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return redactDefaults(text, exportRules);
     }
 
-    // Match the durable hook's conservative, separator-insensitive secret-key policy.
-    private static final List<String> SECRET_KEY_WORDS =
-            List.of("apikey", "secret", "token", "passwd", "password", "authorization", "credential", "privatekey");
+    @Override
+    public String redactForSummary(String text) {
+        if (text == null)
+
+            return null;
+
+        return redactDefaults(text, BUILT_IN_RULES);
+    }
+
+    // The structured, separator-insensitive secret-key policy for member names and property-list
+    // keys: the durable hook's words plus passphrase, and environment-style _KEY names.
+    private static final List<String> SECRET_KEY_WORDS = List.of(
+            "apikey",
+            "secret",
+            "token",
+            "passwd",
+            "password",
+            "passphrase",
+            "authorization",
+            "credential",
+            "privatekey");
 
     private final boolean enabled;
     private final boolean defaultRules;
@@ -61,7 +267,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         this.enabled = properties.isRedactEnabled();
         List<String> customPatterns = properties.getRedactPatterns();
         this.defaultRules = customPatterns.isEmpty();
-        this.rules = defaultRules ? builtInRules() : customRules(customPatterns);
+        this.rules = defaultRules ? BUILT_IN_RULES : customRules(customPatterns);
     }
 
     @Override
@@ -83,16 +289,84 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     private static String redactDefaults(String text, List<RedactionRule> rules) {
-        String clipped = clipScalar(text);
-        boolean truncated = text.length() > MAX_SCAN_CHARS;
+        // A text that already ends with the marker, such as a stored text that ingestion clipped, is
+        // clipped once: its marker stays whole and last, and only the text before it is scanned.
+        boolean marked = text.endsWith(CLIP_MARKER);
+        String body = marked ? text.substring(0, text.length() - CLIP_MARKER.length()) : text;
+        boolean truncated = marked || body.length() > MAX_SCAN_CHARS;
         // The marker is not part of the value. An unclosed quoted credential at the scan
         // boundary must consume the retained value without swallowing that marker.
-        String result = truncated ? clipped.substring(0, clipped.length() - CLIP_MARKER.length()) : clipped;
+        String scanned = body.length() > MAX_SCAN_CHARS ? body.substring(0, clipLength(body)) : body;
+        String result = applyRules(scanned, rules);
+        // HTML-safe JSON escapes for < and > (u003c and u003e after a backslash) and unicode-escaped
+        // quotes can hide a whole credential pair. Scan the first result again with those escapes
+        // decoded: spans it replaced stay replaced, so this scan can only add replacements, and its
+        // result is kept, decoded, only when it does.
+        String decoded = decodeEscapedMarkup(result);
+        if (decoded != null) {
+            String decodedResult = applyRules(decoded, rules);
+            if (!decodedResult.equals(decoded)) {
+                result = decodedResult;
+            }
+        }
+
+        return result + (truncated ? CLIP_MARKER : "");
+    }
+
+    private static String applyRules(String text, List<RedactionRule> rules) {
+        String result = text;
         for (RedactionRule rule : rules) {
             result = rule.redact(result);
         }
 
-        return result + (truncated ? CLIP_MARKER : "");
+        return result;
+    }
+
+    /**
+     * The text with each escape of {@code <}, {@code >}, {@code "} or {@code '} as a backslash (one to
+     * fifteen of them) and u003c, u003e, u0022 or u0027 (either hex case) replaced by that
+     * character, or null when it has none.
+     */
+    private static String decodeEscapedMarkup(String text) {
+        StringBuilder decoded = null;
+        int copied = 0;
+        for (int at = text.indexOf("u00"); at >= 0 && at + 5 <= text.length(); at = text.indexOf("u00", at + 1)) {
+            char character = markupCharacter(text.charAt(at + 3), text.charAt(at + 4));
+            int escapeStart = at;
+            while (escapeStart > copied && at - escapeStart < MAX_ESCAPE_RUN && text.charAt(escapeStart - 1) == '\\') {
+                escapeStart--;
+            }
+            if (character == 0 || escapeStart == at) {
+                continue;
+            }
+            if (decoded == null) {
+                decoded = new StringBuilder(text.length());
+            }
+            decoded.append(text, copied, escapeStart).append(character);
+            copied = at + 5;
+        }
+
+        return decoded == null
+                ? null
+                : decoded.append(text, copied, text.length()).toString();
+    }
+
+    private static char markupCharacter(char high, char low) {
+        char lower = Character.toLowerCase(low);
+        if (high == '3' && lower == 'c') {
+
+            return '<';
+        }
+        if (high == '3' && lower == 'e') {
+
+            return '>';
+        }
+        if (high == '2' && low == '2') {
+
+            return '"';
+        }
+
+        return high == '2' && low == '7' ? '\'' : 0;
     }
 
     private static String clipScalar(String text) {
@@ -100,18 +374,29 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return text;
         }
+
+        return text.substring(0, clipLength(text)) + CLIP_MARKER;
+    }
+
+    // How much of a text longer than the scan budget is kept: the budget, less half a surrogate pair.
+    private static int clipLength(String text) {
         int keep = MAX_SCAN_CHARS;
         if (Character.isHighSurrogate(text.charAt(keep - 1)) && Character.isLowSurrogate(text.charAt(keep))) {
             keep--;
         }
 
-        return text.substring(0, keep) + CLIP_MARKER;
+        return keep;
     }
 
     /** Whether {@link #redact(String)} will clip this scalar before scanning it. */
     public boolean clips(String text) {
+        if (!enabled || text == null) {
 
-        return enabled && text != null && text.length() > MAX_SCAN_CHARS;
+            return false;
+        }
+        int scanned = defaultRules && text.endsWith(CLIP_MARKER) ? text.length() - CLIP_MARKER.length() : text.length();
+
+        return scanned > MAX_SCAN_CHARS;
     }
 
     @Override
@@ -120,9 +405,193 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return value;
         }
+
+        return redactTree(value, this::redact, defaultRules, false);
+    }
+
+    @Override
+    public String redactJsonForSummary(String json) {
+
+        // The scan budget of one stored text.
+        return redactJsonForSummary(json, MAX_SCAN_CHARS);
+    }
+
+    @Override
+    public String redactJsonForSummary(String json, int maxChars) {
+        if (json == null) {
+
+            return null;
+        }
+        StoredJson stored = readStoredJson(json, maxChars);
+        if (stored == null) {
+
+            // Not one JSON value, such as text stored before tool payloads were JSON.
+            return redactForSummary(json);
+        }
+        Object redacted = redactTree(stored.value(), RedactionService::redactStoredText, true, true);
+        if (!stored.cut() && Objects.equals(redacted, stored.value())) {
+
+            return json;
+        }
+        try {
+
+            return STORED_JSON.writeValueAsString(redacted);
+        } catch (JsonProcessingException ex) {
+
+            return redactForSummary(json);
+        }
+    }
+
+    private static String redactStoredText(String text) {
+
+        return redactDefaults(text, BUILT_IN_RULES);
+    }
+
+    /** A stored JSON value as Jackson reads one, and whether it was cut at its budget. */
+    private record StoredJson(Object value, boolean cut) {}
+
+    /**
+     * Reads stored JSON as Jackson reads an untyped value, in document order, until {@code maxChars}
+     * characters of names, strings and other values have been read, each member, value, array and
+     * object counting as at least one: a member or element that starts after that is not read, and
+     * {@link #CUT} stands in for it and for everything after it, a member keeping its name. Nothing
+     * after a cut is parsed, so the work stays within the budget and the one string that crosses it,
+     * also for JSON made of empty strings, names, arrays or objects. Null when the text is not one
+     * JSON value.
+     */
+    private static StoredJson readStoredJson(String json, int maxChars) {
+        try (JsonParser parser = STORED_JSON.createParser(json)) {
+            if (parser.nextToken() == null) {
+
+                return null;
+            }
+            JsonBudget budget = new JsonBudget(maxChars);
+            Object value = readJsonValue(parser, budget);
+            if (!budget.cut && parser.nextToken() != null) {
+
+                return null;
+            }
+
+            return new StoredJson(value, budget.cut);
+        } catch (IOException ex) {
+
+            return null;
+        }
+    }
+
+    private static final class JsonBudget {
+        private final long max;
+        private long read;
+        private boolean cut;
+
+        JsonBudget(int max) {
+            this.max = max;
+        }
+
+        // Whether the next member or element starts after the budget; it is then cut.
+        boolean cuts() {
+            cut = read >= max;
+
+            return cut;
+        }
+
+        void read(int chars) {
+            read += chars;
+        }
+    }
+
+    private static Object readJsonValue(JsonParser parser, JsonBudget budget) throws IOException {
+        JsonToken token = parser.currentToken();
+        if (token == JsonToken.START_OBJECT) {
+            budget.read(1);
+            Map<String, Object> members = new LinkedHashMap<>();
+            for (String name = parser.nextFieldName(); name != null; name = parser.nextFieldName()) {
+                if (budget.cuts()) {
+                    members.put(name, CUT);
+
+                    return members;
+                }
+                budget.read(name.length() + 1);
+                parser.nextToken();
+                members.put(name, readJsonValue(parser, budget));
+                if (budget.cut) {
+
+                    return members;
+                }
+            }
+            requireToken(parser, JsonToken.END_OBJECT);
+
+            return members;
+        }
+        if (token == JsonToken.START_ARRAY) {
+            budget.read(1);
+            List<Object> elements = new ArrayList<>();
+            for (JsonToken next = parser.nextToken(); next != JsonToken.END_ARRAY; next = parser.nextToken()) {
+                requireValue(parser, next);
+                if (budget.cuts()) {
+                    elements.add(CUT);
+
+                    return elements;
+                }
+                elements.add(readJsonValue(parser, budget));
+                if (budget.cut) {
+
+                    return elements;
+                }
+            }
+
+            return elements;
+        }
+        requireValue(parser, token);
+        budget.read(Math.max(1, parser.getTextLength()));
+
+        // The values Jackson's untyped reader builds.
+        return switch (token) {
+            case VALUE_STRING -> parser.getText();
+            case VALUE_NUMBER_INT -> parser.getNumberValue();
+            case VALUE_NUMBER_FLOAT -> floatingPoint(parser);
+            case VALUE_TRUE -> Boolean.TRUE;
+            case VALUE_FALSE -> Boolean.FALSE;
+            default -> null;
+        };
+    }
+
+    private static Object floatingPoint(JsonParser parser) throws IOException {
+        JsonParser.NumberTypeFP type = parser.getNumberTypeFP();
+        if (type == JsonParser.NumberTypeFP.BIG_DECIMAL) {
+
+            return parser.getDecimalValue();
+        }
+
+        return type == JsonParser.NumberTypeFP.FLOAT32 ? (Object) parser.getFloatValue() : parser.getDoubleValue();
+    }
+
+    private static void requireToken(JsonParser parser, JsonToken expected) throws IOException {
+        if (parser.currentToken() != expected) {
+            throw new JsonParseException(parser, "Expected " + expected);
+        }
+    }
+
+    private static void requireValue(JsonParser parser, JsonToken token) throws IOException {
+        if (token == null
+                || !token.isScalarValue() && !token.isStructStart()
+                || token == JsonToken.VALUE_EMBEDDED_OBJECT) {
+            throw new JsonParseException(parser, "Expected a JSON value");
+        }
+    }
+
+    /**
+     * Redacts each string of a JSON-shaped value with {@code leaf}, member names included. With
+     * {@code structured}, a member whose name is a secret key loses its whole value, and a
+     * property-list name that one list element leaves open names the value that starts the next. With
+     * {@code acrossElements}, a list is also read across its elements (see
+     * {@link #redactAcrossElements}).
+     */
+    private static Object redactTree(
+            Object value, UnaryOperator<String> leaf, boolean structured, boolean acrossElements) {
         if (value instanceof String text) {
 
-            return redact(text);
+            return leaf.apply(text);
         }
         if (value instanceof Map<?, ?> map) {
             Map<Object, Object> redacted = new LinkedHashMap<>();
@@ -131,8 +600,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 Object key = entry.getKey();
                 boolean secretValue = false;
                 if (key instanceof String name) {
-                    secretValue = defaultRules && isSecretKey(name);
-                    String safeName = redact(name);
+                    secretValue = structured && isSecretKey(name);
+                    String safeName = leaf.apply(name);
                     if (!safeName.equals(name)) {
                         String baseName = safeName;
                         // Reserve original names, including ones not visited yet, so a
@@ -143,15 +612,35 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     }
                     key = safeName;
                 }
-                redacted.put(key, secretValue ? REDACTED : redactDeep(entry.getValue()));
+                redacted.put(
+                        key, secretValue ? REDACTED : redactTree(entry.getValue(), leaf, structured, acrossElements));
             }
 
             return redacted;
         }
         if (value instanceof List<?> list) {
             List<Object> redacted = new ArrayList<>(list.size());
+            // A property-list name and its value can arrive as separate list elements, such as the
+            // lines of an Edit tool's structuredPatch: the open name carries over to the next one.
+            String openName = null;
             for (Object item : list) {
-                redacted.add(redactDeep(item));
+                Object safe = redactTree(item, leaf, structured, acrossElements);
+                if (structured && safe instanceof String line) {
+                    String leading = openName == null ? line : redactLeadingPropertyListValue(line, openName);
+                    String tailName = openSecretMember(leading);
+                    if ("".equals(tailName) && openName != null && isFlag(openName)) {
+                        // A flag's replaced value: the chain still stops at the next flag.
+                        tailName = openName;
+                    }
+                    openName = tailName != null ? tailName : isGapOnly(leading) ? openName : null;
+                    safe = leading;
+                } else {
+                    openName = null;
+                }
+                redacted.add(safe);
+            }
+            if (acrossElements) {
+                redactAcrossElements(redacted);
             }
 
             return redacted;
@@ -160,54 +649,483 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return value;
     }
 
-    private static boolean isSecretKey(String key) {
-        String normalized = key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    /**
+     * What a list shows only across its string elements: a credential flag that is a whole element
+     * takes the next element as its argument ({@code ["--api-key", "…"]}) unless that is another
+     * flag, and a private key block can span consecutive string elements, as the lines of a patch do,
+     * from the element that holds its BEGIN line through the one that holds its END line, or through
+     * the last element read when the list was cut at its budget before an END line. Each search for an
+     * END line covers elements no earlier search did, so the work stays linear.
+     */
+    private static void redactAcrossElements(List<Object> items) {
+        // No END line that a BEGIN line before this element could reach.
+        int searchedThrough = 0;
+        for (int index = 0; index + 1 < items.size(); index++) {
+            if (!(items.get(index) instanceof String element)) {
+                continue;
+            }
+            if (items.get(index + 1) instanceof String next
+                    && isSecretFlag(element)
+                    && FLAG.matcher(element).matches()
+                    && !next.isEmpty()
+                    && !startsFlag(next, 0)) {
+                items.set(++index, REDACTED);
+                continue;
+            }
+            Matcher begin = PRIVATE_KEY_BEGIN.matcher(element);
+            if (index < searchedThrough
+                    || !begin.find()
+                    || PRIVATE_KEY_END.matcher(element).find(begin.end())) {
+                continue;
+            }
+            int last = index + 1;
+            Matcher end = null;
+            while (end == null && last < items.size() && items.get(last) instanceof String line) {
+                Matcher candidate = PRIVATE_KEY_END.matcher(line);
+                end = candidate.find() ? candidate : null;
+                last += end == null ? 1 : 0;
+            }
+            if (end == null && last < items.size() && items.get(last) == CUT) {
+                // The block runs on past the budget: what was read of it is replaced.
+                items.set(index, element.substring(0, begin.start()) + REDACTED);
+                for (int inside = index + 1; inside < last; inside++) {
+                    items.set(inside, REDACTED);
+                }
 
-        return SECRET_KEY_WORDS.stream().anyMatch(normalized::contains);
+                return;
+            }
+            if (end == null) {
+                searchedThrough = last;
+                continue;
+            }
+            items.set(index, element.substring(0, begin.start()) + REDACTED);
+            for (int inside = index + 1; inside < last; inside++) {
+                items.set(inside, REDACTED);
+            }
+            items.set(last, REDACTED + ((String) items.get(last)).substring(end.end()));
+            // The element that holds the END line may open another block.
+            index = last - 1;
+        }
+    }
+
+    private static boolean isSecretKey(String key) {
+        String normalized =
+                NOT_NAME_LETTER.matcher(key.toLowerCase(Locale.ROOT)).replaceAll("");
+
+        return SECRET_KEY_WORDS.stream().anyMatch(normalized::contains)
+                || ENV_KEY_NAME.matcher(key.strip()).matches();
+    }
+
+    // A command-line flag that takes a credential: its name ends with a credential word, as in
+    // --api-key, --db-password, --client-secret and --auth-token. A flag that names where a credential
+    // is (--secret-id, --token-file, --api-key-env), reads one (--password-stdin) or pages results
+    // (--next-token) does not, and neither does a token limit (--max-tokens).
+    private static boolean isSecretFlag(String flag) {
+
+        return flag.length() <= MAX_FLAG_CHARS
+                && endsWithSecretWord(flag)
+                && SECRET_FLAG_NAME.matcher(flag).matches();
+    }
+
+    private static boolean endsWithSecretWord(String flag) {
+        for (String ending : SECRET_FLAG_ENDINGS) {
+            if (flag.regionMatches(true, flag.length() - ending.length(), ending, 0, ending.length())) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isFlag(String name) {
+
+        return name.startsWith("-");
     }
 
     private static List<RedactionRule> builtInRules() {
+        List<RedactionRule> result = new ArrayList<>(credentialRules());
+        result.add(RedactionService::redactHexApiKeys);
+
+        return List.copyOf(result);
+    }
+
+    private static List<RedactionRule> credentialRules() {
 
         return List.of(
-                literal(
-                        "-----BEGIN [^-\\r\\n]*PRIVATE KEY-----.*?-----END [^-\\r\\n]*PRIVATE KEY-----",
-                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
-                literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
+                RedactionService::redactPrivateKeyBlocks,
+                literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", "AKIA", "ASIA", "A3T"),
+                RedactionService::redactPropertyListValues,
                 RedactionService::redactAssignments,
+                RedactionService::redactSecretFlags,
+                RedactionService::redactWriteCommands,
                 new RegexRule(
-                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"), matcher -> "Bearer " + REDACTED),
-                literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
-                literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", 0),
-                literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", 0));
+                        Pattern.compile("(?i)bearer\\s+[A-Za-z0-9._~+/=-]{16,}"),
+                        matcher -> "Bearer " + REDACTED,
+                        text -> containsIgnoreCase(text, "bearer")),
+                literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", "ghp_", "gho_", "ghu_", "ghs_", "ghr_"),
+                literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", "sk-"),
+                literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", "xox"));
+    }
+
+    /**
+     * Replaces each complete private key block, from a BEGIN line through the first END line after it.
+     * When no END line follows a BEGIN line, none follows a later one either, so the scan stops there
+     * rather than searching the rest of the text again for every later BEGIN line.
+     */
+    private static String redactPrivateKeyBlocks(String text) {
+        Matcher begin = PRIVATE_KEY_BEGIN.matcher(text);
+        Matcher end = PRIVATE_KEY_END.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && begin.find(searchFrom) && end.find(begin.end())) {
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, begin.start()).append(REDACTED);
+            copiedThrough = end.end();
+            searchFrom = end.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    /**
+     * Replaces each provider key shaped apikey_<hex>[_<hex>...] that has at least 16 hexadecimal
+     * digits and starts a token (see {@link #keyBoundary}), or at least 32 wherever it starts.
+     * Characters glued after the hexadecimal run stay, as in apikey_...PID or apikey_...ready.
+     */
+    private static String redactHexApiKeys(String text) {
+        Matcher matcher = HEX_API_KEY.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && matcher.find(searchFrom)) {
+            int digits = hexDigits(matcher.group());
+            if (digits < GLUED_API_KEY_HEX_DIGITS
+                    && (digits < MIN_API_KEY_HEX_DIGITS || !keyBoundary(text, matcher.start()))) {
+                // Another key may start inside this near miss (apikey_apikey_<hex>).
+                searchFrom = matcher.start() + 1;
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, matcher.start()).append(REDACTED);
+            copiedThrough = matcher.end();
+            searchFrom = matcher.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // Whether a key starting here starts a token: after a non-word character, a JSON-escaped line break
+    // or tab (\n), a percent-encoded byte (%22, %3D) or a backslash-u escape (u000a after a backslash).
+    private static boolean keyBoundary(String text, int start) {
+        if (start == 0 || !isWordChar(text.charAt(start - 1))) {
+
+            return true;
+        }
+        char previous = text.charAt(start - 1);
+        if (start >= 2 && text.charAt(start - 2) == '\\' && "nrt".indexOf(previous) >= 0) {
+
+            return true;
+        }
+        if (start >= 3 && text.charAt(start - 3) == '%' && isHexDigit(text.charAt(start - 2)) && isHexDigit(previous)) {
+
+            return true;
+        }
+
+        return start >= 6
+                && text.charAt(start - 6) == '\\'
+                && text.charAt(start - 5) == 'u'
+                && isHexDigit(text.charAt(start - 4))
+                && isHexDigit(text.charAt(start - 3))
+                && isHexDigit(text.charAt(start - 2))
+                && isHexDigit(previous);
+    }
+
+    private static boolean isWordChar(char value) {
+
+        return value == '_' || value < 128 && Character.isLetterOrDigit(value);
+    }
+
+    private static boolean isHexDigit(char value) {
+
+        return Character.digit(value, 16) >= 0 && value < 128;
+    }
+
+    private static int hexDigits(String apiKey) {
+        int digits = 0;
+        for (int index = "apikey_".length(); index < apiKey.length(); index++) {
+            if (apiKey.charAt(index) != '_') {
+                digits++;
+            }
+        }
+
+        return digits;
+    }
+
+    /**
+     * Replaces the {@code <string>}, {@code <data>}, {@code <integer>} or {@code <real>} value of a
+     * property-list member whose key name follows the structured secret-key policy, or of a
+     * credential flag's argument, keeping both tags, and any value element that directly follows it
+     * (the old and new lines of a diff; for a flag, up to the next flag). An unclosed value consumes
+     * the rest of the scanned scalar. A token count keeps its integer.
+     */
+    private static String redactPropertyListValues(String text) {
+        Matcher matcher = PLIST_ENTRY.matcher(text);
+        StringBuilder redacted = new StringBuilder();
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && matcher.find(searchFrom)) {
+            String key = matcher.group(1);
+            String name = key != null ? key : matcher.group(2);
+            String tag = matcher.group(3);
+            // The value element may itself name another member, such as the next flag of an array.
+            searchFrom = matcher.start(3) - 1;
+            boolean secret = key != null ? isSecretKey(name) : isSecretFlag(name);
+            if (!secret || keepsTokenCount(text, matcher.end(), name, tag)) {
+                continue;
+            }
+            if (isFlag(name) && startsFlag(text, matcher.end())) {
+                // A flag without an argument, directly followed by the next flag.
+                continue;
+            }
+            copiedThrough = redactValues(text, matcher.end(), tag, isFlag(name), redacted, copiedThrough);
+            searchFrom = copiedThrough;
+        }
+
+        return redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    /** Replaces a leading value element of a list item whose previous items left this name open. */
+    private static String redactLeadingPropertyListValue(String text, String openName) {
+        Matcher value = PLIST_NEXT_VALUE.matcher(text);
+        if (!value.lookingAt()
+                || keepsTokenCount(text, value.end(), openName, value.group(1))
+                || isFlag(openName) && startsFlag(text, value.end())) {
+
+            return text;
+        }
+        StringBuilder redacted = new StringBuilder();
+        int copiedThrough = redactValues(text, value.end(), value.group(1), isFlag(openName), redacted, 0);
+
+        return redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // Appends text up to each replaced value, starting with the one at valueStart, and returns
+    // where copying resumes: after the last value replaced. After a flag, a value that is itself a
+    // flag ends the chain.
+    private static int redactValues(
+            String text, int valueStart, String tag, boolean flag, StringBuilder redacted, int copiedThrough) {
+        int start = valueStart;
+        String element = tag;
+        while (true) {
+            int valueEnd = closingTag(text, start, element);
+            redacted.append(text, copiedThrough, start).append(REDACTED);
+            copiedThrough = valueEnd;
+            int afterTag = afterClosingTag(text, valueEnd, element);
+            Matcher next = PLIST_NEXT_VALUE.matcher(text);
+            if (afterTag < 0
+                    || !next.region(afterTag, text.length()).lookingAt()
+                    || flag && startsFlag(text, next.end())) {
+
+                return copiedThrough;
+            }
+            start = next.end();
+            element = next.group(1);
+        }
+    }
+
+    private static boolean startsFlag(String text, int at) {
+
+        return at < text.length() && text.charAt(at) == '-';
+    }
+
+    // The name, or "" after a replaced value, when text ends with an open secret member; else null.
+    private static String openSecretMember(String text) {
+        if (text.indexOf('<') < 0) {
+
+            return null;
+        }
+        Matcher tail = PLIST_OPEN_TAIL.matcher(text);
+        if (!tail.find()) {
+
+            return null;
+        }
+        String key = tail.group(1);
+        String flag = tail.group(2);
+        if (key == null && flag == null) {
+
+            return "";
+        }
+
+        return key != null ? isSecretKey(key) ? key : null : isSecretFlag(flag) ? flag : null;
+    }
+
+    private static boolean isGapOnly(String text) {
+
+        return text.length() <= 1024 && text.indexOf('<') < 0;
+    }
+
+    // A token count such as <key>tokenCount</key><integer>42</integer> is not a credential.
+    private static boolean keepsTokenCount(String text, int valueStart, String key, String tag) {
+        if (!"integer".equals(tag) || !countsTokens(key)) {
+
+            return false;
+        }
+        int end = valueStart;
+        while (end < text.length() && end - valueStart <= MAX_TOKEN_COUNT_DIGITS && isAsciiDigit(text.charAt(end))) {
+            end++;
+        }
+
+        return end > valueStart && end - valueStart <= MAX_TOKEN_COUNT_DIGITS && afterClosingTag(text, end, tag) >= 0;
+    }
+
+    // A name that counts tokens (max_tokens, tokenCount) and carries no other secret word.
+    private static boolean countsTokens(String name) {
+        String normalized =
+                NOT_NAME_LETTER.matcher(name.toLowerCase(Locale.ROOT)).replaceAll("");
+
+        return (normalized.contains("tokens") || normalized.contains("tokencount"))
+                && !isSecretKey(normalized.replace("token", ""));
+    }
+
+    // The next </tag> (or slash-escaped <\/tag>), else the end of the text. Scanning stops at the
+    // first closing tag, so successive values never rescan the same span.
+    private static int closingTag(String text, int from, String tag) {
+        for (int open = text.indexOf('<', from); open >= 0; open = text.indexOf('<', open + 1)) {
+            if (afterClosingTag(text, open, tag) >= 0) {
+
+                return open;
+            }
+        }
+
+        return text.length();
+    }
+
+    // The index after the closing tag that starts at open, else -1.
+    private static int afterClosingTag(String text, int open, String tag) {
+        if (open >= text.length() || text.charAt(open) != '<') {
+
+            return -1;
+        }
+        int slash = open + 1 + Math.min(backslashRun(text, open + 1), MAX_ESCAPE_RUN);
+        int end = slash + 1 + tag.length();
+        boolean closes = text.startsWith("/", slash) && text.startsWith(tag, slash + 1) && text.startsWith(">", end);
+
+        return closes ? end + 1 : -1;
+    }
+
+    private static int backslashRun(String text, int from) {
+        int end = from;
+        while (end < text.length() && text.charAt(end) == '\\') {
+            end++;
+        }
+
+        return end - from;
     }
 
     private static List<RedactionRule> customRules(List<String> patterns) {
         List<RedactionRule> customRules = new ArrayList<>(patterns.size());
         for (String pattern : patterns) {
-            customRules.add(literal(pattern, 0));
+            customRules.add(new RegexRule(Pattern.compile(pattern), matcher -> REDACTED, text -> true));
         }
 
         return customRules;
     }
 
-    private static RedactionRule literal(String pattern, int flags) {
+    // A pattern whose every match holds one of these strings: text without any of them is left as it is
+    // without being searched.
+    private static RedactionRule literal(String pattern, String... required) {
 
-        return new RegexRule(Pattern.compile(pattern, flags), matcher -> REDACTED);
+        return new RegexRule(Pattern.compile(pattern), matcher -> REDACTED, text -> {
+            for (String literal : required) {
+                if (text.contains(literal)) {
+
+                    return true;
+                }
+            }
+
+            return false;
+        });
+    }
+
+    // Whether the word stands in the text in any letter case; its first letter is compared first.
+    private static boolean containsIgnoreCase(String text, String word) {
+        char lower = Character.toLowerCase(word.charAt(0));
+        char upper = Character.toUpperCase(lower);
+        for (int at = 0; at + word.length() <= text.length(); at++) {
+            char current = text.charAt(at);
+            if ((current == lower || current == upper) && text.regionMatches(true, at, word, 0, word.length())) {
+
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static String redactAssignments(String text) {
-        Matcher matcher = ASSIGNMENT.matcher(text);
+        Matcher matcher = scanner(ASSIGNMENT, text);
+        Lines lines = new Lines(text);
         StringBuilder redacted = new StringBuilder();
         int copiedThrough = 0;
         int searchFrom = 0;
         // Advance beyond each selected value before looking for another key. Quoted
         // values may contain spaces, escaped quotes or text that resembles another key.
-        while (matcher.find(searchFrom)) {
+        while (findAssignment(matcher, text, searchFrom)) {
             int valueStart = matcher.end();
             if (valueStart == text.length()) {
                 break;
             }
-            AssignmentValue value = assignmentValue(text, valueStart);
+            String name = keyName(text, matcher);
+            String separator = matcher.group(3);
+            boolean arrow = separator.contains("=>")
+                    || separator.toLowerCase(Locale.ROOT).contains("u003e");
+            // The shortest credential names are token and A_KEY.
+            boolean sized = name.length() >= MIN_SECRET_NAME_CHARS && name.length() <= MAX_NAME_CHARS;
+            boolean strong = sized && STRONG_SECRET_NAME.matcher(name).find();
+            boolean weak = !strong && sized && weakSecretName(name);
+            if (!strong && !(weak && weakNameCounts(text, name, matcher, arrow))) {
+                // Ordinary code, such as credentials: 'include' or ENTER_KEY = 13.
+                searchFrom = valueStart;
+                continue;
+            }
+            boolean bareKey = matcher.group(1).isEmpty();
+            // PlistBuddy Print shows an environment entry as NAME = value through the end of its line.
+            // Code assigns lowercase names the same way (token = { value: "" }), so those keep the
+            // bare value.
+            boolean spaced = strong
+                    && bareKey
+                    && isEnvironmentName(name)
+                    && SPACED_EQUALS.matcher(separator).matches();
+            LineStart line = arrow || spaced ? lineStart(text, keyStart(text, matcher), lines) : LineStart.NONE;
+            if (arrow && !arrowPair(text, matcher, valueStart, name, line)) {
+                // A lambda or arrow-function parameter such as token => token.trim().
+                searchFrom = valueStart;
+                continue;
+            }
+            int countEnd = tokenCountEnd(text, matcher, valueStart);
+            if (countEnd > valueStart) {
+                // Keep only the digits; whatever follows them is scanned as ordinary text.
+                searchFrom = countEnd;
+                continue;
+            }
+            // launchctl print shows an environment value unquoted, through the end of its line, and
+            // plutil -p does not escape a quote inside a quoted value.
+            boolean wholeLine = line.starts() && (spaced || bareKey || isEnvironmentName(name));
+            boolean lastQuote = arrow && line.starts() && !bareKey;
+            boolean continues = arrow && wholeLine && bareKey && line.tabsOnly();
+            int level = line.starts() ? line.level() : lineBreakRun(text, matcher);
+            AssignmentValue value =
+                    assignmentValue(text, valueStart, level, wholeLine, lastQuote, continues, line.closer());
             searchFrom = value.end();
             if (searchFrom == valueStart) {
                 continue;
@@ -219,8 +1137,271 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return redacted.append(text, copiedThrough, text.length()).toString();
     }
 
-    private static AssignmentValue assignmentValue(String text, int start) {
+    // A name that only the weaker signals make a credential name: "credential" in any letter case, or
+    // an environment-style name ending in _KEY.
+    private static boolean weakSecretName(String name) {
+
+        return CREDENTIAL_WORD.matcher(name).find()
+                || ENV_KEY_NAME.matcher(name).matches();
+    }
+
+    /**
+     * Whether a name that is a credential name only through "credential" or an environment-style
+     * {@code _KEY} suffix counts in this text form, with its value on the same line. A {@code =>}
+     * pair (plutil -p, launchctl print) always counts, since those displays show values, never shell
+     * references. An environment-style name such as {@code SBA_DB_CREDENTIAL} or {@code STRIPE_KEY}
+     * also counts quoted (JSON) or in {@code NAME=value} and {@code NAME: value}, but not in a spaced
+     * code assignment ({@code ENTER_KEY = 13}). Ordinary code and data stay: a name with lowercase
+     * letters ({@code credentials: 'include'}, {@code "credential-management":}), a block colon
+     * ({@code != FAKE_KEY:}) and a shell reference ({@code EVENT_KEY="$(...)"}, {@code $HOME/...}).
+     */
+    private static boolean weakNameCounts(String text, String name, Matcher matcher, boolean arrow) {
+        String separator = matcher.group(3);
+        if (separator.indexOf('\n') >= 0 || separator.indexOf('\r') >= 0) {
+
+            return false;
+        }
+        if (arrow) {
+
+            return true;
+        }
+        if (!isEnvironmentName(name) || shellExpansion(text, matcher.end())) {
+
+            return false;
+        }
+
+        return !matcher.group(1).isEmpty()
+                || separator.indexOf('=') < 0
+                || !Character.isWhitespace(separator.charAt(0));
+    }
+
+    /**
+     * Whether a value (after an optional plain or escaped quote) reads as a shell reference rather than
+     * a literal: $(command), ${NAME...}, or $NAME, $1 and $@ ending where the value, a word or a path
+     * segment does. $2b$10$... (a bcrypt hash) and $argon2id$... are literals.
+     */
+    private static boolean shellExpansion(String text, int valueStart) {
+        int at = valueStart + escapedQuoteLength(text, valueStart) + unicodeQuoteLength(text, valueStart);
+        if (at == valueStart && at < text.length() && (text.charAt(at) == '"' || text.charAt(at) == '\'')) {
+            at++;
+        }
+        if (at + 1 >= text.length() || text.charAt(at) != '$') {
+
+            return false;
+        }
+        char first = text.charAt(at + 1);
+        if (first == '(' || first == '{') {
+
+            return true;
+        }
+        int end;
+        if (isAsciiDigit(first) || "@*#?".indexOf(first) >= 0) {
+            end = at + 2;
+        } else if (first == '_' || first < 128 && Character.isLetter(first)) {
+            end = at + 2;
+            while (end < text.length() && isWordChar(text.charAt(end))) {
+                end++;
+            }
+        } else {
+
+            return false;
+        }
+
+        return end == text.length() || !isWordChar(text.charAt(end)) && text.charAt(end) != '$';
+    }
+
+    private static boolean isEnvironmentName(String name) {
+
+        return name.chars().noneMatch(Character::isLowerCase);
+    }
+
+    // Where a key begins: its quote, or the character after a JSON escape letter glued to it.
+    private static int keyStart(String text, Matcher matcher) {
+
+        return keyName(text, matcher).length() == matcher.group(2).length() ? matcher.start() : matcher.start(2) + 1;
+    }
+
+    /**
+     * Where a name stands on its displayed line. {@code level} is the number of backslashes in a
+     * JSON-escaped line break at the line's encoding level (0 in raw text), or -1 when other text
+     * precedes the name on its line; {@code tabsOnly} is set when only tabs indent it, as in
+     * launchctl print; {@code closer} closes the code span or bold text the name opens, else null.
+     */
+    private record LineStart(int level, boolean tabsOnly, String closer, int start) {
+        static final LineStart NONE = new LineStart(-1, false, null, -1);
+
+        boolean starts() {
+
+            return level >= 0;
+        }
+    }
+
+    /**
+     * Whether a name starts its displayed line: a raw or JSON-escaped line break, the start of the
+     * text, or the quote that opens a JSON string, followed only by indentation (spaces, tabs,
+     * JSON-escaped tabs), optionally after a line-number or path gutter (cat -n, grep -n, rg, a file
+     * view), quote marks, a Markdown heading, a list or diff marker or an opening code span or bold
+     * marker, and by the dotted prefix of the name itself ({@code sba.judge.password}). A name inline
+     * in prose ({@code see `SBA_X_TOKEN => …`}) does not.
+     */
+    private static LineStart lineStart(String text, int nameStart, Lines lines) {
+        int at = nameStart;
+        while (at > 1 && text.charAt(at - 1) == '.' && nameStart - at < 128) {
+            int segment = at - 1;
+            while (segment > 0 && isNameChar(text.charAt(segment - 1)) && !escapeLetter(text, segment - 1)) {
+                if (nameStart - segment >= MAX_LINE_PREFIX) {
+
+                    // Each lookup reads a bounded stretch before the name.
+                    return LineStart.NONE;
+                }
+                segment--;
+            }
+            if (segment == at - 1) {
+                break;
+            }
+            at = segment;
+        }
+        // The line starts after the nearest raw line break, opening quote or escaped line break within
+        // MAX_LINE_PREFIX characters, or at the start of the text when that is as close.
+        int stop = lines.stopBefore(at);
+        if (stop == Lines.FAR || stop == Lines.NO_STOP && at > MAX_LINE_PREFIX + 1) {
+
+            return LineStart.NONE;
+        }
+        int lineStart = stop + 1;
+        int level = stop == Lines.NO_STOP ? 0 : lines.levelAfter(stop);
+        boolean escaped = level > 0;
+        int tabLevel = 0;
+        StringBuilder prefix = new StringBuilder(at - lineStart);
+        // 0 in the leading blanks, 1 in the first word, which may be a gutter or a marker, and 2 after the
+        // blank that ends it, where LINE_PREFIX reads only blanks, markers and an opening code span or
+        // bold marker: anything else there means the name does not start its line.
+        int part = 0;
+        for (int index = lineStart; index < at; index++) {
+            char current = text.charAt(index);
+            int run = current == '\\' ? backslashRun(text, index) : 0;
+            char shown = current;
+            if (run > 0 && index + run < at && text.charAt(index + run) == 't') {
+                tabLevel = tabLevel == 0 ? run : tabLevel;
+                shown = '\t';
+                prefix.append(shown);
+                index += run;
+            } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= at) {
+                shown = '→';
+                prefix.append(shown);
+                index += run + 4;
+            } else if (run > 0) {
+                // Backslashes that escape nothing shown here read as themselves, the whole run at once.
+                int end = Math.min(index + run, at);
+                prefix.append(text, index, end);
+                index = end - 1;
+            } else {
+                prefix.append(current);
+            }
+            if (shown == ' ' || shown == '\t') {
+                part = part == 1 ? 2 : part;
+            } else if (part == 2 && "#>0123456789.)-+*`_".indexOf(shown) < 0) {
+
+                return LineStart.NONE;
+            } else {
+                part = Math.max(part, 1);
+            }
+        }
+        Matcher gutter = LINE_PREFIX.matcher(prefix);
+        if (!gutter.matches()) {
+
+            return LineStart.NONE;
+        }
+        boolean tabsOnly = !prefix.isEmpty() && prefix.chars().allMatch(character -> character == '\t');
+        if (!escaped && tabLevel == 0 && lineStart == 0) {
+            // The first line of the text: its own line break, raw or escaped, shows its encoding level.
+            tabLevel = firstLineBreakRun(text, nameStart);
+        }
+
+        return new LineStart(escaped ? level : tabLevel, tabsOnly, gutter.group(1), lineStart);
+    }
+
+    private static boolean isNameChar(char value) {
+
+        return isWordChar(value) || value == '-';
+    }
+
+    // The backslashes in the first line break after this index when it is JSON-escaped, else 0.
+    private static int firstLineBreakRun(String text, int from) {
+        for (int at = from; at < text.length(); at++) {
+            char current = text.charAt(at);
+            if (current == '\n' || current == '\r') {
+
+                return 0;
+            }
+            if (current == '\\') {
+                int run = backslashRun(text, at);
+                if (at + run < text.length() && "nr".indexOf(text.charAt(at + run)) >= 0) {
+
+                    return run;
+                }
+                at += run;
+            }
+        }
+
+        return 0;
+    }
+
+    // Whether the character here is the letter of a JSON escape (the t of \t).
+    private static boolean escapeLetter(String text, int at) {
+
+        return at > 0 && text.charAt(at - 1) == '\\' && "nrt".indexOf(text.charAt(at)) >= 0;
+    }
+
+    private static int backslashRunBefore(String text, int end) {
+        int run = 0;
+        while (end - 1 - run >= 0 && text.charAt(end - 1 - run) == '\\') {
+            run++;
+        }
+
+        return run;
+    }
+
+    /**
+     * The backslashes in a JSON-escaped line break at the key's encoding level ({@code \n} is 1,
+     * {@code \\n} is 2), read from the escape before the key or from its escaped quote; 0 in raw text.
+     * Used when the key does not start its line.
+     */
+    private static int lineBreakRun(String text, Matcher matcher) {
+        int quote = matcher.group(1).length();
+        if (quote > 1) {
+
+            return quote / 2;
+        }
+        if (keyName(text, matcher).length() == matcher.group(2).length()) {
+
+            return 0;
+        }
+
+        return backslashRunBefore(text, matcher.start(2));
+    }
+
+    private static AssignmentValue assignmentValue(
+            String text, int start, int level, boolean wholeLine, boolean lastQuote, boolean continues, String closer) {
         char quote = text.charAt(start);
+        int escapedQuote = escapedQuoteLength(text, start);
+        if (lastQuote && (quote == '"' || escapedQuote > 0)) {
+            // plutil -p prints a string value between quotes without escaping the quotes inside it:
+            // the value closes at the last quote on its line. A value already replaced closes right
+            // after its marker, so a later pair on the line is never taken with it.
+            String delimiter = escapedQuote > 0 ? text.substring(start, start + escapedQuote) : "\"";
+            if (text.startsWith(REDACTED + delimiter, start + delimiter.length())) {
+
+                return new AssignmentValue(
+                        start + 2 * delimiter.length() + REDACTED.length(), delimiter + REDACTED + delimiter);
+            }
+            int stop = lineEnd(text, start + delimiter.length(), level, false);
+            int end = lastQuoteBefore(text, start + delimiter.length(), stop, delimiter.length() - 1);
+            if (end > 0) {
+
+                return new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
+            }
+        }
         if (quote == '"' || quote == '\'') {
             int end = start + 1;
             boolean closed = false;
@@ -235,7 +1416,45 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             }
 
             // A missing closing quote consumes the remainder of the scanned scalar.
-            return new AssignmentValue(end, quote + REDACTED + (closed ? Character.toString(quote) : ""));
+            return new AssignmentValue(
+                    closed ? attachedSuffixEnd(text, end) : end,
+                    quote + REDACTED + (closed ? Character.toString(quote) : ""));
+        }
+        if (escapedQuote > 0) {
+            // A value quoted inside JSON-encoded text ends at the same escaped quote. Quotes
+            // escaped one level deeper belong to the value; a missing close consumes the rest.
+            String delimiter = text.substring(start, start + escapedQuote);
+            int end = escapedQuoteEnd(text, start + escapedQuote, escapedQuote - 1);
+
+            return end < 0
+                    ? new AssignmentValue(text.length(), delimiter + REDACTED)
+                    : new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
+        }
+        int unicodeQuote = unicodeQuoteLength(text, start);
+        if (unicodeQuote > 0) {
+            // A value between unicode-escaped quotes (\\u0022...\\u0022) ends at the same escape.
+            String delimiter = text.substring(start, start + unicodeQuote);
+            int end = unicodeQuoteEnd(text, start + unicodeQuote, delimiter);
+
+            return end < 0
+                    ? new AssignmentValue(text.length(), delimiter + REDACTED)
+                    : new AssignmentValue(attachedSuffixEnd(text, end), delimiter + REDACTED + delimiter);
+        }
+        if (text.startsWith("{length = ", start)) {
+
+            // A plutil -p data value: {length = 16, bytes = 0x0123...}.
+            return new AssignmentValue(lineEnd(text, start, level, true), REDACTED);
+        }
+        if (wholeLine) {
+            int end = lineEnd(text, start, level, false);
+            int closed = closer == null ? -1 : text.indexOf(closer, start, end);
+            if (closed >= 0) {
+
+                // A code span or bold text that opened before the name ends the value: `NAME => value`.
+                return new AssignmentValue(closed, REDACTED);
+            }
+
+            return new AssignmentValue(continues ? continuationEnd(text, end, level) : end, REDACTED);
         }
         String prefix = "";
         if (text.regionMatches(true, start, "Bearer", 0, 6)
@@ -250,32 +1469,1496 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 start = tokenStart;
             }
         }
-        // Treat every marker as an atomic span, including markers inside this value.
-        // Its closing bracket must not expose any attached credential suffix.
-        int end = start;
-        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
-            if (text.startsWith(REDACTED, end)) {
-                end += REDACTED.length();
-            } else if (",}]".indexOf(text.charAt(end)) >= 0) {
-                break;
-            } else {
-                end++;
+
+        return new AssignmentValue(bareValueEnd(text, start), prefix + REDACTED);
+    }
+
+    // The end of the last quote in [from, stop) preceded by exactly this many backslashes, else -1.
+    private static int lastQuoteBefore(String text, int from, int stop, int slashes) {
+        for (int quote = text.lastIndexOf('"', stop - 1); quote >= from; quote = text.lastIndexOf('"', quote - 1)) {
+            if (backslashRunBefore(text, quote) == slashes && quote - slashes >= from) {
+
+                return quote + 1;
             }
         }
 
-        return new AssignmentValue(end, prefix + REDACTED);
+        return -1;
+    }
+
+    private static int bareValueEnd(String text, int start) {
+        // Treat every marker as an atomic span, including markers inside this value.
+        // Its closing bracket must not expose any attached credential suffix.
+        int end = start;
+        boolean afterMarker = false;
+        while (end < text.length() && !Character.isWhitespace(text.charAt(end))) {
+            char current = text.charAt(end);
+            if (text.startsWith(REDACTED, end)) {
+                end += REDACTED.length();
+                afterMarker = true;
+                continue;
+            }
+            if (",}]".indexOf(current) >= 0) {
+                break;
+            }
+            if (current == '"' || current == '\'') {
+                // A quote right after a marker, or one that a delimiter follows, closes the string that
+                // holds this value, as in {"cmd": "tool --api-key VALUE"}; it stays a delimiter.
+                if (afterMarker || closesString(text, end + 1)) {
+                    break;
+                }
+                end++;
+            } else if (current == '\\') {
+                // A JSON-escaped line break or tab, at any encoding level, ends the value as raw
+                // whitespace does; the next entry of an escaped env or launchctl listing follows it. An
+                // escaped quote ends it as a raw one does.
+                int run = backslashRun(text, end);
+                char escaped = end + run < text.length() ? text.charAt(end + run) : 0;
+                if ("nrt".indexOf(escaped) >= 0
+                        || escaped == '"' && (afterMarker || closesString(text, end + run + 1))) {
+                    break;
+                }
+                end += run;
+            } else {
+                end++;
+            }
+            afterMarker = false;
+        }
+
+        return end;
+    }
+
+    // Whether a quote that ends just before this index closes a string: the end of the text, whitespace,
+    // a JSON or code delimiter, or a JSON-escaped line break or tab follows it.
+    private static boolean closesString(String text, int after) {
+        if (after >= text.length()) {
+
+            return true;
+        }
+        char next = text.charAt(after);
+        if (Character.isWhitespace(next) || ",}]);:".indexOf(next) >= 0) {
+
+            return true;
+        }
+        int run = next == '\\' ? backslashRun(text, after) : 0;
+
+        return run > 0 && after + run < text.length() && "nrt".indexOf(text.charAt(after + run)) >= 0;
+    }
+
+    /**
+     * The end of a displayed line from start: a raw line break or, in JSON-escaped text displayed at
+     * this level ({@code level} backslashes in its line break), an escaped line break or the quote
+     * that closes the string holding the display. An escaped quote or backslash of the display itself
+     * belongs to the line. With {@code throughBrace}, the first {@code }} on the line ends it too,
+     * included.
+     */
+    private static int lineEnd(String text, int start, int level, boolean throughBrace) {
+        int end = start;
+        while (end < text.length()) {
+            char current = text.charAt(end);
+            if (current == '\n' || current == '\r' || current == '"' && level > 0) {
+
+                return end;
+            }
+            if (current == '}' && throughBrace) {
+
+                return end + 1;
+            }
+            if (current != '\\') {
+                end++;
+                continue;
+            }
+            int run = backslashRun(text, end);
+            if (end + run >= text.length()) {
+
+                return text.length();
+            }
+            char escaped = text.charAt(end + run);
+            if (escaped == '\n' || escaped == '\r') {
+
+                // Backslashes that end a raw line, as in a shell continuation, belong to it.
+                return end + run;
+            }
+            int offset = level > 0 ? lineBreakOffset(run, escaped, level) : -1;
+            if (offset >= 0) {
+
+                return end + offset;
+            }
+            // The escaped character belongs to the line, even when it is a quote.
+            end += run + 1;
+        }
+
+        return end;
+    }
+
+    /**
+     * Where a run of backslashes before this character ends a line displayed at this encoding level,
+     * as an offset into the run, else -1. At level {@code l} (backslashes in its line break), a line
+     * break of the display carries {@code l} backslashes modulo {@code 2l}, the quote that closes its
+     * string {@code l - 1}, a quote of the display {@code 2l - 1} and a literal backslash {@code 2l};
+     * literal backslashes before the break belong to the line. Any other run before a line break or
+     * quote belongs to an enclosing level and ends the line where the run starts.
+     */
+    private static int lineBreakOffset(int run, char next, int level) {
+        int period = 2 * level;
+        int rest = run % period;
+        if (next == 'n' || next == 'r') {
+
+            return rest == 0 ? -1 : rest == level ? run - level : 0;
+        }
+        if (next != '"' || rest == period - 1) {
+
+            return -1;
+        }
+
+        return rest == level - 1 ? run - rest : 0;
+    }
+
+    /**
+     * Where a launchctl print value that holds line breaks ends: its entries are indented with a tab,
+     * so the lines after an entry that are not are the rest of its value. They are taken only when a
+     * tab-indented line follows them; a blank line or the end of the text first means the display
+     * ended and other text follows.
+     */
+    private static int continuationEnd(String text, int lineEnd, int level) {
+        int end = lineEnd;
+        while (end - lineEnd <= MAX_CONTINUATION_CHARS) {
+            int next = afterLineBreak(text, end, level);
+            if (next < 0 || next >= text.length() || atLineBreak(text, next, level)) {
+
+                return lineEnd;
+            }
+            if (startsWithTab(text, next)) {
+
+                return end;
+            }
+            end = lineEnd(text, next, level, false);
+        }
+
+        return lineEnd;
+    }
+
+    // The index after the raw or escaped line break at this index, else -1.
+    private static int afterLineBreak(String text, int at, int level) {
+        if (at >= text.length()) {
+
+            return -1;
+        }
+        char current = text.charAt(at);
+        if (current == '\r') {
+
+            return at + 1 < text.length() && text.charAt(at + 1) == '\n' ? at + 2 : at + 1;
+        }
+        if (current == '\n') {
+
+            return at + 1;
+        }
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+        if (level == 0 || run == 0 || at + run >= text.length() || "nr".indexOf(text.charAt(at + run)) < 0) {
+
+            return -1;
+        }
+        int after = at + run + 1;
+        if (text.charAt(at + run) == 'r' && text.startsWith("n", after + run) && backslashRun(text, after) == run) {
+            after += run + 1;
+        }
+
+        return after;
+    }
+
+    // Whether the end of the text, a raw line break, a quote, or backslashes before n, r or a quote stand
+    // here: what atLineBreak can find at some encoding level, so that other text skips the search for
+    // its level.
+    private static boolean mayEndLine(String text, int at) {
+        if (at == text.length()) {
+
+            return true;
+        }
+        char current = text.charAt(at);
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+
+        return current == '\n'
+                || current == '\r'
+                || current == '"'
+                || run > 0 && at + run < text.length() && "nr\"".indexOf(text.charAt(at + run)) >= 0;
+    }
+
+    private static boolean atLineBreak(String text, int at, int level) {
+        char current = text.charAt(at);
+        if (current == '\n' || current == '\r' || current == '"' && level > 0) {
+
+            return true;
+        }
+        int run = current == '\\' ? backslashRun(text, at) : 0;
+
+        return level > 0
+                && run > 0
+                && at + run < text.length()
+                && lineBreakOffset(run, text.charAt(at + run), level) == 0;
+    }
+
+    private static boolean startsWithTab(String text, int at) {
+        if (text.charAt(at) == '\t') {
+
+            return true;
+        }
+        int run = text.charAt(at) == '\\' ? backslashRun(text, at) : 0;
+
+        return run > 0 && at + run < text.length() && text.charAt(at + run) == 't';
+    }
+
+    // Characters glued to a closing quote, as in the shell word "abc"def, continue the value;
+    // a delimiter, quote or JSON escape after the quote ends it.
+    private static int attachedSuffixEnd(String text, int closedAt) {
+        if (closedAt == text.length()) {
+
+            return closedAt;
+        }
+        char next = text.charAt(closedAt);
+        // A JSON escape at any encoding level (\n, \\\", ...), such as the quote closing the string
+        // that holds this value.
+        int run = next == '\\' ? backslashRun(text, closedAt) : 0;
+        boolean escape =
+                run > 0 && closedAt + run < text.length() && "nrt\"'".indexOf(text.charAt(closedAt + run)) >= 0;
+        boolean attached = !escape && (Character.isLetterOrDigit(next) || "_-+/=.~%@!#$*?^|\\[".indexOf(next) >= 0);
+
+        return attached ? bareValueEnd(text, closedAt) : closedAt;
+    }
+
+    // The length of a JSON-escaped double quote (\" or \\\" ...) at start, else 0.
+    private static int escapedQuoteLength(String text, int start) {
+        int slashes = 0;
+        while (slashes < MAX_ESCAPE_RUN && start + slashes < text.length() && text.charAt(start + slashes) == '\\') {
+            slashes++;
+        }
+
+        return slashes > 0 && start + slashes < text.length() && text.charAt(start + slashes) == '"' ? slashes + 1 : 0;
+    }
+
+    // The length of a unicode-escaped quote (one to fifteen backslashes, then u0022 or u0027) at start,
+    // else 0.
+    private static int unicodeQuoteLength(String text, int start) {
+        int slashes = 0;
+        while (slashes < MAX_ESCAPE_RUN && start + slashes < text.length() && text.charAt(start + slashes) == '\\') {
+            slashes++;
+        }
+        boolean quote =
+                slashes > 0 && (text.startsWith("u0022", start + slashes) || text.startsWith("u0027", start + slashes));
+
+        return quote ? slashes + 5 : 0;
+    }
+
+    // The end of the next delimiter not preceded by another backslash, else -1.
+    private static int unicodeQuoteEnd(String text, int from, String delimiter) {
+        for (int at = text.indexOf(delimiter, from); at >= 0; at = text.indexOf(delimiter, at + 1)) {
+            if (at == from || text.charAt(at - 1) != '\\') {
+
+                return at + delimiter.length();
+            }
+        }
+
+        return -1;
+    }
+
+    // The end of the first quote preceded by exactly this many backslashes, else -1.
+    private static int escapedQuoteEnd(String text, int from, int slashes) {
+        for (int quote = text.indexOf('"', from); quote >= 0; quote = text.indexOf('"', quote + 1)) {
+            int run = 0;
+            while (run <= slashes && quote - run - 1 >= from && text.charAt(quote - run - 1) == '\\') {
+                run++;
+            }
+            if (run == slashes) {
+
+                return quote + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Whether {@code key => value} is a key/value pair rather than a lambda parameter such as
+     * {@code token => token.trim()}: a quoted key (plutil -p, PHP, Ruby), a quoted value (Perl,
+     * Ruby), an environment-style name without lowercase letters (launchctl print), a compact
+     * {@code key=>value}, which stays conservative, or a name in any letter case that starts its
+     * displayed line, as launchctl print shows {@code JevApiKey => …}, unless the value is an
+     * arrow-function body that uses the parameter or opens a block.
+     */
+    private static boolean arrowPair(String text, Matcher matcher, int valueStart, String name, LineStart line) {
+        char first = text.charAt(valueStart);
+        String separator = matcher.group(3);
+        if (!matcher.group(1).isEmpty()
+                || first == '"'
+                || first == '\''
+                || escapedQuoteLength(text, valueStart) > 0
+                || unicodeQuoteLength(text, valueStart) > 0
+                || !Character.isWhitespace(separator.charAt(separator.length() - 1))
+                || isEnvironmentName(name)) {
+
+            return true;
+        }
+
+        return line.starts() && !arrowFunctionBody(text, valueStart, name);
+    }
+
+    // A block or parenthesized body, or an expression that uses the parameter's own name on the same
+    // line: token => token.trim(), password => check(password).
+    private static boolean arrowFunctionBody(String text, int valueStart, String name) {
+        char first = text.charAt(valueStart);
+        if (first == '{' || first == '(') {
+
+            return true;
+        }
+        int stop = valueStart;
+        int limit = Math.min(text.length(), valueStart + MAX_ARROW_BODY_CHARS);
+        while (stop < limit
+                && text.charAt(stop) != '\n'
+                && text.charAt(stop) != '\r'
+                && !(text.charAt(stop) == '\\' && stop + 1 < limit && "nr".indexOf(text.charAt(stop + 1)) >= 0)) {
+            stop++;
+        }
+        for (int at = text.indexOf(name, valueStart, stop); at >= 0; at = text.indexOf(name, at + 1, stop)) {
+            int after = at + name.length();
+            if ((at == 0 || !isIdentifierChar(text.charAt(at - 1)))
+                    && (after >= text.length() || !isIdentifierChar(text.charAt(after)))) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isIdentifierChar(char value) {
+
+        return isWordChar(value) || value == '$';
+    }
+
+    // A key directly after a JSON-escaped newline or tab starts after its escape letter.
+    private static String keyName(String text, Matcher matcher) {
+        String key = matcher.group(2);
+        int start = matcher.start(2);
+
+        return start > 0 && text.charAt(start - 1) == '\\' && "nrt".indexOf(key.charAt(0)) >= 0
+                ? key.substring(1)
+                : key;
+    }
+
+    /**
+     * Replaces the argument of each credential flag: {@code --api-key VALUE} on a command line, the
+     * next element of a quoted list ({@code ["--api-key", "VALUE"]}, plutil -p, defaults read), or
+     * the next line when the flag is alone on its line (launchctl print, PlistBuddy). The
+     * {@code --api-key=VALUE} form is an assignment.
+     */
+    private static String redactSecretFlags(String text) {
+        FlagFinder flags = new FlagFinder(text);
+        Lines lines = new Lines(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && flags.find(searchFrom)) {
+            searchFrom = flags.end();
+            if (!isSecretFlag(text.substring(flags.start(), flags.end()))) {
+                continue;
+            }
+            Span value = flagValue(text, flags.start(), flags.end(), lines);
+            if (value == null) {
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, value.start()).append(value.replacement());
+            copiedThrough = value.end();
+            searchFrom = value.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    /**
+     * Finds the flags that {@link #FLAG} matches, in one forward pass: "--" where a name cannot
+     * continue before it, or after a JSON escape letter, and the whole run of flag characters from
+     * there, when that run holds at most MAX_FLAG_CHARS characters. Each run's end is found once for
+     * every "--" inside it, and a "--" too far from that end is skipped, so a near miss such as a long
+     * run of ".--" costs constant work per character rather than a capped run per "--".
+     */
+    private static final class FlagFinder {
+        private final String text;
+        // [runStart, runEnd): flag characters that run to their end, holding the last "--" read.
+        private int runStart = -1;
+        private int runEnd = -1;
+        private int start;
+        private int end;
+
+        FlagFinder(String text) {
+            this.text = text;
+        }
+
+        // Whether a flag starts at or after from; it is then [start(), end()).
+        boolean find(int from) {
+            int at = text.indexOf("--", from);
+            while (at >= 0) {
+                if (at < runStart || at >= runEnd) {
+                    runStart = at;
+                    runEnd = at;
+                    while (runEnd < text.length() && isFlagChar(text.charAt(runEnd))) {
+                        runEnd++;
+                    }
+                }
+                int length = runEnd - at;
+                if (length > MAX_FLAG_CHARS) {
+                    // Every "--" before runEnd - MAX_FLAG_CHARS starts a run too long to be a flag.
+                    at = text.indexOf("--", Math.max(at + 1, runEnd - MAX_FLAG_CHARS));
+                    continue;
+                }
+                if (length > 2 && (at == 0 || !isNameChar(text.charAt(at - 1)) || escapeLetter(text, at - 1))) {
+                    start = at;
+                    end = runEnd;
+
+                    return true;
+                }
+                at = text.indexOf("--", at + 1);
+            }
+
+            return false;
+        }
+
+        int start() {
+
+            return start;
+        }
+
+        int end() {
+
+            return end;
+        }
+
+        private static boolean isFlagChar(char value) {
+
+            return isNameChar(value) || value == '.';
+        }
+    }
+
+    /**
+     * What one rule learns about displayed lines while it reads a text from start to end, so that names
+     * and flags looked up in that order cost constant work per character: a lookup walks back only over
+     * text the previous one did not, and the level of a line, which can follow a long backslash run, is
+     * counted once for every name on it. A lookup before the previous one walks back in full.
+     */
+    private static final class Lines {
+        // What lies before lastAt: the index of the nearest character that ends a line, NO_STOP when no
+        // character before it does, or FAR when none of the MAX_LINE_PREFIX + 1 characters before it does.
+        private static final int NO_STOP = -1;
+        private static final int FAR = -2;
+        private final String text;
+        private int lastAt = -1;
+        private int lastStop;
+        private int levelStop = -1;
+        private int level;
+
+        Lines(String text) {
+            this.text = text;
+        }
+
+        // The nearest character before at that ends a line (a raw line break, a quote, or the n or r of a
+        // JSON-escaped line break), NO_STOP or FAR, as for lastStop.
+        int stopBefore(int at) {
+            int floor = Math.max(0, at - MAX_LINE_PREFIX - 1);
+            boolean continues = lastAt >= 0 && at >= lastAt && lastAt >= floor;
+            int from = continues ? lastAt : floor;
+            int stop = Integer.MIN_VALUE;
+            for (int index = at - 1; index >= from && stop == Integer.MIN_VALUE; index--) {
+                stop = endsLine(index) ? index : stop;
+            }
+            if (stop == Integer.MIN_VALUE) {
+                stop = continues ? lastStop : floor == 0 ? NO_STOP : FAR;
+                stop = stop >= 0 && stop < floor ? FAR : stop;
+            }
+            lastAt = at;
+            lastStop = stop;
+
+            return stop;
+        }
+
+        private boolean endsLine(int index) {
+            char current = text.charAt(index);
+
+            return current == '\n'
+                    || current == '\r'
+                    || current == '"'
+                    || (current == 'n' || current == 'r') && index > 0 && text.charAt(index - 1) == '\\';
+        }
+
+        // The encoding level of the line that starts after this stop: 0 after a raw line break, the
+        // backslashes in an escaped one, and one more than the backslashes before the quote that opens
+        // the JSON string holding the line.
+        int levelAfter(int stop) {
+            if (stop != levelStop) {
+                char current = text.charAt(stop);
+                int run = backslashRunBefore(text, stop);
+                level = current == '"' ? run + 1 : current == 'n' || current == 'r' ? run : 0;
+                levelStop = stop;
+            }
+
+            return level;
+        }
+    }
+
+    // The argument of the flag in [flagStart, flagEnd), or null when none follows.
+    private static Span flagValue(String text, int flagStart, int flagEnd, Lines lines) {
+        if (flagEnd >= text.length()) {
+
+            return null;
+        }
+        String delimiter = quoteBefore(text, flagStart);
+        if (!delimiter.isEmpty() && text.startsWith(delimiter, flagEnd)) {
+
+            return listElementAfter(text, flagEnd + delimiter.length(), delimiter);
+        }
+        if (flagStart > 0 && text.charAt(flagStart - 1) == '[' && synopsisEntry(text, flagEnd)) {
+
+            // An optional flag in a usage synopsis: [--api-key API_KEY].
+            return null;
+        }
+        int at = blankEnd(text, flagEnd);
+        if (mayEndLine(text, at)) {
+            // Alone on its line, the flag takes the next line, as launchctl print and PlistBuddy show,
+            // unless that line is a description indented under the flag, as help output shows.
+            LineStart line = lineStart(text, flagStart, lines);
+            if (line.starts() && (at == text.length() || atLineBreak(text, at, line.level()))) {
+
+                return describedBelow(text, line, flagStart, at) ? null : nextLineAfter(text, at, line.level());
+            }
+        }
+        if (at == flagEnd
+                || at == text.length()
+                || !startsArgument(text, at)
+                || proseWord(text, at)
+                || separatorWord(text, at)
+                || documented(text, flagStart, flagEnd, lines)) {
+
+            return null;
+        }
+
+        return shellWord(text, at);
+    }
+
+    // Whether a flag that opens a bracket is a usage synopsis entry: a metavar, then the bracket closes
+    // or an alternative follows ([--api-key API_KEY], [--token TOKEN | --token-file PATH]). An
+    // argument slice ([--api-key F4KE… --port 8080], [--api-key f4ke…]) is not one.
+    private static boolean synopsisEntry(String text, int flagEnd) {
+        if (flagEnd >= text.length() || text.charAt(flagEnd) != ' ') {
+
+            return false;
+        }
+        int start = flagEnd + 1;
+        int word = start;
+        // The word ends before a bracket glued to it ([--api-key API_KEY]), or after the bracket that
+        // closes a bracketed metavar ([--token [TOKEN]]).
+        boolean bracketed = start < text.length() && text.charAt(start) == '[';
+        while (word < text.length()
+                && word - start <= 66
+                && !Character.isWhitespace(text.charAt(word))
+                && "\\\"'|".indexOf(text.charAt(word)) < 0) {
+            if (text.charAt(word) == ']') {
+                word += bracketed && word > start ? 1 : 0;
+                break;
+            }
+            word++;
+        }
+        int after = blankEnd(text, word);
+
+        return metavar(text, start, word)
+                && after < text.length()
+                && (text.charAt(after) == ']' || text.charAt(after) == '|');
+    }
+
+    // Prose names a flag too ("pass --api-key or --token to the CLI", "the --token flag"): a word that
+    // prose puts after a flag is not its argument when it stands alone, followed by whitespace, a
+    // JSON-escaped line break or tab, a quote that closes its string or the end of the text, directly
+    // or after one or two closing punctuation marks ("flag.", "option),"). An argument that only
+    // starts with such a word (not-a-secret, will.i.am, value@prod) is still taken.
+    private static boolean proseWord(String text, int at) {
+        int end = at;
+        while (end < text.length() && end - at <= 8 && text.charAt(end) >= 'a' && text.charAt(end) <= 'z') {
+            end++;
+        }
+        if (end == at || !PROSE_WORDS.contains(text.substring(at, end))) {
+
+            return false;
+        }
+        for (int marks = 0; marks < 2 && end < text.length() && ".,;:)".indexOf(text.charAt(end)) >= 0; marks++) {
+            end++;
+        }
+
+        return standsAlone(text, end);
+    }
+
+    // Whether a word that ends here stands alone: whitespace, a JSON-escaped line break or tab, a raw
+    // or escaped quote that closes its string, or the end of the text follows it.
+    private static boolean standsAlone(String text, int at) {
+        if (at >= text.length() || Character.isWhitespace(text.charAt(at))) {
+
+            return true;
+        }
+        char next = text.charAt(at);
+        if (next == '"' || next == '\'') {
+
+            return closesString(text, at + 1);
+        }
+        int run = next == '\\' ? backslashRun(text, at) : 0;
+        if (run == 0 || at + run >= text.length()) {
+
+            return false;
+        }
+        char escaped = text.charAt(at + run);
+
+        return "nrt".indexOf(escaped) >= 0 || escaped == '"' && closesString(text, at + run + 1);
+    }
+
+    // A lone colon after a flag separates it from its description (--federated-token : Federated …).
+    private static boolean separatorWord(String text, int at) {
+
+        return text.charAt(at) == ':' && (at + 1 == text.length() || Character.isWhitespace(text.charAt(at + 1)));
+    }
+
+    // The end of the blanks at this index: spaces, tabs and JSON-escaped tabs at any encoding level.
+    private static int blankEnd(String text, int at) {
+        int end = at;
+        while (end < text.length()) {
+            char current = text.charAt(end);
+            int run = current == '\\' ? backslashRun(text, end) : 0;
+            if (current == ' ' || current == '\t') {
+                end++;
+            } else if (run > 0 && end + run < text.length() && text.charAt(end + run) == 't') {
+                end += run + 1;
+            } else {
+                break;
+            }
+        }
+
+        return end;
+    }
+
+    /**
+     * Whether a credential flag is documented rather than passed: help output and manual pages start
+     * a line with the flag, after any short alias ({@code -p, --password}), and follow it with an
+     * optional metavar ({@code API_KEY}, {@code <token>}, {@code string}) and its description, either
+     * in a column after two or more spaces or a tab, or on the next line, indented deeper than the
+     * flag. A description reads as prose (see {@link #describes}), so an aligned argument with digits
+     * or symbols ({@code --api-key   F4KE…   prod}), one that a {@code #} comment or a parenthesized
+     * note follows, and one on a line that a shell continuation ends ({@code --api-key   VALUE \}) are
+     * still taken.
+     */
+    private static boolean documented(String text, int flagStart, int flagEnd, Lines lines) {
+        int entry = optionListStart(text, flagStart);
+        LineStart line = lineStart(text, entry, lines);
+        if (!line.starts()) {
+
+            return false;
+        }
+        int at = blankEnd(text, flagEnd);
+        if (columnGap(text, flagEnd, at)) {
+
+            // Without a metavar, the description's first word stands where an argument would.
+            return describes(text, at, line.level(), true);
+        }
+        if (at != flagEnd + 1) {
+
+            return false;
+        }
+        int end = metavarEnd(text, at);
+        if (end < 0) {
+
+            return false;
+        }
+        int after = blankEnd(text, end);
+        if (after < text.length() && atLineBreak(text, after, line.level())) {
+
+            return describedBelow(text, line, entry, after);
+        }
+
+        return columnGap(text, end, after) && describes(text, after, line.level(), false);
+    }
+
+    // Where a help entry's option list starts: a short alias before the long flag (-p, --password, or
+    // -k API_KEY, --api-key), else the flag itself.
+    private static int optionListStart(String text, int flagStart) {
+        int at = flagStart;
+        while (at > 0 && text.charAt(at - 1) == ' ') {
+            at--;
+        }
+        if (at == flagStart || at < 3 || text.charAt(at - 1) != ',') {
+
+            return flagStart;
+        }
+        int wordEnd = at - 1;
+        int wordStart = wordStartBefore(text, wordEnd);
+        if (shortOption(text, wordStart, wordEnd)) {
+
+            return wordStart;
+        }
+        if (wordStart < 2 || text.charAt(wordStart - 1) != ' ' || !metavar(text, wordStart, wordEnd)) {
+
+            return flagStart;
+        }
+        int optionStart = wordStartBefore(text, wordStart - 1);
+
+        return shortOption(text, optionStart, wordStart - 1) ? optionStart : flagStart;
+    }
+
+    // The start of the word that ends here, after whitespace or a JSON escape letter, at most 64 back.
+    private static int wordStartBefore(String text, int end) {
+        int start = end;
+        while (start > 0
+                && end - start < 64
+                && !Character.isWhitespace(text.charAt(start - 1))
+                && !escapeLetter(text, start - 1)) {
+            start--;
+        }
+
+        return start;
+    }
+
+    private static boolean shortOption(String text, int start, int end) {
+
+        return end - start == 2 && text.charAt(start) == '-' && Character.isLetterOrDigit(text.charAt(start + 1));
+    }
+
+    private static boolean metavar(String text, int start, int end) {
+
+        return end > start && METAVAR.matcher(text).region(start, end).matches();
+    }
+
+    // The end of a metavar at this index, else -1.
+    private static int metavarEnd(String text, int at) {
+        int end = at;
+        while (end < text.length()
+                && end - at <= 66
+                && !Character.isWhitespace(text.charAt(end))
+                && "\\\"'".indexOf(text.charAt(end)) < 0) {
+            end++;
+        }
+
+        return metavar(text, at, end) ? end : -1;
+    }
+
+    // Whether the blanks in [from, to) separate columns: two or more spaces, or a tab.
+    private static boolean columnGap(String text, int from, int to) {
+
+        return to - from >= 2 || to - from == 1 && text.charAt(from) == '\t';
+    }
+
+    /**
+     * Whether the rest of the line from here describes a flag as prose does: it starts with a word of
+     * letters (see {@link #descriptionWord}), another word that opens neither a {@code #} comment nor
+     * a parenthesized note follows, and no shell continuation ends the line: a backslash, or a
+     * backtick (PowerShell) or caret (cmd) standing alone.
+     */
+    private static boolean describes(String text, int at, int level, boolean sentenceStart) {
+        int end = lineEnd(text, at, level, false);
+        int last = end;
+        while (last > at && Character.isWhitespace(text.charAt(last - 1))) {
+            last--;
+        }
+        if (last <= at || continued(text, at, last)) {
+
+            return false;
+        }
+        int first = wordEnd(text, at, last);
+        int next = blankEnd(text, first);
+
+        return descriptionWord(text, at, first, sentenceStart)
+                && next < last
+                && text.charAt(next) != '#'
+                && text.charAt(next) != '(';
+    }
+
+    // Whether a shell continuation ends the line [at, last): a backslash, or a backtick or caret after
+    // a blank.
+    private static boolean continued(String text, int at, int last) {
+        char lastChar = text.charAt(last - 1);
+        if (lastChar == '\\') {
+
+            return true;
+        }
+
+        return (lastChar == '`' || lastChar == '^')
+                && last - 2 >= at
+                && (text.charAt(last - 2) == ' ' || text.charAt(last - 2) == '\t');
+    }
+
+    /**
+     * Whether [start, end) can open a help description: up to 20 ASCII letters and at most one
+     * closing {@code .,:;}, no digits or other symbols. With {@code sentenceStart}, where an argument
+     * would otherwise stand, the word must also start a sentence: lower case, capitalized, or an
+     * all-capital acronym of up to five letters ({@code Read}, {@code prompt}, {@code API}).
+     */
+    private static boolean descriptionWord(String text, int start, int end, boolean sentenceStart) {
+        int letters = end > start && ".,:;".indexOf(text.charAt(end - 1)) >= 0 ? end - 1 : end;
+        int length = letters - start;
+        if (length < 1 || length > MAX_DESCRIPTION_WORD_CHARS) {
+
+            return false;
+        }
+        int upper = 0;
+        for (int index = start; index < letters; index++) {
+            char current = text.charAt(index);
+            if (current >= 128 || !Character.isLetter(current)) {
+
+                return false;
+            }
+            upper += Character.isUpperCase(current) ? 1 : 0;
+        }
+        boolean capitalized = upper == 1 && Character.isUpperCase(text.charAt(start));
+
+        return !sentenceStart || upper == 0 || capitalized || upper == length && length <= MAX_ACRONYM_CHARS;
+    }
+
+    // The end of the word at this index, before whitespace or a JSON-escaped tab, at most at stop.
+    private static int wordEnd(String text, int at, int stop) {
+        int end = at;
+        while (end < stop && !Character.isWhitespace(text.charAt(end))) {
+            int run = text.charAt(end) == '\\' ? backslashRun(text, end) : 0;
+            if (run > 0 && end + run < text.length() && text.charAt(end + run) == 't') {
+                break;
+            }
+            end += Math.max(run, 1);
+        }
+
+        return Math.min(end, stop);
+    }
+
+    /**
+     * Whether the line after the line break at {@code lineBreak} is a description indented under the
+     * help entry at {@code entry}: at least two columns deeper, after the same kind of line-number or
+     * path gutter, and read as prose (see {@link #describes}). A launchctl print or PlistBuddy listing
+     * indents its next argument as deep as the flag.
+     */
+    private static boolean describedBelow(String text, LineStart line, int entry, int lineBreak) {
+        if (lineBreak >= text.length()) {
+
+            return false;
+        }
+        int next = afterLineBreak(text, lineBreak, line.level());
+        if (next < 0 || next >= text.length()) {
+
+            return false;
+        }
+        int entryIndent = indentAfterGutter(text, line.start(), entry);
+        int nextEnd = Math.min(lineEnd(text, next, line.level(), false), next + MAX_LINE_PREFIX);
+        String shown = displayed(text, next, nextEnd);
+        int content = blankEnd(shown, gutterEnd(shown));
+        if (entryIndent < 0 || content == shown.length()) {
+
+            return false;
+        }
+
+        return column(shown, content) - column(shown, gutterEnd(shown)) >= entryIndent + MIN_DESCRIPTION_INDENT
+                && describes(shown, content, 0, false);
+    }
+
+    // The columns between the gutter of the line that starts at lineStart and this index, else -1 when
+    // more than the line-prefix budget stands between them.
+    private static int indentAfterGutter(String text, int lineStart, int at) {
+        if (lineStart < 0 || at - lineStart > MAX_LINE_PREFIX) {
+
+            return -1;
+        }
+        String shown = displayed(text, lineStart, at);
+
+        return column(shown, shown.length()) - column(shown, gutterEnd(shown));
+    }
+
+    // Where a line-number or path gutter that starts this displayed line ends, else 0.
+    private static int gutterEnd(String shown) {
+        Matcher gutter = GUTTER.matcher(shown);
+
+        return gutter.lookingAt() ? gutter.end() : 0;
+    }
+
+    // The display column of this index, a tab advancing to the next multiple of eight.
+    private static int column(String shown, int at) {
+        int column = 0;
+        for (int index = 0; index < at; index++) {
+            column = shown.charAt(index) == '\t' ? (column / 8 + 1) * 8 : column + 1;
+        }
+
+        return column;
+    }
+
+    // The characters of [from, to) as displayed: a JSON-escaped tab or file-view arrow (→) at any
+    // encoding level reads as itself.
+    private static String displayed(String text, int from, int to) {
+        StringBuilder shown = new StringBuilder(to - from);
+        for (int index = from; index < to; index++) {
+            char current = text.charAt(index);
+            int run = current == '\\' ? backslashRun(text, index) : 0;
+            if (run > 0 && index + run < to && text.charAt(index + run) == 't') {
+                shown.append('\t');
+                index += run;
+            } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= to) {
+                shown.append('→');
+                index += run + 4;
+            } else if (run > 0) {
+                int end = Math.min(index + run, to);
+                shown.append(text, index, end);
+                index = end - 1;
+            } else {
+                shown.append(current);
+            }
+        }
+
+        return shown.toString();
+    }
+
+    // The quote that opens the list element holding a flag at this index ("--api-key" or \"--api-key),
+    // else "".
+    private static String quoteBefore(String text, int flagStart) {
+        if (flagStart == 0) {
+
+            return "";
+        }
+        char quote = text.charAt(flagStart - 1);
+        if (quote == '\'') {
+
+            return "'";
+        }
+        if (quote != '"') {
+
+            return "";
+        }
+
+        return "\\".repeat(Math.min(backslashRunBefore(text, flagStart - 1), MAX_ESCAPE_RUN)) + "\"";
+    }
+
+    // The list element after a flag element that closed at from, quoted the same way: separators, line
+    // breaks, indentation and a plutil -p index (2 => ) may stand between them. An unquoted element,
+    // such as a variable in code ("--api-key", key), is not taken.
+    private static Span listElementAfter(String text, int from, String delimiter) {
+        int at = from;
+        int limit = Math.min(text.length(), from + MAX_LINE_PREFIX);
+        boolean indexed = false;
+        while (at < limit) {
+            char current = text.charAt(at);
+            int run = current == '\\' ? backslashRun(text, at) : 0;
+            if (current == ' ' || current == '\t' || current == ',' || current == '\n' || current == '\r') {
+                at++;
+            } else if (run > 0
+                    && run < delimiter.length()
+                    && at + run < text.length()
+                    && "nrt".indexOf(text.charAt(at + run)) >= 0) {
+                at += run + 1;
+            } else if (!indexed && isAsciiDigit(current)) {
+                int digits = at;
+                while (digits < limit && isAsciiDigit(text.charAt(digits))) {
+                    digits++;
+                }
+                int arrow = digits;
+                while (arrow < limit && text.charAt(arrow) == ' ') {
+                    arrow++;
+                }
+                if (!text.startsWith("=>", arrow)) {
+
+                    return null;
+                }
+                indexed = true;
+                at = arrow + 2;
+            } else {
+                break;
+            }
+        }
+        if (at >= limit) {
+
+            return null;
+        }
+        if (text.startsWith(delimiter, at)) {
+            int contentStart = at + delimiter.length();
+            if (startsFlag(text, contentStart)) {
+
+                return null;
+            }
+            int end = delimiter.length() == 1
+                    ? quotedEnd(text, contentStart, delimiter.charAt(0))
+                    : escapedQuoteEnd(text, contentStart, delimiter.length() - 1);
+
+            return end < 0
+                    ? new Span(at, text.length(), delimiter + REDACTED)
+                    : new Span(at, end, delimiter + REDACTED + delimiter);
+        }
+
+        return null;
+    }
+
+    // The end of a quoted value whose content starts here, with backslash escapes, else -1.
+    private static int quotedEnd(String text, int contentStart, char quote) {
+        int end = contentStart;
+        while (end < text.length()) {
+            char current = text.charAt(end++);
+            if (current == '\\' && end < text.length()) {
+                end++;
+            } else if (current == quote) {
+
+                return end;
+            }
+        }
+
+        return -1;
+    }
+
+    // The line after the line break at this index, after its indentation, through its end; null when
+    // it is blank, holds another flag, or no line follows.
+    private static Span nextLineAfter(String text, int lineBreak, int level) {
+        int at = afterLineBreak(text, lineBreak, level);
+        if (at < 0) {
+
+            return null;
+        }
+        while (at < text.length()) {
+            char current = text.charAt(at);
+            int run = current == '\\' ? backslashRun(text, at) : 0;
+            if (current == ' ' || current == '\t') {
+                at++;
+            } else if (run > 0 && at + run < text.length() && text.charAt(at + run) == 't') {
+                at += run + 1;
+            } else {
+                break;
+            }
+        }
+        if (at >= text.length() || atLineBreak(text, at, level) || startsFlag(text, at)) {
+
+            return null;
+        }
+
+        return new Span(at, lineEnd(text, at, level, false), REDACTED);
+    }
+
+    // Whether an argument starts here rather than another flag, a shell operator or a comment.
+    private static boolean startsArgument(String text, int at) {
+        char first = text.charAt(at);
+
+        return "-<>|&;)#`]}".indexOf(first) < 0 && !Character.isWhitespace(first);
+    }
+
+    // A shell word at this index: a quoted string (plain or JSON-escaped) or a bare word.
+    private static Span shellWord(String text, int at) {
+        AssignmentValue value = assignmentValue(text, at, 0, false, false, false, null);
+
+        return value.end() > at ? new Span(at, value.end(), value.replacement()) : null;
+    }
+
+    /**
+     * Replaces the value that a configuration write command gives a credential name: launchctl setenv,
+     * PlistBuddy Set and Add (through the end of the -c argument), plutil -replace and -insert,
+     * defaults write, and the -w password of security add-generic-password.
+     */
+    private static String redactWriteCommands(String text) {
+        Matcher matcher = scanner(WRITE_COMMAND, text);
+        PasswordOptions options = new PasswordOptions(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        // The next command of each kind at or after searchFrom (Integer.MAX_VALUE when none is left),
+        // kept until searchFrom passes its start; the earlier one is read first.
+        int writeStart = -1;
+        int securityStart = -1;
+        int securityEnd = -1;
+        while (searchFrom < text.length()) {
+            if (writeStart < searchFrom) {
+                writeStart = findFrom(matcher, text, searchFrom, RedactionService::writeCommandStart)
+                        ? matcher.start()
+                        : Integer.MAX_VALUE;
+            }
+            if (securityStart < searchFrom) {
+                securityStart = Integer.MAX_VALUE;
+                for (int at = text.indexOf("add-", searchFrom); at >= 0; at = text.indexOf("add-", at + 1)) {
+                    int nameEnd = securityCommandEnd(text, at);
+                    int end = nameEnd < 0 ? -1 : options.endAfter(nameEnd);
+                    if (end >= 0) {
+                        securityStart = at;
+                        securityEnd = end;
+                        break;
+                    }
+                }
+            }
+            boolean securityFirst = securityStart < writeStart;
+            if ((securityFirst ? securityStart : writeStart) == Integer.MAX_VALUE) {
+                break;
+            }
+            int commandEnd = securityFirst ? securityEnd : matcher.end();
+            searchFrom = commandEnd;
+            if (commandEnd == text.length()) {
+                break;
+            }
+            String name = securityFirst ? null : writtenName(matcher);
+            if (name != null && (!isSecretKey(name) || countsTokens(name))) {
+                continue;
+            }
+            Span value = !securityFirst && matcher.group("buddy") != null
+                    ? buddyValue(text, matcher.start(), matcher.end())
+                    : startsArgument(text, commandEnd) ? shellWord(text, commandEnd) : null;
+            if (value == null) {
+                continue;
+            }
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, value.start()).append(value.replacement());
+            copiedThrough = value.end();
+            searchFrom = value.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    /**
+     * Finds the -w option of each security command: the first blank, "-w" and blank that starts within
+     * MAX_SECURITY_OPTIONS_CHARS characters after the command's name with no line break before it, and
+     * the blanks after it. The next option and the next line break are each searched for once and kept
+     * while the commands before them are read, so dense commands without one cost constant work per
+     * character rather than a window each.
+     */
+    private static final class PasswordOptions {
+        private final String text;
+        // The first option at or after optionFrom (text.length() when none), and the same for line breaks.
+        private int optionFrom = -1;
+        private int option = -1;
+        private int lineBreakFrom = -1;
+        private int lineBreak = -1;
+
+        PasswordOptions(String text) {
+            this.text = text;
+        }
+
+        // The end of the blanks after the -w option of a command whose name ends here, else -1.
+        int endAfter(int from) {
+            if (from < optionFrom || from > option) {
+                optionFrom = from;
+                option = nextOption(from);
+            }
+            if (from < lineBreakFrom || from > lineBreak) {
+                lineBreakFrom = from;
+                lineBreak = nextLineBreak(from);
+            }
+            if (option == text.length() || option - from > MAX_SECURITY_OPTIONS_CHARS || lineBreak < option) {
+
+                return -1;
+            }
+            int end = option + 3;
+            while (end < text.length() && isBlank(text.charAt(end))) {
+                end++;
+            }
+
+            return end;
+        }
+
+        // The first blank at or after from that "-w" and another blank follow, else text.length().
+        private int nextOption(int from) {
+            for (int dash = text.indexOf("-w", from + 1); dash >= 0; dash = text.indexOf("-w", dash + 1)) {
+                if (isBlank(text.charAt(dash - 1)) && dash + 2 < text.length() && isBlank(text.charAt(dash + 2))) {
+
+                    return dash - 1;
+                }
+            }
+
+            return text.length();
+        }
+
+        private int nextLineBreak(int from) {
+            int at = from;
+            while (at < text.length() && text.charAt(at) != '\n' && text.charAt(at) != '\r') {
+                at++;
+            }
+
+            return at;
+        }
+
+        private static boolean isBlank(char value) {
+
+            return value == ' ' || value == '\t';
+        }
+    }
+
+    // The end of a security add-generic-password or add-internet-password command's name that starts
+    // here where a name cannot continue before it (or after a JSON escape letter), else -1.
+    private static int securityCommandEnd(String text, int at) {
+        if (at > 0 && isNameChar(text.charAt(at - 1)) && !escapeLetter(text, at - 1)) {
+
+            return -1;
+        }
+        for (String command : SECURITY_COMMANDS) {
+            if (text.startsWith(command, at)) {
+
+                return at + command.length();
+            }
+        }
+
+        return -1;
+    }
+
+    // Whether WRITE_COMMAND can match from here: setenv, set or add in any letter case, defaults, -replace
+    // or -insert starts here, where a name cannot continue before it or after a JSON escape letter.
+    private static boolean writeCommandStart(String text, int at) {
+        char current = text.charAt(at);
+        boolean command =
+                switch (current) {
+                    case 's', 'S' -> text.regionMatches(true, at, "set", 0, 3);
+                    case 'a', 'A' -> text.regionMatches(true, at, "add", 0, 3);
+                    case 'd' -> text.startsWith("defaults", at);
+                    case '-' -> text.startsWith("-replace", at) || text.startsWith("-insert", at);
+                    default -> false;
+                };
+
+        return command && (at == 0 || !isNameChar(text.charAt(at - 1)) || escapeLetter(text, at - 1));
+    }
+
+    /**
+     * Finds the leftmost ASSIGNMENT match at or after from, as {@link Matcher#find(int)} does, trying the
+     * pattern only where a match can start and has its shape (see {@link #assignmentShape}): at a quote,
+     * where NAME can start, and in a backslash run at the last MAX_ESCAPE_RUN backslashes before a quote
+     * or a unicode-escaped quote, the only ones that can open an escaped quoted name. Other text costs a
+     * few comparisons per character.
+     */
+    private static boolean findAssignment(Matcher matcher, String text, int from) {
+        int at = from;
+        while (at < text.length()) {
+            char current = text.charAt(at);
+            if (current == '\\') {
+                int runEnd = at + backslashRun(text, at);
+                int quote = runEnd < text.length() && text.charAt(runEnd) == '"'
+                        ? 1
+                        : unicodeQuoteBefore(text, runEnd + 5) ? 5 : 0;
+                for (int start = Math.max(at, runEnd - MAX_ESCAPE_RUN); quote > 0 && start < runEnd; start++) {
+                    if (assignmentShape(text, start, runEnd + quote - start)
+                            && matcher.region(start, text.length()).lookingAt()) {
+
+                        return true;
+                    }
+                }
+                at = runEnd;
+                continue;
+            }
+            int delimiter = current == '"' || current == '\'' ? 1 : 0;
+            boolean starts = delimiter == 1
+                    || isNameChar(current)
+                            && (at == 0 || !isNameChar(text.charAt(at - 1)) || unicodeQuoteBefore(text, at));
+            if (starts
+                    && assignmentShape(text, at, delimiter)
+                    && matcher.region(at, text.length()).lookingAt()) {
+
+                return true;
+            }
+            at++;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the text from here has the shape every ASSIGNMENT match with an opening delimiter of this
+     * length has: a run of at most MAX_NAME_CHARS + 1 name characters, the same delimiter again in any
+     * letter case, then '=' or ':' after any whitespace that {@code \s} matches.
+     */
+    private static boolean assignmentShape(String text, int start, int delimiterLength) {
+        int nameStart = start + delimiterLength;
+        int nameEnd = nameStart;
+        while (nameEnd < text.length() && isNameChar(text.charAt(nameEnd))) {
+            if (nameEnd - nameStart > MAX_NAME_CHARS) {
+
+                return false;
+            }
+            nameEnd++;
+        }
+        if (nameEnd == nameStart || !text.regionMatches(true, nameEnd, text, start, delimiterLength)) {
+
+            return false;
+        }
+        int at = nameEnd + delimiterLength;
+        while (at < text.length() && " \t\n\u000B\f\r".indexOf(text.charAt(at)) >= 0) {
+            at++;
+        }
+
+        return at < text.length() && (text.charAt(at) == '=' || text.charAt(at) == ':');
+    }
+
+    // Whether a unicode-escaped quote, \\u0022 or \\u0027 (either case of u), ends here.
+    private static boolean unicodeQuoteBefore(String text, int at) {
+
+        return at >= 6
+                && at <= text.length()
+                && text.charAt(at - 6) == '\\'
+                && (text.charAt(at - 5) == 'u' || text.charAt(at - 5) == 'U')
+                && text.startsWith("002", at - 4)
+                && (text.charAt(at - 1) == '2' || text.charAt(at - 1) == '7');
+    }
+
+    // A matcher for a pattern tried at single positions: lookbehinds read the text before the position.
+    private static Matcher scanner(Pattern pattern, String text) {
+
+        return pattern.matcher(text).useTransparentBounds(true).useAnchoringBounds(false);
+    }
+
+    /**
+     * Finds the leftmost match at or after from, as {@link Matcher#find(int)} does, but tries the pattern
+     * only where {@code startsHere} allows a match to start: Java code passes over the rest, so text
+     * where no match can start costs a comparison or two per character instead of a pattern attempt.
+     */
+    private static boolean findFrom(Matcher matcher, String text, int from, StartTest startsHere) {
+        for (int at = from; at < text.length(); at++) {
+            if (startsHere.test(text, at) && matcher.region(at, text.length()).lookingAt()) {
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private interface StartTest {
+        boolean test(String text, int at);
+    }
+
+    // The name a write command assigns (the last segment of a key path), or null for a password.
+    private static String writtenName(Matcher matcher) {
+        if (matcher.group("setenv") != null) {
+
+            return matcher.group("setenv");
+        }
+        if (matcher.group("buddy") != null) {
+            String path = matcher.group("buddy");
+
+            return path.substring(path.lastIndexOf(':') + 1);
+        }
+        if (matcher.group("plutil") != null) {
+            String path = matcher.group("plutil");
+
+            return path.substring(path.lastIndexOf('.') + 1);
+        }
+
+        return matcher.group("defaults");
+    }
+
+    // A PlistBuddy value runs to the end of its command: the quote that opened the -c argument, else
+    // the end of the line, raw or JSON-escaped.
+    private static Span buddyValue(String text, int commandStart, int valueStart) {
+        String delimiter = quoteBefore(text, commandStart);
+        int end;
+        if (delimiter.isEmpty()) {
+            end = commandLineEnd(text, valueStart);
+        } else if (delimiter.length() == 1) {
+            end = quotedEnd(text, valueStart, delimiter.charAt(0));
+            end = end < 0 ? text.length() : end - 1;
+        } else {
+            end = escapedQuoteEnd(text, valueStart, delimiter.length() - 1);
+            end = end < 0 ? text.length() : end - delimiter.length();
+        }
+
+        return end > valueStart ? new Span(valueStart, end, REDACTED) : null;
+    }
+
+    /**
+     * The end of a command's line from here: the first raw line break, which keeps backslashes that
+     * end the line (a shell continuation), or the first JSON-escaped line break at any encoding level.
+     * One forward pass that stops at the first of them, so a command costs only its own line.
+     */
+    private static int commandLineEnd(String text, int from) {
+        int end = from;
+        while (end < text.length()) {
+            char current = text.charAt(end);
+            if (current == '\n' || current == '\r') {
+
+                return end;
+            }
+            if (current != '\\') {
+                end++;
+                continue;
+            }
+            int run = backslashRun(text, end);
+            if (end + run >= text.length()) {
+
+                return text.length();
+            }
+            char escaped = text.charAt(end + run);
+            if (escaped == '\n' || escaped == '\r') {
+
+                return end + run;
+            }
+            if (escaped == 'n' || escaped == 'r') {
+
+                return end;
+            }
+            end += run + 1;
+        }
+
+        return end;
+    }
+
+    /**
+     * The end of a token count such as {@code max_tokens: 4096} or {@code promptTokenCount=87}, else
+     * -1. The name must count tokens and carry no other secret word; the value must be plain digits
+     * followed by a delimiter, never by more credential-like characters.
+     */
+    private static int tokenCountEnd(String text, Matcher matcher, int valueStart) {
+        if (!countsTokens(matcher.group(2))) {
+
+            return -1;
+        }
+        int end = valueStart;
+        while (end < text.length() && end - valueStart <= MAX_TOKEN_COUNT_DIGITS && isAsciiDigit(text.charAt(end))) {
+            end++;
+        }
+        int digits = end - valueStart;
+        if (digits == 0 || digits > MAX_TOKEN_COUNT_DIGITS) {
+
+            return -1;
+        }
+        if (end == text.length()) {
+
+            return end;
+        }
+        char next = text.charAt(end);
+        if (Character.isWhitespace(next)
+                || ",}]".indexOf(next) >= 0
+                || next == '\\' && end + 1 < text.length() && "nrt".indexOf(text.charAt(end + 1)) >= 0) {
+
+            return end;
+        }
+        // Closing punctuation (4096), 4096; 4096. or a closing quote) must not glue on more value.
+        int after = next == '\\' && end + 1 < text.length() && text.charAt(end + 1) == '"' ? end + 2 : end + 1;
+        boolean closing = after == end + 2 || "\"');.".indexOf(next) >= 0;
+        boolean glued =
+                after < text.length() && (Character.isLetterOrDigit(text.charAt(after)) || text.charAt(after) == '_');
+
+        return closing && !glued ? end : -1;
+    }
+
+    private static boolean isAsciiDigit(char value) {
+
+        return value >= '0' && value <= '9';
     }
 
     private record AssignmentValue(int end, String replacement) {}
+
+    private record Span(int start, int end, String replacement) {}
 
     private interface RedactionRule {
         String redact(String value);
     }
 
-    private record RegexRule(Pattern pattern, Replacement replacement) implements RedactionRule {
+    // A pattern rule that searches only text that may hold a match.
+    private record RegexRule(Pattern pattern, Replacement replacement, Predicate<String> mayMatch)
+            implements RedactionRule {
 
         @Override
         public String redact(String value) {
+            if (!mayMatch.test(value)) {
+
+                return value;
+            }
             Matcher matcher = pattern.matcher(value);
             StringBuilder redacted = new StringBuilder();
             while (matcher.find()) {

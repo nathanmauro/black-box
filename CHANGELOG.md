@@ -4,6 +4,96 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Redaction recognizes credentials in displayed and written service configuration before storage
+  and export. Covered: `=>` pairs from `plutil -p` (also with `=\u003e`), including
+  `{length = …, bytes = 0x…}` data values and quoted values that hold unescaped quotes, and from
+  `launchctl print`, where a name that starts its line is a pair in any letter case
+  (`JevApiKey => …`) and its value is removed to the end of the line, also behind `cat -n`,
+  `grep -n` or `rg` gutters, quote marks, Markdown headings or list markers, with quotes, backslashes
+  or a leading `$` in it, and across the later lines of a value that holds line breaks; property-list
+  `<string>`, `<data>`, `<integer>` and `<real>` values under a secret `<key>`, raw or JSON-escaped,
+  behind `cat -n` numbers, `grep`/`rg` line-number and path gutters, diff markers or XML comments,
+  both lines of a changed value in a diff, and a key and value split across the lines of an Edit
+  tool's `structuredPatch`; the argument of a flag that ends with a credential word (`--api-key`,
+  `--db-password`), on a command line, in a quoted argument list or plist array, or on the line after
+  it in `launchctl print` and PlistBuddy output, while help output and manual pages in the layouts
+  it recognizes, and prose that puts one of a fixed list of words after such a flag, keep their
+  text; `launchctl setenv`, PlistBuddy `Set`/`Add`, `plutil -replace`/`-insert`, `defaults write`
+  and `security add-generic-password -w`;
+  `PlistBuddy -c Print` lines for environment-style names (`SBA_DB_PASSWORD = …`); JSON-encoded tool
+  results up to four encoding levels, where each displayed line keeps its own encoding level, so an
+  escaped line break ends a value but a quote or backslash inside it does not; a credential word
+  anywhere in a name of up to 256 characters in a text assignment (`=`, `:` or `=>`, as in
+  `SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD=…`), where at most 40 characters could
+  precede it before, of up to 128 in a property-list `<key>` and in the name that
+  `launchctl setenv`, PlistBuddy `Set`/`Add` or `defaults write` writes, and in a flag of up to
+  130; the names `passphrase` and `private_key` everywhere, and `credential` and environment-style
+  `_KEY` names such as `STRIPE_KEY` in configuration forms; a
+  bare value now ends before the quote that closes the JSON string holding it, which it used to
+  swallow (`{"cmd": "… --api-key …"}` stays valid JSON); HTML-safe and unicode-escaped markup,
+  scanned again after decoding without undoing what the first scan replaced; characters glued to a
+  quoted value; and the bare `apikey_<hex>` key shape where a token starts, and with at least 32
+  hexadecimal digits wherever it starts, as after a binary property list's length byte. Previously
+  such values reached event text, tool output, metadata, the full-text index and Elasticsearch in
+  plain text.
+  Durable capture's local sanitizer no longer splits `=>` into `=` and a value `>`, which hid the
+  pair from these rules: `=>` pairs reach the server whole, and a queued row holds them until
+  delivery. Token counts such as `max_tokens: 4096` in text are no longer redacted, and
+  `token => token.trim()` lambdas are kept. Not covered: a credential shown without its name, an
+  unquoted `NAME=value` or YAML value after its first space, an assignment whose value starts
+  another credential shape, whatever the length of its name (`SBA_DB_PASSWORD=--db-password …`,
+  `SBA_API_TOKEN:--api-key …`, `SBA_API_TOKEN=""Bearer …`, `SBA_API_TOKEN=apiKey: …`), a lowercase
+  `name => value` inline in prose or behind an unrecognized gutter, timestamp or ANSI color codes, a
+  `_KEY` name assigned a `$NAME` reference with `=` (an `env` listing), PlistBuddy Print and
+  `defaults read` lines for `_KEY` names (and lowercase names after the value's first word), quoted
+  dotted names (`"sba.judge.password"`), mixed-case names that end with `key` without a credential
+  word (`JevKey`), names in code subscripts (`os.environ["SBA_X_TOKEN"] = …`), a list or object
+  written in text after its first delimiter, an unquoted list element after a flag
+  (`defaults read`), the `;`-separated `launchctl list` arguments, `defaults write … -dict-add`,
+  Markdown restatements (`` `NAME` => `value` ``, table rows), a `launchctl print` value after its
+  leading quoted part, the rest of a `plutil -p` line whose value's first quoted part is an AWS
+  access key ID (`"AKIA…" …"`), property-list values on the `<` lines of normal-format `diff` output
+  or split by merge-conflict markers, single-dash flags, `--secret-key`-style flags, arguments that
+  start with `-` or follow a shell continuation, YAML block-sequence arguments (`- --api-key` and
+  then `- …`, as in Kubernetes `args` and Docker Compose `command` lists), and an argument laid out
+  like help output or prose: a word that could start a sentence followed by more words in a column
+  after the flag (`--password   letmein   for the demo`), a metavar-shaped word before a description
+  column or in a `[--flag …]` synopsis (`--api-key ABCDEFQWERTY   set for the demo`), a
+  description-like line indented deeper than its flag, or one of the listed prose words
+  (`--password value`); and other formats: a private key block without its END line
+  (`head -4 tls.key`), Maven `<password>` elements, .NET `<add key="DbPassword" value="…" />`,
+  `aws configure set`, `gh secret set --body`, Makefile `:=` and `?=` assignments, `.netrc`
+  passwords, passwords in URLs, em-dash flags (`—password …`) and the credential after an
+  `Authorization: Basic` or `Token` scheme word; see
+  [docs/operations.md](docs/operations.md#configuration). Code that assigns to these names, such as
+  `passphrase: cert.passphrase` or `SECRET_KEY = os.environ.get(…)` at the start of a line, loses
+  the value, and so do a documentation placeholder after a credential flag, a synopsis metavar that
+  holds `=` (`[--api-key PROVIDER=KEY]`), the type of an AWS CLI option entry
+  (`--password (string)`), and any word that prose puts after such a flag other than a listed word
+  standing alone (`the --api-key parameter`, `--api-key and/or --token`). Capture work still grows
+  with size, and dense near misses that hold an escaped markup character cost about twice what they
+  did before, so a crafted capture of about 20 MB can take longer than the default hook's 3-second
+  `curl` limit; the hook then gives up without failing the agent's turn and the server still stores
+  the event, while durable capture drops any capture over 1 MiB of hook input. Existing captures are
+  not rewritten; rotate any credential an agent displayed before this change.
+- Session summaries and direct meld previews pass stored text through the built-in credential rules
+  before the summary backend receives it. Text stored before a redaction rule recognized its
+  credential was sent as stored, by default to the external Codex wrapper; now each piece is
+  redacted first, without export's whole-leaf fallback, so text holding no recognized credential
+  (a `"max_tokens": 4096` member, a later session in a meld) still reaches the backend. A stored tool
+  input or output is redacted string by string, as ingestion stored it, so one that holds no
+  recognized credential reaches the backend exactly as stored, while a flag's argument in the next
+  list element and a private key split across list elements are still replaced. Any other credential
+  that ingestion kept reaches the backend as stored, such as one that spans two JSON strings or a
+  shell line continuation (`["password:", "…"]`, `security add-generic-password … \` and then `-w …`
+  on the next line) or one next to a literal `\n` (`--token "…\n`, `"AUTHORIZATION"=>\n…`). Like any
+  stored text, it is read up to the 50,000-character scan budget, each member, value, array and
+  object counting as at least one character, so JSON made of empty values is cut too: a longer one
+  is cut between its members or elements, with one `…[truncated]` marker, and stays valid JSON, and
+  a meld preview reads it the same way only as far as its bundle shows (900 characters). A clipped
+  stored text keeps one truncation marker. The summary and title the backend returns are redacted
+  before they are stored. A summary redacts up to 2,000 events before it calls the backend, so its
+  cost grows with the number of events.
 - Shutdown no longer waits for stream clients. An open `/api/stream` subscription or MCP listening
   stream (`GET /mcp`) used to hold Spring Boot's graceful shutdown for its full 30-second phase
   timeout, so a launchd restart, which sends SIGKILL after 5 seconds, ended in a kill that dropped

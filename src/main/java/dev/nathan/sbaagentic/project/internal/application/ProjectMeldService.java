@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 import dev.nathan.sbaagentic.project.internal.domain.MeldCursor;
 import dev.nathan.sbaagentic.project.internal.domain.ProjectKeyCodec;
 import dev.nathan.sbaagentic.recording.AgentSession;
+import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -48,16 +50,19 @@ public class ProjectMeldService implements ProjectMeldOperations {
     private final ProjectMeldSummarizer summaryBackend;
     private final ProjectAliasService aliasService;
     private final IngestionRedactor redactor;
+    private final ExportRedactor exportRedactor;
 
     public ProjectMeldService(
             ProjectCatalogStore repository,
             ProjectMeldSummarizer summaryBackend,
             ProjectAliasService aliasService,
-            IngestionRedactor redactor) {
+            IngestionRedactor redactor,
+            ExportRedactor exportRedactor) {
         this.repository = repository;
         this.summaryBackend = summaryBackend;
         this.aliasService = aliasService;
         this.redactor = redactor;
+        this.exportRedactor = exportRedactor;
     }
 
     public ProjectMeldPreviewResponse preview(String projectKey, ProjectMeldPreviewRequest request) {
@@ -72,7 +77,8 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         List<AgentSession> sessions = orderedSessions(canonicalKey, sessionIds);
         Map<String, List<ProjectTimelineBlock>> evidence = evidenceBySession(canonicalKey, sessions);
-        Bundle bundle = buildBundle(canonicalKey, sessions, evidence);
+        Bundle bundle =
+                buildBundle(canonicalKey, sessions, evidence, UnaryOperator.identity(), UnaryOperator.identity());
         String executionMode = executionMode(request.executionMode());
         String provider =
                 firstNonBlank(request.provider(), executionMode.equals(DIRECT) ? "configured-summary" : "local");
@@ -83,7 +89,17 @@ public class ProjectMeldService implements ProjectMeldOperations {
 
         if (DIRECT.equals(executionMode)) {
             try {
-                preview = summaryBackend.summarize(directPrompt(bundle.text()));
+                // The configured summary backend may run outside this machine, and stored text can
+                // predate a redaction rule: its bundle is built from separately redacted pieces, so a
+                // value cut by a clip or a quoted credential key never costs the rest of the bundle. A
+                // stored tool input or output is read only as far as the bundle shows it.
+                Bundle outbound = buildBundle(
+                        canonicalKey,
+                        sessions,
+                        evidence,
+                        exportRedactor::redactForSummary,
+                        json -> exportRedactor.redactJsonForSummary(json, MAX_JSON_CHARS));
+                preview = summaryBackend.summarize(directPrompt(outbound.text()));
                 status = "preview";
             } catch (RuntimeException ex) {
                 throw new ResponseStatusException(
@@ -234,15 +250,21 @@ public class ProjectMeldService implements ProjectMeldOperations {
         return evidence;
     }
 
+    // Each stored piece passes through stored, or storedJson for a tool input or output, before it is
+    // clipped and appended.
     private Bundle buildBundle(
-            String canonicalKey, List<AgentSession> sessions, Map<String, List<ProjectTimelineBlock>> evidence) {
+            String canonicalKey,
+            List<AgentSession> sessions,
+            Map<String, List<ProjectTimelineBlock>> evidence,
+            UnaryOperator<String> stored,
+            UnaryOperator<String> storedJson) {
         List<String> degradationNotes = new ArrayList<>();
         StringBuilder builder = new StringBuilder();
         builder.append("# Project Meld Bundle\n\n");
         builder.append("- Project: ")
-                .append(ProjectKeyCodec.labelFor(canonicalKey))
+                .append(stored.apply(ProjectKeyCodec.labelFor(canonicalKey)))
                 .append('\n');
-        builder.append("- Canonical key: ").append(canonicalKey).append('\n');
+        builder.append("- Canonical key: ").append(stored.apply(canonicalKey)).append('\n');
         builder.append("- Selected sessions: ").append(sessions.size()).append('\n');
         builder.append("- Bundle policy: summaries first, then bounded high-signal evidence.\n\n");
 
@@ -254,15 +276,15 @@ public class ProjectMeldService implements ProjectMeldOperations {
             builder.append("## Session ")
                     .append(index++)
                     .append(": ")
-                    .append(firstNonBlank(session.title(), session.clientSessionId()))
+                    .append(stored.apply(firstNonBlank(session.title(), session.clientSessionId())))
                     .append("\n\n");
             builder.append("- Session id: ").append(session.id()).append('\n');
             builder.append("- Client session id: ")
-                    .append(session.clientSessionId())
+                    .append(stored.apply(session.clientSessionId()))
                     .append('\n');
-            builder.append("- Source: ").append(session.source()).append('\n');
+            builder.append("- Source: ").append(stored.apply(session.source())).append('\n');
             builder.append("- CWD: ")
-                    .append(firstNonBlank(session.cwd(), "(none)"))
+                    .append(stored.apply(firstNonBlank(session.cwd(), "(none)")))
                     .append('\n');
             builder.append("- Started: ").append(session.startedAt()).append('\n');
             builder.append("- Last seen: ").append(session.lastSeenAt()).append('\n');
@@ -274,7 +296,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 degradationNotes.add("Missing summary for " + session.clientSessionId());
             } else {
                 builder.append("### Summary\n\n");
-                appendClipped(builder, session.summary().strip(), MAX_TEXT_CHARS);
+                appendClipped(builder, stored.apply(session.summary().strip()), MAX_TEXT_CHARS);
                 builder.append("\n\n");
             }
 
@@ -285,7 +307,7 @@ public class ProjectMeldService implements ProjectMeldOperations {
                 continue;
             }
             for (ProjectTimelineBlock block : blocks) {
-                appendEvidence(builder, block);
+                appendEvidence(builder, block, stored, storedJson);
             }
             builder.append('\n');
         }
@@ -300,34 +322,38 @@ public class ProjectMeldService implements ProjectMeldOperations {
         return new Bundle(text, List.copyOf(degradationNotes));
     }
 
-    private static void appendEvidence(StringBuilder builder, ProjectTimelineBlock block) {
+    private static void appendEvidence(
+            StringBuilder builder,
+            ProjectTimelineBlock block,
+            UnaryOperator<String> stored,
+            UnaryOperator<String> storedJson) {
         builder.append("- [")
                 .append(block.observedAt())
                 .append("] ")
                 .append(block.blockType())
                 .append(" / ")
-                .append(firstNonBlank(block.eventType(), "event"))
+                .append(stored.apply(firstNonBlank(block.eventType(), "event")))
                 .append(" / ")
-                .append(firstNonBlank(block.source(), "unknown"))
+                .append(stored.apply(firstNonBlank(block.source(), "unknown")))
                 .append(": ")
-                .append(firstNonBlank(block.headline(), "(untitled evidence)"))
+                .append(stored.apply(firstNonBlank(block.headline(), "(untitled evidence)")))
                 .append('\n');
         if (block.text() != null && !block.text().isBlank()) {
             builder.append("  Text: ");
-            appendClipped(builder, block.text().strip(), MAX_TEXT_CHARS);
+            appendClipped(builder, stored.apply(block.text().strip()), MAX_TEXT_CHARS);
             builder.append('\n');
         }
         if (block.toolName() != null && !block.toolName().isBlank()) {
-            builder.append("  Tool: ").append(block.toolName()).append('\n');
+            builder.append("  Tool: ").append(stored.apply(block.toolName())).append('\n');
         }
         if (block.toolInputJson() != null && !block.toolInputJson().isBlank()) {
             builder.append("  Input: ");
-            appendClipped(builder, block.toolInputJson().strip(), MAX_JSON_CHARS);
+            appendClipped(builder, storedJson.apply(block.toolInputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
         if (block.toolOutputJson() != null && !block.toolOutputJson().isBlank()) {
             builder.append("  Output: ");
-            appendClipped(builder, block.toolOutputJson().strip(), MAX_JSON_CHARS);
+            appendClipped(builder, storedJson.apply(block.toolOutputJson().strip()), MAX_JSON_CHARS);
             builder.append('\n');
         }
     }

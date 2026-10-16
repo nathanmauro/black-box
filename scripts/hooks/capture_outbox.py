@@ -37,7 +37,10 @@ IDENTITY_KEYS = frozenset(("source", "clientsessionid", "sessionid", "parentclie
                            "filename", "repo", "repository", "worktree"))
 PRIVATE_BEGIN = re.compile(r"-----BEGIN [^\r\n-]{0,80}PRIVATE KEY-----", re.I)
 PRIVATE_END = re.compile(r"-----END [^\r\n-]{0,80}PRIVATE KEY-----", re.I)
-ASSIGNMENT = re.compile(r'''(?<![A-Za-z0-9_-])(["']?)([A-Za-z0-9_-]+)\1(\s*[=:]\s*)''')
+# "=>" (also written =\u003e) is never a separator here: launchctl print and plutil -p pairs reach the
+# server whole, where its displayed-configuration rules replace the value. Splitting "=" from ">" hid
+# the pair from them.
+ASSIGNMENT = re.compile(r'''(?<![A-Za-z0-9_-])(["']?)([A-Za-z0-9_-]+)\1(\s*(?:=(?!>|\\{1,15}u003[eE])|:)\s*)''')
 BEARER = re.compile(r"\bbearer\s+[A-Za-z0-9._~+/=-]+", re.I)
 PROVIDERS = (
     re.compile(r"\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\b"),
