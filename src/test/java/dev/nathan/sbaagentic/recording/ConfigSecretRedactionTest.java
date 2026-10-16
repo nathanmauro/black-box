@@ -730,6 +730,19 @@ class ConfigSecretRedactionTest {
     }
 
     @Test
+    void privateKeyBlocksAreReplacedFromEachBeginLineThroughTheNextEndLine() {
+        String block = "-----BEGIN RSA PRIVATE KEY-----\nF4KE7material\n-----END RSA PRIVATE KEY-----";
+        assertThat(redactor.redact("a " + block + " b " + block + " c")).isEqualTo("a [REDACTED] b [REDACTED] c");
+        // A second BEGIN line before the END line belongs to the first block.
+        assertThat(redactor.redact("-----BEGIN PRIVATE KEY-----\nF4KE7a\n-----begin private key-----\nF4KE7b\n"
+                        + "-----END PRIVATE KEY----- tail"))
+                .isEqualTo("[REDACTED] tail");
+        // A BEGIN line that no END line follows starts no block, and neither does a later one.
+        assertThat(redactor.redact(block + " mid -----BEGIN PRIVATE KEY-----\nunfinished -----BEGIN PRIVATE KEY-----"))
+                .isEqualTo("[REDACTED] mid -----BEGIN PRIVATE KEY-----\nunfinished -----BEGIN PRIVATE KEY-----");
+    }
+
+    @Test
     void propertyListPairSplitAcrossListElementsLosesItsValue() {
         // An Edit tool result: each structuredPatch line is its own JSON string.
         Map<String, Object> patch = Map.of(
@@ -821,7 +834,19 @@ class ConfigSecretRedactionTest {
                     "long flag-shaped words", " --api-key" + "-a".repeat(2_000) + " value --token" + ".x".repeat(900)),
             Arguments.of(
                     "provider keys glued to short hexadecimal runs",
-                    "Hapikey_" + "0123456789abcdef" + "f".repeat(15) + "g apikey_apikey_" + "0".repeat(31) + "x "));
+                    "Hapikey_" + "0123456789abcdef" + "f".repeat(15) + "g apikey_apikey_" + "0".repeat(31) + "x "),
+            Arguments.of(
+                    "names after whitespace runs and other text",
+                    "\n" + " ".repeat(200) + "x SBA_A_TOKEN => v SBA_B_TOKEN => w\n" + "\t".repeat(220)
+                            + "x token => token token => token\n" + " \t".repeat(90) + "x SBA_X_PASSWORD = v\n"
+                            + " ".repeat(120) + ">" + " ".repeat(120) + "x judgeToken => judgeToken\n"),
+            Arguments.of(
+                    "credential flags after whitespace runs and other text",
+                    "\n" + " ".repeat(250) + "x --api-key\n" + " ".repeat(160) + "y --api-key\"\n" + " ".repeat(240)
+                            + "z --api-key\\\n" + "\\n" + "\\t".repeat(120) + "x --token\\n"),
+            Arguments.of(
+                    "private key BEGIN lines without an END line",
+                    "-----BEGIN RSA PRIVATE KEY-----\n" + "x".repeat(20) + "\n-----END RSA PUBLIC KEY-----\n"));
 
     static Stream<Arguments> nearMissShapes() {
 

@@ -95,6 +95,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             + "(?:[ \\t]++-(?:string|data|int|integer|float|bool|boolean|date)(?![A-Za-z0-9_-]))?+"
             + "|add-(?:generic|internet)-password(?<security>)[^\\r\\n]{0,512}?[ \\t]-w"
             + ")[ \\t]++");
+    // The lines that open and close a private key block, in any letter case.
+    private static final Pattern PRIVATE_KEY_BEGIN =
+            Pattern.compile("-----BEGIN [^-\\r\\n]*PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PRIVATE_KEY_END =
+            Pattern.compile("-----END [^-\\r\\n]*PRIVATE KEY-----", Pattern.CASE_INSENSITIVE);
     // Provider keys shaped apikey_<hex>[_<hex>...]. Possessive runs keep this linear on long
     // hexadecimal near misses; where a key may start is decided by keyBoundary.
     private static final Pattern HEX_API_KEY = Pattern.compile("apikey_[0-9a-fA-F]++(?:_[0-9a-fA-F]++)*+");
@@ -113,9 +118,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // read as tabs: indentation after cat -n or file-view line numbers or grep and rg gutters with or
     // without a path (path:12:, path-13-, 12:), then quote marks, Markdown headings, list or diff
     // markers, and an opening code span or bold marker, whose closer then ends the value (group 1).
-    private static final Pattern LINE_PREFIX = Pattern.compile("[ \\t]*(?:\\d{1,9}(?:\\t|→)"
+    // Every blank run is possessive: no part of the pattern after one can start with a blank, and
+    // nested greedy blank runs backtracked quadratically on a long run of blanks before other text.
+    private static final Pattern LINE_PREFIX = Pattern.compile("[ \\t]*+(?:\\d{1,9}(?:\\t|→)"
             + "|(?:[^\\s:]{1,200}?[:-])?(?:\\d{1,9}[:-])?)"
-            + "(?:[ \\t]*(?:>|(?:#{1,6}|\\d{1,3}[.)]|[-+*])(?=[ \\t])))*[ \\t]*(`|\\*\\*|__)?");
+            + "(?:[ \\t]*+(?:>|(?:#{1,6}|\\d{1,3}[.)]|[-+*])(?=[ \\t])))*+[ \\t]*+(`|\\*\\*|__)?");
     // How far a launchctl print value may continue on following lines before a tab-indented entry.
     private static final int MAX_CONTINUATION_CHARS = 4096;
     // Text after an arrow that is searched for a lambda's own parameter name.
@@ -388,9 +395,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static List<RedactionRule> credentialRules() {
 
         return List.of(
-                literal(
-                        "-----BEGIN [^-\\r\\n]*PRIVATE KEY-----.*?-----END [^-\\r\\n]*PRIVATE KEY-----",
-                        Pattern.CASE_INSENSITIVE | Pattern.DOTALL),
+                RedactionService::redactPrivateKeyBlocks,
                 literal("\\b(?:AKIA|ASIA|A3T[A-Z0-9])[A-Z0-9]{16}\\b", 0),
                 RedactionService::redactPropertyListValues,
                 RedactionService::redactAssignments,
@@ -401,6 +406,31 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 literal("\\bgh[pousr]_[A-Za-z0-9]{36,}\\b", 0),
                 literal("\\bsk-[A-Za-z0-9_-]{20,}\\b", 0),
                 literal("\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b", 0));
+    }
+
+    /**
+     * Replaces each complete private key block, from a BEGIN line through the first END line after it.
+     * When no END line follows a BEGIN line, none follows a later one either, so the scan stops there
+     * rather than searching the rest of the text again for every later BEGIN line.
+     */
+    private static String redactPrivateKeyBlocks(String text) {
+        Matcher begin = PRIVATE_KEY_BEGIN.matcher(text);
+        Matcher end = PRIVATE_KEY_END.matcher(text);
+        StringBuilder redacted = null;
+        int copiedThrough = 0;
+        int searchFrom = 0;
+        while (searchFrom < text.length() && begin.find(searchFrom) && end.find(begin.end())) {
+            if (redacted == null) {
+                redacted = new StringBuilder(text.length());
+            }
+            redacted.append(text, copiedThrough, begin.start()).append(REDACTED);
+            copiedThrough = end.end();
+            searchFrom = end.end();
+        }
+
+        return redacted == null
+                ? text
+                : redacted.append(text, copiedThrough, text.length()).toString();
     }
 
     /**
@@ -820,6 +850,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         while (at > 1 && text.charAt(at - 1) == '.' && nameStart - at < 128) {
             int segment = at - 1;
             while (segment > 0 && isNameChar(text.charAt(segment - 1)) && !escapeLetter(text, segment - 1)) {
+                if (nameStart - segment >= MAX_LINE_PREFIX) {
+
+                    // Each lookup reads a bounded stretch before the name.
+                    return LineStart.NONE;
+                }
                 segment--;
             }
             if (segment == at - 1) {
@@ -863,6 +898,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= at) {
                 prefix.append('→');
                 index += run + 4;
+            } else if (run > 0) {
+                // Backslashes that escape nothing shown here read as themselves, the whole run at once.
+                int end = Math.min(index + run, at);
+                prefix.append(text, index, end);
+                index = end - 1;
             } else {
                 prefix.append(current);
             }
