@@ -1,5 +1,6 @@
 import { render, screen } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
+import * as api from "../../lib/api";
 import type { EventFeedItem } from "../../lib/api";
 import StreamRow from "./StreamRow";
 
@@ -171,5 +172,26 @@ describe("StreamRow", () => {
     expect(screen.getByText("what if the stream led with what I said")).toHaveClass("idea-quote");
     expect(screen.getByText("human-turn-first")).toBeInTheDocument();
     expect(screen.getByText("Sketch the classifier")).toBeInTheDocument();
+  });
+
+  it("expands a human turn into what followed instead of repeating the prompt", async () => {
+    vi.spyOn(api, "getTurnFollowup").mockResolvedValue({
+      eventId: "event-1",
+      complete: true,
+      events: [],
+    });
+    render(() => (
+      <StreamRow
+        item={feedItem({ eventType: "UserPromptSubmit", role: "user", text: "where is it" })}
+        expanded
+        humanMode
+        sessionHref="/session"
+        onToggle={vi.fn()}
+      />
+    ));
+
+    expect(await screen.findByText("Nothing recorded after this turn yet.")).toBeInTheDocument();
+    expect(screen.getAllByText("where is it")).toHaveLength(1);
+    expect(api.getTurnFollowup).toHaveBeenCalledWith("event-1");
   });
 });

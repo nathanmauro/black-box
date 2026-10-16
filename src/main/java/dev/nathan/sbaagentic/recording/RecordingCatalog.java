@@ -33,6 +33,9 @@ public interface RecordingCatalog {
     /** {@code humanOnly} keeps only the session's human turns. */
     List<AgentEvent> eventsForSession(String sessionId, int limit, boolean humanOnly);
 
+    /** Events after {@code eventId} in its session, oldest first, stopping before the next human turn. */
+    Optional<TurnFollowup> turnFollowup(String eventId, int limit);
+
     /** Cursor-paged event search with a hard internal-session boundary. */
     default EventFeedResponse feedForSession(String sessionId, String query, String before, int limit) {
 
