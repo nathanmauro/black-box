@@ -8,6 +8,7 @@ import dev.nathan.sbaagentic.recording.internal.application.RedactionService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -587,7 +588,28 @@ class ConfigSecretRedactionTest {
                                 SBA_DB_PASSWORD = [REDACTED]
                                 SBA_PORT = 8766
                             }
-                        }"""));
+                        }"""),
+                Arguments.of("credential names longer than forty characters", """
+                        \tenvironment = {
+                        \t\tSPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET => F4KE7long1
+                        \t\tSPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD => F4KE7long2 tail
+                        \t\tPATH => /usr/bin:/bin
+                        \t}
+                          "SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD" => "F4KE7long3"
+                        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET=F4KE7long4
+                        {"SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD": "F4KE7long5", "port": 5432}
+                            SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD = F4KE7long6 tail
+                        java -jar app.jar --spring-datasource-hikari-data-source-properties-password F4KE7long7 --port 8766""", """
+                        \tenvironment = {
+                        \t\tSPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET => [REDACTED]
+                        \t\tSPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD => [REDACTED]
+                        \t\tPATH => /usr/bin:/bin
+                        \t}
+                          "SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD" => "[REDACTED]"
+                        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET=[REDACTED]
+                        {"SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD": "[REDACTED]", "port": 5432}
+                            SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD = [REDACTED]
+                        java -jar app.jar --spring-datasource-hikari-data-source-properties-password [REDACTED] --port 8766"""));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -636,6 +658,75 @@ class ConfigSecretRedactionTest {
     private static String toolResult(String stdout) throws Exception {
 
         return "{\"stdout\":" + JSON.writeValueAsString(stdout) + ",\"stderr\":\"\",\"interrupted\":false}";
+    }
+
+    // Words of a realistic configuration name that hold no credential word, cut to length.
+    private static final String NAME_WORDS =
+            "SPRING_CLOUD_CONFIG_SERVER_GIT_REPOS_MIRROR_PRIMARY_CLUSTER_REGION_EAST_REPLICA_POOL_DATA_SOURCE_"
+                    + "PROPERTIES_HIKARI_CONNECTION_SETTINGS_SERVICE_ACCOUNT_DEFAULT_PROFILE_";
+
+    // A name of exactly this many characters that ends with the credential word.
+    private static String longName(int length, String word) {
+
+        return NAME_WORDS.substring(0, length - word.length()) + word;
+    }
+
+    /**
+     * A credential name may hold any number of characters before its credential word, up to 256:
+     * each form keeps the name and loses the value, raw and JSON-encoded, inside a tool result, as a
+     * structured member, and on the export and summary paths.
+     */
+    @ParameterizedTest(name = "{0}-character names")
+    @ValueSource(ints = {60, 90, 120})
+    void removesTheValuesOfLongCredentialNamesInEveryForm(int length) throws Exception {
+        String upper = longName(length, "_PASSWORD");
+        String lower = longName(length, "_token").toLowerCase(Locale.ROOT);
+        String flag =
+                "--" + longName(length - 2, "-secret").toLowerCase(Locale.ROOT).replace('_', '-');
+        String display = String.join(
+                "\n",
+                "\tenvironment = {",
+                "\t\t" + upper + " => F4KE7launchctl two words",
+                "\t\t" + lower + " => F4KE7lowercase",
+                "\t\tPATH => /usr/bin:/bin",
+                "  \"" + upper + "\" => \"F4KE7plutil\"",
+                "    " + upper + " = F4KE7buddy tail",
+                upper + "=F4KE7env",
+                "{\"" + upper + "\": \"F4KE7json\", \"port\": 5432}",
+                "java -jar app.jar " + flag + " F4KE7flag --port 8766");
+        String expected = String.join(
+                "\n",
+                "\tenvironment = {",
+                "\t\t" + upper + " => [REDACTED]",
+                "\t\t" + lower + " => [REDACTED]",
+                "\t\tPATH => /usr/bin:/bin",
+                "  \"" + upper + "\" => \"[REDACTED]\"",
+                "    " + upper + " = [REDACTED]",
+                upper + "=[REDACTED]",
+                "{\"" + upper + "\": \"[REDACTED]\", \"port\": 5432}",
+                "java -jar app.jar " + flag + " [REDACTED] --port 8766");
+        assertThat(upper).hasSize(length);
+        assertThat(flag).hasSize(length);
+        String encodedInput = display;
+        String encodedExpected = expected;
+        for (int level = 0; level <= 4; level++) {
+            assertThat(redactor.redact(encodedInput))
+                    .as("JSON-encoded %d times", level)
+                    .isEqualTo(encodedExpected);
+            assertThat(redactor.redactForExport(encodedInput))
+                    .doesNotContain("F4KE7")
+                    .contains(upper);
+            assertThat(redactor.redactForSummary(encodedInput)).isEqualTo(encodedExpected);
+            if (level < 4) {
+                assertThat(redactor.redact(toolResult(encodedInput)))
+                        .as("in a tool result, JSON-encoded %d more times", level)
+                        .isEqualTo(toolResult(encodedExpected));
+            }
+            encodedInput = jsonEncode(encodedInput);
+            encodedExpected = jsonEncode(encodedExpected);
+        }
+        assertThat(redactor.redactDeep(Map.of("stdout", display, upper, "F4KE7member")))
+                .isEqualTo(Map.of("stdout", expected, upper, "[REDACTED]"));
     }
 
     /**
@@ -844,6 +935,12 @@ class ConfigSecretRedactionTest {
                     "credential flags after whitespace runs and other text",
                     "\n" + " ".repeat(250) + "x --api-key\n" + " ".repeat(160) + "y --api-key\"\n" + " ".repeat(240)
                             + "z --api-key\\\n" + "\\n" + "\\t".repeat(120) + "x --token\\n"),
+            Arguments.of(
+                    "long names without a separator",
+                    "SBA_" + "SEGMENT_".repeat(30) + "PASSWORD v " + "A".repeat(300) + "=v "
+                            + "tokenpassphrase".repeat(30) + " \\\"SBA_" + "A_".repeat(60) + "PASSWORD\\\" x \\tSBA_"
+                            + "SEG_".repeat(30) + "TOKEN x --" + "a-".repeat(60) + "password" + "x v --"
+                            + "a-".repeat(200) + "token v "),
             Arguments.of(
                     "private key BEGIN lines without an END line",
                     "-----BEGIN RSA PRIVATE KEY-----\n" + "x".repeat(20) + "\n-----END RSA PUBLIC KEY-----\n"));

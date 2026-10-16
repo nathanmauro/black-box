@@ -444,6 +444,12 @@ class ConfigSecretRedactionHttpTest {
             "F4KE7buddyArg",
             "F4KE7promptTok",
             "F4KE7stopMixed",
+            "F4KE7springSecret",
+            "F4KE7springHikari",
+            "F4KE7springPlutil",
+            "F4KE7springEnv",
+            "F4KE7springJson",
+            "F4KE7springFlag",
             FAKE_SEGMENT,
             FAKE_SEGMENT_2);
     private static final String LAUNCHCTL_QUOTES_AND_NAMES = """
@@ -545,6 +551,22 @@ class ConfigSecretRedactionHttpTest {
                         false,
                         "last_assistant_message",
                         "JevApiKey => F4KE7stopMixed was rotated; launchctl print now shows it."));
+        // Names with more than forty characters before their credential word.
+        payloads.put(
+                "long credential names",
+                bash(
+                        "launchctl print gui/501/com.example.blackbox; java -jar black-box.jar"
+                                + " --spring-datasource-hikari-data-source-properties-password F4KE7springFlag",
+                        """
+                        \tenvironment = {
+                        \t\tSPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET => F4KE7springSecret
+                        \t\tSPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD => F4KE7springHikari tail
+                        \t}
+                          "SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD" => "F4KE7springPlutil"
+                        {"SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD": "F4KE7springJson"}
+                        SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET=F4KE7springEnv
+                        exit status 0
+                        """));
 
         int index = 0;
         for (Map.Entry<String, Map<String, Object>> payload : payloads.entrySet()) {
@@ -581,6 +603,13 @@ class ConfigSecretRedactionHttpTest {
         assertThat(jdbc.queryForObject(
                         "SELECT title FROM agent_sessions WHERE client_session_id = ?", String.class, prefix + "-5"))
                 .startsWith("judgeToken => [REDACTED]");
+        assertThat(jdbc.queryForObject(
+                        "SELECT e.text FROM agent_events e JOIN agent_sessions s ON s.id = e.session_id"
+                                + " WHERE s.client_session_id = ?",
+                        String.class,
+                        prefix + "-7"))
+                .contains("SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENTSECRET => [REDACTED]\\n")
+                .contains("SPRING_DATASOURCE_HIKARI_DATA_SOURCE_PROPERTIES_PASSWORD => [REDACTED]\\n");
     }
 
     private static Map<String, Object> bash(String command, String stdout) {

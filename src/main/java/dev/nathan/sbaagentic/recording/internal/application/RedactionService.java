@@ -24,18 +24,18 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // (STRIPE_KEY). Ordinary code uses both (credentials: 'include', ENTER_KEY = 13), so in text they
     // count only in configuration forms; see weakNameCounts.
     private static final Pattern STRONG_SECRET_NAME = Pattern.compile("(?i)" + STRONG_SECRET_WORDS);
+    private static final Pattern CREDENTIAL_WORD = Pattern.compile("(?i)credential");
     private static final Pattern ENV_KEY_NAME = Pattern.compile("(?:[A-Z0-9]++_)++KEY");
-    // Anchored at token starts via lookbehind, with a bounded lazy prefix and a possessive
-    // suffix: greedy runs flanking the keyword alternation backtrack quadratically on long
-    // keyword-dense inputs (measured seconds of CPU per event), this shape stays linear. The
-    // environment-style alternative is case-sensitive and possessive. A key may also start directly
-    // after a unicode-escaped quote (\\u0022, as System.Text.Json writes one).
-    private static final String SECRET_KEY = "(?:(?<![A-Za-z0-9_-])|(?<=\\\\u00(?:22|27)))(?:[A-Za-z0-9_-]{0,40}?(?:"
-            + STRONG_SECRET_WORDS
-            + "|credential)[A-Za-z0-9_-]*+|(?-i:(?:(?<=\\\\)[nrt])?(?:[A-Z0-9]++_)++KEY)(?![A-Za-z0-9_-]))";
-    // The same shape with the strong words only, for export's whole-leaf fallback.
-    private static final String STRONG_SECRET_KEY =
-            "(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{0,40}?(?:" + STRONG_SECRET_WORDS + ")[A-Za-z0-9_-]*+";
+    // The longest name the text rules read: a longer run of name characters is not a name.
+    private static final int MAX_NAME_CHARS = 256;
+    // A name in text: the whole run of name characters that starts a token, after a non-name character
+    // or a unicode-escaped quote (\\u0022, as System.Text.Json writes one), with the letter of a JSON
+    // escape glued before it (the t of \tSBA_DB_PASSWORD) counted as one more character. The run is
+    // possessive and capped, so a near miss costs one pass over it; which names are credential names is
+    // decided outside the pattern (see redactAssignments), wherever the credential word stands in the
+    // name.
+    private static final String NAME = "(?:(?<![A-Za-z0-9_-])|(?<=\\\\u00(?:22|27)))[A-Za-z0-9_-]{1,"
+            + (MAX_NAME_CHARS + 1) + "}+(?![A-Za-z0-9_-])";
     // Clip oversized unredacted input before applying any rules. Anything past this
     // scan budget is dropped rather than stored unscanned; replacements may expand it.
     private static final int MAX_SCAN_CHARS = 50_000;
@@ -43,11 +43,15 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // Backslashes before an escaped quote at the fourth JSON encoding level (\\\\\\\\\\\\\\\").
     private static final int MAX_ESCAPE_RUN = 15;
     // Bare, quoted, JSON-escaped quoted (\" through four encoding levels) or unicode-escaped quoted
-    // keys. "=>" joins plutil -p, launchctl print, Ruby and PHP pairs, also with its > written as an
-    // HTML-safe escape (=\\u003e). Each run is bounded, so a near miss costs constant work per start.
+    // names followed by a separator. "=>" joins plutil -p, launchctl print, Ruby and PHP pairs, also
+    // with its > written as an HTML-safe escape (=\\u003e). Each run is bounded or possessive, so a near
+    // miss costs constant work per start, and only a credential name's pair is redacted.
     private static final Pattern ASSIGNMENT = Pattern.compile("(?i)(\\\\{1," + MAX_ESCAPE_RUN + "}\"|\\\\{1,"
-            + MAX_ESCAPE_RUN + "}u00(?:22|27)|[\"']|)(" + SECRET_KEY + ")\\1(\\s*(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
-            + "}u003e|[=:])\\s*)");
+            + MAX_ESCAPE_RUN + "}u00(?:22|27)|[\"']|)(" + NAME + ")\\1(\\s*+(?:=>|=\\\\{1," + MAX_ESCAPE_RUN
+            + "}u003e|[=:])\\s*+)");
+    // Export's whole-leaf fallback starts at a quoted name, raw or JSON-escaped, and its colon.
+    private static final Pattern QUOTED_NAME_COLON =
+            Pattern.compile("(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{1," + (MAX_NAME_CHARS + 1) + "}+)\\\\*+[\"']\\s*+:");
     // NAME = value with a space on each side, as PlistBuddy Print shows an environment entry.
     private static final Pattern SPACED_EQUALS = Pattern.compile("[ \\t]++=[ \\t]++");
     // Text between a property-list key and its value: anything but markup, so raw or JSON-escaped
@@ -68,11 +72,12 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final Pattern PLIST_OPEN_TAIL = Pattern.compile("(?:" + PLIST_NAME
             + "|<(?:string|data|integer|real)>\\[REDACTED]<\\\\{0," + MAX_ESCAPE_RUN
             + "}/(?:string|data|integer|real)>)" + PLIST_GAP + "\\z");
-    // A command-line flag that mentions a credential word; isSecretFlag decides whether its argument is
-    // one. A bounded lazy prefix and a possessive suffix keep a near miss linear.
-    private static final Pattern SECRET_FLAG =
-            Pattern.compile("(?i)(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{0,40}?(?:" + STRONG_SECRET_WORDS
-                    + ")[A-Za-z0-9._-]*+");
+    // Longer text that starts with -- is not a flag.
+    private static final int MAX_FLAG_CHARS = 130;
+    // A command-line flag of at most MAX_FLAG_CHARS characters, read as one possessive run, so a near
+    // miss stays linear; isSecretFlag decides whether its argument is a credential.
+    private static final Pattern FLAG = Pattern.compile(
+            "(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{1," + (MAX_FLAG_CHARS - 2) + "}+(?![A-Za-z0-9._-])");
     // English function words that prose puts after a flag it names ("--api-key or --token").
     private static final Set<String> PROSE_WORDS = Set.of(
             "a", "an", "and", "as", "at", "by", "for", "from", "if", "in", "into", "is", "it", "of", "on", "or", "than",
@@ -110,8 +115,6 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final int GLUED_API_KEY_HEX_DIGITS = 32;
     // A token count, never a credential, has at most this many digits.
     private static final int MAX_TOKEN_COUNT_DIGITS = 12;
-    // Longer text that starts with -- is not a flag.
-    private static final int MAX_FLAG_CHARS = 130;
     // How far back a key may start its displayed line: indentation plus a line-number or path gutter.
     private static final int MAX_LINE_PREFIX = 256;
     // What may stand between the start of a displayed line and a key that starts it, once escaped tabs
@@ -138,11 +141,25 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         // nested string boundaries and accidentally retain part of a secret. Weak names
         // ("credentials", STRIPE_KEY) are left to the exact rules: "WebAuthn.credentialAdded":
         // must not cost a model the rest of a document.
-        result.add(literal(STRONG_SECRET_KEY + "\\\\*[\"']\\s*:\\s*.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL));
+        result.add(RedactionService::redactAfterQuotedCredentialName);
         // Last, so a quoted apikey_<hex> member name still reaches the rule above.
         result.add(RedactionService::redactHexApiKeys);
 
         return result;
+    }
+
+    // Replaces the rest of the text from the first quoted name that holds a strong credential word and
+    // is followed by a colon, the name included.
+    private static String redactAfterQuotedCredentialName(String text) {
+        Matcher matcher = QUOTED_NAME_COLON.matcher(text);
+        while (matcher.find()) {
+            if (STRONG_SECRET_NAME.matcher(matcher.group(1)).find()) {
+
+                return text.substring(0, matcher.start()) + REDACTED;
+            }
+        }
+
+        return text;
     }
 
     @Override
@@ -701,8 +718,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             String separator = matcher.group(3);
             boolean arrow = separator.contains("=>")
                     || separator.toLowerCase(Locale.ROOT).contains("u003e");
-            boolean strong = STRONG_SECRET_NAME.matcher(name).find();
-            if (!strong && !weakNameCounts(text, name, matcher, arrow)) {
+            boolean strong = name.length() <= MAX_NAME_CHARS
+                    && STRONG_SECRET_NAME.matcher(name).find();
+            boolean weak = !strong && name.length() <= MAX_NAME_CHARS && weakSecretName(name);
+            if (!strong && !(weak && weakNameCounts(text, name, matcher, arrow))) {
                 // Ordinary code, such as credentials: 'include' or ENTER_KEY = 13.
                 searchFrom = valueStart;
                 continue;
@@ -744,6 +763,14 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
 
         return redacted.append(text, copiedThrough, text.length()).toString();
+    }
+
+    // A name that only the weaker signals make a credential name: "credential" in any letter case, or
+    // an environment-style name ending in _KEY.
+    private static boolean weakSecretName(String name) {
+
+        return CREDENTIAL_WORD.matcher(name).find()
+                || ENV_KEY_NAME.matcher(name).matches();
     }
 
     /**
@@ -1394,7 +1421,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * {@code --api-key=VALUE} form is an assignment.
      */
     private static String redactSecretFlags(String text) {
-        Matcher matcher = SECRET_FLAG.matcher(text);
+        Matcher matcher = FLAG.matcher(text);
         StringBuilder redacted = null;
         int copiedThrough = 0;
         int searchFrom = 0;
