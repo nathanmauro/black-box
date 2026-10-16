@@ -739,6 +739,79 @@ class ConfigSecretRedactionTest {
     }
 
     /**
+     * Help output, manual pages and prose name credential flags without giving them an argument: a
+     * description column, a description on the deeper-indented lines after a flag, a usage synopsis
+     * and an English word after the flag all stay.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "      --with-token            Read token from standard input",
+                "  -p, --password string   Password or Personal Access Token (PAT), or \"-\"\n"
+                        + "                          to read from stdin",
+                "  --client-secret              Prompt for OAuth client secret (or set\n"
+                        + "                               MCP_CLIENT_SECRET env var)",
+                "       --ask-password              prompt for passwords",
+                "      --hide-secret                                hide Kubernetes Secrets when also using the"
+                        + " --dry-run flag",
+                "      --kube-token string               bearer token used for authentication",
+                "      --secret stringArray            Secret to expose to the build",
+                "      --xml-raw-token                     enables using RawToken method instead Token.",
+                "     --change-passphrase\tchange a passphrase",
+                "  --api-key API_KEY     OpenAI API key",
+                "  --password\n    Password for authentication. Can be provided via command line when",
+                "  --connect-expired-password \n                      Notify the server that this client is prepared",
+                "       --with-secret\n              Include info about the presence of a secret key in listings.",
+                "  --openai-api-key OPENAI_API_KEY\n                        OpenAI API key",
+                "usage: judge [-h] [--api-key API_KEY] [--port PORT]",
+                "    --password -p          : The password used to log into a container registry.",
+                "Use the --token flag to authenticate.",
+                "The --api-key option is deprecated.",
+                "Add --api-key support to the CLI",
+                "Documented --auth-token usage in README",
+                "Wired the --api-key flag into the CLI",
+                "--hide-secret flag. Please carefully consider how and when these flags are used.",
+                "    12→  --password\n    13→      Password for authentication.",
+                "/fixture/docs/cli.md:12:  --password\n/fixture/docs/cli.md-13-      Password for authentication."
+            })
+    void keepsCredentialFlagsThatHelpAndProseOnlyName(String text) throws Exception {
+        assertThat(redactor.redact(text)).isEqualTo(text);
+        assertThat(redactor.redactForSummary(text)).isEqualTo(text);
+        assertThat(redactor.redact(toolResult(text))).isEqualTo(toolResult(text));
+        assertThat(redactor.redactDeep(Map.of("stdout", List.of(text)))).isEqualTo(Map.of("stdout", List.of(text)));
+    }
+
+    /** Text that resembles help or prose but passes a credential flag its argument still loses it. */
+    static Stream<Arguments> credentialFlagArgumentsBesideHelpLikeText() {
+
+        return Stream.of(
+                Arguments.of("mycli --password secret --port 1", "mycli --password [REDACTED] --port 1"),
+                Arguments.of("mycli --password letmein", "mycli --password [REDACTED]"),
+                Arguments.of("mycli --api-key LETMEIN", "mycli --api-key [REDACTED]"),
+                Arguments.of(
+                        "docker run \\\n  --api-key     F4KE7aligned \\\n  --port        8766",
+                        "docker run \\\n  --api-key     [REDACTED] \\\n  --port        8766"),
+                Arguments.of("--api-key F4KE7argsFile\n--port 8766", "--api-key [REDACTED]\n--port 8766"),
+                Arguments.of(
+                        "  -p, --password F4KE7short   # set for the demo",
+                        "  -p, --password [REDACTED]   # set for the demo"),
+                Arguments.of("  --api-key\tF4KE7tab", "  --api-key\t[REDACTED]"),
+                Arguments.of("  --api-key  F4KE7gap", "  --api-key  [REDACTED]"),
+                Arguments.of("\t\t--api-key\n\t\tF4KE7 launchctl two words", "\t\t--api-key\n\t\t[REDACTED]"),
+                Arguments.of("24:\t\t--api-key\n25-\t\tF4KE7 grep context", "24:\t\t--api-key\n[REDACTED]"),
+                Arguments.of(
+                        "    ProgramArguments = Array {\n        --db-password\n        F4KE7 buddy words\n    }",
+                        "    ProgramArguments = Array {\n        --db-password\n        [REDACTED]\n    }"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("credentialFlagArgumentsBesideHelpLikeText")
+    void credentialFlagsKeepTakingRealArguments(String input, String expected) throws Exception {
+        assertThat(redactor.redact(input)).isEqualTo(expected);
+        assertThat(redactor.redact(toolResult(input))).isEqualTo(toolResult(expected));
+    }
+
+    /**
      * The summary backend is sent each stored piece through the built-in rules: a tool input that
      * ingestion already redacted reaches it unchanged, still valid JSON, never losing the quote that
      * closes a replaced value.
@@ -991,6 +1064,10 @@ class ConfigSecretRedactionTest {
                     "credential flags after whitespace runs and other text",
                     "\n" + " ".repeat(250) + "x --api-key\n" + " ".repeat(160) + "y --api-key\"\n" + " ".repeat(240)
                             + "z --api-key\\\n" + "\\n" + "\\t".repeat(120) + "x --token\\n"),
+            Arguments.of(
+                    "credential flags in help layouts",
+                    "  --api-key" + " ".repeat(300) + "x\n  -p, --password string" + " ".repeat(200) + "two words\n"
+                            + "  --password\n" + " ".repeat(250) + "Password for it\n"),
             Arguments.of(
                     "long names without a separator",
                     "SBA_" + "SEGMENT_".repeat(30) + "PASSWORD v " + "A".repeat(300) + "=v "

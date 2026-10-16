@@ -78,10 +78,26 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // miss stays linear; isSecretFlag decides whether its argument is a credential.
     private static final Pattern FLAG = Pattern.compile(
             "(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{1," + (MAX_FLAG_CHARS - 2) + "}+(?![A-Za-z0-9._-])");
-    // English function words that prose puts after a flag it names ("--api-key or --token").
+    // Words that prose and help text put after a flag they name ("--api-key or --token", "the
+    // --token flag", "--api-key support"): English function words and the words that name a flag.
     private static final Set<String> PROSE_WORDS = Set.of(
-            "a", "an", "and", "as", "at", "by", "for", "from", "if", "in", "into", "is", "it", "of", "on", "or", "than",
-            "that", "the", "then", "this", "to", "when", "with");
+            "a", "also", "an", "and", "are", "as", "at", "be", "but", "by", "can", "does", "flag", "flags", "for",
+            "from", "has", "if", "in", "into", "is", "it", "must", "not", "of", "on", "option", "options", "or",
+            "prompt", "read", "should", "string", "support", "than", "that", "the", "then", "this", "to", "usage",
+            "value", "was", "when", "which", "will", "with", "without");
+    // What help output and manual pages print between a flag and its description: an upper-case name
+    // (API_KEY), a bracketed name (<token>, [PASSWORD], {key}) or a type name, as Go's flag packages
+    // print one (string, stringArray).
+    private static final Pattern METAVAR = Pattern.compile("[A-Z][A-Z0-9_-]{0,63}+(?:\\.\\.\\.)?"
+            + "|<[^<>\\s]{1,64}+>(?:\\.\\.\\.)?|\\[[^\\[\\]\\s]{1,64}+]|\\{[^{}\\s]{1,64}+}"
+            + "|string|strings|stringArray|stringSlice|stringToString|int|uint|float|duration|bool|value|file|path"
+            + "|name");
+    // A line-number or path gutter at the start of a displayed line: cat -n, a file view's arrow, and
+    // grep -n or rg with or without a path (12:, path:12:, path-13-).
+    private static final Pattern GUTTER =
+            Pattern.compile("[ \\t]*+\\d{1,9}(?:\\t|→)|(?:[^\\s:]{1,200}?[:-])?\\d{1,9}[:-]");
+    // How much deeper than its flag a help description is indented, at least.
+    private static final int MIN_DESCRIPTION_INDENT = 2;
     // Matched only against a flag of at most MAX_FLAG_CHARS, so its segment loop may backtrack.
     private static final Pattern SECRET_FLAG_NAME = Pattern.compile("(?i)--(?:[a-z0-9]+[._-])*"
             + "(?<!page[._-]|next[._-]|continuation[._-]|starting[._-]|sync[._-])"
@@ -869,8 +885,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * precedes the name on its line; {@code tabsOnly} is set when only tabs indent it, as in
      * launchctl print; {@code closer} closes the code span or bold text the name opens, else null.
      */
-    private record LineStart(int level, boolean tabsOnly, String closer) {
-        static final LineStart NONE = new LineStart(-1, false, null);
+    private record LineStart(int level, boolean tabsOnly, String closer, int start) {
+        static final LineStart NONE = new LineStart(-1, false, null, -1);
 
         boolean starts() {
 
@@ -959,7 +975,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             tabLevel = firstLineBreakRun(text, nameStart);
         }
 
-        return new LineStart(escaped ? level : tabLevel, tabsOnly, gutter.group(1));
+        return new LineStart(escaped ? level : tabLevel, tabsOnly, gutter.group(1), lineStart);
     }
 
     private static boolean isNameChar(char value) {
@@ -1511,19 +1527,27 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return listElementAfter(text, flagEnd + delimiter.length(), delimiter);
         }
-        int at = flagEnd;
-        while (at < text.length() && (text.charAt(at) == ' ' || text.charAt(at) == '\t')) {
-            at++;
+        if (flagStart > 0 && text.charAt(flagStart - 1) == '[') {
+
+            // An optional flag in a usage synopsis: [--api-key API_KEY].
+            return null;
         }
+        int at = blankEnd(text, flagEnd);
         if (at == text.length() || "\n\r\\\"".indexOf(text.charAt(at)) >= 0) {
-            // Alone on its line, the flag takes the next line, as launchctl print and PlistBuddy show.
+            // Alone on its line, the flag takes the next line, as launchctl print and PlistBuddy show,
+            // unless that line is a description indented under the flag, as help output shows.
             LineStart line = lineStart(text, flagStart);
             if (line.starts() && (at == text.length() || atLineBreak(text, at, line.level()))) {
 
-                return nextLineAfter(text, at, line.level());
+                return describedBelow(text, line, flagStart, at) ? null : nextLineAfter(text, at, line.level());
             }
         }
-        if (at == flagEnd || at == text.length() || !startsArgument(text, at) || proseWord(text, at)) {
+        if (at == flagEnd
+                || at == text.length()
+                || !startsArgument(text, at)
+                || proseWord(text, at)
+                || separatorWord(text, at)
+                || documented(text, flagStart, flagEnd)) {
 
             return null;
         }
@@ -1531,16 +1555,258 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return shellWord(text, at);
     }
 
-    // Prose names a flag too ("pass --api-key or --token to the CLI"): an English function word after
-    // it is not its argument.
+    // Prose names a flag too ("pass --api-key or --token to the CLI", "the --token flag"): a word that
+    // prose puts after a flag is not its argument.
     private static boolean proseWord(String text, int at) {
         int end = at;
-        while (end < text.length() && end - at <= 4 && text.charAt(end) >= 'a' && text.charAt(end) <= 'z') {
+        while (end < text.length() && end - at <= 8 && text.charAt(end) >= 'a' && text.charAt(end) <= 'z') {
             end++;
         }
         boolean wordEnds = end > at && (end == text.length() || !isWordChar(text.charAt(end)));
 
         return wordEnds && PROSE_WORDS.contains(text.substring(at, end));
+    }
+
+    // A lone colon after a flag separates it from its description (--federated-token : Federated …).
+    private static boolean separatorWord(String text, int at) {
+
+        return text.charAt(at) == ':' && (at + 1 == text.length() || Character.isWhitespace(text.charAt(at + 1)));
+    }
+
+    // The end of the blanks at this index: spaces, tabs and JSON-escaped tabs at any encoding level.
+    private static int blankEnd(String text, int at) {
+        int end = at;
+        while (end < text.length()) {
+            char current = text.charAt(end);
+            int run = current == '\\' ? backslashRun(text, end) : 0;
+            if (current == ' ' || current == '\t') {
+                end++;
+            } else if (run > 0 && end + run < text.length() && text.charAt(end + run) == 't') {
+                end += run + 1;
+            } else {
+                break;
+            }
+        }
+
+        return end;
+    }
+
+    /**
+     * Whether a credential flag is documented rather than passed: help output and manual pages start
+     * a line with the flag, after any short alias ({@code -p, --password}), and follow it with an
+     * optional metavar ({@code API_KEY}, {@code <token>}, {@code string}) and its description, either
+     * in a column after two or more spaces or a tab, or on the lines below, indented deeper than the
+     * flag. A description has more than one word, and a line that ends with a shell continuation is a
+     * command, so an aligned argument ({@code --api-key   VALUE \}) is still taken.
+     */
+    private static boolean documented(String text, int flagStart, int flagEnd) {
+        int entry = optionListStart(text, flagStart);
+        LineStart line = lineStart(text, entry);
+        if (!line.starts()) {
+
+            return false;
+        }
+        int at = blankEnd(text, flagEnd);
+        if (columnGap(text, flagEnd, at)) {
+
+            return describes(text, at, line.level());
+        }
+        if (at != flagEnd + 1) {
+
+            return false;
+        }
+        int end = metavarEnd(text, at);
+        if (end < 0) {
+
+            return false;
+        }
+        int after = blankEnd(text, end);
+        if (after < text.length() && atLineBreak(text, after, line.level())) {
+
+            return describedBelow(text, line, entry, after);
+        }
+
+        return columnGap(text, end, after) && describes(text, after, line.level());
+    }
+
+    // Where a help entry's option list starts: a short alias before the long flag (-p, --password, or
+    // -k API_KEY, --api-key), else the flag itself.
+    private static int optionListStart(String text, int flagStart) {
+        int at = flagStart;
+        while (at > 0 && text.charAt(at - 1) == ' ') {
+            at--;
+        }
+        if (at == flagStart || at < 3 || text.charAt(at - 1) != ',') {
+
+            return flagStart;
+        }
+        int wordEnd = at - 1;
+        int wordStart = wordStartBefore(text, wordEnd);
+        if (shortOption(text, wordStart, wordEnd)) {
+
+            return wordStart;
+        }
+        if (wordStart < 2 || text.charAt(wordStart - 1) != ' ' || !metavar(text, wordStart, wordEnd)) {
+
+            return flagStart;
+        }
+        int optionStart = wordStartBefore(text, wordStart - 1);
+
+        return shortOption(text, optionStart, wordStart - 1) ? optionStart : flagStart;
+    }
+
+    // The start of the word that ends here, after whitespace or a JSON escape letter, at most 64 back.
+    private static int wordStartBefore(String text, int end) {
+        int start = end;
+        while (start > 0
+                && end - start < 64
+                && !Character.isWhitespace(text.charAt(start - 1))
+                && !escapeLetter(text, start - 1)) {
+            start--;
+        }
+
+        return start;
+    }
+
+    private static boolean shortOption(String text, int start, int end) {
+
+        return end - start == 2 && text.charAt(start) == '-' && Character.isLetterOrDigit(text.charAt(start + 1));
+    }
+
+    private static boolean metavar(String text, int start, int end) {
+
+        return end > start && METAVAR.matcher(text).region(start, end).matches();
+    }
+
+    // The end of a metavar at this index, else -1.
+    private static int metavarEnd(String text, int at) {
+        int end = at;
+        while (end < text.length()
+                && end - at <= 66
+                && !Character.isWhitespace(text.charAt(end))
+                && "\\\"'".indexOf(text.charAt(end)) < 0) {
+            end++;
+        }
+
+        return metavar(text, at, end) ? end : -1;
+    }
+
+    // Whether the blanks in [from, to) separate columns: two or more spaces, or a tab.
+    private static boolean columnGap(String text, int from, int to) {
+
+        return to - from >= 2 || to - from == 1 && text.charAt(from) == '\t';
+    }
+
+    // Whether the rest of the line from here describes a flag: more than one word, not another flag or
+    // a quoted value, and no shell continuation at its end.
+    private static boolean describes(String text, int at, int level) {
+        int end = lineEnd(text, at, level, false);
+        if (end <= at || "-\"'\\".indexOf(text.charAt(at)) >= 0) {
+
+            return false;
+        }
+        int last = end;
+        while (last > at && Character.isWhitespace(text.charAt(last - 1))) {
+            last--;
+        }
+
+        return text.charAt(last - 1) != '\\' && blankEnd(text, wordEnd(text, at, last)) < last;
+    }
+
+    // The end of the word at this index, before whitespace or a JSON-escaped tab, at most at stop.
+    private static int wordEnd(String text, int at, int stop) {
+        int end = at;
+        while (end < stop && !Character.isWhitespace(text.charAt(end))) {
+            int run = text.charAt(end) == '\\' ? backslashRun(text, end) : 0;
+            if (run > 0 && end + run < text.length() && text.charAt(end + run) == 't') {
+                break;
+            }
+            end += Math.max(run, 1);
+        }
+
+        return Math.min(end, stop);
+    }
+
+    /**
+     * Whether the line after the line break at {@code lineBreak} is a description indented under the
+     * help entry at {@code entry}: at least two columns deeper, after the same kind of line-number or
+     * path gutter. A launchctl print or PlistBuddy listing indents its next argument as deep as the
+     * flag.
+     */
+    private static boolean describedBelow(String text, LineStart line, int entry, int lineBreak) {
+        if (lineBreak >= text.length()) {
+
+            return false;
+        }
+        int next = afterLineBreak(text, lineBreak, line.level());
+        if (next < 0 || next >= text.length()) {
+
+            return false;
+        }
+        int entryIndent = indentAfterGutter(text, line.start(), entry);
+        int nextEnd = Math.min(lineEnd(text, next, line.level(), false), next + MAX_LINE_PREFIX);
+        String shown = displayed(text, next, nextEnd);
+        int content = blankEnd(shown, gutterEnd(shown));
+        if (entryIndent < 0 || content == shown.length()) {
+
+            return false;
+        }
+
+        return column(shown, content) - column(shown, gutterEnd(shown)) >= entryIndent + MIN_DESCRIPTION_INDENT;
+    }
+
+    // The columns between the gutter of the line that starts at lineStart and this index, else -1 when
+    // more than the line-prefix budget stands between them.
+    private static int indentAfterGutter(String text, int lineStart, int at) {
+        if (lineStart < 0 || at - lineStart > MAX_LINE_PREFIX) {
+
+            return -1;
+        }
+        String shown = displayed(text, lineStart, at);
+
+        return column(shown, shown.length()) - column(shown, gutterEnd(shown));
+    }
+
+    // Where a line-number or path gutter that starts this displayed line ends, else 0.
+    private static int gutterEnd(String shown) {
+        Matcher gutter = GUTTER.matcher(shown);
+
+        return gutter.lookingAt() ? gutter.end() : 0;
+    }
+
+    // The display column of this index, a tab advancing to the next multiple of eight.
+    private static int column(String shown, int at) {
+        int column = 0;
+        for (int index = 0; index < at; index++) {
+            column = shown.charAt(index) == '\t' ? (column / 8 + 1) * 8 : column + 1;
+        }
+
+        return column;
+    }
+
+    // The characters of [from, to) as displayed: a JSON-escaped tab or file-view arrow (→) at any
+    // encoding level reads as itself.
+    private static String displayed(String text, int from, int to) {
+        StringBuilder shown = new StringBuilder(to - from);
+        for (int index = from; index < to; index++) {
+            char current = text.charAt(index);
+            int run = current == '\\' ? backslashRun(text, index) : 0;
+            if (run > 0 && index + run < to && text.charAt(index + run) == 't') {
+                shown.append('\t');
+                index += run;
+            } else if (run > 0 && text.startsWith("u2192", index + run) && index + run + 5 <= to) {
+                shown.append('→');
+                index += run + 4;
+            } else if (run > 0) {
+                int end = Math.min(index + run, to);
+                shown.append(text, index, end);
+                index = end - 1;
+            } else {
+                shown.append(current);
+            }
+        }
+
+        return shown.toString();
     }
 
     // The quote that opens the list element holding a flag at this index ("--api-key" or \"--api-key),
