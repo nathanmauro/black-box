@@ -1114,6 +1114,29 @@ class ConfigSecretRedactionTest {
         });
     }
 
+    /**
+     * Empty strings, names, arrays and objects each count against the scan budget, so 16 MB of them
+     * is read only as far as the budget, like any other stored JSON.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"\"\"", "{\"\":\"\"}", "[]", "{}"})
+    void summaryWorkOnStoredJsonOfEmptyValuesStopsAtTheScanBudget(String element) throws Exception {
+        int count = 16_000_000 / (element.length() + 1);
+        String stored = "[" + (element + ",").repeat(count - 1) + element + "]";
+
+        assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
+            for (int call = 0; call < 20; call++) {
+                assertThat(redactor.redactJsonForSummary(stored)).hasSizeLessThan(400_000);
+                assertThat(redactor.redactJsonForSummary(stored, 900)).hasSizeLessThan(8_000);
+            }
+        });
+        // The marker ends the last list or object read, so the JSON stays valid.
+        for (String sent : List.of(redactor.redactJsonForSummary(stored), redactor.redactJsonForSummary(stored, 900))) {
+            assertThat(sent).matches("(?s)\\[.*\"…\\[truncated]\"}?]");
+            assertThat(JSON.readTree(sent).isArray()).isTrue();
+        }
+    }
+
     // Thirteen strings of about 48,600 characters, each starting with its own marker.
     private static List<String> longParts(String marker) {
         List<String> parts = new ArrayList<>();

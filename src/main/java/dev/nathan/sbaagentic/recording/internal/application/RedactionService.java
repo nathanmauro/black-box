@@ -39,6 +39,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static final Pattern STRONG_SECRET_NAME = Pattern.compile("(?i)" + STRONG_SECRET_WORDS);
     private static final Pattern CREDENTIAL_WORD = Pattern.compile("(?i)credential");
     private static final Pattern ENV_KEY_NAME = Pattern.compile("(?:[A-Z0-9]++_)++KEY");
+    // What a name loses before its credential words are compared (lowercase letters and digits stay).
+    private static final Pattern NOT_NAME_LETTER = Pattern.compile("[^a-z0-9]");
     // The longest name the text rules read: a longer run of name characters is not a name.
     private static final int MAX_NAME_CHARS = 256;
     // The shortest name that holds a credential word (token) or is an environment-style _KEY name (A_KEY).
@@ -450,10 +452,12 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     /**
      * Reads stored JSON as Jackson reads an untyped value, in document order, until {@code maxChars}
-     * characters of names, strings and other values have been read: a member or element that starts
-     * after that is not read, and {@link #CUT} stands in for it and for everything after it, a member
-     * keeping its name. Nothing after a cut is parsed, so the work stays within the budget and the one
-     * string that crosses it. Null when the text is not one JSON value.
+     * characters of names, strings and other values have been read, each member, value, array and
+     * object counting as at least one: a member or element that starts after that is not read, and
+     * {@link #CUT} stands in for it and for everything after it, a member keeping its name. Nothing
+     * after a cut is parsed, so the work stays within the budget and the one string that crosses it,
+     * also for JSON made of empty strings, names, arrays or objects. Null when the text is not one
+     * JSON value.
      */
     private static StoredJson readStoredJson(String json, int maxChars) {
         try (JsonParser parser = STORED_JSON.createParser(json)) {
@@ -499,6 +503,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private static Object readJsonValue(JsonParser parser, JsonBudget budget) throws IOException {
         JsonToken token = parser.currentToken();
         if (token == JsonToken.START_OBJECT) {
+            budget.read(1);
             Map<String, Object> members = new LinkedHashMap<>();
             for (String name = parser.nextFieldName(); name != null; name = parser.nextFieldName()) {
                 if (budget.cuts()) {
@@ -506,7 +511,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
                     return members;
                 }
-                budget.read(name.length());
+                budget.read(name.length() + 1);
                 parser.nextToken();
                 members.put(name, readJsonValue(parser, budget));
                 if (budget.cut) {
@@ -519,6 +524,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return members;
         }
         if (token == JsonToken.START_ARRAY) {
+            budget.read(1);
             List<Object> elements = new ArrayList<>();
             for (JsonToken next = parser.nextToken(); next != JsonToken.END_ARRAY; next = parser.nextToken()) {
                 requireValue(parser, next);
@@ -537,7 +543,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return elements;
         }
         requireValue(parser, token);
-        budget.read(parser.getTextLength());
+        budget.read(Math.max(1, parser.getTextLength()));
 
         // The values Jackson's untyped reader builds.
         return switch (token) {
@@ -703,7 +709,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     }
 
     private static boolean isSecretKey(String key) {
-        String normalized = key.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        String normalized =
+                NOT_NAME_LETTER.matcher(key.toLowerCase(Locale.ROOT)).replaceAll("");
 
         return SECRET_KEY_WORDS.stream().anyMatch(normalized::contains)
                 || ENV_KEY_NAME.matcher(key.strip()).matches();
@@ -983,7 +990,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     // A name that counts tokens (max_tokens, tokenCount) and carries no other secret word.
     private static boolean countsTokens(String name) {
-        String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        String normalized =
+                NOT_NAME_LETTER.matcher(name.toLowerCase(Locale.ROOT)).replaceAll("");
 
         return (normalized.contains("tokens") || normalized.contains("tokencount"))
                 && !isSecretKey(normalized.replace("token", ""));
