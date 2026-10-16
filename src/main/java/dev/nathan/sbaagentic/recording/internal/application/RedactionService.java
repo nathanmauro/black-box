@@ -80,15 +80,20 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             "(?:(?<![A-Za-z0-9_-])|(?<=\\\\[nrt]))--[A-Za-z0-9._-]{1," + (MAX_FLAG_CHARS - 2) + "}+(?![A-Za-z0-9._-])");
     // Words that prose and help text put after a flag they name ("--api-key or --token", "the
     // --token flag", "--api-key support"): English function words and the words that name a flag.
+    // Each counts only standing alone (see proseWord), never as the head of a longer argument.
     private static final Set<String> PROSE_WORDS = Set.of(
             "a", "also", "an", "and", "are", "as", "at", "be", "but", "by", "can", "does", "flag", "flags", "for",
             "from", "has", "if", "in", "into", "is", "it", "must", "not", "of", "on", "option", "options", "or",
             "prompt", "read", "should", "string", "support", "than", "that", "the", "then", "this", "to", "usage",
             "value", "was", "when", "which", "will", "with", "without");
+    // The most letters in the word a help description starts with.
+    private static final int MAX_DESCRIPTION_WORD_CHARS = 20;
+    // An all-capital word of up to this many letters starts a description as an acronym (API, JWT).
+    private static final int MAX_ACRONYM_CHARS = 5;
     // What help output and manual pages print between a flag and its description: an upper-case name
-    // (API_KEY), a bracketed name (<token>, [PASSWORD], {key}) or a type name, as Go's flag packages
-    // print one (string, stringArray).
-    private static final Pattern METAVAR = Pattern.compile("[A-Z][A-Z0-9_-]{0,63}+(?:\\.\\.\\.)?"
+    // without digits (API_KEY), a bracketed name (<token>, [PASSWORD], {key}) or a type name, as Go's
+    // flag packages print one (string, stringArray).
+    private static final Pattern METAVAR = Pattern.compile("[A-Z][A-Z_-]{0,63}+(?:\\.\\.\\.)?"
             + "|<[^<>\\s]{1,64}+>(?:\\.\\.\\.)?|\\[[^\\[\\]\\s]{1,64}+]|\\{[^{}\\s]{1,64}+}"
             + "|string|strings|stringArray|stringSlice|stringToString|int|uint|float|duration|bool|value|file|path"
             + "|name");
@@ -1527,7 +1532,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return listElementAfter(text, flagEnd + delimiter.length(), delimiter);
         }
-        if (flagStart > 0 && text.charAt(flagStart - 1) == '[') {
+        if (flagStart > 0 && text.charAt(flagStart - 1) == '[' && synopsisEntry(text, flagEnd)) {
 
             // An optional flag in a usage synopsis: [--api-key API_KEY].
             return null;
@@ -1555,16 +1560,77 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return shellWord(text, at);
     }
 
+    // Whether a flag that opens a bracket is a usage synopsis entry: a metavar, then the bracket closes
+    // or an alternative follows ([--api-key API_KEY], [--token TOKEN | --token-file PATH]). An
+    // argument slice ([--api-key F4KE… --port 8080], [--api-key f4ke…]) is not one.
+    private static boolean synopsisEntry(String text, int flagEnd) {
+        if (flagEnd >= text.length() || text.charAt(flagEnd) != ' ') {
+
+            return false;
+        }
+        int start = flagEnd + 1;
+        int word = start;
+        // The word ends before a bracket glued to it ([--api-key API_KEY]), or after the bracket that
+        // closes a bracketed metavar ([--token [TOKEN]]).
+        boolean bracketed = start < text.length() && text.charAt(start) == '[';
+        while (word < text.length()
+                && word - start <= 66
+                && !Character.isWhitespace(text.charAt(word))
+                && "\\\"'|".indexOf(text.charAt(word)) < 0) {
+            if (text.charAt(word) == ']') {
+                word += bracketed && word > start ? 1 : 0;
+                break;
+            }
+            word++;
+        }
+        int after = blankEnd(text, word);
+
+        return metavar(text, start, word)
+                && after < text.length()
+                && (text.charAt(after) == ']' || text.charAt(after) == '|');
+    }
+
     // Prose names a flag too ("pass --api-key or --token to the CLI", "the --token flag"): a word that
-    // prose puts after a flag is not its argument.
+    // prose puts after a flag is not its argument when it stands alone, followed by whitespace, a
+    // JSON-escaped line break or tab, a quote that closes its string or the end of the text, directly
+    // or after one or two closing punctuation marks ("flag.", "option),"). An argument that only
+    // starts with such a word (not-a-secret, will.i.am, value@prod) is still taken.
     private static boolean proseWord(String text, int at) {
         int end = at;
         while (end < text.length() && end - at <= 8 && text.charAt(end) >= 'a' && text.charAt(end) <= 'z') {
             end++;
         }
-        boolean wordEnds = end > at && (end == text.length() || !isWordChar(text.charAt(end)));
+        if (end == at || !PROSE_WORDS.contains(text.substring(at, end))) {
 
-        return wordEnds && PROSE_WORDS.contains(text.substring(at, end));
+            return false;
+        }
+        for (int marks = 0; marks < 2 && end < text.length() && ".,;:)".indexOf(text.charAt(end)) >= 0; marks++) {
+            end++;
+        }
+
+        return standsAlone(text, end);
+    }
+
+    // Whether a word that ends here stands alone: whitespace, a JSON-escaped line break or tab, a raw
+    // or escaped quote that closes its string, or the end of the text follows it.
+    private static boolean standsAlone(String text, int at) {
+        if (at >= text.length() || Character.isWhitespace(text.charAt(at))) {
+
+            return true;
+        }
+        char next = text.charAt(at);
+        if (next == '"' || next == '\'') {
+
+            return closesString(text, at + 1);
+        }
+        int run = next == '\\' ? backslashRun(text, at) : 0;
+        if (run == 0 || at + run >= text.length()) {
+
+            return false;
+        }
+        char escaped = text.charAt(at + run);
+
+        return "nrt".indexOf(escaped) >= 0 || escaped == '"' && closesString(text, at + run + 1);
     }
 
     // A lone colon after a flag separates it from its description (--federated-token : Federated …).
@@ -1595,9 +1661,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      * Whether a credential flag is documented rather than passed: help output and manual pages start
      * a line with the flag, after any short alias ({@code -p, --password}), and follow it with an
      * optional metavar ({@code API_KEY}, {@code <token>}, {@code string}) and its description, either
-     * in a column after two or more spaces or a tab, or on the lines below, indented deeper than the
-     * flag. A description has more than one word, and a line that ends with a shell continuation is a
-     * command, so an aligned argument ({@code --api-key   VALUE \}) is still taken.
+     * in a column after two or more spaces or a tab, or on the next line, indented deeper than the
+     * flag. A description reads as prose (see {@link #describes}), so an aligned argument with digits
+     * or symbols ({@code --api-key   F4KE…   prod}), one that a {@code #} comment or a parenthesized
+     * note follows, and one on a line that a shell continuation ends ({@code --api-key   VALUE \}) are
+     * still taken.
      */
     private static boolean documented(String text, int flagStart, int flagEnd) {
         int entry = optionListStart(text, flagStart);
@@ -1609,7 +1677,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         int at = blankEnd(text, flagEnd);
         if (columnGap(text, flagEnd, at)) {
 
-            return describes(text, at, line.level());
+            // Without a metavar, the description's first word stands where an argument would.
+            return describes(text, at, line.level(), true);
         }
         if (at != flagEnd + 1) {
 
@@ -1626,7 +1695,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return describedBelow(text, line, entry, after);
         }
 
-        return columnGap(text, end, after) && describes(text, after, line.level());
+        return columnGap(text, end, after) && describes(text, after, line.level(), false);
     }
 
     // Where a help entry's option list starts: a short alias before the long flag (-p, --password, or
@@ -1697,20 +1766,70 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         return to - from >= 2 || to - from == 1 && text.charAt(from) == '\t';
     }
 
-    // Whether the rest of the line from here describes a flag: more than one word, not another flag or
-    // a quoted value, and no shell continuation at its end.
-    private static boolean describes(String text, int at, int level) {
+    /**
+     * Whether the rest of the line from here describes a flag as prose does: it starts with a word of
+     * letters (see {@link #descriptionWord}), another word that opens neither a {@code #} comment nor
+     * a parenthesized note follows, and no shell continuation ends the line: a backslash, or a
+     * backtick (PowerShell) or caret (cmd) standing alone.
+     */
+    private static boolean describes(String text, int at, int level, boolean sentenceStart) {
         int end = lineEnd(text, at, level, false);
-        if (end <= at || "-\"'\\".indexOf(text.charAt(at)) >= 0) {
-
-            return false;
-        }
         int last = end;
         while (last > at && Character.isWhitespace(text.charAt(last - 1))) {
             last--;
         }
+        if (last <= at || continued(text, at, last)) {
 
-        return text.charAt(last - 1) != '\\' && blankEnd(text, wordEnd(text, at, last)) < last;
+            return false;
+        }
+        int first = wordEnd(text, at, last);
+        int next = blankEnd(text, first);
+
+        return descriptionWord(text, at, first, sentenceStart)
+                && next < last
+                && text.charAt(next) != '#'
+                && text.charAt(next) != '(';
+    }
+
+    // Whether a shell continuation ends the line [at, last): a backslash, or a backtick or caret after
+    // a blank.
+    private static boolean continued(String text, int at, int last) {
+        char lastChar = text.charAt(last - 1);
+        if (lastChar == '\\') {
+
+            return true;
+        }
+
+        return (lastChar == '`' || lastChar == '^')
+                && last - 2 >= at
+                && (text.charAt(last - 2) == ' ' || text.charAt(last - 2) == '\t');
+    }
+
+    /**
+     * Whether [start, end) can open a help description: up to 20 ASCII letters and at most one
+     * closing {@code .,:;}, no digits or other symbols. With {@code sentenceStart}, where an argument
+     * would otherwise stand, the word must also start a sentence: lower case, capitalized, or an
+     * all-capital acronym of up to five letters ({@code Read}, {@code prompt}, {@code API}).
+     */
+    private static boolean descriptionWord(String text, int start, int end, boolean sentenceStart) {
+        int letters = end > start && ".,:;".indexOf(text.charAt(end - 1)) >= 0 ? end - 1 : end;
+        int length = letters - start;
+        if (length < 1 || length > MAX_DESCRIPTION_WORD_CHARS) {
+
+            return false;
+        }
+        int upper = 0;
+        for (int index = start; index < letters; index++) {
+            char current = text.charAt(index);
+            if (current >= 128 || !Character.isLetter(current)) {
+
+                return false;
+            }
+            upper += Character.isUpperCase(current) ? 1 : 0;
+        }
+        boolean capitalized = upper == 1 && Character.isUpperCase(text.charAt(start));
+
+        return !sentenceStart || upper == 0 || capitalized || upper == length && length <= MAX_ACRONYM_CHARS;
     }
 
     // The end of the word at this index, before whitespace or a JSON-escaped tab, at most at stop.
@@ -1730,8 +1849,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     /**
      * Whether the line after the line break at {@code lineBreak} is a description indented under the
      * help entry at {@code entry}: at least two columns deeper, after the same kind of line-number or
-     * path gutter. A launchctl print or PlistBuddy listing indents its next argument as deep as the
-     * flag.
+     * path gutter, and read as prose (see {@link #describes}). A launchctl print or PlistBuddy listing
+     * indents its next argument as deep as the flag.
      */
     private static boolean describedBelow(String text, LineStart line, int entry, int lineBreak) {
         if (lineBreak >= text.length()) {
@@ -1752,7 +1871,8 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return false;
         }
 
-        return column(shown, content) - column(shown, gutterEnd(shown)) >= entryIndent + MIN_DESCRIPTION_INDENT;
+        return column(shown, content) - column(shown, gutterEnd(shown)) >= entryIndent + MIN_DESCRIPTION_INDENT
+                && describes(shown, content, 0, false);
     }
 
     // The columns between the gutter of the line that starts at lineStart and this index, else -1 when

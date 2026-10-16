@@ -355,18 +355,35 @@ The same names also match displayed service configuration:
   under it (see below). Flags that name where a credential is, read one or page results
   (`--secret-id`, `--token-file`, `--api-key-env`, `--password-stdin`, `--next-token`) and token
   limits (`--max-tokens`) keep theirs. `--api-key=value` is an ordinary assignment.
-- Help output, manual pages and prose that only name a credential flag keep their text. Not taken
-  as an argument: a word that prose puts after a flag (English function words such as `or`, `to`
-  and `the`, and `flag`, `option`, `support`, `usage`, `value`, `string`, `read` and `prompt`, in
-  lower case), a lone `:`, the argument of an optional flag in a usage synopsis
-  (`[--api-key API_KEY]`), and a help entry's metavar and description. A help entry starts its line
-  with the flag, after any short alias (`-p, --password`, `-k API_KEY, --api-key`), and follows it
-  with an optional metavar (an upper-case word such as `API_KEY`, a bracketed name such as
-  `<token>`, or a type name such as `string` or `stringArray`) and then either a description of more
-  than one word after two or more spaces or a tab, or a description on the next line indented at
-  least two columns deeper than the entry, after the same kind of line-number or path gutter. A line
-  whose description would start with `-` or a quote, or that ends with a shell continuation (`\`),
-  is a command, so an aligned argument (`--api-key   VALUE \`) is still taken.
+- What a flag is followed by in help output, manual pages and prose is kept in these cases only;
+  any other word after a credential flag is taken as its argument (see the limits below):
+  - A word from a fixed list that prose puts after a flag, in lower case and standing alone:
+    English function words (`a`, `also`, `an`, `and`, `are`, `as`, `at`, `be`, `but`, `by`, `can`,
+    `does`, `for`, `from`, `has`, `if`, `in`, `into`, `is`, `it`, `must`, `not`, `of`, `on`, `or`,
+    `should`, `than`, `that`, `the`, `then`, `this`, `to`, `was`, `when`, `which`, `will`, `with`,
+    `without`) and `flag`, `flags`, `option`, `options`, `prompt`, `read`, `string`, `support`,
+    `usage` and `value`. Standing alone means that whitespace, a raw or JSON-escaped line break or
+    tab, a quote that closes its string or the end of the text follows the word, directly or after
+    one or two of `.`, `,`, `;`, `:` and `)`. An argument that only starts with such a word
+    (`not-a-secret`, `will.i.am`, `value@prod`) is taken.
+  - In a usage synopsis, a metavar (see below) between a `[` directly before the flag and a `]` or
+    `|` after it (`[--api-key API_KEY]`, `[--token TOKEN | --token-file PATH]`). An argument slice
+    such as Go prints for `os.Args` (`[--api-key F4KE… --port 8080]`) is taken.
+  - A help entry's metavar and description. A help entry starts its line with the flag, after any
+    short alias (`-p, --password`, `-k API_KEY, --api-key`), and follows it with a description in
+    a column after two or more spaces or a tab, or with a metavar after one space (an upper-case word
+    without digits such as `API_KEY`, a bracketed name such as `<token>`, or a type name such as
+    `string` or `stringArray`) and then a description in a column, or on the next line indented at
+    least two columns deeper than the entry, after the same kind of line-number or path gutter. A
+    description reads as prose: its first word is up to 20 letters, optionally followed by one of
+    `.`, `,`, `:` and `;`, and another word follows that opens neither a `#` comment nor a
+    parenthesized note. Where the description stands right after the flag, its first word must also
+    be lower case, capitalized or an acronym of up to five capitals
+    (`Read token from standard input`, `prompt for passwords`, `API key for the service`). A line
+    that ends with a shell continuation (`\`, or a `` ` `` or `^` after a blank) is a command. So an
+    aligned argument with digits or symbols (`--api-key   F4KE…   prod key`), one that a comment or
+    note follows (`--db-password    hunter2   (from file)`) and one on a continued line
+    (`--api-key   VALUE \`) are still taken.
 - Commands that write a credential: `launchctl setenv NAME value`, PlistBuddy `Set :…:NAME value`
   and `Add :…:NAME type value` (through the end of the `-c` argument), `plutil -replace` or
   `-insert` with a key path ending in the name and a type, `defaults write domain NAME [-type]
@@ -423,14 +440,30 @@ unlabelled secrets. Known limits:
   `--secret-key`, `--access-key` or `--signing-key`, whose names end with `key` rather than a
   credential word, are kept. An argument that only names where the credential is or a documentation
   placeholder (`--api-key env:NAME`, `--secret xxx`) is replaced anyway.
-- Help layouts are recognized by shape, not by content: an argument is kept when its flag starts a
-  line and the argument looks like a metavar (an upper-case word, a bracketed name or a type name)
-  followed by two or more spaces and more than one word
-  (`--api-key ABCDEFQWERTY   set for the demo`), or stands alone on the next line indented at least
-  two columns deeper than the flag. Help text that does not follow these layouts can still lose a
-  word after a flag, such as a description after a single space (`--with-token Read token …`), a
-  placeholder (`--password password`, `--change-passphrase user-id`) or a GNU `--password=PASS`
-  metavar, which is an assignment.
+- Help layouts and prose words are recognized by shape, not by content, so an argument laid out
+  like them is kept. The open layouts, all for a flag that starts its line unless noted:
+  - after two or more spaces or a tab, a word that could start a sentence followed by another word
+    (`--password   letmein   for the demo`, or a tab-separated row
+    `--db-password<TAB>hunter<TAB>staging`);
+  - after one space, a metavar-shaped argument followed by a description column
+    (`--api-key ABCDEFQWERTY   set for the demo`);
+  - a line indented at least two columns deeper than a flag that is alone on its line, or followed
+    only by a metavar-shaped argument, when that line starts with a word of letters and holds another
+    word (`--password` above `      letmein for the demo`);
+  - anywhere on a line, a metavar-shaped argument of a flag directly after `[` when `]` or `|`
+    follows it (`[--api-key ABCDEFQWERTY]`);
+  - anywhere, an argument that is exactly one of the prose words above (`--password value`,
+    `--token not`).
+
+  Help and prose outside these layouts lose the word after a credential flag: a description after a
+  single space (`--with-token Read token …`), a description column right after the flag that starts
+  with a digit, a symbol, a mixed-case word or more than five capitals
+  (`--github-token   GitHub token`), a description of one word or one that a note follows
+  (`--secret   Secret (required)`), a description after a lone colon, which reads as a
+  `name : value` pair (`--federated-token : Federated token …` loses `Federated`), a placeholder
+  (`--password password`, `--change-passphrase user-id`), a GNU `--password=PASS` metavar, which is
+  an assignment, and prose that puts any other word after a flag (`Added the --api-key parameter`,
+  `--token now reads …`, `Make --api-key required.`).
 - Names: a quoted name with dots is not matched (`"sba.judge.password" => …`,
   `{"sba.judge.password": …}`, `defaults read`'s `"sync.auth.token" = …;`), nor is a lowercase or
   mixed-case name that ends with `key` but holds no credential word (`jev_key`, `JevKey`), a name

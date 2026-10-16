@@ -772,7 +772,15 @@ class ConfigSecretRedactionTest {
                 "Wired the --api-key flag into the CLI",
                 "--hide-secret flag. Please carefully consider how and when these flags are used.",
                 "    12→  --password\n    13→      Password for authentication.",
-                "/fixture/docs/cli.md:12:  --password\n/fixture/docs/cli.md-13-      Password for authentication."
+                "/fixture/docs/cli.md:12:  --password\n/fixture/docs/cli.md-13-      Password for authentication.",
+                "  --token        Auth token (default: read from ~/.config/app/token)",
+                "  --password     Prompt for the password interactively",
+                "  --api-key      API key for the service",
+                "      --token TOKEN           GitHub token",
+                "  --secret NAME  Name of the secret to mount",
+                "Document the --token flag",
+                "Pass the --api-key option, which overrides the environment.",
+                "Avoid the --password flag; it leaks into the shell history."
             })
     void keepsCredentialFlagsThatHelpAndProseOnlyName(String text) throws Exception {
         assertThat(redactor.redact(text)).isEqualTo(text);
@@ -801,7 +809,69 @@ class ConfigSecretRedactionTest {
                 Arguments.of("24:\t\t--api-key\n25-\t\tF4KE7 grep context", "24:\t\t--api-key\n[REDACTED]"),
                 Arguments.of(
                         "    ProgramArguments = Array {\n        --db-password\n        F4KE7 buddy words\n    }",
-                        "    ProgramArguments = Array {\n        --db-password\n        [REDACTED]\n    }"));
+                        "    ProgramArguments = Array {\n        --db-password\n        [REDACTED]\n    }"),
+                // An aligned argument is not a help description: it holds digits or symbols, a '#'
+                // comment or a parenthesized note follows it, or a continuation ends its line.
+                Arguments.of(
+                        "exec app \\\n  --verbose \\\n  --api-key   F4KE7s4   # prod key\n",
+                        "exec app \\\n  --verbose \\\n  --api-key   [REDACTED]   # prod key\n"),
+                Arguments.of(
+                        "Effective flags:\n  --api-key        F4KE7u2    (from env)\n"
+                                + "  --db-password    hunter8   (from file)\n",
+                        "Effective flags:\n  --api-key        [REDACTED]    (from env)\n"
+                                + "  --db-password    [REDACTED]   (from file)\n"),
+                Arguments.of("  --db-password    letmein   (from file)", "  --db-password    [REDACTED]   (from file)"),
+                Arguments.of("--password   letmein   # demo", "--password   [REDACTED]   # demo"),
+                Arguments.of(
+                        "docker run `\n  --api-key   F4KE7s7 `\n  myimage\n",
+                        "docker run `\n  --api-key   [REDACTED] `\n  myimage\n"),
+                Arguments.of(
+                        "app.exe ^\n  --password   letmein ^\n  --port 1\n",
+                        "app.exe ^\n  --password   [REDACTED] ^\n  --port 1\n"),
+                Arguments.of("--api-key\tF4KE7t1\t# staging\n", "--api-key\t[REDACTED]\t# staging\n"),
+                Arguments.of(
+                        "flag\tvalue\tenv\n--api-key\tF4KE7u3\tprod\n--db-password\thunter9\tstaging\n",
+                        "flag\tvalue\tenv\n--api-key\t[REDACTED]\tprod\n--db-password\t[REDACTED]\tstaging\n"),
+                Arguments.of(
+                        "1. --api-key   F4KE7t8 is the staging key\n",
+                        "1. --api-key   [REDACTED] is the staging key\n"),
+                Arguments.of(
+                        "#   --api-key  F4KE7t9 old key, rotated\n", "#   --api-key  [REDACTED] old key, rotated\n"),
+                Arguments.of(
+                        "deploy.sh:12:  --api-key   F4KE7u4   # prod\n",
+                        "deploy.sh:12:  --api-key   [REDACTED]   # prod\n"),
+                Arguments.of("    12\t  --api-key   F4KE7u5   # prod\n", "    12\t  --api-key   [REDACTED]   # prod\n"),
+                Arguments.of("> --api-key   F4KE7u6 worked for me\n", "> --api-key   [REDACTED] worked for me\n"),
+                Arguments.of(
+                        "exec app \\\n  --api-key F4KE7S6UPPER  # prod key\n",
+                        "exec app \\\n  --api-key [REDACTED]  # prod key\n"),
+                Arguments.of("  --api-key F4KE7UPPER   staging key", "  --api-key [REDACTED]   staging key"),
+                // A deeper-indented next line is a description only when it reads as one.
+                Arguments.of(
+                        "  --api-key F4KE7U7UPPER\n      && echo ok\n", "  --api-key [REDACTED]\n      && echo ok\n"),
+                Arguments.of(
+                        "\targuments = {\n\t\t--api-key\n\t\t\tF4KE7w2\n\t}\n",
+                        "\targuments = {\n\t\t--api-key\n\t\t\t[REDACTED]\n\t}\n"),
+                Arguments.of(
+                        "    ProgramArguments = Array {\n        --api-key\n          F4KE7w3\n    }\n",
+                        "    ProgramArguments = Array {\n        --api-key\n          [REDACTED]\n    }\n"),
+                Arguments.of("--api-key\n  F4KE7t3\n", "--api-key\n  [REDACTED]\n"),
+                Arguments.of("--password\n    letmein\n", "--password\n    [REDACTED]\n"),
+                // A bracket is a usage synopsis only around a metavar: argument slices keep losing it.
+                Arguments.of("args=[--api-key F4KE7r2 --port 1]", "args=[--api-key [REDACTED] --port 1]"),
+                Arguments.of("starting with [--api-key F4KE7r3]", "starting with [--api-key [REDACTED]]"),
+                Arguments.of("[--api-key F4KE7v1]\n", "[--api-key [REDACTED]]\n"),
+                Arguments.of("[--api-key F4KE7SECRET9]", "[--api-key [REDACTED]]"),
+                // A word from prose's list is prose only standing alone, never as the head of an argument.
+                Arguments.of("app --password not-a-secret --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --token will.i.am --verbose", "app --token [REDACTED] --verbose"),
+                Arguments.of("app --password read-only-77 --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password be@ch2026 --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password value@prod --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password which=one --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password flags! --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password the-secret --verbose", "app --password [REDACTED] --verbose"),
+                Arguments.of("app --password it's-me", "app --password [REDACTED]"));
     }
 
     @ParameterizedTest

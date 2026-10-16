@@ -16,9 +16,10 @@ All notable changes to this project will be documented in this file.
   both lines of a changed value in a diff, and a key and value split across the lines of an Edit
   tool's `structuredPatch`; the argument of a flag that ends with a credential word (`--api-key`,
   `--db-password`), on a command line, in a quoted argument list or plist array, or on the line after
-  it in `launchctl print` and PlistBuddy output, while help output, manual pages and prose that only
-  name such a flag keep their text; `launchctl setenv`, PlistBuddy `Set`/`Add`,
-  `plutil -replace`/`-insert`, `defaults write` and `security add-generic-password -w`;
+  it in `launchctl print` and PlistBuddy output, while help output and manual pages in the layouts
+  it recognizes, and prose that puts one of a fixed list of words after such a flag, keep their
+  text; `launchctl setenv`, PlistBuddy `Set`/`Add`, `plutil -replace`/`-insert`, `defaults write`
+  and `security add-generic-password -w`;
   `PlistBuddy -c Print` lines for environment-style names (`SBA_DB_PASSWORD = …`); JSON-encoded tool
   results up to four encoding levels, where each displayed line keeps its own encoding level, so an
   escaped line break ends a value but a quote or backslash inside it does not; a credential word
@@ -48,12 +49,16 @@ All notable changes to this project will be documented in this file.
   (`` `NAME` => `value` ``, table rows), a `launchctl print` value after its leading quoted part,
   property-list pairs in normal-format `diff` output or split by merge-conflict markers, single-dash
   flags, `--secret-key`-style flags, arguments that start with `-` or follow a shell continuation,
-  and an argument shaped like help output (a metavar-like word before a description column, or a
-  line indented deeper than its flag); see [docs/operations.md](docs/operations.md#configuration).
-  Code that assigns to these names, such as `passphrase: cert.passphrase` or
-  `SECRET_KEY = os.environ.get(…)` at the start of a line, loses the value, and so does a
-  documentation placeholder after a credential flag. Existing captures are not rewritten; rotate any
-  credential an agent displayed before this change.
+  and an argument laid out like help output or prose: a word that could start a sentence followed
+  by more words in a column after the flag (`--password   letmein   for the demo`), a
+  metavar-shaped word before a description column or in a `[--flag …]` synopsis
+  (`--api-key ABCDEFQWERTY   set for the demo`), a description-like line indented deeper than its
+  flag, or one of the listed prose words (`--password value`); see
+  [docs/operations.md](docs/operations.md#configuration). Code that assigns to these names, such as
+  `passphrase: cert.passphrase` or `SECRET_KEY = os.environ.get(…)` at the start of a line, loses
+  the value, and so do a documentation placeholder after a credential flag and any word other than
+  the listed ones that prose puts after one (`the --api-key parameter`). Existing captures are not
+  rewritten; rotate any credential an agent displayed before this change.
 - Session summaries and direct meld previews pass stored text through the built-in credential rules
   before the summary backend receives it. Text stored before a redaction rule recognized its
   credential was sent as stored, by default to the external Codex wrapper; now each piece is
