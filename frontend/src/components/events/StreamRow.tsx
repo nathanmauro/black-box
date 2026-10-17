@@ -6,6 +6,7 @@ import { kindMarkOf } from "../../lib/presenters/marks";
 import { LANDMARK_KINDS } from "../../lib/streamGroups";
 import KindBadge from "../KindBadge";
 import { EventRenderer, eventHeadline, eventHeadlineSpans } from "./EventRow";
+import TurnFollowup from "./TurnFollowup";
 
 type StreamRowProps = {
   item: EventFeedItem;
@@ -96,7 +97,13 @@ export default function StreamRow(props: StreamRowProps) {
               )}
             </Show>
           </div>
-          <EventRenderer event={item()} textExpanded={props.textExpanded} />
+          <Show
+            when={props.humanMode}
+            fallback={<EventRenderer event={item()} textExpanded={props.textExpanded} />}
+          >
+            {/* The headline unclamps when expanded, so the turn itself is not repeated here. */}
+            <TurnFollowup eventId={item().id} textExpanded={props.textExpanded} />
+          </Show>
         </div>
       ) : null}
     </article>

@@ -79,6 +79,30 @@ class HumanTurnStoreTest {
     }
 
     @Test
+    void turnFollowupRunsFromTheTurnToTheNextHumanTurn() {
+        String client = start();
+        String first = ingest(client, "UserPromptSubmit", "first question");
+        String read = ingest(client, "PostToolUse", "read a file");
+        String note = ingest(client, "UserPromptSubmit", NOTIFICATION);
+        String stop = ingest(client, "Stop", "answered");
+        String second = ingest(client, "UserPromptSubmit", "second question");
+        String tail = ingest(client, "PostToolUse", "still working");
+
+        TurnFollowup followup = repository.turnFollowup(first, 50).orElseThrow();
+        assertThat(followup.events()).extracting(AgentEvent::id).containsExactly(read, note, stop);
+        assertThat(followup.complete()).isTrue();
+
+        TurnFollowup open = repository.turnFollowup(second, 50).orElseThrow();
+        assertThat(open.events()).extracting(AgentEvent::id).containsExactly(tail);
+
+        TurnFollowup capped = repository.turnFollowup(first, 2).orElseThrow();
+        assertThat(capped.events()).extracting(AgentEvent::id).containsExactly(read, note);
+        assertThat(capped.complete()).isFalse();
+
+        assertThat(repository.turnFollowup("missing", 50)).isEmpty();
+    }
+
+    @Test
     void humanPromptStoresHumanTextAndMachineTurnsStoreNull() {
         String client = start();
         String human = ingest(client, "UserPromptSubmit", "please rename the widget");

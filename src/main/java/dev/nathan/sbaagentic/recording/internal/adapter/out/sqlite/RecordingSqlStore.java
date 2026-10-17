@@ -19,6 +19,7 @@ import dev.nathan.sbaagentic.recording.HumanTurns;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
+import dev.nathan.sbaagentic.recording.TurnFollowup;
 import dev.nathan.sbaagentic.recording.internal.application.port.RecordingStore;
 import jakarta.annotation.PostConstruct;
 import java.time.Clock;
@@ -521,6 +522,48 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 this::mapEvent,
                 sessionId,
                 limit);
+    }
+
+    @Override
+    public Optional<TurnFollowup> turnFollowup(String eventId, int limit) {
+        Optional<AgentEvent> anchor = findEventById(eventId);
+        if (anchor.isEmpty()) {
+            return Optional.empty();
+        }
+
+        SqlInstant observedTime = SqlInstant.column("observed_at", postgres);
+        List<Object> args = new ArrayList<>();
+        args.add(anchor.get().sessionId());
+        SqlInstant.bind(args, anchor.get().observedAt());
+        SqlInstant.bind(args, anchor.get().observedAt());
+        args.add(anchor.get().id());
+        args.add(limit + 1);
+        List<AgentEvent> fetched = jdbcTemplate.query(
+                """
+                SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
+                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
+                  FROM agent_events
+                 WHERE session_id = ?
+                   AND %1$s >= ? AND %2$s > (?, ?)
+                 ORDER BY %1$s ASC, id ASC
+                 LIMIT ?
+                """.formatted(observedTime.expression(), observedTime.cursorTuple("id")),
+                this::mapEvent,
+                args.toArray());
+
+        // The turn ends at the next human turn; reaching it means nothing was cut off.
+        List<AgentEvent> events = new ArrayList<>();
+        for (AgentEvent event : fetched) {
+            if (event.humanText() != null) {
+                return Optional.of(new TurnFollowup(eventId, events, true));
+            }
+            if (events.size() == limit) {
+                return Optional.of(new TurnFollowup(eventId, events, false));
+            }
+            events.add(event);
+        }
+
+        return Optional.of(new TurnFollowup(eventId, events, true));
     }
 
     @Override

@@ -29,6 +29,12 @@ export type AgentEvent = {
   observedAt: string;
 };
 
+export type TurnFollowupResponse = {
+  eventId: string;
+  events: AgentEvent[];
+  complete: boolean;
+};
+
 export type SessionTranscriptResponse = {
   sessionId: string;
   available: boolean;
@@ -602,6 +608,14 @@ export function getSession(id: string): Promise<AgentSession> {
 
 export function getEvent(id: string): Promise<AgentEvent> {
   return getJson(`/api/events/${encodeURIComponent(id)}`);
+}
+
+/** What the agent did after a human turn, up to (not including) the next one. */
+export function getTurnFollowup(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<TurnFollowupResponse> {
+  return getJson(`/api/events/${encodeURIComponent(eventId)}/followup`, signal);
 }
 
 export function getSessionEvents(

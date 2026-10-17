@@ -6019,6 +6019,12 @@ a {
   overflow-wrap: anywhere;
 }
 
+.stream-row-wrap--human.stream-row-wrap--expanded .stream-row-headline {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: none;
+}
+
 .stream-row-wrap--human .reader-text {
   white-space: pre-wrap;
 }
@@ -6880,4 +6886,64 @@ a {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Human-turns mode: an expanded turn lists what the agent did before the next human turn. */
+.turn-followup {
+  display: grid;
+  gap: 6px;
+}
+
+.turn-followup-label,
+.turn-followup-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.turn-followup-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turn-followup-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+}
+
+.turn-followup-row:hover,
+.turn-followup-row[aria-expanded="true"] {
+  background: var(--bg-hover);
+}
+
+.turn-followup-row .stream-row-headline {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-followup-row time {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.turn-followup-detail {
+  margin: 4px 0 8px 24px;
 }

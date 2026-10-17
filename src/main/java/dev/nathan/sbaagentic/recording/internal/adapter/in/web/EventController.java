@@ -12,6 +12,7 @@ import dev.nathan.sbaagentic.recording.IdempotentIngestResponse;
 import dev.nathan.sbaagentic.recording.IngestResponse;
 import dev.nathan.sbaagentic.recording.ProjectScopeResolver;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.TurnFollowup;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -88,6 +89,15 @@ public class EventController {
     public ResponseEntity<AgentEvent> event(@PathVariable String id) {
 
         return ResponseEntity.of(repository.findEventById(id));
+    }
+
+    /** Human-turns mode expands a turn into what the agent did after it, up to the next turn. */
+    @GetMapping("/events/{id}/followup")
+    public ResponseEntity<TurnFollowup> followup(
+            @PathVariable String id,
+            @RequestParam(defaultValue = "200") int limit) {
+
+        return ResponseEntity.of(repository.turnFollowup(id, Math.max(1, Math.min(limit, 500))));
     }
 
     @GetMapping("/sessions")
