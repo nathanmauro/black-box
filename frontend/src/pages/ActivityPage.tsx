@@ -192,6 +192,9 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
         <ProjectPicker
           projects={availableProjects()}
           selectedProjectKey={requestedProjectKey() || undefined}
+          allLabel={cardsActive() ? "Active projects" : undefined}
+          allDescription={cardsActive() ? "Card view · last 48h" : undefined}
+          allowAll={!cardsActive()}
           loading={projects.loading}
           error={projects.error ? "Unable to load projects." : null}
           onSelect={selectProject}

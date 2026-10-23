@@ -15,6 +15,8 @@ type ProjectPickerProps = {
   loading?: boolean;
   error?: string | null;
   allDescription?: string;
+  // What the trigger calls "no single project" when the host means something narrower than all.
+  allLabel?: string;
   allowAll?: boolean;
   onSelect: (projectKey: string | undefined) => void;
 };
@@ -100,7 +102,11 @@ export default function ProjectPicker(props: ProjectPickerProps) {
         onClick={toggleOpen}
       >
         <span class="project-picker-label">Project</span>
-        <strong>{selectedProject() ? projectShortName(selectedProject()!) : "All projects"}</strong>
+        <strong>
+          {selectedProject()
+            ? projectShortName(selectedProject()!)
+            : props.allLabel || "All projects"}
+        </strong>
         <small>
           {selectedProject()
             ? primaryProjectScope(selectedProject()!).canonicalKey

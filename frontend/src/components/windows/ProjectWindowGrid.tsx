@@ -181,6 +181,8 @@ function ProjectWindow(props: ProjectWindowProps) {
     return !Number.isNaN(at) && props.now - at <= LIVE_WINDOW_MS;
   };
 
+  // A dark window keeps its place: nothing here matches the shared filter right now.
+  const isDark = () => !loading() && !error() && !items().length && !pendingItems().length;
   // Cards are a glance surface: always collapsed, no day breaks, rows never expand in place.
   const runs = createMemo(() =>
     segmentStream(items(), {
@@ -322,7 +324,11 @@ function ProjectWindow(props: ProjectWindowProps) {
 
   return (
     <section
-      classList={{ "project-window": true, "project-window--flash": flashing() }}
+      classList={{
+        "project-window": true,
+        "project-window--flash": flashing(),
+        "project-window--dark": isDark(),
+      }}
       role="listitem"
       aria-label={projectShortName(props.project)}
     >
