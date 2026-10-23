@@ -16,6 +16,7 @@ import RowSessionActions from "../components/events/RowSessionActions";
 import RunHeader from "../components/events/RunHeader";
 import StreamFold from "../components/events/StreamFold";
 import StreamRow from "../components/events/StreamRow";
+import ProjectWindowGrid from "../components/windows/ProjectWindowGrid";
 import {
   getEventFacets,
   getEventFeed,
@@ -31,9 +32,10 @@ import {
 import { truncatePath } from "../lib/format";
 import { humanOnly, withHumanText } from "../lib/humanOnly";
 import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../lib/projects";
+import type { StreamLayout } from "../lib/projectWindows";
 import { listSavedViews, removeSavedView, saveSavedView } from "../lib/savedViews";
 import {
-  appendQueryToken,
+  appendProjectGroupScope,
   describeTimeSpec,
   FACET_FIELDS,
   parseQuery,
@@ -102,6 +104,11 @@ type StreamPageProps = {
   projects?: ProjectSummary[];
   projectScopePending?: boolean;
   onClearProject?: () => void;
+  // Card view ("windows"): one live mini-stream per recently active project. The host owns the
+  // layout because entering it releases the project scope.
+  layout?: StreamLayout;
+  onLayoutChange?: (layout: StreamLayout) => void;
+  onOpenProject?: (projectKey: string) => void;
 };
 
 export default function StreamPage(props: StreamPageProps = {}) {
@@ -217,6 +224,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
   let facetsToken = 0;
 
   const submitted = () => params.q ?? "";
+  const cardsLayout = () => props.layout === "cards";
   // A pinned project's hidden scope replaces visible project:/cwd: includes. They are removed by
   // span, never by re-serializing, so the rest of the text stays as typed and the URL settles.
   const visibleSubmitted = createMemo(() =>
@@ -360,6 +368,16 @@ export default function StreamPage(props: StreamPageProps = {}) {
       setLoadingMore(false);
       setOverrides(new Set<string>());
       setUnfolds(new Set<string>());
+      return;
+    }
+    if (cardsLayout()) {
+      // Each window loads its own feed; the global one stays idle until the toggle flips back.
+      loadToken += 1;
+      setLoading(false);
+      setItems([]);
+      setPendingItems([]);
+      setNewCount(0);
+      setNextBefore(null);
       return;
     }
     const q = apiQuery();
@@ -604,7 +622,7 @@ export default function StreamPage(props: StreamPageProps = {}) {
     // The live store retains at most 50 frames, so its length cannot signal later arrivals.
     const notification = live.events()[0];
     const newestEventId = notification?.id;
-    if (livePaused() || !newestEventId) return newestEventId;
+    if (cardsLayout() || livePaused() || !newestEventId) return newestEventId;
     if (newestEventId === previousEventId) return newestEventId;
     const head = newestObservedAt();
     // Keep this sticky across the burst: a later fresh timestamp cannot erase an earlier
@@ -907,6 +925,19 @@ export default function StreamPage(props: StreamPageProps = {}) {
               }
             />
             <button type="submit">Filter</button>
+            <Show when={props.onLayoutChange}>
+              <button
+                type="button"
+                class="stream-layout-toggle"
+                aria-pressed={cardsLayout()}
+                title={
+                  cardsLayout() ? "Back to the single stream" : "One window per active project"
+                }
+                onClick={() => props.onLayoutChange?.(cardsLayout() ? "stream" : "cards")}
+              >
+                {cardsLayout() ? "Stream" : "Cards"}
+              </button>
+            </Show>
             {/* Always mounted (hidden when closed) so aria-controls never points at nothing. */}
             <ul
               class="suggest-popover"
@@ -1315,110 +1346,131 @@ export default function StreamPage(props: StreamPageProps = {}) {
         {suggestionAnnouncement()}
       </div>
 
-      <div
-        ref={feedRef}
-        class="stream-feed"
-        role="feed"
-        aria-busy={loadingMore()}
-        aria-label="Activity stream"
+      <Show
+        when={!cardsLayout()}
+        fallback={
+          <ProjectWindowGrid
+            projects={props.projects ?? []}
+            query={visibleSubmitted()}
+            hasVisibleFilter={hasVisibleFilter()}
+            onOpenProject={(projectKey) => props.onOpenProject?.(projectKey)}
+          />
+        }
       >
-        <Show when={newCount() && !livePaused()}>
-          <button type="button" class="stream-new-pill" onClick={showNewItems}>
-            {newCount()} new
-          </button>
-        </Show>
-        <Show when={!loading()} fallback={<p class="empty-state">Loading activity...</p>}>
-          <For each={segments()}>
-            {(segment) => (
-              <Switch>
-                <Match when={segment.type === "day" ? segment : null}>
-                  {(day) => (
-                    <div class="stream-daybreak">
-                      <span>{day().label}</span>
-                      <Show when={day().gapLabel}>
-                        {(gap) => <span class="stream-daybreak-gap">· {gap()}</span>}
-                      </Show>
-                    </div>
-                  )}
-                </Match>
-                <Match when={segment.type === "run" ? segment : null}>
-                  {/* The run wrapper is a generic <div>, not a <section>: a labeled section is
+        <div
+          ref={feedRef}
+          class="stream-feed"
+          role="feed"
+          aria-busy={loadingMore()}
+          aria-label="Activity stream"
+        >
+          <Show when={newCount() && !livePaused()}>
+            <button type="button" class="stream-new-pill" onClick={showNewItems}>
+              {newCount()} new
+            </button>
+          </Show>
+          <Show when={!loading()} fallback={<p class="empty-state">Loading activity...</p>}>
+            <For each={segments()}>
+              {(segment) => (
+                <Switch>
+                  <Match when={segment.type === "day" ? segment : null}>
+                    {(day) => (
+                      <div class="stream-daybreak">
+                        <span>{day().label}</span>
+                        <Show when={day().gapLabel}>
+                          {(gap) => <span class="stream-daybreak-gap">· {gap()}</span>}
+                        </Show>
+                      </div>
+                    )}
+                  </Match>
+                  <Match when={segment.type === "run" ? segment : null}>
+                    {/* The run wrapper is a generic <div>, not a <section>: a labeled section is
                       a region landmark that would interpose between the feed and its owned
                       articles (§4.6). The run header is its own article, labeled by session. */}
-                  {(run) => (
-                    <div class="stream-run">
-                      <RunHeader
-                        run={run()}
-                        sticky={run().eventCount >= 3}
-                        sessionHref={runSessionHref(run().sessionId, props.project)}
-                        actions={
-                          <RowSessionActions
-                            sessionId={run().sessionId}
-                            streamLink={sessionStreamLink(
-                              visibleSubmitted(),
-                              run().sessionId,
-                              props.project?.projectKey ?? "",
-                            )}
-                            onFilterToSession={(sessionId) =>
-                              patchQuery((state) => (state.session = sessionId))
-                            }
-                          />
-                        }
-                      />
-                      <div class="stream-run-body">
-                        <For each={run().rows}>
-                          {(row) =>
-                            row.type === "event" ? (
-                              <StreamRow
-                                item={withHumanText(row.item, humanOnly())}
-                                humanMode={humanOnly()}
-                                expanded={isExpanded(row.item.id)}
-                                textExpanded={density() === "expanded"}
-                                sessionHref={sessionHref(row.item, props.project)}
-                                trajectoryHref={trajectoryHrefFor(row.item, props.projects)}
-                                onToggle={() => toggleRow(row.item.id)}
-                                cwdException={cwdDiffers(row.item.cwd, run().cwd)}
-                              />
-                            ) : (
-                              <StreamFold fold={row} onUnfold={() => unfold(row)} />
-                            )
+                    {(run) => (
+                      <div class="stream-run">
+                        <RunHeader
+                          run={run()}
+                          sticky={run().eventCount >= 3}
+                          sessionHref={runSessionHref(run().sessionId, props.project)}
+                          actions={
+                            <RowSessionActions
+                              sessionId={run().sessionId}
+                              streamLink={sessionStreamLink(
+                                visibleSubmitted(),
+                                run().sessionId,
+                                props.project?.projectKey ?? "",
+                              )}
+                              onFilterToSession={(sessionId) =>
+                                patchQuery((state) => (state.session = sessionId))
+                              }
+                            />
                           }
-                        </For>
+                        />
+                        <div class="stream-run-body">
+                          <For each={run().rows}>
+                            {(row) =>
+                              row.type === "event" ? (
+                                <StreamRow
+                                  item={withHumanText(row.item, humanOnly())}
+                                  humanMode={humanOnly()}
+                                  expanded={isExpanded(row.item.id)}
+                                  textExpanded={density() === "expanded"}
+                                  sessionHref={sessionHref(row.item, props.project)}
+                                  trajectoryHref={trajectoryHrefFor(row.item, props.projects)}
+                                  onToggle={() => toggleRow(row.item.id)}
+                                  cwdException={cwdDiffers(row.item.cwd, run().cwd)}
+                                />
+                              ) : (
+                                <StreamFold fold={row} onUnfold={() => unfold(row)} />
+                              )
+                            }
+                          </For>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </Match>
-              </Switch>
-            )}
-          </For>
-          <Show when={!items().length && !error()}>
-            <p class="empty-state">
-              {hasVisibleFilter() || props.project
-                ? humanOnly()
-                  ? "No human turns match the current filters."
-                  : "No stream events match the current filters."
-                : humanOnly()
-                  ? "No human turns recorded yet."
-                  : parsed().isAll
-                    ? "No events recorded yet."
-                    : "No meaningful events recorded yet."}
-            </p>
-            <Show when={recoveryNotes().length}>
-              <QueryNoteList notes={recoveryNotes()} label="Ways to widen the query" onFix={run} />
+                    )}
+                  </Match>
+                </Switch>
+              )}
+            </For>
+            <Show when={!items().length && !error()}>
+              <p class="empty-state">
+                {hasVisibleFilter() || props.project
+                  ? humanOnly()
+                    ? "No human turns match the current filters."
+                    : "No stream events match the current filters."
+                  : humanOnly()
+                    ? "No human turns recorded yet."
+                    : parsed().isAll
+                      ? "No events recorded yet."
+                      : "No meaningful events recorded yet."}
+              </p>
+              <Show when={recoveryNotes().length}>
+                <QueryNoteList
+                  notes={recoveryNotes()}
+                  label="Ways to widen the query"
+                  onFix={run}
+                />
+              </Show>
             </Show>
           </Show>
-        </Show>
-      </div>
+        </div>
 
-      <Show when={canLoadMore()}>
-        <button type="button" class="stream-load-more" disabled={loadingMore()} onClick={loadMore}>
-          {loadingMore() ? "Loading..." : "Load more"}
-        </button>
-      </Show>
-      {/* Cap honesty (spec §4.5): at MAX_ROWS the silently-vanishing Load more becomes an
+        <Show when={canLoadMore()}>
+          <button
+            type="button"
+            class="stream-load-more"
+            disabled={loadingMore()}
+            onClick={loadMore}
+          >
+            {loadingMore() ? "Loading..." : "Load more"}
+          </button>
+        </Show>
+        {/* Cap honesty (spec §4.5): at MAX_ROWS the silently-vanishing Load more becomes an
           honest terminal row instead. */}
-      <Show when={items().length >= MAX_ROWS}>
-        <p class="stream-endcap">{MAX_ROWS} of many shown — refine the filter to go deeper.</p>
+        <Show when={items().length >= MAX_ROWS}>
+          <p class="stream-endcap">{MAX_ROWS} of many shown — refine the filter to go deeper.</p>
+        </Show>
       </Show>
     </section>
   );
@@ -1446,18 +1498,6 @@ function browserRows(listed: FacetValueCount[], active: string[]): FacetValueCou
 
 function formatMatchCount(total: number): string {
   return `${total.toLocaleString("en-US")} ${total === 1 ? "match" : "matches"}`;
-}
-
-// The hidden scope goes first when the visible query ends in an unclosed quote or a bare NOT:
-// the quote would swallow it, and both parsers read a negated project_group as free text.
-function appendProjectGroupScope(query: string, canonicalKey: string): string {
-  return appendQueryToken(query, `project_group:${quoteHiddenFacet(canonicalKey)}`);
-}
-
-// Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
-// canonicalKey containing one would fan out into bogus project groups.
-function quoteHiddenFacet(value: string): string {
-  return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
 // Lowercases only the leading word of a describeTimeSpec phrase ("Past 2 hours" → "past 2 hours")

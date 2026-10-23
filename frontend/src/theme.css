@@ -3012,6 +3012,110 @@ a {
   flex: none;
 }
 
+/* Card view toggle: sits beside Filter, quieter than it — a layout switch, not a query action. */
+.stream-layout-toggle {
+  flex: none;
+  height: 46px;
+  padding: 0 14px;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.stream-layout-toggle:hover,
+.stream-layout-toggle[aria-pressed="true"] {
+  color: var(--text-bright);
+  background: var(--bg-hover);
+}
+
+/* Project windows: a fixed-height card per active project, each scrolling on its own. Order is
+   positional memory, so the grid never reflows by activity. */
+.project-windows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.project-window {
+  display: flex;
+  flex-direction: column;
+  height: 420px;
+  min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.project-window-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  font-size: 13px;
+}
+
+.project-window-head:hover {
+  background: var(--bg-hover);
+}
+
+.project-window-head:hover .project-window-name {
+  color: var(--text-bright);
+}
+
+.project-window-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+
+.project-window-dot--live {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+}
+
+.project-window-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.project-window-age {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.project-window-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 8px 6px 8px 8px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.project-window-note {
+  margin: auto;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 .stream-options-trigger {
   height: 34px;
   padding: 0 12px;

@@ -16,6 +16,12 @@ import {
   readRememberedProjectKey,
   rememberProjectKey,
 } from "../lib/projects";
+import {
+  loadStreamLayout,
+  parseStreamLayout,
+  saveStreamLayout,
+  type StreamLayout,
+} from "../lib/projectWindows";
 import SessionsPage from "./SessionsPage";
 import SearchPage from "./SearchPage";
 import StreamPage from "./StreamPage";
@@ -42,17 +48,26 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
     view?: string;
     project?: string;
     event?: string;
+    layout?: string;
   }>();
   const [modeSignal, setModeSignal] = createSignal<ActivityMode>(modeFromParams(params));
   const mode = () => props.lockedMode ?? modeSignal();
+  const [rememberedLayout, setRememberedLayout] = createSignal(loadStreamLayout());
+  // Card view replaces the single project scope with one window per active project, so the
+  // picker's scope (and the remembered one) stays out of it.
+  const layout = createMemo<StreamLayout>(
+    () => parseStreamLayout(params.layout) ?? rememberedLayout(),
+  );
+  const cardsActive = () => mode() === "stream" && layout() === "cards";
   const [rememberedProjectKey, setRememberedProjectKey] = createSignal(readRememberedProjectKey());
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, {
     initialValue: [],
   });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
-  const requestedProjectKey = createMemo(() =>
-    params.project !== undefined ? params.project : rememberedProjectKey(),
-  );
+  const requestedProjectKey = createMemo(() => {
+    if (cardsActive()) return undefined;
+    return params.project !== undefined ? params.project : rememberedProjectKey();
+  });
   const selectedProject = createMemo(() =>
     findProjectByIdentifier(availableProjects(), requestedProjectKey()),
   );
@@ -74,6 +89,7 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
   });
   createEffect(() => {
     if (params.project !== undefined || projects.loading || projects.error) return;
+    if (cardsActive()) return;
     const remembered = rememberedProjectKey();
     if (!remembered) return;
     const rememberedProject = findProjectByIdentifier(availableProjects(), remembered);
@@ -124,8 +140,35 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
   }
 
   function selectProject(projectKey: string | undefined) {
+    if (cardsActive()) {
+      if (projectKey) openProject(projectKey);
+      return;
+    }
     persistProjectKey(projectKey);
     setParams({ project: projectKey, session: undefined, event: undefined });
+  }
+
+  function changeLayout(next: StreamLayout) {
+    persistLayout(next);
+    if (next === "cards") {
+      persistProjectKey(undefined);
+      setParams({ layout: next, project: undefined, session: undefined, event: undefined });
+    } else {
+      setParams({ layout: next });
+    }
+  }
+
+  // A window's header (or the picker while in card view) leaves the grid for that project's
+  // regular stream: reading happens there, the grid is for glancing.
+  function openProject(projectKey: string) {
+    persistLayout("stream");
+    persistProjectKey(projectKey);
+    setParams({ layout: "stream", project: projectKey, session: undefined, event: undefined });
+  }
+
+  function persistLayout(next: StreamLayout) {
+    saveStreamLayout(next);
+    setRememberedLayout(next);
   }
 
   function persistProjectKey(projectKey: string | undefined) {
@@ -228,6 +271,9 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
             </Match>
             <Match when={mode() === "stream"}>
               <StreamPage
+                layout={layout()}
+                onLayoutChange={changeLayout}
+                onOpenProject={openProject}
                 project={selectedProject()}
                 projects={availableProjects()}
                 projectScopePending={projectScopePending()}
