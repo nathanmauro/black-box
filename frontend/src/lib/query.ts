@@ -358,6 +358,18 @@ export function appendQueryToken(query: string, token: string): string {
   return absorbed ? `${token} ${visible}` : `${visible} ${token}`;
 }
 
+// The hidden scope goes first when the visible query ends in an unclosed quote or a bare NOT:
+// the quote would swallow it, and both parsers read a negated project_group as free text.
+export function appendProjectGroupScope(query: string, canonicalKey: string): string {
+  return appendQueryToken(query, `project_group:${quoteHiddenFacet(canonicalKey)}`);
+}
+
+// Commas trigger quoting too: an unquoted comma in a facet value now splits into an IN-list, so a
+// canonicalKey containing one would fan out into bogus project groups.
+function quoteHiddenFacet(value: string): string {
+  return /[\s",]/u.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
 export function serializeQuery(state: QueryState): string {
   const parts: string[] = [];
   for (const key of FACET_ORDER) {
