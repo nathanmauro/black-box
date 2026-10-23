@@ -13,7 +13,12 @@ import { getEventFeed, type EventFeedItem, type ProjectSummary } from "../../lib
 import { timeAgo } from "../../lib/format";
 import { humanOnly, withHumanText } from "../../lib/humanOnly";
 import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../../lib/projects";
-import { LIVE_WINDOW_MS, stableWindowOrder } from "../../lib/projectWindows";
+import {
+  LIVE_WINDOW_MS,
+  stableWindowOrder,
+  windowSpanMs,
+  type WindowSpan,
+} from "../../lib/projectWindows";
 import { appendProjectGroupScope } from "../../lib/query";
 import { useLiveStore, type EventAppended } from "../../lib/sse";
 import { segmentStream, type FoldRow } from "../../lib/streamGroups";
@@ -24,6 +29,8 @@ import StreamRow from "../events/StreamRow";
 const WINDOW_FEED_LIMIT = 30;
 const WINDOW_MAX_ROWS = 200;
 const LIVE_DEBOUNCE_MS = 500;
+// Load the next page once the card is scrolled within this distance of its bottom.
+const LOAD_MORE_THRESHOLD_PX = 120;
 const FLASH_MS = 1400;
 const CLOCK_TICK_MS = 30_000;
 // An unknown cwd usually means a brand-new project or worktree; one catalog refresh per window
@@ -41,7 +48,8 @@ type ProjectWindowGridProps = {
   hasVisibleFilter: boolean;
   // until: bounds the query in the past, so live arrivals cannot match it.
   livePaused: boolean;
-  onOpenProject: (projectKey: string) => void;
+  windowSpan: WindowSpan;
+  onOpenProject: (projectKey: string, eventId?: string) => void;
   onRefreshProjects?: () => void;
 };
 
@@ -53,8 +61,19 @@ export default function ProjectWindowGrid(props: ProjectWindowGridProps) {
   const [now, setNow] = createSignal(Date.now());
   let catalogRefreshedAt = Number.NEGATIVE_INFINITY;
 
-  createEffect(() => {
-    setOrder((placed) => stableWindowOrder(placed, props.projects, Date.now()));
+  // Changing the span is an explicit regrouping, so it re-lays the grid from scratch; catalog
+  // refreshes only ever append.
+  // One effect, not two: a separate reset could run after the recompute and wipe it.
+  createEffect<WindowSpan | undefined>((previousSpan) => {
+    const span = props.windowSpan;
+    const windowMs = windowSpanMs(span);
+    const regrouped = previousSpan !== undefined && previousSpan !== span;
+
+    setOrder((placed) =>
+      stableWindowOrder(regrouped ? [] : placed, props.projects, Date.now(), windowMs),
+    );
+
+    return span;
   });
 
   const windows = createMemo(() => {
@@ -124,7 +143,7 @@ export default function ProjectWindowGrid(props: ProjectWindowGridProps) {
   return (
     <Show
       when={windows().length}
-      fallback={<p class="empty-state">No projects were active in the last 48 hours.</p>}
+      fallback={<p class="empty-state">No projects were active in the last {props.windowSpan}.</p>}
     >
       <div class="project-windows" role="list" aria-label="Active projects">
         <For each={windows()}>
@@ -137,7 +156,7 @@ export default function ProjectWindowGrid(props: ProjectWindowGridProps) {
               pulse={pulses()[project.projectKey]}
               reloadRevision={reloadRevision()}
               now={now()}
-              onOpen={() => props.onOpenProject(project.projectKey)}
+              onOpen={(eventId) => props.onOpenProject(project.projectKey, eventId)}
             />
           )}
         </For>
@@ -154,7 +173,7 @@ type ProjectWindowProps = {
   pulse?: Pulse;
   reloadRevision: number;
   now: number;
-  onOpen: () => void;
+  onOpen: (eventId?: string) => void;
 };
 
 function ProjectWindow(props: ProjectWindowProps) {
@@ -165,6 +184,8 @@ function ProjectWindow(props: ProjectWindowProps) {
 
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
   const [pendingItems, setPendingItems] = createSignal<EventFeedItem[]>([]);
+  const [nextBefore, setNextBefore] = createSignal<string | null>(null);
+  const [loadingMore, setLoadingMore] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
   const [unfolds, setUnfolds] = createSignal<Set<string>>(new Set());
@@ -205,11 +226,14 @@ function ProjectWindow(props: ProjectWindowProps) {
     setLoading(true);
     setError(null);
     setPendingItems([]);
+    setNextBefore(null);
+    setLoadingMore(false);
     setUnfolds(new Set<string>());
     getEventFeed({ limit: WINDOW_FEED_LIMIT, q, meaningful: true, humanOnly: human || undefined })
       .then((response) => {
         if (token === loadToken) {
           setItems(response.items);
+          setNextBefore(response.nextBefore ?? null);
         }
       })
       .catch((cause) => {
@@ -293,6 +317,56 @@ function ProjectWindow(props: ProjectWindowProps) {
     }
   }
 
+  async function loadMore() {
+    const before = nextBefore();
+
+    if (!before || loadingMore() || items().length >= WINDOW_MAX_ROWS) {
+      return;
+    }
+
+    const token = loadToken;
+
+    setLoadingMore(true);
+
+    try {
+      const response = await getEventFeed({
+        limit: WINDOW_FEED_LIMIT,
+        q: scopedQuery(),
+        meaningful: true,
+        humanOnly: humanOnly() || undefined,
+        before,
+      });
+
+      if (token !== loadToken) {
+        return;
+      }
+
+      const existing = new Set(items().map((item) => item.id));
+      const older = response.items.filter((item) => !existing.has(item.id));
+
+      setItems((current) => [...current, ...older].slice(0, WINDOW_MAX_ROWS));
+      setNextBefore(response.nextBefore ?? null);
+    } catch {
+      // A failed page leaves the cursor in place; the next scroll retries.
+    } finally {
+      if (token === loadToken) {
+        setLoadingMore(false);
+      }
+    }
+  }
+
+  function handleBodyScroll() {
+    if (!bodyRef) {
+      return;
+    }
+
+    const remaining = bodyRef.scrollHeight - bodyRef.scrollTop - bodyRef.clientHeight;
+
+    if (remaining < LOAD_MORE_THRESHOLD_PX) {
+      void loadMore();
+    }
+  }
+
   function nearTop() {
     return !bodyRef || bodyRef.scrollTop < 40;
   }
@@ -350,7 +424,7 @@ function ProjectWindow(props: ProjectWindowProps) {
           {pendingItems().length} new
         </button>
       </Show>
-      <div ref={bodyRef} class="project-window-body">
+      <div ref={bodyRef} class="project-window-body" onScroll={handleBodyScroll}>
         <Switch>
           <Match when={loading() && !items().length}>
             <p class="project-window-note">Loading…</p>
@@ -379,7 +453,7 @@ function ProjectWindow(props: ProjectWindowProps) {
                             humanMode={humanOnly()}
                             expanded={false}
                             sessionHref={windowSessionHref(run.sessionId, props.project)}
-                            onToggle={() => props.onOpen()}
+                            onToggle={() => props.onOpen(row.item.id)}
                             cwdException={(row.item.cwd ?? null) !== (run.cwd ?? null)}
                           />
                         ) : (
@@ -391,6 +465,9 @@ function ProjectWindow(props: ProjectWindowProps) {
                 </div>
               )}
             </For>
+            <Show when={loadingMore()}>
+              <p class="project-window-more">Loading older…</p>
+            </Show>
           </Match>
         </Switch>
       </div>

@@ -18,9 +18,12 @@ import {
 } from "../lib/projects";
 import {
   loadStreamLayout,
+  loadWindowSpan,
   parseStreamLayout,
   saveStreamLayout,
+  saveWindowSpan,
   type StreamLayout,
+  type WindowSpan,
 } from "../lib/projectWindows";
 import SessionsPage from "./SessionsPage";
 import SearchPage from "./SearchPage";
@@ -59,6 +62,7 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
     () => parseStreamLayout(params.layout) ?? rememberedLayout(),
   );
   const cardsActive = () => mode() === "stream" && layout() === "cards";
+  const [windowSpan, setWindowSpan] = createSignal<WindowSpan>(loadWindowSpan());
   const [rememberedProjectKey, setRememberedProjectKey] = createSignal(readRememberedProjectKey());
   const [projects, { refetch: refetchProjects }] = createResource(getProjects, {
     initialValue: [],
@@ -160,10 +164,15 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
 
   // A window's header (or the picker while in card view) leaves the grid for that project's
   // regular stream: reading happens there, the grid is for glancing.
-  function openProject(projectKey: string) {
+  function openProject(projectKey: string, eventId?: string) {
     persistLayout("stream");
     persistProjectKey(projectKey);
-    setParams({ layout: "stream", project: projectKey, session: undefined, event: undefined });
+    setParams({ layout: "stream", project: projectKey, session: undefined, event: eventId });
+  }
+
+  function changeWindowSpan(next: WindowSpan) {
+    saveWindowSpan(next);
+    setWindowSpan(next);
   }
 
   function persistLayout(next: StreamLayout) {
@@ -193,7 +202,7 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
           projects={availableProjects()}
           selectedProjectKey={requestedProjectKey() || undefined}
           allLabel={cardsActive() ? "Active projects" : undefined}
-          allDescription={cardsActive() ? "Card view · last 48h" : undefined}
+          allDescription={cardsActive() ? `Card view · last ${windowSpan()}` : undefined}
           allowAll={!cardsActive()}
           loading={projects.loading}
           error={projects.error ? "Unable to load projects." : null}
@@ -277,6 +286,8 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
                 layout={layout()}
                 onLayoutChange={changeLayout}
                 onOpenProject={openProject}
+                windowSpan={windowSpan()}
+                onWindowSpanChange={changeWindowSpan}
                 onRefreshProjects={() => void refetchProjects()}
                 project={selectedProject()}
                 projects={availableProjects()}

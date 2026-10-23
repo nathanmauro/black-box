@@ -32,7 +32,7 @@ import {
 import { truncatePath } from "../lib/format";
 import { humanOnly, withHumanText } from "../lib/humanOnly";
 import { findProjectByIdentifier, primaryProjectScope, projectShortName } from "../lib/projects";
-import type { StreamLayout } from "../lib/projectWindows";
+import { WINDOW_SPANS, type StreamLayout, type WindowSpan } from "../lib/projectWindows";
 import { listSavedViews, removeSavedView, saveSavedView } from "../lib/savedViews";
 import {
   appendProjectGroupScope,
@@ -108,8 +108,10 @@ type StreamPageProps = {
   // layout because entering it releases the project scope.
   layout?: StreamLayout;
   onLayoutChange?: (layout: StreamLayout) => void;
-  onOpenProject?: (projectKey: string) => void;
+  onOpenProject?: (projectKey: string, eventId?: string) => void;
   onRefreshProjects?: () => void;
+  windowSpan?: WindowSpan;
+  onWindowSpanChange?: (span: WindowSpan) => void;
 };
 
 export default function StreamPage(props: StreamPageProps = {}) {
@@ -122,7 +124,11 @@ export default function StreamPage(props: StreamPageProps = {}) {
 
   const live = useLiveStore();
   const [snapshotRevision, setSnapshotRevision] = createSignal(0);
-  const [params, setParams] = useSearchParams<{ q?: string; project?: string }>();
+  const [params, setParams] = useSearchParams<{
+    q?: string;
+    project?: string;
+    event?: string;
+  }>();
   const [draft, setDraft] = createSignal(params.q ?? "");
   const [items, setItems] = createSignal<EventFeedItem[]>([]);
   const [pendingItems, setPendingItems] = createSignal<EventFeedItem[]>([]);
@@ -412,6 +418,26 @@ export default function StreamPage(props: StreamPageProps = {}) {
       .finally(() => {
         if (token === loadToken) setLoading(false);
       });
+  });
+
+  // A card row opens the regular stream at that event (?event=): once the scoped snapshot lands,
+  // the row expands and scrolls into view, then the param retires so reloads read as ordinary.
+  createEffect(() => {
+    const eventId = params.event;
+    if (!eventId || cardsLayout() || loading() || props.projectScopePending) return;
+    const target = untrack(items).find((item) => item.id === eventId);
+    if (target && untrack(density) === "collapsed") {
+      setOverrides((current) => new Set(current).add(target.id));
+    }
+    setParams({ event: undefined }, { replace: true });
+    if (!target) return;
+    requestAnimationFrame(() => {
+      const row = feedRef?.querySelector<HTMLButtonElement>(
+        `button[data-event-id="${CSS.escape(target.id)}"]`,
+      );
+      row?.scrollIntoView({ block: "center" });
+      row?.focus({ preventScroll: true });
+    });
   });
 
   // Counts follow the query with a debounce and abort-on-change: the stale value clears the
@@ -1106,22 +1132,42 @@ export default function StreamPage(props: StreamPageProps = {}) {
                   />
                   meaningful events only
                 </label>
-                <div class="density-toggle" role="group" aria-label="Stream density">
-                  <button
-                    type="button"
-                    classList={{ active: density() === "collapsed" }}
-                    onClick={() => switchDensity("collapsed")}
-                  >
-                    Collapsed
-                  </button>
-                  <button
-                    type="button"
-                    classList={{ active: density() === "expanded" }}
-                    onClick={() => switchDensity("expanded")}
-                  >
-                    Expanded
-                  </button>
-                </div>
+                <Show
+                  when={!cardsLayout()}
+                  fallback={
+                    // Cards are always collapsed; their option is how far back "active" reaches.
+                    <div class="density-toggle" role="group" aria-label="Active project window">
+                      <For each={WINDOW_SPANS}>
+                        {(span) => (
+                          <button
+                            type="button"
+                            classList={{ active: (props.windowSpan ?? "48h") === span.id }}
+                            onClick={() => props.onWindowSpanChange?.(span.id)}
+                          >
+                            Active {span.label}
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  }
+                >
+                  <div class="density-toggle" role="group" aria-label="Stream density">
+                    <button
+                      type="button"
+                      classList={{ active: density() === "collapsed" }}
+                      onClick={() => switchDensity("collapsed")}
+                    >
+                      Collapsed
+                    </button>
+                    <button
+                      type="button"
+                      classList={{ active: density() === "expanded" }}
+                      onClick={() => switchDensity("expanded")}
+                    >
+                      Expanded
+                    </button>
+                  </div>
+                </Show>
               </div>
             </Show>
           </div>
@@ -1356,7 +1402,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
             hasVisibleFilter={hasVisibleFilter()}
             livePaused={livePaused()}
             onRefreshProjects={props.onRefreshProjects}
-            onOpenProject={(projectKey) => props.onOpenProject?.(projectKey)}
+            windowSpan={props.windowSpan ?? "48h"}
+            onOpenProject={(projectKey, eventId) => props.onOpenProject?.(projectKey, eventId)}
           />
         }
       >

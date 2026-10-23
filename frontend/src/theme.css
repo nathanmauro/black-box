@@ -3133,7 +3133,14 @@ a {
   opacity: 0.55;
 }
 
-.project-window--dark .project-window-note {
+.project-window--dark .project-window-more {
+  margin: 4px 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+.project-window-note {
   opacity: 0.7;
 }
 

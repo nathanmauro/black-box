@@ -1,8 +1,20 @@
 import type { ProjectSummary } from "./api";
 
 const LAYOUT_KEY = "bb.streamLayout";
+const SPAN_KEY = "bb.windowSpan";
 
-export const ACTIVE_WINDOW_MS = 48 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
+
+export const WINDOW_SPANS = [
+  { id: "24h", label: "24h", ms: 24 * HOUR_MS },
+  { id: "48h", label: "48h", ms: 48 * HOUR_MS },
+  { id: "7d", label: "7d", ms: 7 * 24 * HOUR_MS },
+] as const;
+
+export type WindowSpan = (typeof WINDOW_SPANS)[number]["id"];
+
+export const DEFAULT_WINDOW_SPAN: WindowSpan = "48h";
+export const ACTIVE_WINDOW_MS = 48 * HOUR_MS;
 // Same "live" threshold as the companion: a session touched in the last 10 minutes.
 export const LIVE_WINDOW_MS = 10 * 60_000;
 
@@ -29,6 +41,27 @@ export function saveStreamLayout(layout: StreamLayout): void {
     localStorage.setItem(LAYOUT_KEY, layout);
   } catch {
     // Private-mode storage failures degrade to a session-only layout.
+  }
+}
+
+export function windowSpanMs(span: WindowSpan): number {
+  return WINDOW_SPANS.find((option) => option.id === span)?.ms ?? ACTIVE_WINDOW_MS;
+}
+
+export function loadWindowSpan(): WindowSpan {
+  try {
+    const stored = localStorage.getItem(SPAN_KEY);
+    return WINDOW_SPANS.find((option) => option.id === stored)?.id ?? DEFAULT_WINDOW_SPAN;
+  } catch {
+    return DEFAULT_WINDOW_SPAN;
+  }
+}
+
+export function saveWindowSpan(span: WindowSpan): void {
+  try {
+    localStorage.setItem(SPAN_KEY, span);
+  } catch {
+    // Private-mode storage failures degrade to a session-only span.
   }
 }
 
