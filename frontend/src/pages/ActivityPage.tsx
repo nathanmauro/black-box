@@ -274,6 +274,7 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
                 layout={layout()}
                 onLayoutChange={changeLayout}
                 onOpenProject={openProject}
+                onRefreshProjects={() => void refetchProjects()}
                 project={selectedProject()}
                 projects={availableProjects()}
                 projectScopePending={projectScopePending()}

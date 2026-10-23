@@ -109,6 +109,7 @@ type StreamPageProps = {
   layout?: StreamLayout;
   onLayoutChange?: (layout: StreamLayout) => void;
   onOpenProject?: (projectKey: string) => void;
+  onRefreshProjects?: () => void;
 };
 
 export default function StreamPage(props: StreamPageProps = {}) {
@@ -1353,6 +1354,8 @@ export default function StreamPage(props: StreamPageProps = {}) {
             projects={props.projects ?? []}
             query={visibleSubmitted()}
             hasVisibleFilter={hasVisibleFilter()}
+            livePaused={livePaused()}
+            onRefreshProjects={props.onRefreshProjects}
             onOpenProject={(projectKey) => props.onOpenProject?.(projectKey)}
           />
         }

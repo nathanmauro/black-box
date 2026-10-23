@@ -3110,6 +3110,32 @@ a {
   scrollbar-gutter: stable;
 }
 
+.project-window {
+  position: relative;
+  transition: border-color 600ms ease;
+}
+
+/* A window "lights up" when a matching event lands: the border warms, then settles back. */
+.project-window--flash {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  transition: none;
+}
+
+.project-window-pill {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  z-index: 2;
+  padding: 4px 12px;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
 .project-window-note {
   margin: auto;
   color: var(--text-faint);
