@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly offsite Black Box snapshot (scripts/storage/nightly-drive-backup.sh).
+
+  Install:
+    cp scripts/storage/com.nathan.sba-agentic-backup.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nathan.sba-agentic-backup.plist
+
+  Run now:
+    launchctl kickstart gui/$(id -u)/com.nathan.sba-agentic-backup
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nathan.sba-agentic-backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/nathan/Developer/proj/sba-agentic/scripts/storage/nightly-drive-backup.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/nathan/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/nathan/Library/Logs/sba-agentic-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nathan/Library/Logs/sba-agentic-backup.log</string>
+</dict>
+</plist>

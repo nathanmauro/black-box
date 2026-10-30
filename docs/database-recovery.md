@@ -55,7 +55,7 @@ Successful execution prints one JSON object:
   "status": "complete",
   "backend": "sqlite",
   "format": "sqlite3",
-  "scope": {"source": "/example/fixtures/blackbox.db"},
+  "scope": { "source": "/example/fixtures/blackbox.db" },
   "output": "/example/artifacts/blackbox.snapshot.db",
   "bytes": 8192,
   "sha256": "<64 lowercase hexadecimal characters>"
@@ -181,6 +181,26 @@ A real restore rehearsal must target a separately provisioned disposable databas
 compatible extensions and roles. Compare native typed records and application behavior after
 restore and after restart. Never use a broad cleanup against a shared cluster to make a rehearsal
 pass. This change intentionally provides no production restore command.
+
+## Nightly offsite snapshot (installed service)
+
+`com.nathan.sba-agentic-backup` runs
+[`nightly-drive-backup.sh`](../scripts/storage/nightly-drive-backup.sh) at 03:30 local time. It
+snapshots the live DB with the backup CLI, compresses it with zstd, and copies it into Google Drive
+for desktop (`My Drive/Data/Backups/black-box/`). It keeps the newest 3 there and 1 locally under
+`~/.local/share/sba-agentic/backups/nightly/`. Each archive has a `.json` sidecar with the CLI's
+completion record, including the snapshot's SHA-256. A failure is sent to Telegram through
+`todo telegram-send`. The log is `~/Library/Logs/sba-agentic-backup.log`.
+
+```bash
+cp scripts/storage/com.nathan.sba-agentic-backup.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nathan.sba-agentic-backup.plist
+launchctl kickstart gui/$(id -u)/com.nathan.sba-agentic-backup   # run now
+```
+
+To rehearse a restore, decompress a copy into a scratch directory, check that its SHA-256 matches
+the sidecar, and open it with `PRAGMA quick_check`. Never decompress over the running service's
+database.
 
 ## Outside the artifact
 
