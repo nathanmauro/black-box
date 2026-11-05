@@ -1,0 +1,170 @@
+
+━━ Act 0: a private recorder on a throwaway database
+  ✓ Port 18766 is free, and this script owns the recorder it starts.
+  ✓ Using sba-agentic-0.2.0.jar.
+  ✓ Recorder is up at http://127.0.0.1:18766, starting from 0 sessions and 0 events.
+    Local AI, Elasticsearch, the judge and the editor are off.
+    Embeddings are on, through nomic-embed-text on local Ollama.
+    open file: <scratch>/demo.db
+    open file: <scratch>/demo.db-shm
+    open file: <scratch>/demo.db-wal
+  ✓ The recorder holds only scratch database files.
+  ✓ Seeded 6 synthetic captures through MCP tools/call.
+    Projects: /demo/ledger-service, /demo/docs-portal. One seeded decision is superseded.
+
+━━ Act 1: agent A decides, and records what it rejected
+  ✓ Agent A opened MCP session 42e55c47…
+
+==> tools/call captureDecision
+{
+  "decision": "Deduplicate payment webhooks with a unique constraint on the provider event id",
+  "alternatives": [
+    "Redis SETNX with a TTL: rejected because a failover inside the retry window lets a duplicate reach the ledger",
+    "Trust the provider to deliver once: rejected because its contract is at-least-once",
+    "Reconcile duplicates nightly: rejected because a customer sees the double post until the job runs"
+  ],
+  "confidence": 0.85,
+  "openLoops": [
+    "Retention for processed event ids is unset; it must outlast the 72-hour retry window"
+  ]
+}
+  ✓ The server committed event 2bde23dc… as a Decision.
+  ✓ Agent A closed its MCP session. Nothing it knew survives except what it committed.
+
+━━ Act 2: agent B recalls a bounded packet before acting
+  ✓ Agent B opened a new MCP session 48b8d1da…, with no shared context.
+
+==> tools/call recallContext (project scoped, limit 3, maxChars 1500)
+{"project":"/demo/ledger-service","query":"deduplicate payment webhooks","limit":3,"maxChars":1500}
+
+DECISION  Deduplicate payment webhooks with a unique constraint on the provider event id
+  from      scripted-agent-a · event 2bde23dc…
+  why       The insert shares a transaction with the ledger write, so a duplicate delivery rolls back with no double post. It needs no new infrastructure.
+  rejected  Redis SETNX with a TTL: rejected because a failover inside the retry window lets a duplicate reach the ledger
+  rejected  Trust the provider to deliver once: rejected because its contract is at-least-once
+  rejected  Reconcile duplicates nightly: rejected because a customer sees the double post until the job runs
+  open loop Retention for processed event ids is unset; it must outlast the 72-hour retry window
+
+HANDOFF  The webhook queue consumer is merged. Duplicate webhook deliveries are not handled yet.
+  from      seed-history-2 · event 039d79b5…
+  open loop Provider retries can deliver the same payment webhook twice
+  next      Decide how to deduplicate webhook deliveries before the refund handler ships
+
+    mode hybrid, 2 items, truncated true, 1735 bytes of JSON
+
+==> What the packet must contain, and what it must leave out
+  ✓ Agent A's decision arrived with all 3 rejected alternatives.
+  ✓ Agent A's open loop arrived intact.
+  ✓ The webhook decision in /demo/docs-portal stayed out, because recall is project scoped.
+  ✓ The superseded synchronous decision stayed out.
+
+==> A tighter budget: the same recall with maxChars 760
+{
+  "count": 1,
+  "truncated": true,
+  "rationale": "The insert shares a transaction with the ledger write, so a duplicate delivery rolls back with … (+47 chars)"
+}
+  ✓ The server kept one item, cut its rationale visibly, and reported truncated.
+    The budget covers text fields plus 200 per item, not JSON framing.
+
+==> The same need in different words
+  How do we avoid charging a customer twice when an event is resent?
+  0.674  Deduplicate payment webhooks with a unique constraint on the provider event id
+  0.624  The webhook queue consumer is merged. Duplicate webhook deliveries are not handled yet.
+  ✓ Hybrid recall found agent A's decision by meaning.
+
+==> Replaced decisions stay available for audit: includeSuperseded true
+  ✓ The original synchronous decision is still on record.
+
+==> Agent B acts on the packet instead of re-deciding
+  ✓ Redis is in the packet as rejected, so agent B does not reopen it.
+  ✓ Agent B closed the open loop with decision 2de26d2b…, citing agent A's event.
+  ✓ Agent B left a handoff with one next action.
+
+==> Provenance: the record behind the recalled decision, over REST
+{"eventType":"Decision","source":"manual","clientSessionId":"scripted-agent-a","repo":"/demo/ledger-service","createdAt":"2026-11-05T21:44:21.745471Z"}
+
+━━ Act 2b: a real Claude Code session, same server, same tools
+
+==> claude -p on claude-sonnet-5-5, offered only recallContext and captureDecision
+    You are working in the repo /demo/ledger-service. A teammate proposes using Redis SETNX to deduplicate
+    payment webhooks. Before you answer, call recallContext with project /demo/ledger-service, a query of your choice,
+    limit 4, and maxChars 3000. Then record your conclusion with captureDecision (source
+    claude, clientSessionId real-agent-demo, repo /demo/ledger-service) and tell me in two sentences what you
+    decided and why.
+
+==> What the model did
+  tool call: recallContext
+  tool call: captureDecision
+
+  I decided against Redis SETNX and kept the earlier choice of a unique constraint on the provider event id. That insert runs in the same transaction as the ledger write, so a duplicate rolls back cleanly. SETNX with a TTL could let a duplicate through after a Redis failover inside the 72-hour retry window, and it needs new infrastructure.
+  
+  I recorded this with `captureDecision` (event 3be45674). The purge job for expired event ids still isn't written, and retention has to outlast the 72-hour window.
+
+  ✓ The model recalled first, received agent A's decision, and recorded its own.
+
+━━ Act 3: the MCP surface
+
+==> tools/list over http://127.0.0.1:18766/mcp
+  captureDecision
+  captureEvidence
+  captureHandoff
+  captureIdea
+  captureObservation
+  captureProjection
+  findBraids
+  localModelStatus
+  recallContext
+  recallIdea
+  recentSessions
+  searchContext
+  searchSessions
+  ✓ 13 tools are registered.
+
+==> The recallContext input schema a client discovers
+["includeSuperseded","kinds","limit","maxChars","project","query","repoOrTopic","telemetryClient","telemetryProject","telemetryPurpose","withinHours"]
+
+==> A capture with a blank required field is refused, and writes nothing
+{"isError":true,"text":"decision must not be blank"}
+  ✓ The tool returned isError true.
+  ✓ The event count stayed at 10.
+
+==> A credential pasted into a capture is redacted before it is stored
+It was pasted into a chat as password=[REDACTED]
+  ✓ Recall returned the redacted text.
+
+━━ Act 4: boundaries the build enforces
+
+==> Spring Modulith and ArchUnit against a clean copy of HEAD
+  Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.739 s -- in dev.nathan.sbaagentic.architecture.ApplicationModuleStructureTest
+  Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.798 s -- in dev.nathan.sbaagentic.architecture.PackageArchitectureTest
+  ✓ Spring Modulith verified this module graph, and generated it from the code:
+  Ask             -> Memory
+  Judgment        -> Recording, SessionLineage
+  Memory          -> Project, Query, Recording
+  Platform        -> Ask, Judgment, Memory, Recording, SessionLineage, Summary
+  Project         -> Query, Recording
+  Recording       -> Query
+  SessionLineage  -> Recording
+  Summary         -> Project, Recording
+
+==> Break a boundary on purpose: recording imports an internal class of memory
+import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
+  PackageArchitectureTest.fullyMigratedModuleGraphIsAcyclic:103 [migrated module dependency cycle] 
+  Expecting empty but was: ["recording", "memory", "project", "recording"]
+  PackageArchitectureTest.moduleInternalsNeverLeakAcrossFeatureBoundaries:75 [cross-module imports of ..internal.. packa
+  Expecting empty but was: ["Field <recording.DemoBoundaryViolation.reachedAcrossTheBoundary> has type <memory.internal.
+  ApplicationModuleStructureTest.verifiesTheClosedApplicationModuleGraph:16 » Violations - Cycle detected: Slice memory 
+  Module 'recording' depends on module 'memory' via recording.DemoBoundaryViolation -> memory.internal.application.Evide
+  Tests run: 6, Failures: 2, Errors: 1, Skipped: 0
+  ✓ The build failed on the violation.
+
+━━ Done
+Final store: 7 sessions, 11 events.
+    open file: <scratch>/demo.db
+    open file: <scratch>/demo.db-shm
+    open file: <scratch>/demo.db-wal
+  ✓ The recorder holds only scratch database files.
+Agents A and B were scripted MCP clients. Real Claude Code session: passed.
+All records are synthetic.
+Stopped the recorder and deleted the scratch directory.
