@@ -6,7 +6,7 @@ stops the run.
 
 ## Run it
 
-You need Java 21, Maven, `curl`, `jq`, `lsof` and `git`. The script stops and names any tool it
+You need Java 21, Maven, `curl`, `jq`, `lsof`, `unzip` and `git`. The script stops and names any tool it
 cannot find. Run from a clean checkout. If `target/` has no current jar, the script builds one first.
 
 ```bash

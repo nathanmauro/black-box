@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -21,12 +22,15 @@ class DemoIsolationTest(unittest.TestCase):
         (self.repo / "scripts").mkdir(parents=True)
         (self.repo / "src").mkdir()
         (self.repo / "target").mkdir()
-        (self.repo / "pom.xml").touch()
+        (self.repo / "scripts/demo").mkdir()
+        shutil.copy(SCRIPT.parent / "demo/recorder-jar.sh", self.repo / "scripts/demo")
+        (self.repo / "pom.xml").write_text(
+            "<project><artifactId>sba-agentic</artifactId>\n<version>9.9.9</version></project>\n")
         # Confine the old launcher's fixed scratch paths for the pre-fix reproduction.
         script = SCRIPT.read_text().replace("/tmp/black-box-demo.db", str(self.root / "old-demo.db"))
         script = script.replace("/tmp/black-box-demo.log", str(self.root / "old-demo.log"))
         (self.repo / "scripts/demo.sh").write_text(script)
-        with zipfile.ZipFile(self.repo / "target/demo.jar", "w") as jar:
+        with zipfile.ZipFile(self.repo / "target/sba-agentic-9.9.9.jar", "w") as jar:
             jar.writestr("CaptureDecisionRequest.class", b"fixture")
         self.bin = self.root / "bin"
         self.bin.mkdir()

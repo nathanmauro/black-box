@@ -186,62 +186,10 @@ ok "Using a new throwaway DB at ${DEMO_DB}."
 # --------------------------------------------------------------------------- #
 step "Locating the Black Box recorder jar"
 
-# Pick the first runnable jar in target/, ignoring the non-runnable *.jar.original
-# artifact. Echoes the path (empty if none found).
-find_jar() {
-  local candidate
-  if compgen -G "${PROJECT_DIR}/target/*.jar" >/dev/null; then
-    for candidate in "${PROJECT_DIR}"/target/*.jar; do
-      case "$candidate" in
-        *.original) continue ;;
-      esac
-      printf '%s' "$candidate"
-      return 0
-    done
-  fi
-  return 0
-}
-
-# Is this jar usable for the DEMO specifically? It must (a) contain the
-# decision/handoff/recall classes — the whole point of Black Box — and (b) not be
-# older than the source tree. A jar that predates the context endpoints would
-# boot fine but return 404 on /api/decisions, silently breaking the demo.
-jar_is_fresh_enough() {
-  local jar="$1"
-  [[ -f "$jar" ]] || return 1
-  # (a) Capability: the recall/decision feature classes must be inside the jar.
-  if ! unzip -l "$jar" 2>/dev/null | grep "CaptureDecisionRequest" >/dev/null; then
-    return 1
-  fi
-  # (b) Freshness: rebuild if any source/build file is newer than the jar.
-  if [[ -n "$(find "${PROJECT_DIR}/src" "${PROJECT_DIR}/pom.xml" -newer "$jar" -print -quit 2>/dev/null)" ]]; then
-    return 1
-  fi
-  return 0
-}
-
-build_jar() {
-  command -v mvn >/dev/null 2>&1 || die "mvn is required to build but was not found on PATH."
-  say "${DIM}   Building with: mvn -q clean -DskipTests package  (one-time, ~30-60s)${RESET}"
-  ( cd "${PROJECT_DIR}" && mvn -q clean -DskipTests package ) || die "Maven build failed."
-}
-
-# Prefer an existing jar; only build when none exists, or the one we have is
-# missing the demo's endpoints / is older than the source.
-JAR="$(find_jar)"
-if [[ -n "$JAR" ]] && jar_is_fresh_enough "$JAR"; then
-  ok "Using existing jar: ${JAR#"${PROJECT_DIR}"/}"
-elif [[ -n "$JAR" ]]; then
-  warn "Existing jar is stale or missing the decision/recall endpoints — rebuilding."
-  build_jar
-  JAR="$(find_jar)"
-else
-  warn "No runnable jar in target/ — building."
-  build_jar
-  JAR="$(find_jar)"
-fi
-[[ -n "$JAR" && -f "$JAR" ]] || die "No runnable jar available in target/ after build."
-ok "Jar: ${JAR#"${PROJECT_DIR}"/}"
+# shellcheck source=scripts/demo/recorder-jar.sh
+source "${PROJECT_DIR}/scripts/demo/recorder-jar.sh"
+ensure_recorder_jar
+JAR="$RECORDER_JAR"
 
 step "Starting the recorder on the demo database (local AI OFF, Elasticsearch OFF)"
 # Launch in the background on the dedicated DB. Local AI and Elasticsearch are

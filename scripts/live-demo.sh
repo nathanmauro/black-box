@@ -113,6 +113,9 @@ pause_for_presenter() {
   fi
 }
 
+# shellcheck source=scripts/demo/recorder-jar.sh
+source "${PROJECT_DIR}/scripts/demo/recorder-jar.sh"
+
 # --------------------------------------------------------------------------- #
 # Lifecycle
 # --------------------------------------------------------------------------- #
@@ -143,7 +146,7 @@ port_listener_pids() {
 preflight() {
   local tool
 
-  for tool in curl jq lsof java git; do
+  for tool in curl jq lsof java git unzip; do
     command -v "$tool" >/dev/null 2>&1 || die "${tool} is required but is not on PATH."
   done
   [[ "$PORT" =~ ^[0-9]{1,5}$ ]] && ((10#$PORT >= 1 && 10#$PORT <= 65535)) \
@@ -160,37 +163,6 @@ preflight() {
 embedding_model_is_available() {
   curl -fsS "${EMBEDDING_URL}/api/tags" 2>/dev/null \
     | jq -e --arg model "$EMBEDDING_MODEL" 'any(.models[].name; startswith($model))' >/dev/null
-}
-
-project_version() {
-  grep -m1 -A1 '<artifactId>sba-agentic</artifactId>' "${PROJECT_DIR}/pom.xml" \
-    | sed -n 's|.*<version>\(.*\)</version>.*|\1|p'
-}
-
-jar_is_current() {
-  local jar="$1"
-
-  [[ -f "$jar" ]] || return 1
-  [[ -z "$(find "${PROJECT_DIR}/src" "${PROJECT_DIR}/pom.xml" -newer "$jar" -print -quit)" ]]
-}
-
-# Selects the jar by the project version, because target/ can also hold an older jar that an
-# installed service runs from. Builds without `clean` for the same reason.
-locate_jar() {
-  JAR="${PROJECT_DIR}/target/sba-agentic-$(project_version).jar"
-
-  if jar_is_current "$JAR"; then
-    ok "Using $(basename "$JAR")."
-    return 0
-  fi
-  if [[ -f "$JAR" && -n "$(lsof -t "$JAR" 2>/dev/null || true)" ]]; then
-    die "A running process holds $(basename "$JAR"); build from an isolated checkout instead."
-  fi
-  command -v mvn >/dev/null 2>&1 || die "mvn is required to build the jar."
-  note "Building $(basename "$JAR") with mvn -q -DskipTests package."
-  (cd "$PROJECT_DIR" && mvn -q -DskipTests package) || die "Maven build failed."
-  [[ -f "$JAR" ]] || die "The build did not produce $(basename "$JAR")."
-  ok "Built $(basename "$JAR")."
 }
 
 # env -i drops every ambient SBA_* and Spring setting, so nothing can point this process at an
@@ -380,7 +352,8 @@ act_boot() {
   DEMO_DIR="$(mktemp -d "${TMPDIR:-/tmp}/black-box-live-demo.XXXXXX")"
   DEMO_DIR="$(cd "$DEMO_DIR" && pwd -P)"
 
-  locate_jar
+  ensure_recorder_jar
+  JAR="$RECORDER_JAR"
   start_recorder
   wait_for_recorder
   ok "Recorder is up at ${BASE_URL}, starting from 0 sessions and 0 events."

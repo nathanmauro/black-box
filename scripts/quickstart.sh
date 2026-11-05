@@ -7,10 +7,10 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [[ -t 1 ]]; then
-  BOLD=$'\033[1m'; DIM=$'\033[2m'; CYAN=$'\033[36m'; GREEN=$'\033[32m'
+  BOLD=$'\033[1m'; CYAN=$'\033[36m'; GREEN=$'\033[32m'
   YELLOW=$'\033[33m'; RED=$'\033[31m'; RESET=$'\033[0m'
 else
-  BOLD=""; DIM=""; CYAN=""; GREEN=""; YELLOW=""; RED=""; RESET=""
+  BOLD=""; CYAN=""; GREEN=""; YELLOW=""; RED=""; RESET=""
 fi
 
 say()  { printf '%s\n' "$*"; }
@@ -72,37 +72,10 @@ if (( ${#missing[@]} > 0 )); then
 fi
 ok "java, mvn, jq, and lsof present."
 
-find_jar() {
-  local candidate
-  for candidate in "${PROJECT_DIR}"/target/*.jar; do
-    [[ -e "$candidate" ]] || return 0
-    case "$candidate" in *.original) continue ;; esac
-    printf '%s' "$candidate"
-    return 0
-  done
-}
-
-jar_is_fresh_enough() {
-  local jar="$1"
-  [[ -f "$jar" ]] || return 1
-  unzip -l "$jar" 2>/dev/null | grep "CaptureDecisionRequest" >/dev/null || return 1
-  [[ -z "$(find "${PROJECT_DIR}/src" "${PROJECT_DIR}/pom.xml" -newer "$jar" -print -quit 2>/dev/null)" ]]
-}
-
-build_jar() {
-  say "${DIM}   Building with: mvn -q clean -DskipTests package${RESET}"
-  ( cd "$PROJECT_DIR" && mvn -q clean -DskipTests package ) || die "Maven build failed."
-}
-
 step "Locating the Black Box recorder jar"
-JAR="$(find_jar)"
-if [[ -n "$JAR" ]] && jar_is_fresh_enough "$JAR"; then
-  ok "Using existing jar: ${JAR}"
-else
-  [[ -n "$JAR" ]] && warn "Existing jar is stale or missing demo endpoints - rebuilding."
-  [[ -z "$JAR" ]] && warn "No runnable jar in target/ - building."
-  build_jar
-fi
+# shellcheck source=scripts/demo/recorder-jar.sh
+source "${PROJECT_DIR}/scripts/demo/recorder-jar.sh"
+ensure_recorder_jar
 
 step "Starting the demo"
 cd "$PROJECT_DIR"

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "live-demo.sh"
@@ -31,6 +32,7 @@ class LiveDemoGuardTest(unittest.TestCase):
         (self.repo / "pom.xml").write_text(POM)
         shutil.copy(SCRIPT, self.repo / "scripts/live-demo.sh")
         shutil.copy(SEED, self.repo / "scripts/demo/live-demo-seed.json")
+        shutil.copy(SCRIPT.parent / "demo/recorder-jar.sh", self.repo / "scripts/demo")
         self.java_record = self.root / "java.json"
         self.mvn_record = self.root / "mvn.txt"
         self.bin = self.root / "bin"
@@ -58,7 +60,8 @@ class LiveDemoGuardTest(unittest.TestCase):
 
     def add_current_jar(self, name):
         jar = self.repo / "target" / name
-        jar.write_bytes(b"fixture")
+        with zipfile.ZipFile(jar, "w") as archive:
+            archive.writestr("CaptureDecisionRequest.class", b"fixture")
         os.utime(jar, (2_000_000_000, 2_000_000_000))
         return jar
 
