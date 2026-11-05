@@ -13,7 +13,7 @@
     Projects: /demo/ledger-service, /demo/docs-portal. One seeded decision is superseded.
 
 ━━ Act 1: agent A decides, and records what it rejected
-  ✓ Agent A opened MCP session 42e55c47…
+  ✓ Agent A opened MCP session 060277c6…
 
 ==> tools/call captureDecision
 {
@@ -28,17 +28,17 @@
     "Retention for processed event ids is unset; it must outlast the 72-hour retry window"
   ]
 }
-  ✓ The server committed event 2bde23dc… as a Decision.
+  ✓ The server committed event 05bccc68… as a Decision.
   ✓ Agent A closed its MCP session. Nothing it knew survives except what it committed.
 
 ━━ Act 2: agent B recalls a bounded packet before acting
-  ✓ Agent B opened a new MCP session 48b8d1da…, with no shared context.
+  ✓ Agent B opened a new MCP session 64c00bd4…, with no shared context.
 
 ==> tools/call recallContext (project scoped, limit 3, maxChars 1500)
 {"project":"/demo/ledger-service","query":"deduplicate payment webhooks","limit":3,"maxChars":1500}
 
 DECISION  Deduplicate payment webhooks with a unique constraint on the provider event id
-  from      scripted-agent-a · event 2bde23dc…
+  from      scripted-agent-a · event 05bccc68…
   why       The insert shares a transaction with the ledger write, so a duplicate delivery rolls back with no double post. It needs no new infrastructure.
   rejected  Redis SETNX with a TTL: rejected because a failover inside the retry window lets a duplicate reach the ledger
   rejected  Trust the provider to deliver once: rejected because its contract is at-least-once
@@ -46,7 +46,7 @@ DECISION  Deduplicate payment webhooks with a unique constraint on the provider 
   open loop Retention for processed event ids is unset; it must outlast the 72-hour retry window
 
 HANDOFF  The webhook queue consumer is merged. Duplicate webhook deliveries are not handled yet.
-  from      seed-history-2 · event 039d79b5…
+  from      seed-history-2 · event 8ff26a45…
   open loop Provider retries can deliver the same payment webhook twice
   next      Decide how to deduplicate webhook deliveries before the refund handler ships
 
@@ -78,11 +78,11 @@ HANDOFF  The webhook queue consumer is merged. Duplicate webhook deliveries are 
 
 ==> Agent B acts on the packet instead of re-deciding
   ✓ Redis is in the packet as rejected, so agent B does not reopen it.
-  ✓ Agent B closed the open loop with decision 2de26d2b…, citing agent A's event.
+  ✓ Agent B closed the open loop with decision dc9420f7…, citing agent A's event.
   ✓ Agent B left a handoff with one next action.
 
 ==> Provenance: the record behind the recalled decision, over REST
-{"eventType":"Decision","source":"manual","clientSessionId":"scripted-agent-a","repo":"/demo/ledger-service","createdAt":"2026-11-05T21:44:21.745471Z"}
+{"eventType":"Decision","source":"manual","clientSessionId":"scripted-agent-a","repo":"/demo/ledger-service","createdAt":"2026-11-05T21:50:58.929508Z"}
 
 ━━ Act 2b: a real Claude Code session, same server, same tools
 
@@ -97,9 +97,9 @@ HANDOFF  The webhook queue consumer is merged. Duplicate webhook deliveries are 
   tool call: recallContext
   tool call: captureDecision
 
-  I decided against Redis SETNX and kept the earlier choice of a unique constraint on the provider event id. That insert runs in the same transaction as the ledger write, so a duplicate rolls back cleanly. SETNX with a TTL could let a duplicate through after a Redis failover inside the 72-hour retry window, and it needs new infrastructure.
-  
-  I recorded this with `captureDecision` (event 3be45674). The purge job for expired event ids still isn't written, and retention has to outlast the 72-hour window.
+  I decided against Redis SETNX and kept the earlier choice of a unique constraint on the provider event id. That constraint is written in the same transaction as the ledger write, so a duplicate delivery rolls back cleanly. SETNX with a TTL can let a duplicate through if Redis fails over inside the 72-hour retry window.
+
+  I recorded this with captureDecision. Two follow-ups are still open: setting retention for processed event ids so it outlasts the retry window, and writing the purge job for expired ids.
 
   ✓ The model recalled first, received agent A's decision, and recorded its own.
 
@@ -136,8 +136,8 @@ It was pasted into a chat as password=[REDACTED]
 ━━ Act 4: boundaries the build enforces
 
 ==> Spring Modulith and ArchUnit against a clean copy of HEAD
-  Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.739 s -- in dev.nathan.sbaagentic.architecture.ApplicationModuleStructureTest
-  Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.798 s -- in dev.nathan.sbaagentic.architecture.PackageArchitectureTest
+  Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.574 s -- in dev.nathan.sbaagentic.architecture.ApplicationModuleStructureTest
+  Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.551 s -- in dev.nathan.sbaagentic.architecture.PackageArchitectureTest
   ✓ Spring Modulith verified this module graph, and generated it from the code:
   Ask             -> Memory
   Judgment        -> Recording, SessionLineage
@@ -150,11 +150,11 @@ It was pasted into a chat as password=[REDACTED]
 
 ==> Break a boundary on purpose: recording imports an internal class of memory
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
-  PackageArchitectureTest.fullyMigratedModuleGraphIsAcyclic:103 [migrated module dependency cycle] 
+  PackageArchitectureTest.fullyMigratedModuleGraphIsAcyclic:103 [migrated module dependency cycle]
   Expecting empty but was: ["recording", "memory", "project", "recording"]
   PackageArchitectureTest.moduleInternalsNeverLeakAcrossFeatureBoundaries:75 [cross-module imports of ..internal.. packa
   Expecting empty but was: ["Field <recording.DemoBoundaryViolation.reachedAcrossTheBoundary> has type <memory.internal.
-  ApplicationModuleStructureTest.verifiesTheClosedApplicationModuleGraph:16 » Violations - Cycle detected: Slice memory 
+  ApplicationModuleStructureTest.verifiesTheClosedApplicationModuleGraph:16 » Violations - Cycle detected: Slice memory
   Module 'recording' depends on module 'memory' via recording.DemoBoundaryViolation -> memory.internal.application.Evide
   Tests run: 6, Failures: 2, Errors: 1, Skipped: 0
   ✓ The build failed on the violation.
