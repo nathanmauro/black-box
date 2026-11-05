@@ -637,7 +637,7 @@ act_real_agent() {
   step "What the model did"
   printf '%s\n' "$tools" | sed 's/^/  tool call: /'
   printf '\n'
-  jq -r 'select(.type == "result") | .result' "$stream" | sed 's/^/  /'
+  jq -r 'select(.type == "result") | .result' "$stream" | sed -e 's/^/  /' -e 's/[[:space:]]*$//'
   printf '\n'
 
   mcp_open_session "scripted-inspector"
@@ -779,7 +779,7 @@ JAVA
   sed -n '/^\[ERROR\] Failures:/,/^\[ERROR\] Tests run:/p' "${copy}/boundary.log" \
     | grep -E "Test\.|Expecting empty|Module 'recording' depends|Tests run:" \
     | sed -e 's/^\[ERROR\] *//' -e 's/^[ -]*//' -e 's/dev\.nathan\.sbaagentic\.//g' -e 's/^/  /' \
-    | scrub_paths | cut -c1-120
+    | scrub_paths | cut -c1-120 | sed 's/[[:space:]]*$//'
   ok "The build failed on the violation."
 }
 
