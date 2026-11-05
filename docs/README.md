@@ -14,6 +14,7 @@ Upgrading source or downloading a JAR does not update an already-running install
 | [Installation](installation.md) | Choose a download or source build, understand platform support, and run a persistent server. |
 | [Agent integration](agent-integration.md) | Connect MCP clients, choose hooks, and preserve session lineage. |
 | [ChatGPT gateway](chatgpt-mcp.md) | Set up a restricted integration with explicit capture and bounded retrieval. |
+| [Live demo](live-demo.md) | Run a scripted write, recall, and boundary walkthrough on a throwaway database. |
 | [Project continuity](project-continuity.md) | Recall a project, follow evidence, and record decision replacements. |
 | [Projectless braids](projectless-braids.md) | Collect related sessions across project boundaries. |
 | [Companion](companion.md) | Use the browser companion and optional macOS shell. |
