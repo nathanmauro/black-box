@@ -130,6 +130,7 @@ cleanup() {
     say "Run failed. The scratch directory is kept for inspection: ${DEMO_DIR}"
   elif [[ -n "$DEMO_DIR" ]]; then
     rm -rf "$DEMO_DIR"
+    say "Stopped the recorder and deleted the scratch directory."
   fi
 }
 trap cleanup EXIT
@@ -777,7 +778,8 @@ JAVA
   fi
   sed -n '/^\[ERROR\] Failures:/,/^\[ERROR\] Tests run:/p' "${copy}/boundary.log" \
     | grep -E "Test\.|Expecting empty|Module 'recording' depends|Tests run:" \
-    | sed -e 's/^\[ERROR\] *//' -e 's/^[ -]*//' -e 's/^/  /' | scrub_paths | cut -c1-110
+    | sed -e 's/^\[ERROR\] *//' -e 's/^[ -]*//' -e 's/dev\.nathan\.sbaagentic\.//g' -e 's/^/  /' \
+    | scrub_paths | cut -c1-120
   ok "The build failed on the violation."
 }
 
@@ -789,7 +791,7 @@ finish() {
 
   status="$(rest_get /api/status)"
   act "Done"
-  printf '%s' "$status" | jq -c '.storage'
+  printf '%s' "$status" | jq -r '.storage | "Final store: \(.sessions) sessions, \(.events) events."'
   assert_only_scratch_database
   say "Agents A and B were scripted MCP clients. Real Claude Code session: ${REAL_AGENT_STATUS}."
   say "All records are synthetic."

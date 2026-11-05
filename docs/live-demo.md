@@ -6,16 +6,16 @@ stops the run.
 
 ## Run it
 
-You need Java 21, Maven, `jq`, `lsof` and `git`. Run from a clean checkout. The script builds the
-jar if `target/` has no current one, which takes about a minute the first time.
+You need Java 21, Maven, `curl`, `jq`, `lsof` and `git`. The script stops and names any tool it
+cannot find. Run from a clean checkout. If `target/` has no current jar, the script builds one first.
 
 ```bash
 ./scripts/live-demo.sh
 ```
 
-The run takes about 30 seconds once the jar exists. It ends by printing `━━ Done`, the final event
-count, and the database files the recorder holds open. It then stops the recorder and deletes its
-scratch directory.
+A first run took 32 seconds including the build, and the full version below took 41 seconds. The
+run prints `━━ Done`, the final session and event counts, and the database files the recorder holds
+open. It then stops the recorder, deletes its scratch directory, and says so on the last line.
 
 | Option | Effect | Needs |
 | --- | --- | --- |
@@ -29,12 +29,13 @@ To present the full version, or to record a run:
 
 ```bash
 ./scripts/live-demo.sh --step --semantic --real-agent
-./scripts/live-demo.sh --semantic --real-agent | tee live-demo-run.txt
+./scripts/live-demo.sh --semantic --real-agent | tee "${TMPDIR:-/tmp}/live-demo-run.txt"
 ```
 
 `SBA_DEMO_PORT` changes the port from its default of 18766. Port 8766 is always refused.
-`SBA_DEMO_CLAUDE_MODEL` changes the Act 2b model. [`live-demo-run.txt`](live-demo-run.txt) is a
-recorded run.
+`SBA_DEMO_CLAUDE_MODEL` changes the Act 2b model, which defaults to `claude-sonnet-5-5`.
+[`live-demo-run.txt`](live-demo-run.txt) is a recorded run. The model's answer in Act 2b changes
+between runs, and Act 4 shortens long failure lines to 120 characters.
 
 ## What each act shows
 
