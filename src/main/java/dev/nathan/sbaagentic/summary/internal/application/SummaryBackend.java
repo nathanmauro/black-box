@@ -43,7 +43,7 @@ public class SummaryBackend implements ProjectMeldSummarizer {
         return localAiClient.title(sourceText);
     }
 
-    private static String titleFromSummary(String sourceText) {
+    static String titleFromSummary(String sourceText) {
         if (sourceText == null || sourceText.isBlank()) {
 
             return Titles.sanitize(null);

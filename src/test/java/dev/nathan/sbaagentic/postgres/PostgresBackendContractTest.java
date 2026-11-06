@@ -16,6 +16,7 @@ import dev.nathan.sbaagentic.recording.CanonicalTimeHttpContract;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.SessionStopped;
+import dev.nathan.sbaagentic.recording.SummarySource;
 import dev.nathan.sbaagentic.recording.TranscriptProperties;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -779,7 +780,8 @@ class PostgresBackendContractTest {
                 .doesNotContain("abcd1234efgh");
         assertThat(jdbc.queryForObject("SELECT event_count FROM agent_sessions WHERE id = ?", Integer.class, parentId))
                 .isEqualTo(2);
-        app.getBean(RecordingCatalog.class).saveSummaryAndTitle(parentId, "Saved summary", "Better title", 100);
+        app.getBean(RecordingCatalog.class)
+                .saveSummaryAndTitle(parentId, "Saved summary", SummarySource.MODEL, "Better title", 100);
         assertThat(get("/api/sessions/" + parentId).path("summary").asText()).isEqualTo("Saved summary");
         var merged = http.exchange(
                 base + "/api/project-aliases",

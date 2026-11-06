@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     event_count INTEGER NOT NULL DEFAULT 0,
     spawned_by TEXT,
     first_human_turn TEXT,
+    summary_source TEXT,
     UNIQUE (source, client_session_id)
 );
 

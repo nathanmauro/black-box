@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -142,6 +143,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 .anyMatch(column -> "first_human_turn".equalsIgnoreCase(String.valueOf(column.get("name"))));
         if (!hasFirstHumanTurn) {
             jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN first_human_turn TEXT");
+        }
+        boolean hasSummarySource = columns.stream()
+                .anyMatch(column -> "summary_source".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasSummarySource) {
+            jdbcTemplate.execute("ALTER TABLE agent_sessions ADD COLUMN summary_source TEXT");
         }
         List<Map<String, Object>> eventColumns = jdbcTemplate.queryForList("PRAGMA table_info(agent_events)");
         if (eventColumns.isEmpty()) {
@@ -528,6 +534,7 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public Optional<TurnFollowup> turnFollowup(String eventId, int limit) {
         Optional<AgentEvent> anchor = findEventById(eventId);
         if (anchor.isEmpty()) {
+
             return Optional.empty();
         }
 
@@ -555,9 +562,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         List<AgentEvent> events = new ArrayList<>();
         for (AgentEvent event : fetched) {
             if (event.humanText() != null) {
+
                 return Optional.of(new TurnFollowup(eventId, events, true));
             }
             if (events.size() == limit) {
+
                 return Optional.of(new TurnFollowup(eventId, events, false));
             }
             events.add(event);
@@ -1056,10 +1065,19 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
      * can never leave a session summarized but still wearing its weak ingest-time title.
      */
     @Transactional
-    public void saveSummaryAndTitle(String sessionId, String summary, String title, int titleRank) {
-        jdbcTemplate.update("UPDATE agent_sessions SET summary = ? WHERE id = ?", summary, sessionId);
+    public void saveSummaryAndTitle(String sessionId, String summary, String source, String title, int titleRank) {
+        jdbcTemplate.update(
+                "UPDATE agent_sessions SET summary = ?, summary_source = ? WHERE id = ?", summary, source, sessionId);
         jdbcTemplate.update(
                 "UPDATE agent_sessions SET title = ?, title_rank = ? WHERE id = ?", title, titleRank, sessionId);
+    }
+
+    @Override
+    public Optional<String> summarySource(String sessionId) {
+        List<String> sources = jdbcTemplate.queryForList(
+                "SELECT summary_source FROM agent_sessions WHERE id = ?", String.class, sessionId);
+
+        return sources.stream().filter(Objects::nonNull).findFirst();
     }
 
     public StorageStats stats() {

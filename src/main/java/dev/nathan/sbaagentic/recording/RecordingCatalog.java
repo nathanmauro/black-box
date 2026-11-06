@@ -84,7 +84,10 @@ public interface RecordingCatalog {
         return facetCounts(query, meaningfulOnly, List.of());
     }
 
-    void saveSummaryAndTitle(String sessionId, String summary, String title, int titleRank);
+    void saveSummaryAndTitle(String sessionId, String summary, String source, String title, int titleRank);
+
+    /** The {@link SummarySource} of the stored summary, empty when none was recorded. */
+    Optional<String> summarySource(String sessionId);
 
     StorageStats stats();
 

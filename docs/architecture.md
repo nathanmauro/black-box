@@ -19,6 +19,18 @@ none, and the `summarize` commands run it explicitly. With the default `external
 invokes a Codex CLI wrapper through `/bin/sh -c`, so transcript text can leave the machine; see the
 privacy boundary below.
 
+A session whose latest handoff still stands for it is summarized from that handoff with no model
+call, so nothing leaves the machine. The summary is the handoff's context, open loops, and next
+action, followed by the first human turn. The handoff stands when at least 300 characters of
+context were written and, since then, there has been no human turn and at most 20 other
+non-lifecycle events. Elapsed time does not count. Anything else falls back to the model, and so
+does an explicit `summarize`; `summarize-missing` tries the handoff first.
+
+Such a summary is provisional. Each later final event looks again: a newer handoff replaces it with
+no model call, and a session that has moved on gets a model summary, which is permanent as before.
+`agent_sessions.summary_source` records `handoff` or `model`; `NULL` predates the column and means
+a model.
+
 ## System shape
 
 ```mermaid

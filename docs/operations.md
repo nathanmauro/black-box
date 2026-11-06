@@ -169,7 +169,8 @@ Background session summaries get 1 second; queued summaries are not started afte
 external backend a summary still running is stopped together with its command; a local-model
 request cannot be interrupted, so it is abandoned when the process exits unless it finishes within
 another half second. A warning names the sessions left without a summary; they keep none until
-`summarize-missing` (CLI) or `POST /api/sessions/summarize-missing` backfills them.
+`summarize-missing` (CLI) or `POST /api/sessions/summarize-missing` backfills them. Backfill uses a
+session's handoff where one still stands, so those sessions make no model call.
 An optional judgment underway gets 0.5 seconds, and queued beats are not judged. These limits keep a
 stop inside launchd's exit timeout, 5 seconds for a job installed from the template (it sets no
 `ExitTimeOut`), after which launchd sends SIGKILL. A service manager with a shorter stop timeout

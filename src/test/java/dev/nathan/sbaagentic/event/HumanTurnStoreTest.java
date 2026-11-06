@@ -164,7 +164,7 @@ class HumanTurnStoreTest {
     void aiTitleStillOutranksHumanTitle() {
         String client = start();
         ingest(client, "UserPromptSubmit", "human words here");
-        repository.saveSummaryAndTitle(session(client).id(), "summary", "AI title", TitleRank.AI);
+        repository.saveSummaryAndTitle(session(client).id(), "summary", SummarySource.MODEL, "AI title", TitleRank.AI);
         ingest(client, "UserPromptSubmit", "more human words");
 
         assertThat(session(client).title()).isEqualTo("AI title");

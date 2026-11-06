@@ -9,12 +9,16 @@ import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.SessionSummaryRecorded;
+import dev.nathan.sbaagentic.recording.SummarySource;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.summary.SummaryBackfillResult;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
+import dev.nathan.sbaagentic.summary.internal.domain.HandoffSummary;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SessionSummaryService implements SummaryOperations {
 
+    private static final Logger log = LoggerFactory.getLogger(SessionSummaryService.class);
     private static final int MAX_BACKFILL_LIMIT = 25;
 
     private final RecordingCatalog repository;
@@ -85,8 +90,36 @@ public class SessionSummaryService implements SummaryOperations {
             throw new ResponseStatusException(SERVICE_UNAVAILABLE, "Summary backend failed or produced no summary", ex);
         }
         String title = ingestionRedactor.redact(summaryBackend.title(outbound(summary)));
-        repository.saveSummaryAndTitle(sessionId, summary, title, TitleRank.AI);
+        repository.saveSummaryAndTitle(sessionId, summary, SummarySource.MODEL, title, TitleRank.AI);
         AgentSession updated = repository.findSessionById(sessionId).orElse(session);
+        eventPublisher.publishEvent(new SessionSummaryRecorded(updated));
+
+        return updated;
+    }
+
+    @Override
+    public AgentSession summarizeFinished(String sessionId) {
+        AgentSession session = repository
+                .findSessionById(sessionId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Session not found"));
+        List<AgentEvent> recent = repository.eventsForSession(sessionId, HandoffSummary.EVENT_WINDOW);
+
+        return HandoffSummary.from(recent, session.firstHumanTurn())
+                .map(handoff -> recordHandoffSummary(session, handoff))
+                .orElseGet(() -> summarize(sessionId));
+    }
+
+    private AgentSession recordHandoffSummary(AgentSession session, HandoffSummary handoff) {
+        String summary = ingestionRedactor.redact(handoff.text());
+        // Codex fires Stop every turn: nothing new to record, or to embed, until a new handoff lands.
+        if (summary.equals(session.summary())) {
+
+            return session;
+        }
+        String title = ingestionRedactor.redact(SummaryBackend.titleFromSummary(handoff.context()));
+        repository.saveSummaryAndTitle(session.id(), summary, SummarySource.HANDOFF, title, TitleRank.AI);
+        log.info("Summarized sessionId={} from its handoff, with no model call", session.id());
+        AgentSession updated = repository.findSessionById(session.id()).orElse(session);
         eventPublisher.publishEvent(new SessionSummaryRecorded(updated));
 
         return updated;
@@ -105,7 +138,7 @@ public class SessionSummaryService implements SummaryOperations {
         List<AgentSession> missing = repository.recentSessionsMissingSummary(safeLimit);
         List<AgentSession> summarized = new ArrayList<>();
         for (AgentSession session : missing) {
-            summarized.add(summarize(session.id()));
+            summarized.add(summarizeFinished(session.id()));
         }
 
         return new SummaryBackfillResult(safeLimit, summarized.size(), summarized);

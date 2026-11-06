@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
     event_count INTEGER NOT NULL DEFAULT 0,
     spawned_by TEXT,
     first_human_turn TEXT,
+    summary_source TEXT,
     UNIQUE (source, client_session_id)
 );
 
@@ -62,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_events_tool_observed
 
 -- Upgrades for databases created before human-turn classification.
 ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS first_human_turn TEXT;
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS summary_source TEXT;
 ALTER TABLE agent_events ADD COLUMN IF NOT EXISTS human_text TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_human

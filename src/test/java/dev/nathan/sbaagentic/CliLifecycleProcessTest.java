@@ -284,6 +284,12 @@ class CliLifecycleProcessTest {
                 }
 
                 @Override
+                public AgentSession summarizeFinished(String sessionId) {
+
+                    return summarize(sessionId);
+                }
+
+                @Override
                 public AgentSession summarize(String source, String clientSessionId) {
 
                     return summarize(clientSessionId);

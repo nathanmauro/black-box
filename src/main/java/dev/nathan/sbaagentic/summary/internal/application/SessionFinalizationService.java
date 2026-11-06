@@ -4,6 +4,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.AgentSession;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import dev.nathan.sbaagentic.recording.SessionStopped;
+import dev.nathan.sbaagentic.recording.SummarySource;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
@@ -23,6 +24,9 @@ import org.springframework.stereotype.Service;
  * Summarizes a session in the background after its final event. At shutdown, queued and running
  * summaries get {@link #SHUTDOWN_GRACE} to finish; the rest are stopped and named in the log. Their
  * sessions keep no summary, so {@code summarize-missing} (CLI or HTTP) can backfill them.
+ *
+ * <p>A model summary ends the matter for its session. A summary taken from a handoff does not; see
+ * {@link #isSettled}.
  */
 @Service
 public class SessionFinalizationService {
@@ -56,7 +60,7 @@ public class SessionFinalizationService {
     public void summarizeAfterFinalEvent(SessionStopped stopped) {
         AgentSession session = stopped.session();
         AgentEvent event = stopped.event();
-        if (hasSummary(session) || !pending.add(session.id())) {
+        if (isSettled(session) || !pending.add(session.id())) {
 
             return;
         }
@@ -72,8 +76,8 @@ public class SessionFinalizationService {
         boolean stoppedByShutdown = false;
         try {
             AgentSession latest = repository.findSessionById(session.id()).orElse(null);
-            if (latest != null && !hasSummary(latest)) {
-                summaryService.summarize(session.id());
+            if (latest != null && !isSettled(latest)) {
+                summaryService.summarizeFinished(session.id());
             }
         } catch (Exception ex) {
             if (abandoning) {
@@ -127,8 +131,15 @@ public class SessionFinalizationService {
         }
     }
 
-    private static boolean hasSummary(AgentSession session) {
+    /**
+     * A model summary is permanent, but a handoff summary is provisional: the session may work on,
+     * so each final event decides again whether the latest handoff still stands for it.
+     */
+    private boolean isSettled(AgentSession session) {
+        boolean hasSummary = session.summary() != null && !session.summary().isBlank();
 
-        return session.summary() != null && !session.summary().isBlank();
+        return hasSummary
+                && !SummarySource.HANDOFF.equals(
+                        repository.summarySource(session.id()).orElse(null));
     }
 }
