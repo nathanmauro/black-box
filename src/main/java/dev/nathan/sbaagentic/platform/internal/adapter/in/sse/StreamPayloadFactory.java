@@ -59,6 +59,11 @@ public class StreamPayloadFactory {
     }
 
     public StreamEvents.SessionUpdated sessionUpdated(AgentSession session) {
+        List<SessionLink> links = safeLinksWhereChild(session.id());
+        String parent = parentSessionIdFromSpawnedBy(session.source(), session.spawnedBy());
+        if (parent == null) {
+            parent = firstParent(links);
+        }
 
         return new StreamEvents.SessionUpdated(
                 session.id(),
@@ -67,13 +72,8 @@ public class StreamPayloadFactory {
                 session.cwd(),
                 session.eventCount(),
                 session.lastSeenAt() == null ? null : session.lastSeenAt().toString(),
-                parentSessionId(session),
-                linkTypes(session.id()));
-    }
-
-    private String parentSessionId(AgentSession session) {
-
-        return parentSessionId(session.id(), session.source(), session.spawnedBy());
+                parent,
+                linkTypes(links));
     }
 
     private String parentSessionId(String sessionId, String source, String spawnedBy) {
@@ -83,10 +83,12 @@ public class StreamPayloadFactory {
             return parentFromSpawnedBy;
         }
 
-        return safeLinksWhereChild(sessionId).stream()
-                .findFirst()
-                .map(SessionLink::parentSessionId)
-                .orElse(null);
+        return firstParent(safeLinksWhereChild(sessionId));
+    }
+
+    private static String firstParent(List<SessionLink> links) {
+
+        return links.stream().findFirst().map(SessionLink::parentSessionId).orElse(null);
     }
 
     private String parentSessionIdFromSpawnedBy(String source, String spawnedBy) {
@@ -101,9 +103,9 @@ public class StreamPayloadFactory {
         return null;
     }
 
-    private List<String> linkTypes(String sessionId) {
+    private static List<String> linkTypes(List<SessionLink> links) {
         Set<String> types = new LinkedHashSet<>();
-        for (SessionLink link : safeLinksWhereChild(sessionId)) {
+        for (SessionLink link : links) {
             types.add(link.linkType().value());
         }
 
