@@ -1,14 +1,17 @@
 import { render } from "solid-js/web";
 import { Navigate, Route, Router } from "@solidjs/router";
 import App from "./App";
-import ActivityPage from "./pages/ActivityPage";
-import CompanionPage from "./pages/CompanionPage";
-import GraphPage from "./pages/GraphPage";
-import IdeasPage from "./pages/IdeasPage";
-import ProjectsPage from "./pages/ProjectsPage";
-import RecallPage from "./pages/RecallPage";
-import SessionsPage from "./pages/SessionsPage";
+import { lazyRoute } from "./lib/lazyRoute";
+import type { ActivityPageProps } from "./pages/ActivityPage";
 import "./theme.css";
+
+const ActivityPage = lazyRoute<ActivityPageProps>(() => import("./pages/ActivityPage"));
+const CompanionPage = lazyRoute(() => import("./pages/CompanionPage"));
+const GraphPage = lazyRoute(() => import("./pages/GraphPage"));
+const IdeasPage = lazyRoute(() => import("./pages/IdeasPage"));
+const ProjectsPage = lazyRoute(() => import("./pages/ProjectsPage"));
+const RecallPage = lazyRoute(() => import("./pages/RecallPage"));
+const SessionsPage = lazyRoute(() => import("./pages/SessionsPage"));
 
 const root = document.getElementById("root");
 const HomeRoute = () => <ActivityPage />;
