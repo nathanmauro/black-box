@@ -19,6 +19,7 @@ import ProjectsPage from "../ProjectsPage";
 
 let routeParams: { projectKey?: string };
 let routeLocation: { search: string; hash: string };
+
 type ProjectSearch = { focus?: string; view?: string; meld?: string };
 let searchParams: ProjectSearch;
 let setSearchParamsStore: SetStoreFunction<ProjectSearch>;
@@ -40,6 +41,7 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
+
   return {
     ...actual,
     deleteProjectAlias: vi.fn(),
@@ -142,11 +144,14 @@ beforeEach(() => {
   vi.mocked(getProjectTimeline)
     .mockReset()
     .mockImplementation(async (_key, limit, offset) => {
-      if (limit === 1)
+      if (limit === 1) {
         return timelineResponse(400, [
           { id: "probe", text: "Oldest probe", observedAt: "2025-01-01T00:00:00Z" },
         ]);
+      }
+
       expect(offset).toBe(150);
+
       return timelineResponse(400, [
         { id: "older", text: "Older project observation", observedAt: "2026-07-14T12:00:00Z" },
         { id: "newest", text: "Newest project observation", observedAt: "2026-07-15T12:00:00Z" },
@@ -206,6 +211,7 @@ describe("ProjectsPage", () => {
   it("keeps Saved braids navigation reachable beside empty and failed catalogs", async () => {
     vi.mocked(getProjects).mockResolvedValueOnce([]);
     const empty = render(() => <ProjectsPage />);
+
     await screen.findByText("No observed projects");
     expect(screen.getByRole("link", { name: "Saved braids" })).toHaveAttribute(
       "href",
@@ -248,6 +254,7 @@ describe("ProjectsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
     const toggle = screen.getByRole("group", { name: "Project storyline view" });
+
     expect(within(toggle).getByRole("button", { name: "Trajectory" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -260,6 +267,61 @@ describe("ProjectsPage", () => {
     expect(document.querySelector(".project-trajectory .traj-stage")).toBeInTheDocument();
     expect(screen.getByText("2 nodes")).toBeInTheDocument();
     expect(getProjectTrajectory).toHaveBeenCalledWith("sba-key");
+    expect(getProjectTrajectory).toHaveBeenCalledTimes(1);
+    expect(getProjectTimeline).not.toHaveBeenCalled();
+  });
+
+  it("loads only the persisted timeline until trajectory is selected", async () => {
+    localStorage.setItem("bb.projectStoryView", "timeline");
+    render(() => <ProjectsPage />);
+    await screen.findByText("Newest project observation", {
+      selector: ".event-card--observation strong",
+    });
+    expect(getProjectTimeline).toHaveBeenCalledTimes(2);
+    expect(getProjectTrajectory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Trajectory" }));
+    await screen.findByText("Current handoff");
+    expect(getProjectTrajectory).toHaveBeenCalledExactlyOnceWith("sba-key");
+    expect(getProjectTimeline).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads trajectory evidence for a focus deep link even with Timeline persisted", async () => {
+    localStorage.setItem("bb.projectStoryView", "timeline");
+    setSearchParamsStore({ focus: "capture:trajectory-handoff" });
+    render(() => <ProjectsPage />);
+    expect(await screen.findByRole("region", { name: "Trajectory detail" })).toHaveTextContent(
+      "Current project state",
+    );
+    expect(screen.getByRole("button", { name: "Timeline" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(getProjectTrajectory).toHaveBeenCalledExactlyOnceWith("sba-key");
+    await waitFor(() => expect(getProjectTimeline).toHaveBeenCalledTimes(2));
+  });
+
+  it("loads only the selected story when switching projects and then views", async () => {
+    const [params, setParams] = createStore({ projectKey: "sba-key" });
+
+    routeParams = params;
+    render(() => <ProjectsPage />);
+    await screen.findByText("Current handoff");
+    expect(getProjectTimeline).not.toHaveBeenCalled();
+
+    setParams("projectKey", "cockpit-key");
+    await waitFor(() => expect(getProjectTrajectory).toHaveBeenLastCalledWith("cockpit-key"));
+    expect(getProjectTrajectory).toHaveBeenCalledTimes(2);
+    expect(getProjectTimeline).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    await waitFor(() =>
+      expect(getProjectTimeline).toHaveBeenLastCalledWith("cockpit-key", 250, 150),
+    );
+    expect(getProjectTimeline).toHaveBeenCalledTimes(2);
+
+    setParams("projectKey", "sba-key");
+    await waitFor(() => expect(getProjectTimeline).toHaveBeenLastCalledWith("sba-key", 250, 150));
+    expect(getProjectTimeline).toHaveBeenCalledTimes(4);
+    expect(getProjectTrajectory).toHaveBeenCalledTimes(2);
   });
 
   it("selects trajectory nodes into the detail card and clears only on unhandled Escape", async () => {
@@ -270,12 +332,15 @@ describe("ProjectsPage", () => {
     const rail = document.querySelector(".project-context-rail") as HTMLElement;
     const headNode = await waitFor(() => {
       const node = document.querySelector('[data-node-kind="head"]');
+
       expect(node).toBeInTheDocument();
+
       return node as Element;
     });
 
     fireEvent.click(headNode);
     const captureDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+
     expect(rail.firstElementChild).toBe(captureDetail);
     expect(captureDetail).toHaveTextContent("Current project state");
     expect(
@@ -287,6 +352,7 @@ describe("ProjectsPage", () => {
       bubbles: true,
       cancelable: true,
     });
+
     preventedEscape.preventDefault();
     window.dispatchEvent(preventedEscape);
     expect(within(rail).getByRole("region", { name: "Trajectory detail" })).toBeInTheDocument();
@@ -298,11 +364,15 @@ describe("ProjectsPage", () => {
 
     const taskNode = await waitFor(() => {
       const node = document.querySelector('[data-node-kind="future-task"]');
+
       expect(node).toBeInTheDocument();
+
       return node as Element;
     });
+
     fireEvent.click(taskNode);
     const taskDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+
     expect(rail.firstElementChild).toBe(taskDetail);
     expect(taskDetail).toHaveTextContent("Prepare task packet");
     expect(within(taskDetail).getByText("Task open: Prepare task packet")).not.toHaveAttribute(
@@ -317,6 +387,7 @@ describe("ProjectsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
 
     const toggle = screen.getByRole("group", { name: "Project storyline view" });
+
     expect(within(toggle).getByRole("button", { name: "Trajectory" })).toHaveAttribute(
       "aria-pressed",
       "false",
@@ -384,6 +455,7 @@ describe("ProjectsPage", () => {
 
   it("persists the storyline view choice to localStorage", async () => {
     const first = render(() => <ProjectsPage />);
+
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
@@ -422,6 +494,7 @@ describe("ProjectsPage", () => {
     });
     const timeline = document.querySelector(".project-timeline") as HTMLElement;
     const rows = Array.from(timeline.querySelectorAll(".project-timeline-row"));
+
     expect(rows[0]).toHaveTextContent("Newest project observation");
     expect(rows[1]).toHaveTextContent("Older project observation");
 
@@ -454,6 +527,7 @@ describe("ProjectsPage", () => {
 
     fireEvent.click(screen.getByText("Merge another catalog entry"));
     const identityPanel = screen.getByRole("region", { name: "Identity & scopes" });
+
     fireEvent.click(
       within(identityPanel).getByRole("button", { name: /Choose a project to merge/ }),
     );
@@ -478,8 +552,20 @@ describe("ProjectsPage", () => {
     await waitFor(() => {
       expect(getProjectSessions).toHaveBeenCalledTimes(2);
       expect(getProjectMelds).toHaveBeenCalledTimes(2);
-      expect(getProjectTimeline).toHaveBeenCalledTimes(4);
+      expect(getProjectTrajectory).toHaveBeenCalledTimes(2);
+      expect(getProjectTimeline).not.toHaveBeenCalled();
     });
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    await waitFor(() => expect(getProjectTimeline).toHaveBeenCalledTimes(2));
+    await screen.findByText("Newest project observation", {
+      selector: ".event-card--observation strong",
+    });
+    vi.mocked(getProjectTimeline).mockClear();
+    vi.mocked(getProjectTrajectory).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /Undo merge for/ }));
+    await waitFor(() => expect(deleteProjectAlias).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getProjectTimeline).toHaveBeenCalledTimes(2));
+    expect(getProjectTrajectory).not.toHaveBeenCalled();
   });
 
   it("keeps catalog and detail failures inside their explicit error states", async () => {
@@ -541,7 +627,9 @@ describe("ProjectsPage", () => {
     const rail = document.querySelector(".project-context-rail") as HTMLElement;
     const headNode = await waitFor(() => {
       const node = document.querySelector('[data-node-kind="head"]');
+
       expect(node).toBeInTheDocument();
+
       return node as Element;
     });
 
@@ -577,6 +665,7 @@ describe("ProjectsPage", () => {
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
     const rail = document.querySelector(".project-context-rail") as HTMLElement;
     const detail = await within(rail).findByRole("region", { name: "Trajectory detail" });
+
     expect(detail).toHaveTextContent("Current project state");
     expect(document.querySelector(".traj-node--selected")).toHaveAttribute(
       "data-node-id",
@@ -596,6 +685,7 @@ describe("ProjectsPage", () => {
     expect(await screen.findByRole("heading", { name: "sba-agentic" })).toBeInTheDocument();
     const rail = document.querySelector(".project-context-rail") as HTMLElement;
     const detail = await within(rail).findByRole("region", { name: "Trajectory detail" });
+
     expect(detail).toHaveTextContent("2 captures");
     expect(detail).toHaveTextContent("Old burst observation");
     expect(document.querySelector(".traj-node--selected")).toHaveAttribute(
@@ -628,6 +718,7 @@ describe("ProjectsPage", () => {
       q: "since:2026-06-01T12:00:00.000Z until:2026-06-01T13:00:00.000Z",
       project: "sba-key",
     });
+
     expect(within(burstDetail).getByRole("link", { name: "View in Stream" })).toHaveAttribute(
       "href",
       `/stream?${burstQuery.toString()}`,
@@ -639,6 +730,7 @@ describe("ProjectsPage", () => {
       q: "since:2026-07-15T16:00:00.000Z until:2026-07-15T16:00:00.000Z",
       project: "sba-key",
     });
+
     expect(within(headDetail).getByRole("link", { name: "View in Stream" })).toHaveAttribute(
       "href",
       `/stream?${headQuery.toString()}`,
@@ -647,6 +739,7 @@ describe("ProjectsPage", () => {
     // Future nodes are not burst-shaped: no Stream span, no link.
     setSearchParamsStore({ focus: "future:next:trajectory-handoff" });
     const futureDetail = within(rail).getByRole("region", { name: "Trajectory detail" });
+
     expect(
       within(futureDetail).queryByRole("link", { name: "View in Stream" }),
     ).not.toBeInTheDocument();
@@ -723,6 +816,7 @@ function trajectoryResponse(): ProjectTrajectoryResponse {
 // and the newest single-handoff burst that becomes the head (July 15, 16:00 UTC).
 function twoBurstTrajectoryResponse(): ProjectTrajectoryResponse {
   const base = trajectoryResponse();
+
   return {
     ...base,
     totalCaptures: 3,
