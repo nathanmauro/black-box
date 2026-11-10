@@ -8,33 +8,33 @@
 set -uo pipefail
 
 if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
-  # An explicit URL (including an empty or unsupported one) is never silently retargeted.
-  SBA_AGENTIC_URL="${SBA_AGENTIC_URL-http://127.0.0.1:8766}"
+    # An explicit URL (including an empty or unsupported one) is never silently retargeted.
+    SBA_AGENTIC_URL="${SBA_AGENTIC_URL-http://127.0.0.1:8766}"
 else
-  SBA_AGENTIC_URL="${SBA_AGENTIC_URL:-http://localhost:8766}"
+    SBA_AGENTIC_URL="${SBA_AGENTIC_URL:-http://localhost:8766}"
 fi
 SOURCE="${SBA_AGENT_SOURCE:-${1:-unknown}}"
 
 if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" && "${2:-}" != "--outbox-supervised" ]]; then
-  command -v python3 >/dev/null 2>&1 || exit 0
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  # The foreground supervisor bounds stdin reading, normalization, enqueue, and HTTP together.
-  # It waits for this invocation only and cleans up its own child group on timeout or signal.
-  exec python3 "$SCRIPT_DIR/capture_outbox.py" _hook "$SOURCE"
-  exit 0
+    command -v python3 >/dev/null 2>&1 || exit 0
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # The foreground supervisor bounds stdin reading, normalization, enqueue, and HTTP together.
+    # It waits for this invocation only and cleans up its own child group on timeout or signal.
+    exec python3 "$SCRIPT_DIR/capture_outbox.py" _hook "$SOURCE"
+    exit 0
 fi
 
 # If jq is unavailable there is nothing useful we can do — never fail the host agent over it.
 command -v jq >/dev/null 2>&1 || exit 0
 
 if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
-  command -v python3 >/dev/null 2>&1 || exit 0
-  RAW="$(python3 -c 'import signal,sys; signal.alarm(3); data=sys.stdin.buffer.read(1048577); sys.exit(1) if len(data)>1048576 else sys.stdout.write(data.decode("utf-8"))' 2>/dev/null)" || {
-    echo "Black Box outbox: invalid_capture." >&2
-    exit 0
-  }
+    command -v python3 >/dev/null 2>&1 || exit 0
+    RAW="$(python3 -c 'import signal,sys; signal.alarm(3); data=sys.stdin.buffer.read(1048577); sys.exit(1) if len(data)>1048576 else sys.stdout.write(data.decode("utf-8"))' 2>/dev/null)" || {
+        echo "Black Box outbox: invalid_capture." >&2
+        exit 0
+    }
 else
-  RAW="$(cat)"
+    RAW="$(cat)"
 fi
 # Payload-sized values never travel as process arguments: argv and the environment share ARG_MAX
 # (1 MiB on macOS), so an oversized jq argument fails with E2BIG and the event is lost. Feed them
@@ -52,32 +52,53 @@ pipe_text() { printf '%s' "$1" 2>/dev/null; }
 
 # Tolerate non-JSON stdin: wrap it so the text is still captured rather than dropped.
 if pipe_text "$RAW" | jq -e . >/dev/null 2>&1; then
-  PAYLOAD="$RAW"
+    PAYLOAD="$RAW"
 else
-  PAYLOAD="$(pipe_text "$RAW" | jq -n --rawfile t /dev/stdin '{hook_event_name: "RawText", prompt: $t}' 2>/dev/null)" ||
-    PAYLOAD="$(pipe_text "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
+    PAYLOAD="$(pipe_text "$RAW" | jq -n --rawfile t /dev/stdin '{hook_event_name: "RawText", prompt: $t}' 2>/dev/null)" ||
+        PAYLOAD="$(pipe_text "$RAW" | jq -Rs '{hook_event_name: "RawText", prompt: .}' 2>/dev/null)"
 fi
 
 # Bash can spill large here-strings to disk. Durable input must stay in a pipe until sanitized.
 jq_payload() {
-  if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
-    printf '%s' "$PAYLOAD" | jq "$@"
-  else
-    jq "$@" <<<"$PAYLOAD"
-  fi
+    if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
+        printf '%s' "$PAYLOAD" | jq "$@"
+    else
+        jq "$@" <<<"$PAYLOAD"
+    fi
 }
 
-EVENT_TYPE="$(jq_payload -r '.hook_event_name // .hookEventName // .event // "HookEvent"')"
-SESSION_ID="$(jq_payload -r '.session_id // .sessionId // .conversation_id // .conversationId // .turn_id // .turnId // "unknown-session"')"
-TURN_ID="$(jq_payload -r '.turn_id // .turnId // empty')"
-CWD="$(jq_payload -r '.cwd // .workspace // env.PWD')"
-TOOL_NAME="$(jq_payload -r '.tool_name // .toolName // empty')"
+# Parse the small identity fields together. NUL separators preserve embedded whitespace without
+# shell evaluation; strip trailing newlines exactly as the former command substitutions did.
+# Keep large message text out of read's delimiter loop and on its existing streaming path below.
+read_identity() {
+    local value=""
+    IFS= read -r -d '' value || true
+    value="${value%"${value##*[!$'\n']}"}"
+    printf -v "$1" '%s' "$value"
+}
+{
+    read_identity EVENT_TYPE
+    read_identity SESSION_ID
+    read_identity TURN_ID
+    read_identity CWD
+    read_identity TOOL_NAME
+    read_identity AGENT_ID
+    read_identity AGENT_TYPE
+} < <(jq_payload -j '
+  def identity: if type == "string" then gsub("\u0000"; "") else . end;
+  (.hook_event_name // .hookEventName // .event // "HookEvent" | identity), "\u0000",
+  (.session_id // .sessionId // .conversation_id // .conversationId // .turn_id // .turnId //
+    "unknown-session" | identity), "\u0000",
+  (.turn_id // .turnId // "" | identity), "\u0000",
+  (.cwd // .workspace // env.PWD | identity), "\u0000",
+  (.tool_name // .toolName // "" | identity), "\u0000",
+  (.agent_id // .agentId // "" | identity), "\u0000",
+  (.agent_type // .agentType // "" | identity), "\u0000"
+')
 TEXT="$(jq_payload -r '
   def stringify: if type == "string" then . else tojson end;
   (.prompt // .last_assistant_message // .lastAssistantMessage // .message // .tool_response // .toolResponse // .tool_output // .toolOutput // empty) | stringify
 ')"
-AGENT_ID="$(jq_payload -r '.agent_id // .agentId // empty')"
-AGENT_TYPE="$(jq_payload -r '.agent_type // .agentType // empty')"
 
 # Hook names vary by client and version (for example UserPromptSubmit, user_prompt_submit, and
 # pre-tool-use). Compare a separator-free, case-insensitive key while preserving the original event
@@ -85,15 +106,15 @@ AGENT_TYPE="$(jq_payload -r '.agent_type // .agentType // empty')"
 EVENT_KEY="$(printf '%s' "$EVENT_TYPE" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
 ROLE="agent"
 case "$EVENT_KEY" in
-  userpromptsubmit|beforesubmitprompt)
+userpromptsubmit | beforesubmitprompt)
     ROLE="user"
     ;;
-  stop|assistantmessage|subagentstop)
+stop | assistantmessage | subagentstop)
     if [[ -n "${TEXT//[[:space:]]/}" ]]; then
-      ROLE="assistant"
+        ROLE="assistant"
     fi
     ;;
-  pretooluse|posttooluse)
+pretooluse | posttooluse)
     ROLE="tool"
     ;;
 esac
@@ -104,13 +125,13 @@ esac
 # never enter this branch, so their session identity stays unchanged.
 SUBAGENT_METADATA="null"
 if [[ "$EVENT_KEY" == "subagentstart" || "$EVENT_KEY" == "subagentstop" ]] && [[ -n "$AGENT_ID" ]]; then
-  PARENT_SESSION_ID="$SESSION_ID"
-  SESSION_ID="${PARENT_SESSION_ID}:${AGENT_ID}"
-  SUBAGENT_METADATA="$(jq -n \
-    --arg agentId "$AGENT_ID" \
-    --arg agentType "$AGENT_TYPE" \
-    --arg parentClientSessionId "$PARENT_SESSION_ID" \
-    '{agentId: $agentId, agentType: $agentType, parentClientSessionId: $parentClientSessionId}')"
+    PARENT_SESSION_ID="$SESSION_ID"
+    SESSION_ID="${PARENT_SESSION_ID}:${AGENT_ID}"
+    SUBAGENT_METADATA="$(jq -n \
+        --arg agentId "$AGENT_ID" \
+        --arg agentType "$AGENT_TYPE" \
+        --arg parentClientSessionId "$PARENT_SESSION_ID" \
+        '{agentId: $agentId, agentType: $agentType, parentClientSessionId: $parentClientSessionId}')"
 fi
 
 # Optional transcript provenance follows the session we actually derived. A child's general
@@ -128,19 +149,19 @@ def transcript_metadata($child):
 '
 
 if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  # Keep the same jq field precedence/role/lineage. Read large text and tools from stdin rather
-  # than process arguments, and omit rawHook before the in-memory sanitizer opens queue storage.
-  printf '%s' "$PAYLOAD" | jq \
-    --arg source "$SOURCE" \
-    --arg clientSessionId "$SESSION_ID" \
-    --arg turnId "$TURN_ID" \
-    --arg eventType "$EVENT_TYPE" \
-    --arg role "$ROLE" \
-    --arg cwd "$CWD" \
-    --arg toolName "$TOOL_NAME" \
-    --argjson subagent "$SUBAGENT_METADATA" \
-    "${TRANSCRIPT_FILTER}"'
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # Keep the same jq field precedence/role/lineage. Read large text and tools from stdin rather
+    # than process arguments, and omit rawHook before the in-memory sanitizer opens queue storage.
+    printf '%s' "$PAYLOAD" | jq \
+        --arg source "$SOURCE" \
+        --arg clientSessionId "$SESSION_ID" \
+        --arg turnId "$TURN_ID" \
+        --arg eventType "$EVENT_TYPE" \
+        --arg role "$ROLE" \
+        --arg cwd "$CWD" \
+        --arg toolName "$TOOL_NAME" \
+        --argjson subagent "$SUBAGENT_METADATA" \
+        "${TRANSCRIPT_FILTER}"'
     def stringify: if type == "string" then . else tojson end;
     ((.prompt // .last_assistant_message // .lastAssistantMessage // .message // .tool_response // .toolResponse // .tool_output // .toolOutput // "") | stringify | sub("\n+$"; "")) as $text |
     {
@@ -153,9 +174,9 @@ if [[ "${SBA_CAPTURE_DURABLE:-0}" == "1" ]]; then
       toolOutput: (.tool_response // .toolResponse // .tool_output // .toolOutput // null),
       metadata: (($subagent // {}) + transcript_metadata($subagent != null)), observedAt: now | todateiso8601
     }' 2>/dev/null |
-    python3 "$SCRIPT_DIR/capture_outbox.py" enqueue --url "$SBA_AGENTIC_URL" ||
-    echo "Black Box outbox: normalization_failed." >&2
-  exit 0
+        python3 "$SCRIPT_DIR/capture_outbox.py" enqueue --url "$SBA_AGENTIC_URL" ||
+        echo "Black Box outbox: normalization_failed." >&2
+    exit 0
 fi
 
 # The recorder truncates text and clips string scalars itself (docs/capture-text-limits.md), so the
@@ -164,29 +185,35 @@ fi
 # the C locale). For those alone, apply the recorder's 50,000-unit scalar clip here, keeping a
 # code-point prefix at least as long as the one it stores, so the event is still recorded.
 CLIP_SCALARS=false
-PAYLOAD_BYTES="$(LC_ALL=C; printf '%s' "${#PAYLOAD}")"
-TEXT_BYTES="$(LC_ALL=C; printf '%s' "${#TEXT}")"
-if (( PAYLOAD_BYTES > 20000000 || TEXT_BYTES > 20000000 )); then
-  CLIP_SCALARS=true
+PAYLOAD_BYTES="$(
+    LC_ALL=C
+    printf '%s' "${#PAYLOAD}"
+)"
+TEXT_BYTES="$(
+    LC_ALL=C
+    printf '%s' "${#TEXT}"
+)"
+if ((PAYLOAD_BYTES > 20000000 || TEXT_BYTES > 20000000)); then
+    CLIP_SCALARS=true
 fi
 
 # Stream the event's large parts on stdin: the payload first, where jq still skips a leading byte
 # order mark, then TEXT (normalized above) as one JSON string, read with --rawfile as above. The
 # payload must be exactly one JSON document, as --argjson required.
 {
-  printf '%s\n' "$PAYLOAD"
-  pipe_text "$TEXT" | jq -n --rawfile t /dev/stdin '$t' 2>/dev/null || pipe_text "$TEXT" | jq -Rs .
+    printf '%s\n' "$PAYLOAD"
+    pipe_text "$TEXT" | jq -n --rawfile t /dev/stdin '$t' 2>/dev/null || pipe_text "$TEXT" | jq -Rs .
 } | jq -n \
-  --arg source "$SOURCE" \
-  --arg clientSessionId "$SESSION_ID" \
-  --arg turnId "$TURN_ID" \
-  --arg eventType "$EVENT_TYPE" \
-  --arg role "$ROLE" \
-  --arg cwd "$CWD" \
-  --arg toolName "$TOOL_NAME" \
-  --argjson subagent "$SUBAGENT_METADATA" \
-  --argjson clipScalars "$CLIP_SCALARS" \
-  "${TRANSCRIPT_FILTER}"'
+    --arg source "$SOURCE" \
+    --arg clientSessionId "$SESSION_ID" \
+    --arg turnId "$TURN_ID" \
+    --arg eventType "$EVENT_TYPE" \
+    --arg role "$ROLE" \
+    --arg cwd "$CWD" \
+    --arg toolName "$TOOL_NAME" \
+    --argjson subagent "$SUBAGENT_METADATA" \
+    --argjson clipScalars "$CLIP_SCALARS" \
+    "${TRANSCRIPT_FILTER}"'
   def clip_scalars:
     if type == "string" then (if length > 50000 then .[:50000] + " …[truncated]" else . end)
     elif type == "array" then map(clip_scalars)
@@ -210,10 +237,10 @@ fi
     observedAt: now | todateiso8601
   } |
   if $clipScalars then (.text, .toolInput, .toolOutput, .metadata) |= clip_scalars else . end' |
-curl -fsS --max-time 3 \
-  -H "Content-Type: application/json" \
-  -X POST \
-  --data-binary @- \
-  "$SBA_AGENTIC_URL/api/events" >/dev/null 2>&1 || true
+    curl -fsS --max-time 3 \
+        -H "Content-Type: application/json" \
+        -X POST \
+        --data-binary @- \
+        "$SBA_AGENTIC_URL/api/events" >/dev/null 2>&1 || true
 
 exit 0
