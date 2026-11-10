@@ -37,7 +37,7 @@ const MODES: Array<{ id: ActivityMode; label: string; hint: string }> = [
   { id: "ask", label: "Ask", hint: "synthesized answer with citations" },
 ];
 
-type ActivityPageProps = {
+export type ActivityPageProps = {
   // Set by the /stream route (spec §6.6): the page renders only this mode regardless of ?view=,
   // so /stream never renders a non-stream mode at a lying address.
   lockedMode?: "stream";
@@ -69,7 +69,10 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
   });
   const availableProjects = createMemo(() => (projects.error ? [] : projects()));
   const requestedProjectKey = createMemo(() => {
-    if (cardsActive()) return undefined;
+    if (cardsActive()) {
+      return undefined;
+    }
+
     return params.project !== undefined ? params.project : rememberedProjectKey();
   });
   const selectedProject = createMemo(() =>
@@ -79,33 +82,57 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
     () => Boolean(requestedProjectKey()) && projects.loading && !selectedProject(),
   );
   const projectScopeError = createMemo(() => {
-    if (!requestedProjectKey() || projects.loading) return null;
-    if (projects.error)
+    if (!requestedProjectKey() || projects.loading) {
+      return null;
+    }
+
+    if (projects.error) {
       return "The project catalog is unavailable, so Black Box will not broaden this scoped view to global activity.";
-    if (!selectedProject())
+    }
+
+    if (!selectedProject()) {
       return `The project “${requestedProjectKey()}” is not present in the current catalog.`;
+    }
+
     return null;
   });
 
   createEffect(() => setModeSignal(modeFromParams(params)));
   createEffect(() => {
-    if (params.view === "find") setParams({ view: undefined });
+    if (params.view === "find") {
+      setParams({ view: undefined });
+    }
   });
   createEffect(() => {
-    if (params.project !== undefined || projects.loading || projects.error) return;
-    if (cardsActive()) return;
+    if (params.project !== undefined || projects.loading || projects.error) {
+      return;
+    }
+
+    if (cardsActive()) {
+      return;
+    }
+
     const remembered = rememberedProjectKey();
-    if (!remembered) return;
+
+    if (!remembered) {
+      return;
+    }
+
     const rememberedProject = findProjectByIdentifier(availableProjects(), remembered);
+
     if (rememberedProject) {
       // A URL with no project but a session/event is a deep link (e.g. the companion's Unassigned
       // row) to an exact target, not an ordinary revisit; forcing the remembered scope onto it would
       // filter that target out of view instead of opening it, so leave it unscoped.
-      if (params.session || params.event) return;
+      if (params.session || params.event) {
+        return;
+      }
+
       persistProjectKey(rememberedProject.projectKey);
       setParams({ project: rememberedProject.projectKey, session: undefined, event: undefined });
     } else {
       persistProjectKey(undefined);
+
       if (params.session || params.event) {
         setParams({ session: undefined, event: undefined });
       }
@@ -113,27 +140,52 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
   });
   createEffect(() => {
     const project = selectedProject();
-    if (!params.project || !project || projects.loading || projects.error) return;
+
+    if (!params.project || !project || projects.loading || projects.error) {
+      return;
+    }
+
     persistProjectKey(project.projectKey);
-    if (params.project !== project.projectKey) setParams({ project: project.projectKey });
+
+    if (params.project !== project.projectKey) {
+      setParams({ project: project.projectKey });
+    }
   });
   createEffect(() => {
-    if (!params.project || projects.loading || projects.error || selectedProject()) return;
-    if (rememberedProjectKey() === params.project) persistProjectKey(undefined);
+    if (!params.project || projects.loading || projects.error || selectedProject()) {
+      return;
+    }
+
+    if (rememberedProjectKey() === params.project) {
+      persistProjectKey(undefined);
+    }
   });
 
   function selectMode(next: ActivityMode) {
     if (props.lockedMode) {
-      if (next === props.lockedMode) return;
+      if (next === props.lockedMode) {
+        return;
+      }
+
       // Mode tabs navigate() off /stream instead of setParams (spec §6.6), preserving the query
       // and project scope across the route change.
       const search = new URLSearchParams({ view: next });
-      if (params.q) search.set("q", params.q);
-      if (params.project !== undefined) search.set("project", params.project);
+
+      if (params.q) {
+        search.set("q", params.q);
+      }
+
+      if (params.project !== undefined) {
+        search.set("project", params.project);
+      }
+
       navigate(`/?${search.toString()}`);
+
       return;
     }
+
     setModeSignal(next);
+
     if (next === "stream") {
       setParams({ view: undefined });
     } else if (next === "browse") {
@@ -145,15 +197,20 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
 
   function selectProject(projectKey: string | undefined) {
     if (cardsActive()) {
-      if (projectKey) openProject(projectKey);
+      if (projectKey) {
+        openProject(projectKey);
+      }
+
       return;
     }
+
     persistProjectKey(projectKey);
     setParams({ project: projectKey, session: undefined, event: undefined });
   }
 
   function changeLayout(next: StreamLayout) {
     persistLayout(next);
+
     if (next === "cards") {
       persistProjectKey(undefined);
       setParams({ layout: next, project: undefined, session: undefined, event: undefined });
@@ -303,7 +360,13 @@ export default function ActivityPage(props: ActivityPageProps = {}) {
 }
 
 function modeFromParams(params: { q?: string; view?: string }): ActivityMode {
-  if (params.view === "ask") return "ask";
-  if (params.view === "browse") return "browse";
+  if (params.view === "ask") {
+    return "ask";
+  }
+
+  if (params.view === "browse") {
+    return "browse";
+  }
+
   return "stream";
 }
