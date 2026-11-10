@@ -58,6 +58,7 @@ type ProjectStoryView = "trajectory" | "timeline";
 export default function ProjectsPage() {
   const [searchParams] = useSearchParams<{ view?: string; meld?: string }>();
   const braidsView = () => searchParams.view === "braids";
+
   return (
     <div class="projects-shell">
       <nav class="projects-workspace-nav" aria-label="Project workspaces">
@@ -93,6 +94,7 @@ function ProjectCatalog() {
     () => routeProject() || (!params.projectKey ? projectList()[0] : undefined),
   );
   const selectedKey = createMemo(() => selectedProject()?.projectKey || null);
+  const trajectoryNeeded = () => storyView() === "trajectory" || Boolean(searchParams.focus);
   const projectCandidates = createMemo(() =>
     projectList().filter(
       (project) =>
@@ -108,12 +110,12 @@ function ProjectCatalog() {
     { initialValue: [] },
   );
   const [timeline, { refetch: refetchTimeline }] = createResource(
-    selectedKey,
+    () => (storyView() === "timeline" ? selectedKey() : null),
     async (key) => (key ? getLatestProjectTimeline(key) : emptyTimeline()),
     { initialValue: emptyTimeline() },
   );
   const [trajectory, { refetch: refetchTrajectory }] = createResource(
-    selectedKey,
+    () => (trajectoryNeeded() ? selectedKey() : null),
     async (key) => (key ? getProjectTrajectory(key) : emptyTrajectory()),
     { initialValue: emptyTrajectory() },
   );
@@ -131,12 +133,17 @@ function ProjectCatalog() {
   // capture. Selection survives reload and the back button walks selection history.
   const selectedTrajectoryNodeId = createMemo<string | null>(() => {
     const focus = searchParams.focus;
-    if (!focus) return null;
+
+    if (!focus) {
+      return null;
+    }
+
     if (focus.startsWith("capture:")) {
       return (
         findTrajectoryNodeForCapture(trajectoryGraph(), focus.slice("capture:".length))?.id ?? null
       );
     }
+
     return focus;
   });
   const selectedTrajectoryNode = createMemo(
@@ -151,7 +158,11 @@ function ProjectCatalog() {
 
   createEffect(() => {
     const project = routeProject();
-    if (!params.projectKey || !project || params.projectKey === project.projectKey) return;
+
+    if (!params.projectKey || !project || params.projectKey === project.projectKey) {
+      return;
+    }
+
     // Resolving an alias changes only the project path, not the selected evidence or URL state.
     navigate(`${projectHref(project)}${location.search}${location.hash}`, { replace: true });
   });
@@ -159,23 +170,33 @@ function ProjectCatalog() {
   createEffect(
     (previousKey: string | null | undefined) => {
       const key = selectedKey();
+
       setMergeTargetKey(undefined);
       setCurationError(null);
+
       // Clear the focus selection only on a real project switch — never on the initial catalog
       // resolve (null → key), which would wipe a deep-linked ?focus= before it ever rendered.
       if (previousKey != null && key != null && previousKey !== key && searchParams.focus) {
         setSearchParams({ focus: undefined }, { replace: true });
       }
+
       return key;
     },
     undefined as string | null | undefined,
   );
 
   const clearTrajectorySelection = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || event.defaultPrevented) return;
-    if (storyView() !== "trajectory" || !searchParams.focus) return;
+    if (event.key !== "Escape" || event.defaultPrevented) {
+      return;
+    }
+
+    if (storyView() !== "trajectory" || !searchParams.focus) {
+      return;
+    }
+
     setSearchParams({ focus: undefined });
   };
+
   onMount(() => window.addEventListener("keydown", clearTrajectorySelection));
   onCleanup(() => window.removeEventListener("keydown", clearTrajectorySelection));
 
@@ -185,22 +206,35 @@ function ProjectCatalog() {
   }
 
   function selectProject(projectKey: string | undefined) {
-    if (projectKey) navigate(`/projects/${encodeURIComponent(projectKey)}`);
-    else navigate("/projects");
+    if (projectKey) {
+      navigate(`/projects/${encodeURIComponent(projectKey)}`);
+    } else {
+      navigate("/projects");
+    }
   }
 
   async function mergeCandidate() {
     const project = selectedProject();
     const candidate = selectedMergeTarget();
-    if (!project || !candidate || curationBusyKey()) return;
+
+    if (!project || !candidate || curationBusyKey()) {
+      return;
+    }
+
     const initiatingProjectKey = project.projectKey;
     const aliasScope = primaryProjectScope(candidate);
     const primaryScope = primaryProjectScope(project);
+
     setCurationBusyKey(aliasScope.canonicalKey);
     setCurationError(null);
+
     try {
       await mergeProjectAlias(aliasScope.canonicalKey, primaryScope.canonicalKey);
-      if (selectedKey() === initiatingProjectKey) setMergeTargetKey(undefined);
+
+      if (selectedKey() === initiatingProjectKey) {
+        setMergeTargetKey(undefined);
+      }
+
       await refreshWorkspace();
     } catch (error) {
       if (selectedKey() === initiatingProjectKey) {
@@ -213,9 +247,14 @@ function ProjectCatalog() {
 
   async function undoScope(scope: ProjectScope) {
     const initiatingProjectKey = selectedKey();
-    if (!initiatingProjectKey || curationBusyKey()) return;
+
+    if (!initiatingProjectKey || curationBusyKey()) {
+      return;
+    }
+
     setCurationBusyKey(scope.canonicalKey);
     setCurationError(null);
+
     try {
       await deleteProjectAlias(scope.canonicalKey);
       await refreshWorkspace();
@@ -230,7 +269,12 @@ function ProjectCatalog() {
 
   async function refreshWorkspace() {
     await refetchProjects();
-    await Promise.all([refetchSessions(), refetchTimeline(), refetchTrajectory(), refetchMelds()]);
+    await Promise.all([
+      refetchSessions(),
+      storyView() === "timeline" ? refetchTimeline() : undefined,
+      trajectoryNeeded() ? refetchTrajectory() : undefined,
+      refetchMelds(),
+    ]);
   }
 
   return (
@@ -503,6 +547,7 @@ function ProjectCatalog() {
 
 function ProjectHeader(props: { project: ProjectSummary }) {
   const primary = () => primaryProjectScope(props.project);
+
   return (
     <header class="project-detail-header">
       <div class="project-detail-identity">
@@ -528,6 +573,7 @@ function ProjectHeader(props: { project: ProjectSummary }) {
 function TrajectoryDetailCard(props: { node: TrajectoryGraphNode; project: ProjectSummary }) {
   const sourceCapture = () => props.node.sourceCapture;
   const sourceSessionId = () => props.node.sessionId || sourceCapture()?.sessionId;
+
   return (
     <section
       class="project-rail-panel trajectory-detail-card"
@@ -648,6 +694,7 @@ function ProjectIdentityPanel(props: {
 }) {
   const scopes = createMemo(() => projectScopes(props.project));
   const variants = createMemo(() => scopes().filter((scope) => !scope.primary));
+
   return (
     <section
       class="project-rail-panel project-identity-panel"
@@ -867,6 +914,7 @@ function SavedMeldsPanel(props: {
 
 function TimelineBlock(props: { block: ProjectTimelineBlock; project: ProjectSummary }) {
   const blockLabel = createMemo(() => timelineBlockLabel(props.block));
+
   return (
     <div class="project-timeline-row">
       <div class="timeline-block-label">
@@ -885,12 +933,14 @@ function TimelineBlockCard(props: { block: ProjectTimelineBlock; project: Projec
   if (props.block.sourceType === "saved_meld") {
     return <SavedMeldTimelineCard block={props.block} project={props.project} />;
   }
+
   if (
     normalizeEventType(props.block.eventType || props.block.blockType || props.block.sourceType) ===
     "Projection"
   ) {
     return <ProjectionTimelineCard block={props.block} />;
   }
+
   return <EventRenderer event={timelineBlockToEvent(props.block)} />;
 }
 
@@ -901,6 +951,7 @@ function ProjectionTimelineCard(props: { block: ProjectTimelineBlock }) {
   const headline = createMemo(
     () => props.block.headline || paths()[0]?.title || "Projected futures",
   );
+
   return (
     <article class="event-card">
       <div class="event-card-head">
@@ -935,6 +986,7 @@ function ProjectionTimelineCard(props: { block: ProjectTimelineBlock }) {
 
 function SavedMeldTimelineCard(props: { block: ProjectTimelineBlock; project: ProjectSummary }) {
   const metadata = createMemo(() => metadataRecord(props.block.metadata));
+
   return (
     <article class="saved-meld-card">
       <div class="saved-meld-card-head">
@@ -1012,15 +1064,23 @@ const STREAM_LINK_KINDS = new Set<string>(["deep-past", "burst", "head"]);
  * non-burst nodes or when the range is unknown (e.g. a capped deep-past with no members).
  */
 function viewInStreamHref(node: TrajectoryGraphNode, project: ProjectSummary): string | null {
-  if (!STREAM_LINK_KINDS.has(node.kind)) return null;
-  if (!node.startMs || !node.endMs) return null;
+  if (!STREAM_LINK_KINDS.has(node.kind)) {
+    return null;
+  }
+
+  if (!node.startMs || !node.endMs) {
+    return null;
+  }
+
   const q = `since:${new Date(node.startMs).toISOString()} until:${new Date(node.endMs).toISOString()}`;
   const query = new URLSearchParams({ q, project: project.projectKey });
+
   return `/stream?${query.toString()}`;
 }
 
 function activityHref(project: ProjectSummary, view: "browse"): string {
   const query = new URLSearchParams({ view, project: project.projectKey });
+
   return `/?${query.toString()}`;
 }
 
@@ -1030,6 +1090,7 @@ function sessionHref(project: ProjectSummary, sessionId: string): string {
     project: project.projectKey,
     session: sessionId,
   });
+
   return `/?${query.toString()}`;
 }
 
@@ -1039,6 +1100,7 @@ function recallHref(project: ProjectSummary): string {
     withinHours: "8760",
     run: "1",
   });
+
   return `/recall?${query.toString()}`;
 }
 
@@ -1053,15 +1115,26 @@ function newestFirst(response: ProjectTimelineResponse): ProjectTimelineResponse
 
 async function getLatestProjectTimeline(projectKey: string): Promise<ProjectTimelineResponse> {
   const probe = await getProjectTimeline(projectKey, 1, 0);
-  if (probe.count <= 1) return newestFirst(probe);
+
+  if (probe.count <= 1) {
+    return newestFirst(probe);
+  }
+
   let expectedCount = probe.count;
   let page = probe;
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const offset = Math.max(0, expectedCount - TIMELINE_LIMIT);
+
     page = await getProjectTimeline(projectKey, TIMELINE_LIMIT, offset);
-    if (page.count === expectedCount) return newestFirst(page);
+
+    if (page.count === expectedCount) {
+      return newestFirst(page);
+    }
+
     expectedCount = page.count;
   }
+
   return newestFirst(page);
 }
 
@@ -1121,6 +1194,7 @@ function metadataRecord(metadata: unknown): Record<string, unknown> {
 
 function metadataValue(metadata: Record<string, unknown>, key: string, fallback: string): string {
   const value = metadata[key];
+
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
@@ -1129,9 +1203,18 @@ function kindLabel(value: string): string {
 }
 
 function futureSourceLabel(value: string): string {
-  if (value === "nextAction") return "Next action";
-  if (value === "openLoop") return "Open loop";
-  if (value === "task") return "Task";
+  if (value === "nextAction") {
+    return "Next action";
+  }
+
+  if (value === "openLoop") {
+    return "Open loop";
+  }
+
+  if (value === "task") {
+    return "Task";
+  }
+
   return "Projection";
 }
 
@@ -1162,36 +1245,73 @@ function timelineMetadata(block: ProjectTimelineBlock): unknown {
       ? { ...(block.metadata as Record<string, unknown>) }
       : {};
   const eventType = normalizeEventType(block.eventType || block.blockType || block.sourceType);
+
   if (eventType === "Decision") {
-    if (!metadata.decision && block.headline) metadata.decision = block.headline;
-    if (!metadata.rationale && block.text) metadata.rationale = block.text;
+    if (!metadata.decision && block.headline) {
+      metadata.decision = block.headline;
+    }
+
+    if (!metadata.rationale && block.text) {
+      metadata.rationale = block.text;
+    }
   }
-  if (eventType === "Handoff" && !metadata.contextSummary && block.text)
+
+  if (eventType === "Handoff" && !metadata.contextSummary && block.text) {
     metadata.contextSummary = block.text;
-  if (eventType === "Observation" && !metadata.observation && block.text)
+  }
+
+  if (eventType === "Observation" && !metadata.observation && block.text) {
     metadata.observation = block.text;
+  }
+
   return Object.keys(metadata).length ? metadata : block.metadata;
 }
 
 function normalizeEventType(value: string | null | undefined): string {
   const normalized = String(value || "Timeline").toLowerCase();
-  if (normalized === "decision") return "Decision";
-  if (normalized === "handoff") return "Handoff";
-  if (normalized === "observation") return "Observation";
-  if (normalized === "projection") return "Projection";
-  if (normalized === "idea") return "Idea";
+
+  if (normalized === "decision") {
+    return "Decision";
+  }
+
+  if (normalized === "handoff") {
+    return "Handoff";
+  }
+
+  if (normalized === "observation") {
+    return "Observation";
+  }
+
+  if (normalized === "projection") {
+    return "Projection";
+  }
+
+  if (normalized === "idea") {
+    return "Idea";
+  }
+
   return value || "Timeline";
 }
 
 function projectionPaths(
   value: unknown,
 ): Array<{ title: string; description?: string; confidence?: number }> {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
   return value.flatMap((path) => {
-    if (!path || typeof path !== "object" || Array.isArray(path)) return [];
+    if (!path || typeof path !== "object" || Array.isArray(path)) {
+      return [];
+    }
+
     const record = path as Record<string, unknown>;
     const title = typeof record.title === "string" ? record.title.trim() : "";
-    if (!title) return [];
+
+    if (!title) {
+      return [];
+    }
+
     const description =
       typeof record.description === "string" && record.description.trim()
         ? record.description.trim()
@@ -1200,19 +1320,33 @@ function projectionPaths(
       typeof record.confidence === "number" && Number.isFinite(record.confidence)
         ? Math.max(0, Math.min(1, record.confidence))
         : undefined;
+
     return [{ title, description, confidence }];
   });
 }
 
 function projectScopeOrigin(scope: ProjectScope): string {
-  if (scope.source === "manual") return "Manual alias";
-  if (scope.source === "nested-worktree") return "Automatic · nested worktree";
-  if (scope.source === "git-commondir") return "Automatic · Git common directory";
-  if (scope.source === "codex-voice") return "Automatic · Codex voice conversation";
+  if (scope.source === "manual") {
+    return "Manual alias";
+  }
+
+  if (scope.source === "nested-worktree") {
+    return "Automatic · nested worktree";
+  }
+
+  if (scope.source === "git-commondir") {
+    return "Automatic · Git common directory";
+  }
+
+  if (scope.source === "codex-voice") {
+    return "Automatic · Codex voice conversation";
+  }
+
   return "Automatic catalog scope";
 }
 
 function isProtectedProject(project: ProjectSummary): boolean {
   const canonicalKey = primaryProjectScope(project).canonicalKey;
+
   return canonicalKey === "/" || canonicalKey === NO_PROJECT_SCOPE;
 }
