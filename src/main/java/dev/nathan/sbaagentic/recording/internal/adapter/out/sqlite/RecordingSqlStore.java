@@ -1159,7 +1159,10 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                         : dailyCounts("""
                             SELECT date(observed_at) AS day, COUNT(*) AS count
                               FROM agent_events
-                             WHERE date(observed_at) >= date('now', ?)
+                             -- Pad the indexed range to preserve date() handling of offsets at midnight.
+                             WHERE observed_at >= date('now', '-14 days')
+                               AND observed_at < date('now', '+2 days')
+                               AND date(observed_at) >= date('now', ?)
                                AND date(observed_at) <= date('now')
                              GROUP BY date(observed_at)
                              ORDER BY day ASC
