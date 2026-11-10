@@ -1,6 +1,7 @@
 package dev.nathan.sbaagentic.recording;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** Public recording queries and session mutations used by neighboring modules. */
@@ -9,6 +10,9 @@ public interface RecordingCatalog {
     Optional<AgentSession> findSession(String source, String clientSessionId);
 
     Optional<AgentSession> findSessionById(String id);
+
+    /** Lightweight headers by exact ID; missing IDs are omitted and null input/IDs are ignored. */
+    Map<String, SessionHeader> sessionHeaders(List<String> sessionIds);
 
     Optional<AgentEvent> findEventById(String id);
 
