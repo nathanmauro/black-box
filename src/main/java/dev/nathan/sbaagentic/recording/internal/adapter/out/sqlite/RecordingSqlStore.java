@@ -52,25 +52,25 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     // rows match `tool_name IS NOT NULL` and never reach the expensive arms — measured 10x faster
     // for full-corpus scans (facet counts) with identical semantics.
     private static final String MEANINGFUL_EVENT_PREDICATE = """
-            (
-              e.tool_name IS NOT NULL
-              OR lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
-              OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
-              OR lower(coalesce(e.event_type, '')) LIKE '%error%'
-              OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
-              OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
-              OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
-            )
-            """;
+        (
+          e.tool_name IS NOT NULL
+          OR lower(coalesce(e.event_type, '')) IN ('decision', 'handoff')
+          OR lower(coalesce(e.event_type, '')) LIKE '%tool%'
+          OR lower(coalesce(e.event_type, '')) LIKE '%error%'
+          OR lower(coalesce(e.event_type, '')) LIKE '%fail%'
+          OR (lower(coalesce(e.role, '')) = 'assistant' AND trim(coalesce(e.text, '')) <> '')
+          OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"decision"%'
+          OR lower(coalesce(e.metadata_json, '')) LIKE '%"kind":"handoff"%'
+        )
+        """;
 
     private static final String SESSION_CANONICAL_CWD_SQL = """
-            CASE
-              WHEN s.cwd IS NULL OR trim(s.cwd) = '' THEN '__no_project__'
-              WHEN rtrim(trim(s.cwd), '/') = '' THEN '/'
-              ELSE rtrim(trim(s.cwd), '/')
-            END
-            """;
+        CASE
+          WHEN s.cwd IS NULL OR trim(s.cwd) = '' THEN '__no_project__'
+          WHEN rtrim(trim(s.cwd), '/') = '' THEN '/'
+          ELSE rtrim(trim(s.cwd), '/')
+        END
+        """;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -162,9 +162,9 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         // Created here, not in schema.sql, because schema.sql runs before the column exists on an
         // upgraded database.
         jdbcTemplate.execute("""
-                CREATE INDEX IF NOT EXISTS idx_agent_events_human
-                    ON agent_events (observed_at DESC, id DESC) WHERE human_text IS NOT NULL
-                """);
+            CREATE INDEX IF NOT EXISTS idx_agent_events_human
+                ON agent_events (observed_at DESC, id DESC) WHERE human_text IS NOT NULL
+            """);
         ensureTimeIndexes();
     }
 
@@ -209,10 +209,10 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         // Reserve before any reads/session writes. Concurrent PostgreSQL inserts wait on this
         // key; on SQLite the transaction already holds the writer lock from BEGIN IMMEDIATE.
         int reserved = jdbcTemplate.update("""
-                INSERT INTO event_capture_receipts (source, client_session_id, capture_id, request_hash)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
-                """, request.source(), request.clientSessionId(), captureId, requestHash);
+            INSERT INTO event_capture_receipts (source, client_session_id, capture_id, request_hash)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (source, client_session_id, capture_id) DO NOTHING
+            """, request.source(), request.clientSessionId(), captureId, requestHash);
         if (reserved == 0) {
             // Read the receipt, then its event and session: row mappers never query.
             CaptureReceipt receipt = jdbcTemplate.queryForObject(
@@ -283,7 +283,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         }
         RecordingStore.Persisted persisted = persistEvent(request, observedAt, title, titleRank);
         int bound = jdbcTemplate.update(
-                "UPDATE decision_replacements SET superseding_event_id = ? WHERE superseded_event_id = ? AND superseding_event_id IS NULL",
+                "UPDATE decision_replacements SET superseding_event_id = ? WHERE superseded_event_id = ? AND"
+                        + " superseding_event_id IS NULL",
                 persisted.event().id(),
                 supersedes);
         if (bound != 1) {
@@ -405,11 +406,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         // not sort chronologically as strings, and database date functions can lose nanos.
         Instant lastSeenAt = session.lastSeenAt().isAfter(observedAt) ? session.lastSeenAt() : observedAt;
         jdbcTemplate.update("""
-                UPDATE agent_sessions
-                   SET event_count = event_count + 1,
-                       last_seen_at = ?
-                 WHERE id = ?
-                """, lastSeenAt.toString(), session.id());
+            UPDATE agent_sessions
+               SET event_count = event_count + 1,
+                   last_seen_at = ?
+             WHERE id = ?
+            """, lastSeenAt.toString(), session.id());
 
         return event;
     }
@@ -418,11 +419,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         try {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
-                           first_human_turn
-                      FROM agent_sessions
-                     WHERE source = ? AND client_session_id = ?
-                    """, this::mapSession, source, clientSessionId));
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                       first_human_turn
+                  FROM agent_sessions
+                 WHERE source = ? AND client_session_id = ?
+                """, this::mapSession, source, clientSessionId));
         } catch (EmptyResultDataAccessException ex) {
 
             return Optional.empty();
@@ -433,11 +434,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         try {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
-                           first_human_turn
-                      FROM agent_sessions
-                     WHERE id = ?
-                    """, this::mapSession, id));
+                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                       first_human_turn
+                  FROM agent_sessions
+                 WHERE id = ?
+                """, this::mapSession, id));
         } catch (EmptyResultDataAccessException ex) {
 
             return Optional.empty();
@@ -448,11 +449,11 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         try {
 
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                           tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
-                      FROM agent_events
-                     WHERE id = ?
-                    """, this::mapEvent, id));
+                SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
+                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
+                  FROM agent_events
+                 WHERE id = ?
+                """, this::mapEvent, id));
         } catch (EmptyResultDataAccessException ex) {
 
             return Optional.empty();
@@ -484,14 +485,14 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
         return jdbcTemplate.query(
                 """
-                SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
-                           first_human_turn
-                  FROM agent_sessions
-                """ + filter
+                        SELECT id, source, client_session_id, title, cwd, summary, started_at, last_seen_at, event_count, spawned_by,
+                                   first_human_turn
+                          FROM agent_sessions
+                        """ + filter
                         + """
-                 ORDER BY %s
-                 LIMIT ?
-                """.formatted(SqlInstant.column("last_seen_at", postgres)
+                         ORDER BY %s
+                         LIMIT ?
+                        """.formatted(SqlInstant.column("last_seen_at", postgres)
                                 .descending("id")),
                 this::mapSession,
                 limit);
@@ -515,15 +516,15 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
         return jdbcTemplate.query(
                 """
-                SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
-                       tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
-                  FROM agent_events
-                 WHERE session_id = ?
-                """ + (humanOnly ? "   AND human_text IS NOT NULL\n" : "")
+                        SELECT id, session_id, source, client_session_id, turn_id, event_type, role, text,
+                               tool_name, tool_input_json, tool_output_json, metadata_json, observed_at, human_text
+                          FROM agent_events
+                         WHERE session_id = ?
+                        """ + (humanOnly ? "   AND human_text IS NOT NULL\n" : "")
                         + """
-                 ORDER BY %s
-                 LIMIT ?
-                """.formatted(SqlInstant.column("observed_at", postgres)
+                         ORDER BY %s
+                         LIMIT ?
+                        """.formatted(SqlInstant.column("observed_at", postgres)
                                 .descending("id")),
                 this::mapEvent,
                 sessionId,
@@ -586,16 +587,16 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
     public List<String> transcriptPathsForSession(String sessionId) {
         List<String> metadataRows = jdbcTemplate.queryForList(
                 """
-                SELECT metadata_json
-                  FROM agent_events
-                 WHERE session_id = ?
-                   AND metadata_json IS NOT NULL
-                   AND (metadata_json LIKE '%transcript_path%' OR metadata_json LIKE '%transcriptPath%')
-                 ORDER BY CASE
-                            WHEN lower(replace(replace(event_type, '_', ''), '-', '')) = 'sessionstart' THEN 0
-                            ELSE 1
-                          END,
-                """ + SqlInstant.column("observed_at", postgres).descending("id") + " LIMIT 100",
+                    SELECT metadata_json
+                      FROM agent_events
+                     WHERE session_id = ?
+                       AND metadata_json IS NOT NULL
+                       AND (metadata_json LIKE '%transcript_path%' OR metadata_json LIKE '%transcriptPath%')
+                     ORDER BY CASE
+                                WHEN lower(replace(replace(event_type, '_', ''), '-', '')) = 'sessionstart' THEN 0
+                                ELSE 1
+                              END,
+                    """ + SqlInstant.column("observed_at", postgres).descending("id") + " LIMIT 100",
                 String.class,
                 sessionId);
         java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
@@ -813,21 +814,21 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
         matched.append(" WHERE 1=1\n");
         appendQueryPredicates(matched, args, facets, meaningfulOnly, humanOnly, projectScopes, null, true);
         String sql = """
-                WITH matched AS MATERIALIZED (
-                %s)
-                SELECT 'total' AS field, '' AS value, COUNT(*) AS cnt FROM matched
-                UNION ALL
-                SELECT 'source', source, COUNT(*) FROM matched GROUP BY 2
-                UNION ALL
-                SELECT 'kind', event_type, COUNT(*) FROM matched GROUP BY 2
-                UNION ALL
-                SELECT 'tool', tool_name, COUNT(*) FROM matched WHERE tool_name IS NOT NULL GROUP BY 2
-                UNION ALL
-                SELECT 'project', %s, SUM(t.cnt)
-                  FROM (SELECT session_id, COUNT(*) AS cnt FROM matched GROUP BY session_id) t
-                  JOIN agent_sessions s ON s.id = t.session_id
-                 GROUP BY 2
-                """.formatted(matched, SESSION_CANONICAL_CWD_SQL);
+            WITH matched AS MATERIALIZED (
+            %s)
+            SELECT 'total' AS field, '' AS value, COUNT(*) AS cnt FROM matched
+            UNION ALL
+            SELECT 'source', source, COUNT(*) FROM matched GROUP BY 2
+            UNION ALL
+            SELECT 'kind', event_type, COUNT(*) FROM matched GROUP BY 2
+            UNION ALL
+            SELECT 'tool', tool_name, COUNT(*) FROM matched WHERE tool_name IS NOT NULL GROUP BY 2
+            UNION ALL
+            SELECT 'project', %s, SUM(t.cnt)
+              FROM (SELECT session_id, COUNT(*) AS cnt FROM matched GROUP BY session_id) t
+              JOIN agent_sessions s ON s.id = t.session_id
+             GROUP BY 2
+            """.formatted(matched, SESSION_CANONICAL_CWD_SQL);
 
         long[] total = {0};
         Map<String, List<EventFacetCounts.ValueCount>> byField = new java.util.HashMap<>();
@@ -1012,8 +1013,8 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
             facets.sessionRef().ifPresent(ref -> {
                 // Resolve through agent_sessions (small, uniquely keyed) so the event scan rides
                 // idx_agent_events_session_observed; a naive OR on agent_events table-scans.
-                sql.append(
-                        "   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id = ?)\n");
+                sql.append("   AND e.session_id IN (SELECT id FROM agent_sessions WHERE id = ? OR client_session_id ="
+                        + " ?)\n");
                 args.add(ref);
                 args.add(ref);
             });
@@ -1094,46 +1095,49 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
                 totals.sessions(),
                 totals.events(),
                 countBy("""
-                        SELECT source AS name, COUNT(*) AS count
-                          FROM agent_events
-                         GROUP BY source
-                         ORDER BY count DESC, name ASC
-                        """),
+                    SELECT source AS name, COUNT(*) AS count
+                      FROM agent_events
+                     GROUP BY source
+                     ORDER BY count DESC, name ASC
+                    """),
                 countBy("""
-                        SELECT event_type AS name, COUNT(*) AS count
-                          FROM agent_events
-                         GROUP BY event_type
-                         ORDER BY count DESC, name ASC
-                        """),
+                    SELECT event_type AS name, COUNT(*) AS count
+                      FROM agent_events
+                     GROUP BY event_type
+                     ORDER BY count DESC, name ASC
+                    """),
                 countBy("""
-                        SELECT source AS name, COUNT(*) AS count
-                          FROM agent_sessions
-                         GROUP BY source
-                         ORDER BY count DESC, name ASC
-                        """),
+                    SELECT source AS name, COUNT(*) AS count
+                      FROM agent_sessions
+                     GROUP BY source
+                     ORDER BY count DESC, name ASC
+                    """),
                 postgres
                         ? dailyCounts(
                                 """
-                        SELECT substring(observed_at, 1, 10) AS day, COUNT(*) AS count
-                          FROM agent_events
-                         WHERE substring(observed_at, 1, 10) >= ?
-                           AND substring(observed_at, 1, 10) <= ?
-                         GROUP BY substring(observed_at, 1, 10)
-                         ORDER BY day ASC
-                        """,
+                                SELECT substring(observed_at, 1, 10) AS day, COUNT(*) AS count
+                                  FROM agent_events
+                                 WHERE substring(observed_at, 1, 10) >= ?
+                                   AND substring(observed_at, 1, 10) <= ?
+                                 GROUP BY substring(observed_at, 1, 10)
+                                 ORDER BY day ASC
+                                """,
                                 java.time.LocalDate.now(clock.withZone(java.time.ZoneOffset.UTC))
                                         .minusDays(13)
                                         .toString(),
                                 java.time.LocalDate.now(clock.withZone(java.time.ZoneOffset.UTC))
                                         .toString())
                         : dailyCounts("""
-                        SELECT date(observed_at) AS day, COUNT(*) AS count
-                          FROM agent_events
-                         WHERE date(observed_at) >= date('now', ?)
-                           AND date(observed_at) <= date('now')
-                         GROUP BY date(observed_at)
-                         ORDER BY day ASC
-                        """, "-13 days"));
+                            SELECT date(observed_at) AS day, COUNT(*) AS count
+                              FROM agent_events
+                             -- Pad the indexed range to preserve date() handling of offsets at midnight.
+                             WHERE observed_at >= date('now', '-14 days')
+                               AND observed_at < date('now', '+2 days')
+                               AND date(observed_at) >= date('now', ?)
+                               AND date(observed_at) <= date('now')
+                             GROUP BY date(observed_at)
+                             ORDER BY day ASC
+                            """, "-13 days"));
     }
 
     private List<DashboardStats.BreakdownCount> countBy(String sql, Object... args) {
