@@ -28,8 +28,8 @@ class EventStreamListener {
         AgentSession session = recorded.session();
         AgentEvent event = recorded.event();
         try {
-            broadcaster.publishEventAppended(payloadFactory.eventAppended(session, event));
-            broadcaster.publishSessionUpdated(payloadFactory.sessionUpdated(session));
+            broadcaster.publishEventAppended(() -> payloadFactory.eventAppended(session, event));
+            broadcaster.publishSessionUpdated(() -> payloadFactory.sessionUpdated(session));
         } catch (RuntimeException ex) {
             // Broadcasting is best-effort; never let it break ingest.
             log.warn("Failed to broadcast recorded event {}", event == null ? null : event.id(), ex);
