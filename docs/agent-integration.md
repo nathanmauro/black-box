@@ -25,21 +25,21 @@ Restart the client if the tools do not appear. The server keeps the historical M
 
 ### Memory tools
 
-| Tool | Purpose |
-| --- | --- |
-| `captureDecision` | Preserve a choice, rationale, rejected alternatives, confidence, and open loops |
-| `captureHandoff` | Leave context, open loops, and one next action for another agent |
-| `captureObservation` | Record a concise fact or note |
-| `captureProjection` | Capture one to five plausible future paths for the project graph |
-| `captureIdea` | Capture an idea someone proposed that is not being acted on now (a human's aside or an agent's suggestion) |
-| `captureEvidence` | Capture a verifiable fact with provenance and optional support or refute links |
-| `recallIdea` | Return an idea with supporting and refuting Evidence across revisions |
-| `recallContext` | Recall Decisions, Handoffs, Observations, Ideas, and Evidence lexically or semantically; Projections are lexical-only |
-| `searchContext` | Bounded discovery excerpts, filter diagnostics, provenance and source references |
-| `findBraids` | Bounded discovery and exact lookup of saved braid artifacts across assigned and unassigned projects |
-| `searchSessions` | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
-| `recentSessions` | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn |
-| `localModelStatus` | Inspect the optional local model backend |
+| Tool                 | Purpose                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `captureDecision`    | Preserve a choice, rationale, rejected alternatives, confidence, and open loops                                         |
+| `captureHandoff`     | Leave context, open loops, and one next action for another agent                                                        |
+| `captureObservation` | Record a concise fact or note                                                                                           |
+| `captureProjection`  | Capture one to five plausible future paths for the project graph                                                        |
+| `captureIdea`        | Capture an idea someone proposed that is not being acted on now (a human's aside or an agent's suggestion)              |
+| `captureEvidence`    | Capture a verifiable fact with provenance and optional support or refute links                                          |
+| `recallIdea`         | Return an idea with supporting and refuting Evidence across revisions                                                   |
+| `recallContext`      | Recall Decisions, Handoffs, Observations, Ideas, and Evidence lexically or semantically; Projections are lexical-only   |
+| `searchContext`      | Bounded discovery excerpts, filter diagnostics, provenance and source references                                        |
+| `findBraids`         | Bounded discovery and exact lookup of saved braid artifacts across assigned and unassigned projects                     |
+| `searchSessions`     | Legacy raw diagnostic search; row limits do not bound payload size. `humanOnly=true` matches only the human's own turns |
+| `recentSessions`     | List recent agent sessions, each with `firstHumanTurn`. `humanOnly=true` keeps only sessions that contain a human turn  |
+| `localModelStatus`   | Inspect the optional local model backend                                                                                |
 
 Capture tools require nonblank `source` and `clientSessionId`. Decisions also require `decision`,
 Handoffs require `contextSummary`, Observations require `text`, Projections require at least one
@@ -264,7 +264,7 @@ Use `recallContext` first to recover structured prior intent. For broader discov
 surfaces return the same JSON shape; they leave existing raw search, event reads and recall intact.
 
 ```json
-{"query":"backend kind:Handoff until:2026-08-18","limit":10,"maxBytes":24000}
+{ "query": "backend kind:Handoff until:2026-08-18", "limit": 10, "maxBytes": 24000 }
 ```
 
 The global result limit defaults to 10 and clamps to 1–50. `maxBytes` defaults to 24,000 and must
@@ -406,7 +406,12 @@ depends on its shape:
 For exact project recall, pass separate `project` and `query` fields in REST or MCP:
 
 ```json
-{"project":"/repos/example","query":"why did we choose retries","withinHours":168,"kinds":["decision","handoff"]}
+{
+  "project": "/repos/example",
+  "query": "why did we choose retries",
+  "withinHours": 168,
+  "kinds": ["decision", "handoff"]
+}
 ```
 
 `project` is the canonical project path; registered aliases are expanded automatically. Both
@@ -439,12 +444,12 @@ scope links retain their legacy matching behavior.
 An event ID still obeys the time/kind filters and uses matching rather than bypassing them;
 use a result's Browse link to open its exact source event.
 
-| Layer | Defaults and bounds |
-| --- | --- |
-| Optional SessionStart hook | 720 hours (30 days), 3 Decisions/Handoffs, 4,000-character context block |
-| MCP `recallContext` | 168 hours, Decisions/Handoffs, 10 items (maximum 50); `maxChars` defaults to 24,000, minimum 500 |
-| REST `GET /api/continuations` | 8,760 hours (range 1–8,760), up to 3 prompts (range 1–3) from the newest 50 Handoffs and 50 current Decisions; each prompt at most 6,000 characters |
-| REST `POST /api/continuations/synthesize` | Off by default; at most one loopback local-model call per request, 512 output tokens, 4,000-character reply, validated citations |
+| Layer                                     | Defaults and bounds                                                                                                                                 |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Optional SessionStart hook                | 720 hours (30 days), 3 Decisions/Handoffs, 4,000-character context block                                                                            |
+| MCP `recallContext`                       | 168 hours, Decisions/Handoffs, 10 items (maximum 50); `maxChars` defaults to 24,000, minimum 500                                                    |
+| REST `GET /api/continuations`             | 8,760 hours (range 1–8,760), up to 3 prompts (range 1–3) from the newest 50 Handoffs and 50 current Decisions; each prompt at most 6,000 characters |
+| REST `POST /api/continuations/synthesize` | Off by default; at most one loopback local-model call per request, 512 output tokens, 4,000-character reply, validated citations                    |
 
 `GET /api/continuations` builds deterministic starting prompts from one project's record; see
 [Prompts from the record](project-continuity.md#prompts-from-the-record). It is not an MCP tool.
@@ -528,6 +533,58 @@ Codex's user-level `hooks.json`:
 
 Use `recallContext` through MCP for topic queries mid-session, more kinds, or a larger recall slice.
 
+### Final assistant turns (Claude Code)
+
+Register `Stop` alongside your existing hooks in Claude Code's user-level `settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /path/to/black-box/scripts/hooks/sba-agent-hook.sh claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Merge this entry into the existing `Stop` list; preserve other hooks. Stop does not support a matcher.
+Claude Code's [Stop input contract](https://code.claude.com/docs/en/hooks#stop) includes
+`session_id`, `cwd`, `transcript_path`, `permission_mode`, `hook_event_name`, `stop_hook_active`, and
+`last_assistant_message`. The final-message field was added in
+[Claude Code 2.1.47](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#2147).
+Use that field directly: the transcript file can lag the Stop notification.
+
+Both direct and durable capture map `last_assistant_message` to event `text`, keep `eventType=Stop`,
+and set `role=assistant` for nonblank text. An empty or missing message keeps `role=agent`.
+`stop_hook_active=true` means another Stop hook caused Claude to continue; it does not suppress
+capture of the resulting response. The capture hook returns without blocking Claude's stop.
+
+Recorded final messages appear in the session transcript even when no local JSONL is available.
+`metadata.transcript_path` preserves provenance; durable capture omits `rawHook`. When a local
+JSONL is available, the existing same-role/text deduplication avoids showing the response twice.
+Search with `source:claude kind:Stop <text from the response>` using Browse, `searchContext`, or
+`/api/search`. These are lexical event searches; `recallContext` targets structured intent kinds
+and does not return ordinary Stop events.
+
+This captures the final response of each completed turn, not assistant text between tool calls or
+thinking. Stop does not fire on user interruption; API-error `StopFailure` events are separate.
+
+The fixture in `scripts/hooks/fixtures/claude-stop.json` follows the documented payload. Verify both
+capture modes through a real HTTP recorder, isolated SQLite database, search, and the transcript
+endpoint with local JSONL unavailable (no model calls or production data):
+
+```bash
+mvn -Dtest=ClaudeStopHookHttpTest test
+```
+
 ### Subagent lineage (Claude Code)
 
 `SubagentStart`/`SubagentStop` hooks fire in the parent session; the bridge derives the child
@@ -542,7 +599,10 @@ entries, passing `claude` as the source argument:
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "/path/to/black-box/scripts/hooks/sba-agent-hook.sh claude" }
+          {
+            "type": "command",
+            "command": "/path/to/black-box/scripts/hooks/sba-agent-hook.sh claude"
+          }
         ]
       }
     ],
@@ -550,7 +610,10 @@ entries, passing `claude` as the source argument:
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "/path/to/black-box/scripts/hooks/sba-agent-hook.sh claude" }
+          {
+            "type": "command",
+            "command": "/path/to/black-box/scripts/hooks/sba-agent-hook.sh claude"
+          }
         ]
       }
     ]

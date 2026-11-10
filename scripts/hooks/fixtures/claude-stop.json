@@ -1,0 +1,9 @@
+{
+  "session_id": "claude-stop-fixture",
+  "transcript_path": "/fixture/claude-stop/session.jsonl",
+  "cwd": "/fixture/claude-stop",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "The cedar migration is complete.\nVerified the café search result."
+}
