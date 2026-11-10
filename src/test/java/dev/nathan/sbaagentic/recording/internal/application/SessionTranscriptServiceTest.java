@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.recording.internal.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -61,6 +62,36 @@ class SessionTranscriptServiceTest {
                 Instant.parse("2026-08-30T13:00:00Z"),
                 2,
                 null);
+    }
+
+    @Test
+    void humanOnlySkipsTheUnusedRecordedConversationRead() {
+        when(repository.findSessionById("session-1")).thenReturn(Optional.of(session));
+        when(repository.transcriptPathsForSession("session-1")).thenReturn(List.of("known.jsonl"));
+        when(repository.feedForSession("session-1", null, null, 10, true))
+                .thenReturn(new EventFeedResponse(
+                        10,
+                        1,
+                        List.of(item("human", "UserPromptSubmit", "user", "Show it", null, "2026-08-30T12:00:00Z")),
+                        null));
+        when(messageSource.read(session, List.of("known.jsonl")))
+                .thenReturn(new TranscriptRead(
+                        true,
+                        true,
+                        null,
+                        List.of(event(
+                                "tx:assistant",
+                                "TranscriptMessage",
+                                "assistant",
+                                "Here it is",
+                                "2026-08-30T12:03:00Z"))));
+
+        SessionTranscriptResponse result = service.transcript("session-1", null, null, 10, true);
+
+        assertThat(result.events()).extracting(AgentEvent::id).containsExactly("human");
+        assertThat(result.available()).isTrue();
+        assertThat(result.complete()).isTrue();
+        verify(repository, never()).conversationEventsForSession("session-1");
     }
 
     @Test

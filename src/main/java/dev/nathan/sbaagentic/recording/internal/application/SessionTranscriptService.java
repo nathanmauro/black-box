@@ -17,7 +17,6 @@ import dev.nathan.sbaagentic.recording.SessionTranscriptResponse;
 import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptMessageSource;
 import dev.nathan.sbaagentic.recording.internal.application.port.TranscriptRead;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -33,7 +32,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class SessionTranscriptService implements SessionTranscriptOperations {
 
-    private static final Duration DUPLICATE_WINDOW = Duration.ofMinutes(2);
     private static final Comparator<AgentEvent> NEWEST_FIRST = Comparator.comparing(AgentEvent::observedAt)
             .thenComparing(AgentEvent::id)
             .reversed();
@@ -63,8 +61,10 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         int safeLimit = Math.max(1, Math.min(limit, 250));
         EventFeedResponse recorded = repository.feedForSession(sessionId, query, before, safeLimit, humanOnly);
         TranscriptRead transcript = messageSource.read(session, repository.transcriptPathsForSession(sessionId));
-        List<AgentEvent> recordedConversation =
-                transcript.messages().isEmpty() ? List.of() : repository.conversationEventsForSession(sessionId);
+        RecordedConversationIndex recordedConversation = new RecordedConversationIndex(
+                humanOnly || transcript.messages().isEmpty()
+                        ? List.of()
+                        : repository.conversationEventsForSession(sessionId));
         EventQuery parsedQuery = EventQuery.parse(query);
         Cursor cursor = parseCursor(before);
 
@@ -76,7 +76,7 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         for (AgentEvent message : humanOnly ? List.<AgentEvent>of() : transcript.messages()) {
             if (isBefore(message, cursor)
                     && matches(message, session, parsedQuery)
-                    && recordedConversation.stream().noneMatch(recordedEvent -> duplicates(recordedEvent, message))) {
+                    && !recordedConversation.contains(message)) {
                 combined.add(message);
             }
         }
@@ -196,52 +196,6 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
         return excluded.stream().map(SessionTranscriptService::lower).anyMatch(value::contains);
     }
 
-    private static boolean duplicates(AgentEvent recorded, AgentEvent transcript) {
-        String recordedRole = conversationRole(recorded);
-        if (recordedRole == null || !recordedRole.equals(transcript.role()))
-
-            return false;
-
-        if (!normalize(recorded.text()).equals(normalize(transcript.text())))
-
-            return false;
-
-        if (recorded.turnId() != null
-                && transcript.turnId() != null
-                && recorded.turnId().equals(transcript.turnId()))
-
-                    return true;
-
-        return Duration.between(recorded.observedAt(), transcript.observedAt())
-                        .abs()
-                        .compareTo(DUPLICATE_WINDOW)
-                <= 0;
-    }
-
-    private static String conversationRole(AgentEvent event) {
-        String role = lower(event.role());
-        if ("user".equals(role) || "assistant".equals(role))
-
-            return role;
-
-        String type = lower(event.eventType()).replaceAll("[^a-z0-9]", "");
-        if (type.equals("userpromptsubmit") || type.equals("beforesubmitprompt"))
-
-            return "user";
-
-        if (event.text() != null
-                && !event.text().isBlank()
-                && (type.equals("stop")
-                        || type.equals("assistantmessage")
-                        || type.equals("agentmessage")
-                        || type.equals("agentresponse")
-                        || type.equals("finalresponse")))
-
-                            return "assistant";
-
-        return null;
-    }
-
     private AgentEvent toEvent(EventFeedItem item) {
         Map<String, Object> metadata = withoutRawHook(item.metadata());
         String text = duplicatesCanonicalToolOutput(item) ? null : item.text();
@@ -322,11 +276,6 @@ public class SessionTranscriptService implements SessionTranscriptOperations {
     private static String cursorFor(AgentEvent event) {
 
         return event.observedAt() + "|" + event.id();
-    }
-
-    private static String normalize(String value) {
-
-        return lower(value).replaceAll("\\s+", " ").trim();
     }
 
     private static String lower(String value) {
