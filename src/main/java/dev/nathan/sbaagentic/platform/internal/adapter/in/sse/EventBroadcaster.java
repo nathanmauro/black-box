@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.springframework.boot.web.context.WebServerGracefulShutdownLifecycle;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.http.MediaType;
@@ -85,24 +86,41 @@ public class EventBroadcaster implements SmartLifecycle {
     }
 
     public void publishEventAppended(StreamEvents.EventAppended payload) {
+        publishEventAppended(() -> payload);
+    }
+
+    public void publishEventAppended(Supplier<StreamEvents.EventAppended> payloadSupplier) {
+        StreamEvents.EventAppended payload = null;
+        boolean prepared = false;
         for (Subscriber subscriber : subscribers) {
             synchronized (subscriber) {
+                if (subscriber.closed) continue;
                 // Callbacks can arrive out of commit order. Never advance using their payload.
                 if (subscriber.feed != null) drain(subscriber);
-                else
+                else {
+                    // Durable streams rebuild from committed rows; only transient streams need this.
+                    if (!prepared) {
+                        payload = payloadSupplier.get();
+                        prepared = true;
+                    }
                     send(
                             subscriber,
                             SseEmitter.event().name("event.appended").data(payload, MediaType.APPLICATION_JSON));
+                }
             }
         }
     }
 
     public void publishSessionUpdated(StreamEvents.SessionUpdated payload) {
-        publish("session.updated", payload);
+        publishSessionUpdated(() -> payload);
+    }
+
+    public void publishSessionUpdated(Supplier<StreamEvents.SessionUpdated> payloadSupplier) {
+        publish("session.updated", payloadSupplier);
     }
 
     public void publishJudgmentAppended(StreamEvents.JudgmentAppended payload) {
-        publish("judgment.appended", payload);
+        publish("judgment.appended", () -> payload);
     }
 
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
@@ -180,9 +198,16 @@ public class EventBroadcaster implements SmartLifecycle {
         close(subscriber);
     }
 
-    private void publish(String name, Object payload) {
+    private void publish(String name, Supplier<?> payloadSupplier) {
+        Object payload = null;
+        boolean prepared = false;
         for (Subscriber subscriber : subscribers) {
             synchronized (subscriber) {
+                if (subscriber.closed) continue;
+                if (!prepared) {
+                    payload = payloadSupplier.get();
+                    prepared = true;
+                }
                 send(subscriber, SseEmitter.event().name(name).data(payload, MediaType.APPLICATION_JSON));
             }
         }

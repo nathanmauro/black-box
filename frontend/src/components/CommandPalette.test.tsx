@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSessions, search } from "../lib/api";
+import { createSignal } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getSessions, search, type SearchResponse } from "../lib/api";
 import { setHumanOnly } from "../lib/humanOnly";
 import CommandPalette from "./CommandPalette";
 
@@ -12,6 +13,7 @@ vi.mock("@solidjs/router", () => ({
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
+
   return {
     ...actual,
     getSessions: vi.fn(async () => [
@@ -40,10 +42,110 @@ beforeEach(() => {
   navigate.mockReset();
   setHumanOnly(false);
   vi.mocked(getSessions).mockClear();
-  vi.mocked(search).mockClear();
+  vi.mocked(search)
+    .mockReset()
+    .mockImplementation(async (query) => ({
+      query,
+      local: [],
+      elastic: [],
+      elasticHealth: { enabled: false, available: false },
+    }));
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("CommandPalette", () => {
+  it("searches remotely once after rapid typing while local commands update immediately", async () => {
+    vi.useFakeTimers();
+    render(() => <CommandPalette open onClose={vi.fn()} />);
+    const input = screen.getByPlaceholderText("Jump to session or filter Stream...");
+
+    fireEvent.input(input, { target: { value: "projects" } });
+    expect(screen.getByRole("option", { name: /Projects/ })).toBeInTheDocument();
+    expect(search).not.toHaveBeenCalled();
+
+    for (let length = 1; length <= "performance".length; length += 1) {
+      fireEvent.input(input, { target: { value: "performance".slice(0, length) } });
+      await vi.advanceTimersByTimeAsync(10);
+    }
+
+    expect(search).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(search).toHaveBeenCalledExactlyOnceWith("performance", 8, false);
+  });
+
+  it("cancels pending searches on close, short queries, and unmount", async () => {
+    vi.useFakeTimers();
+    const [open, setOpen] = createSignal(true);
+    const view = render(() => <CommandPalette open={open()} onClose={() => setOpen(false)} />);
+
+    fireEvent.input(screen.getByRole("textbox"), { target: { value: "closed" } });
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(search).not.toHaveBeenCalled();
+
+    setOpen(true);
+    fireEvent.input(screen.getByRole("textbox"), { target: { value: "cleared" } });
+    fireEvent.input(screen.getByRole("textbox"), { target: { value: "c" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(search).not.toHaveBeenCalled();
+
+    fireEvent.input(screen.getByRole("textbox"), { target: { value: "reopened" } });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(search).toHaveBeenCalledExactlyOnceWith("reopened", 8, false);
+    fireEvent.input(screen.getByRole("textbox"), { target: { value: "unmounted" } });
+    view.unmount();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides completed and late results as soon as the query or human mode changes", async () => {
+    vi.useFakeTimers();
+    const response: SearchResponse = {
+      query: "earlier",
+      local: [
+        {
+          id: "stale-event",
+          sessionId: "stale-session",
+          source: "claude",
+          clientSessionId: "stale-client",
+          eventType: "Observation",
+          text: "An earlier search result",
+          humanText: "An earlier human result",
+          observedAt: "2026-07-01T12:00:00Z",
+        },
+      ],
+      elastic: [],
+      elasticHealth: { enabled: false, available: false },
+    };
+    let finishLateSearch!: (result: SearchResponse) => void;
+
+    vi.mocked(search)
+      .mockResolvedValueOnce(response)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishLateSearch = resolve;
+          }),
+      );
+    render(() => <CommandPalette open onClose={vi.fn()} />);
+    const input = screen.getByRole("textbox");
+
+    fireEvent.input(input, { target: { value: "earlier" } });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(screen.getByRole("option", { name: /An earlier search result/ })).toBeInTheDocument();
+    setHumanOnly(true);
+    expect(screen.queryByRole("option", { name: /An earlier/ })).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(search).toHaveBeenLastCalledWith("earlier", 8, true);
+    fireEvent.input(input, { target: { value: "latest" } });
+    finishLateSearch(response);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.queryByRole("option", { name: /An earlier/ })).not.toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(search).toHaveBeenLastCalledWith("latest", 8, true);
+  });
+
   it.each([
     ["Long event rationale.\n\n" + "Readable details. ".repeat(12), "Long event rationale."],
     ["x".repeat(118) + "😀ending", "x".repeat(118)],
@@ -72,6 +174,7 @@ describe("CommandPalette", () => {
       name: new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
     });
     const label = option.querySelector("strong")!.textContent!;
+
     expect(label.startsWith(prefix)).toBe(true);
     expect(label.length).toBeLessThanOrEqual(120);
     expect(label).toMatch(/…$/);
@@ -102,6 +205,7 @@ describe("CommandPalette", () => {
     });
     render(() => <CommandPalette open onClose={() => {}} />);
     const input = screen.getByPlaceholderText("Jump to session or filter Stream...");
+
     fireEvent.input(input, { target: { value: "aside" } });
     await screen.findByRole("option", { name: /Unique cleaned human aside/ });
     fireEvent.input(input, { target: { value: "" } });
@@ -129,6 +233,7 @@ describe("CommandPalette", () => {
 
   it("offers Projects as a first-class navigation command", async () => {
     const onClose = vi.fn();
+
     render(() => <CommandPalette open onClose={onClose} />);
 
     fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
@@ -142,6 +247,7 @@ describe("CommandPalette", () => {
 
   it("offers the Ideas view for an 'open ideas' query", async () => {
     const onClose = vi.fn();
+
     render(() => <CommandPalette open onClose={onClose} />);
 
     fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {
@@ -155,6 +261,7 @@ describe("CommandPalette", () => {
 
   it("opens session picks in the Activity browse view", async () => {
     const onClose = vi.fn();
+
     render(() => <CommandPalette open onClose={onClose} />);
 
     fireEvent.click(await screen.findByRole("option", { name: /Focused session/ }));
@@ -165,6 +272,7 @@ describe("CommandPalette", () => {
 
   it("sends free-form queries to the Activity Stream", async () => {
     const onClose = vi.fn();
+
     render(() => <CommandPalette open onClose={onClose} />);
 
     fireEvent.input(screen.getByPlaceholderText("Jump to session or filter Stream..."), {

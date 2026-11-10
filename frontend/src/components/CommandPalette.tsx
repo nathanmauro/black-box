@@ -1,6 +1,14 @@
 import { readerTextPreview } from "../lib/payloadPreview";
 import { useNavigate } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { getSessions, search, type AgentSession } from "../lib/api";
 import { humanOnly, leadLine, toggleHumanOnly } from "../lib/humanOnly";
 import { sourceLabel, timeAgo, truncatePath } from "../lib/format";
@@ -20,6 +28,8 @@ type CommandItem = {
   eventKind?: string;
   run: () => void;
 };
+
+type RemoteQuery = { q: string; human: boolean };
 
 const NAV_ITEMS = [
   {
@@ -48,6 +58,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
   const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
   const [active, setActive] = createSignal(0);
+  const [remoteQuery, setRemoteQuery] = createSignal<RemoteQuery>();
   const [sessions] = createResource(
     () => (props.open ? { human: humanOnly() } : undefined),
     async ({ human }) => getSessions(120, false, human),
@@ -55,13 +66,31 @@ export default function CommandPalette(props: CommandPaletteProps) {
       initialValue: [] as AgentSession[],
     },
   );
-  const [fallback] = createResource(
-    () => ({
-      q: props.open && query().trim().length >= 2 ? query().trim() : "",
-      human: humanOnly(),
-    }),
-    async ({ q, human }) => (q ? search(q, 8, human) : null),
-  );
+  const [fallback] = createResource(remoteQuery, async (request) => ({
+    request,
+    response: await search(request.q, 8, request.human),
+  }));
+  const remoteResult = createMemo(() => {
+    const result = fallback();
+
+    // A resource retains its last value while refetching; never show it for a changed input.
+    return result?.request === remoteQuery() ? result?.response : undefined;
+  });
+
+  createEffect(() => {
+    const q = query().trim();
+    const human = humanOnly();
+
+    setRemoteQuery(undefined);
+
+    if (!props.open || q.length < 2) {
+      return;
+    }
+
+    const timer = setTimeout(() => setRemoteQuery({ q, human }), 200);
+
+    onCleanup(() => clearTimeout(timer));
+  });
 
   const items = createMemo<CommandItem[]>(() => {
     const q = normalize(query());
@@ -98,7 +127,7 @@ export default function CommandPalette(props: CommandPaletteProps) {
       .slice(0, 7)
       .map((session) => sessionItem(session, navigate, close));
     const remoteEvents =
-      fallback()
+      remoteResult()
         ?.local?.filter((event) => !humanOnly() || Boolean(event.humanText?.trim()))
         .slice(0, 5)
         .map((event) => ({
@@ -132,11 +161,15 @@ export default function CommandPalette(props: CommandPaletteProps) {
           },
         ]
       : [];
+
     return [...nav, ...commands, ...matchedSessions, ...remoteEvents, ...searchItem];
   });
 
   createEffect(() => {
-    if (!props.open) return;
+    if (!props.open) {
+      return;
+    }
+
     setActive(0);
     queueMicrotask(() => inputRef?.focus());
   });
@@ -150,23 +183,31 @@ export default function CommandPalette(props: CommandPaletteProps) {
     if (event.key === "Escape") {
       event.preventDefault();
       close();
+
       return;
     }
+
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActive((index) => Math.min(index + 1, Math.max(items().length - 1, 0)));
+
       return;
     }
+
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActive((index) => Math.max(index - 1, 0));
+
       return;
     }
+
     if (event.key === "Enter") {
       event.preventDefault();
       items()[active()]?.run();
+
       return;
     }
+
     if (event.key === "Tab") {
       event.preventDefault();
       inputRef?.focus();
@@ -223,9 +264,14 @@ export default function CommandPalette(props: CommandPaletteProps) {
 }
 
 function PaletteIcon(props: { item: CommandItem }) {
-  if (props.item.kind === "event") return <KindBadge kind={props.item.eventKind} />;
-  if (props.item.kind === "session")
+  if (props.item.kind === "event") {
+    return <KindBadge kind={props.item.eventKind} />;
+  }
+
+  if (props.item.kind === "session") {
     return <SourceDot source={props.item.meta.split(" · ")[0].toLowerCase()} />;
+  }
+
   return (
     <span class={`palette-glyph palette-glyph--${props.item.kind}`}>
       {props.item.kind === "search" ? "⌕" : "↗"}
@@ -270,6 +316,7 @@ function normalize(value: string): string {
 // Presentation only: keep search and exact-source navigation on the complete canonical event.
 function eventLabel(text: string): string {
   const singleLine = text.replace(/\s+/g, " ").trim();
+
   return singleLine.length <= 120
     ? singleLine
     : readerTextPreview(singleLine, { chars: 119, nonemptyLines: 1 }).text;
