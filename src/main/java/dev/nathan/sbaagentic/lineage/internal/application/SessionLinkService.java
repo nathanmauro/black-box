@@ -11,8 +11,10 @@ import dev.nathan.sbaagentic.lineage.SessionLinksResponse;
 import dev.nathan.sbaagentic.lineage.SessionRef;
 import dev.nathan.sbaagentic.lineage.internal.application.port.SessionLinkStore;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.SessionHeader;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -53,11 +55,19 @@ public class SessionLinkService implements SessionLineageOperations {
 
     public SessionLinksResponse linksForSession(String sessionId) {
         requireText(sessionId, "Session id");
-        List<SessionLinkView> parents = repository.linksWhereChild(sessionId).stream()
-                .map(link -> view(link, link.parentSessionId()))
+        List<SessionLink> parentLinks = repository.linksWhereChild(sessionId);
+        List<SessionLink> childLinks = repository.linksWhereParent(sessionId);
+        List<String> peers = Stream.concat(
+                        parentLinks.stream().map(SessionLink::parentSessionId),
+                        childLinks.stream().map(SessionLink::childSessionId))
+                .distinct()
                 .toList();
-        List<SessionLinkView> children = repository.linksWhereParent(sessionId).stream()
-                .map(link -> view(link, link.childSessionId()))
+        Map<String, SessionHeader> headers = eventRepository.sessionHeaders(peers);
+        List<SessionLinkView> parents = parentLinks.stream()
+                .map(link -> view(link, link.parentSessionId(), headers))
+                .toList();
+        List<SessionLinkView> children = childLinks.stream()
+                .map(link -> view(link, link.childSessionId(), headers))
                 .toList();
 
         return new SessionLinksResponse(parents, children);
@@ -93,11 +103,11 @@ public class SessionLinkService implements SessionLineageOperations {
         return repository.childCounts(ids);
     }
 
-    private SessionLinkView view(SessionLink link, String otherSessionId) {
-        SessionRef session = eventRepository
-                .findSessionById(otherSessionId)
-                .map(other -> new SessionRef(other.id(), other.title(), other.source()))
-                .orElse(new SessionRef(otherSessionId, null, null));
+    private SessionLinkView view(SessionLink link, String otherSessionId, Map<String, SessionHeader> headers) {
+        SessionHeader other = headers.get(otherSessionId);
+        SessionRef session = other == null
+                ? new SessionRef(otherSessionId, null, null)
+                : new SessionRef(other.id(), other.title(), other.source());
 
         return new SessionLinkView(
                 link.id(), link.parentSessionId(), link.childSessionId(), link.linkType(), link.createdAt(), session);

@@ -17,6 +17,7 @@ import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventTypes;
 import dev.nathan.sbaagentic.recording.HumanTurns;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.SessionHeader;
 import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.recording.TitleRank;
 import dev.nathan.sbaagentic.recording.TurnFollowup;
@@ -27,6 +28,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,6 +47,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+    // Stay below SQLite's legacy 999-bind limit; PostgreSQL uses the same bounded query shape.
+    private static final int SESSION_HEADER_BATCH_SIZE = 500;
 
     // Arms are ordered cheapest-first on purpose: SQLite short-circuits OR left-to-right, and in
     // an agent_events row the huge tool JSON columns sit between tool_name and metadata_json, so
@@ -443,6 +447,31 @@ public class RecordingSqlStore implements RecordingStore, RecordingCatalog {
 
             return Optional.empty();
         }
+    }
+
+    @Override
+    public Map<String, SessionHeader> sessionHeaders(List<String> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+
+            return Map.of();
+        }
+        List<String> ids =
+                sessionIds.stream().filter(Objects::nonNull).distinct().toList();
+        Map<String, SessionHeader> headers = new HashMap<>();
+        for (int offset = 0; offset < ids.size(); offset += SESSION_HEADER_BATCH_SIZE) {
+            List<String> batch = ids.subList(offset, Math.min(offset + SESSION_HEADER_BATCH_SIZE, ids.size()));
+            String placeholders = String.join(", ", Collections.nCopies(batch.size(), "?"));
+            List<SessionHeader> found = jdbcTemplate.query(
+                    "SELECT id, title, source FROM agent_sessions WHERE id IN (" + placeholders + ")",
+                    (row, rowNumber) ->
+                            new SessionHeader(row.getString("id"), row.getString("title"), row.getString("source")),
+                    batch.toArray());
+            for (SessionHeader header : found) {
+                headers.put(header.id(), header);
+            }
+        }
+
+        return Map.copyOf(headers);
     }
 
     public Optional<AgentEvent> findEventById(String id) {
