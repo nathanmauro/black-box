@@ -15,6 +15,7 @@ import dev.nathan.sbaagentic.project.internal.application.port.ProjectCatalogSto
 import dev.nathan.sbaagentic.recording.CanonicalTimeHttpContract;
 import dev.nathan.sbaagentic.recording.EventRecorded;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
+import dev.nathan.sbaagentic.recording.SessionHeader;
 import dev.nathan.sbaagentic.recording.SessionStopped;
 import dev.nathan.sbaagentic.recording.SummarySource;
 import dev.nathan.sbaagentic.recording.TranscriptProperties;
@@ -134,6 +135,41 @@ class PostgresBackendContractTest {
     }
 
     @Test
+    void sessionHeadersUsePortableBatchesAndExactBoundIds() {
+        String prefix = "header-" + UUID.randomUUID() + "-";
+        String quotedId = prefix + "') OR 1=1 --";
+        String now = Instant.now().toString();
+        List<String> ids = new ArrayList<>();
+        List<Object[]> rows = new ArrayList<>();
+        for (int index = 0; index < 1001; index++) {
+            String id = index == 0 ? quotedId : prefix + index;
+            String title = index == 0 ? "" : "Title " + index;
+            ids.add(id);
+            rows.add(new Object[] {id, id, title, "summary payload ".repeat(2048), now, now});
+        }
+        jdbc.batchUpdate("""
+            INSERT INTO agent_sessions
+                (id, source, client_session_id, title, summary, started_at, last_seen_at)
+            VALUES (?, 'claude', ?, ?, ?, ?, ?)
+            """, rows);
+        ids.add(quotedId);
+        ids.add(prefix + "missing");
+        ids.add(null);
+
+        var catalog = app.getBean(RecordingCatalog.class);
+        var headers = catalog.sessionHeaders(ids);
+
+        assertThat(headers).hasSize(1001);
+        assertThat(headers.get(quotedId)).isEqualTo(new SessionHeader(quotedId, "", "claude"));
+        for (int index = 1; index < 1001; index++) {
+            assertThat(headers.get(prefix + index))
+                    .isEqualTo(new SessionHeader(prefix + index, "Title " + index, "claude"));
+        }
+        assertThat(headers).doesNotContainKey(prefix + "missing");
+        assertThat(catalog.sessionHeaders(List.of())).isEmpty();
+    }
+
+    @Test
     void preciseWindowsAndLegacySearchUseCanonicalChronology() {
         new CanonicalTimeHttpContract(http, base)
                 .exactWindowsAndOrdering(app.getBean(Clock.class).getZone());
@@ -238,12 +274,12 @@ class PostgresBackendContractTest {
                 .asText();
         var replacement = continuityDecision(scope, "Will fail", target);
         String client = replacement.get("clientSessionId").toString();
-        jdbc.execute(
-                "CREATE FUNCTION reject_replacement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.client_session_id = '"
-                        + client
-                        + "' THEN RAISE EXCEPTION 'controlled replacement failure'; END IF; RETURN NEW; END $$");
-        jdbc.execute(
-                "CREATE TRIGGER reject_replacement BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION reject_replacement()");
+        jdbc.execute("CREATE FUNCTION reject_replacement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF"
+                + " NEW.client_session_id = '"
+                + client
+                + "' THEN RAISE EXCEPTION 'controlled replacement failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER reject_replacement BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION"
+                + " reject_replacement()");
         try {
             assertThat(http.postForEntity(base + "/api/decisions", replacement, JsonNode.class)
                             .getStatusCode()
@@ -492,11 +528,11 @@ class PostgresBackendContractTest {
                         "Observation",
                         "text",
                         "Keep atomic capture"));
-        jdbc.execute(
-                "CREATE FUNCTION reject_capture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.client_session_id = '"
-                        + client + "' THEN RAISE EXCEPTION 'controlled capture failure'; END IF; RETURN NEW; END $$");
-        jdbc.execute(
-                "CREATE TRIGGER reject_capture BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION reject_capture()");
+        jdbc.execute("CREATE FUNCTION reject_capture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF"
+                + " NEW.client_session_id = '"
+                + client + "' THEN RAISE EXCEPTION 'controlled capture failure'; END IF; RETURN NEW; END $$");
+        jdbc.execute("CREATE TRIGGER reject_capture BEFORE INSERT ON agent_events FOR EACH ROW EXECUTE FUNCTION"
+                + " reject_capture()");
         try {
             assertThat(http.postForEntity(base + "/api/events/idempotent", body, JsonNode.class)
                             .getStatusCode()
@@ -673,13 +709,13 @@ class PostgresBackendContractTest {
                 JdbcTemplate migrationJdbc = new JdbcTemplate(dataSource);
                 migrationJdbc.execute("DROP TABLE event_capture_receipts");
                 migrationJdbc.update("""
-                        INSERT INTO agent_sessions (id, source, client_session_id, title, started_at, last_seen_at, event_count)
-                        VALUES ('legacy-session', 'codex', 'legacy-client', 'Original title', '2026-09-18T12:00:00Z', '2026-09-18T12:00:00Z', 1)
-                        """);
+                    INSERT INTO agent_sessions (id, source, client_session_id, title, started_at, last_seen_at, event_count)
+                    VALUES ('legacy-session', 'codex', 'legacy-client', 'Original title', '2026-09-18T12:00:00Z', '2026-09-18T12:00:00Z', 1)
+                    """);
                 migrationJdbc.update("""
-                        INSERT INTO agent_events (id, session_id, source, client_session_id, event_type, text, observed_at)
-                        VALUES ('legacy-event', 'legacy-session', 'codex', 'legacy-client', 'Observation', 'Original evidence', '2026-09-18T12:00:00Z')
-                        """);
+                    INSERT INTO agent_events (id, session_id, source, client_session_id, event_type, text, observed_at)
+                    VALUES ('legacy-event', 'legacy-session', 'codex', 'legacy-client', 'Observation', 'Original evidence', '2026-09-18T12:00:00Z')
+                    """);
                 var sessionBefore = migrationJdbc.queryForMap("SELECT * FROM agent_sessions");
                 var eventBefore = migrationJdbc.queryForMap("SELECT * FROM agent_events");
                 migration.execute(dataSource);
@@ -732,7 +768,8 @@ class PostgresBackendContractTest {
         assertThat(get("/api/projects/" + key + "/graph").path("captures").size())
                 .isEqualTo(3);
         assertThat(jdbc.queryForList(
-                        "SELECT observed_at FROM agent_events WHERE session_id IN (SELECT id FROM agent_sessions WHERE cwd = ?)",
+                        "SELECT observed_at FROM agent_events WHERE session_id IN (SELECT id FROM agent_sessions WHERE"
+                                + " cwd = ?)",
                         String.class,
                         scope))
                 .containsExactlyInAnyOrderElementsOf(stamps);
@@ -897,16 +934,19 @@ class PostgresBackendContractTest {
                 now,
                 now);
         jdbc.update(
-                "INSERT INTO tasks VALUES ('retired-task', 'retired-spec', ?, 'Completed task', 'codex', 'done', 1, 'planner', 'worker', NULL, ?, ?, ?)",
+                "INSERT INTO tasks VALUES ('retired-task', 'retired-spec', ?, 'Completed task', 'codex', 'done', 1,"
+                        + " 'planner', 'worker', NULL, ?, ?, ?)",
                 repo,
                 eventId,
                 now,
                 now);
         jdbc.update(
-                "INSERT INTO task_events VALUES ('retired-transition', 'retired-task', 'task.completed', 'worker', 'in_progress', 'done', '{}', ?)",
+                "INSERT INTO task_events VALUES ('retired-transition', 'retired-task', 'task.completed', 'worker',"
+                        + " 'in_progress', 'done', '{}', ?)",
                 now);
         jdbc.update(
-                "INSERT INTO session_links (id,parent_session_id,child_session_id,link_type,task_id,created_at) VALUES ('retired-link', ?, ?, 'spawned', 'retired-task', ?)",
+                "INSERT INTO session_links (id,parent_session_id,child_session_id,link_type,task_id,created_at) VALUES"
+                        + " ('retired-link', ?, ?, 'spawned', 'retired-task', ?)",
                 parent,
                 child,
                 now);
@@ -932,13 +972,13 @@ class PostgresBackendContractTest {
         migration.migrate();
         assertThat(jdbc.queryForObject("SELECT metadata_json FROM agent_events WHERE id=?", String.class, eventId))
                 .isEqualTo(eventBefore);
-        assertThat(
-                        jdbc.queryForList(
-                                "SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_name IN ('specs','tasks','task_events')"))
+        assertThat(jdbc.queryForList(
+                        "SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema()"
+                                + " AND table_name IN ('specs','tasks','task_events')"))
                 .isEmpty();
-        assertThat(
-                        jdbc.queryForList(
-                                "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='session_links' AND column_name='task_id'"))
+        assertThat(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE"
+                        + " table_schema=current_schema() AND table_name='session_links' AND"
+                        + " column_name='task_id'"))
                 .isEmpty();
         assertThat(jdbc.queryForObject("SELECT created_at FROM session_links WHERE id='retired-link'", String.class))
                 .isEqualTo(now);
