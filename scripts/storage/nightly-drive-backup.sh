@@ -4,7 +4,7 @@
 # Snapshot with blackbox_backup.py (one-step backup API, read-only source, quick_check), compress
 # with zstd, copy into a Google Drive for desktop folder, keep the newest KEEP_REMOTE there and
 # KEEP_LOCAL locally. Prunes only files matching its own blackbox-nightly-* pattern.
-# Failure pings Telegram through `todo telegram-send` when that CLI exists.
+# Failure posts to Slack through `todo notify --route alerts` when that CLI exists.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +25,7 @@ log() {
 fail() {
     log "FAILED: $1"
     if command -v todo >/dev/null 2>&1; then
-        todo telegram-send "Black Box nightly backup failed: $1" >/dev/null 2>&1 || true
+        todo notify --route alerts "Black Box nightly backup failed: $1" >/dev/null 2>&1 || true
     fi
     exit 1
 }

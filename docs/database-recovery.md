@@ -189,8 +189,8 @@ pass. This change intentionally provides no production restore command.
 snapshots the live DB with the backup CLI, compresses it with zstd, and copies it into Google Drive
 for desktop (`My Drive/Data/Backups/black-box/`). It keeps the newest 3 there and 1 locally under
 `~/.local/share/sba-agentic/backups/nightly/`. Each archive has a `.json` sidecar with the CLI's
-completion record, including the snapshot's SHA-256. A failure is sent to Telegram through
-`todo telegram-send`. The log is `~/Library/Logs/sba-agentic-backup.log`.
+completion record, including the snapshot's SHA-256. A failure is sent to Slack through
+`todo notify --route alerts`. The log is `~/Library/Logs/sba-agentic-backup.log`.
 
 ```bash
 cp scripts/storage/com.nathan.sba-agentic-backup.plist ~/Library/LaunchAgents/

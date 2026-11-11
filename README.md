@@ -56,10 +56,11 @@ its scratch directory when you are done.
 For a persistent installation, downloads, Windows guidance, and service setup, follow the
 [installation guide](docs/installation.md).
 
-**Source and release:** this README describes the current source. The latest published download,
-[v0.2.0](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0), predates some features shown
-here and still includes the retired task board. Read its [release boundaries](docs/releases/v0.2.0.md)
-and the [upgrade notes](docs/board-retirement.md) before replacing an existing installation.
+**Source vs. tagged release:** this README describes `main`. The earlier
+[v0.2.0](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0) JAR predates the October
+decision-ledger narrowing and still includes the retired task board; see its
+[release boundaries](docs/releases/v0.2.0.md) and [board retirement notes](docs/board-retirement.md)
+before upgrading an existing installation.
 
 ## Connect your agents
 
@@ -70,13 +71,11 @@ codex mcp add sba-agentic --url http://localhost:8766/mcp
 claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
 ```
 
-Use your chosen port if it differs. These commands register the server; they do not start it or
-enable automatic capture. Ask the agent to recall context before work and leave a handoff when it
-finishes. Optional hooks can record session activity or supply a small recall packet at startup.
-
-[Agent integration](docs/agent-integration.md) covers the tools, hooks, and session lineage.
-[ChatGPT integration](docs/chatgpt-mcp.md) uses a separate restricted gateway. Connecting either
-client does not automatically synchronize its entire conversation history.
+Use your chosen port if it differs. Once registered against a running server, agents can call
+`recallContext` at the start of a task and `captureDecision` or `captureHandoff` at closeout. Opt-in
+hooks can also record session events (including Claude `Stop` responses) or inject a compact startup
+recall packet; see [Agent integration](docs/agent-integration.md) and the restricted
+[ChatGPT gateway](docs/chatgpt-mcp.md).
 
 ## Find the context behind the work
 
@@ -100,30 +99,43 @@ project-scoped recall. The browser interface remains available without the nativ
 
 ## What to expect
 
-| Area | Current behavior |
-| --- | --- |
-| Storage | SQLite by default. Optional PostgreSQL owns a separate database for one API server; there is no automatic local/cloud synchronization. |
-| Recall | Lexical retrieval works without a model. Optional semantic recall covers Decisions, Handoffs, Observations, Ideas, and Evidence. Projections are lexical-only; full event history is searchable but not entirely vector-indexed. |
-| Capture | Explicit memory tools plus opt-in session hooks. The optional durable outbox retries accepted captures; it is not a replica of your history. |
-| Execution | The server records and retrieves context. It does not run coding agents. |
-| Availability | Self-hosted software. The earlier hosted prototype was retired; no hosted service is offered by this repository. |
+| Area                | Current behavior                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Storage             | SQLite by default. Optional PostgreSQL owns a separate database for a single API server; local and PostgreSQL histories do not auto-synchronize.                                                                                                                                                                                                                                          |
+| Recall              | Lexical retrieval works without a model. Optional semantic recall indexes structured intent (`Decision`, `Handoff`, `Observation`, `Idea`, `Evidence`) and falls back to lexical search when embeddings are unavailable; projections are lexical-only, session-summary vectors are stored for backfill rather than returned by recall today, and the raw event log is searched lexically. |
+| Summaries           | A session that closes with a standing handoff reuses that handoff directly as its summary (`summary_source = handoff`) with no model call; sessions that moved past their last handoff fall back to the configured summary backend.                                                                                                                                                       |
+| Capture & streaming | Explicit MCP/REST tools plus opt-in hooks, idempotent capture keys, an optional local retry outbox, and cursor-based SSE replay for `event.appended` notifications.                                                                                                                                                                                                                       |
+| Scope               | Self-hosted memory and lineage server; it records and retrieves context rather than executing coding agents, and no hosted service is offered here.                                                                                                                                                                                                                                       |
 
-**Data and access:** the default server listens on loopback without authentication. Network access
-requires [authentication and HTTPS](docs/authentication.md). The source configuration defaults to
-an external Codex summary wrapper, which can send transcript text to that provider. Choose a
-model-disabled or locally configured setup using the [installation guide](docs/installation.md).
-Optional integrations have their own data flows. Ingestion redaction is best-effort; see
-[configuration and redaction limits](docs/operations.md#configuration).
+**Data and access:** the default server listens on `127.0.0.1:8766` without authentication. Network
+exposure requires [authentication and HTTPS](docs/authentication.md). When model summarization runs,
+the default source configuration invokes an external Codex wrapper that sends transcript text to
+that provider; choose a model-disabled or `SBA_SUMMARY_BACKEND=local` setup in the
+[installation guide](docs/installation.md) to keep summarization local. Ingestion redaction is
+best-effort; see [configuration and redaction limits](docs/operations.md#configuration).
 
-## Built with Black Box
+## Architecture and measured behavior
 
-Black Box is used while developing Black Box. In an October 2026 development run, Codex recalled
-an earlier handoff about a recall launcher, used that context to preserve its behavior, verified the
-result, and recorded new handoffs for the next session.
+Black Box is structured as a feature-first modular monolith (`recording`, `memory`, `lineage`,
+`project`, `summary`, `judgment`, `ask`, `query`, `platform`) on Java 21, Spring Boot, and Spring
+Modulith, with SolidJS/TypeScript compiled into the JAR:
 
-That is a traceable example of the write-and-query loop. It is not proof that memory makes every
-task faster or more accurate. Read the [case study and its limits](docs/building-black-box.md),
-[project history](docs/evolution.md), or the [continuation evaluation](docs/real-resumption-evaluation.md).
+- **Enforced module boundaries:** cross-module and hexagonal dependency rules are checked in tests
+  by Spring Modulith and ArchUnit (`ApplicationModuleStructureTest`, `PackageArchitectureTest`).
+  Canonical relational writes commit before optional Elasticsearch, SSE, or summary fan-out.
+- **Measured hot-path optimizations:** reproducible query-plan, work-count, service-merge, and
+  Playwright byte-budget checks cover
+  [indexed transcript deduplication](docs/performance/transcript-deduplication.md),
+  [batched lineage header projections](docs/performance/lineage-metadata.md),
+  [covering-index dashboard range bounds](docs/performance/dashboard-activity-range.md),
+  [lazy SSE stream payloads](docs/performance/stream-payload-work.md),
+  [on-demand frontend route chunks](docs/performance/frontend-route-loading.md), and
+  [palette/story request budgets](docs/performance/frontend-request-budgets.md).
+- **Dogfooding and bounded evaluations:** Black Box is used daily while developing Black Box. Read
+  the [traceable development case study](docs/building-black-box.md),
+  [project evolution and retired designs](docs/evolution.md), and the
+  [resumption evaluation](docs/real-resumption-evaluation.md) (which separates measured checkpoint
+  reconstruction from broader, unproven productivity claims).
 
 ## Develop and contribute
 
