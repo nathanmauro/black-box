@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Session finalization promotes a session's latest recorded Handoff directly as its summary
+  (`summary_source = handoff`) without calling a summary model; sessions without a Handoff continue
+  through the configured summary backend.
+- Hot-path query, stream, hook, and bundle optimizations with reproducible notes under
+  `docs/performance/`: indexed conversation-match lookup during transcript merges, batched
+  lightweight session metadata reads for lineage views, timestamp-indexed bounds on recent dashboard
+  activity reads, lazy SSE payload construction when no stream subscribers match, single-pass `jq`
+  hook identity parsing, on-demand frontend route chunks, and eliminated duplicate command-palette
+  and project-story fetches.
+- Activity adds a **Project Windows** card view showing one live-updating window per active project
+  with shared filter dimming and direct event navigation, and expanding a prompt in **My Turns**
+  mode reveals the assistant and tool turns that followed it.
+- Claude `Stop` hook captures preserve assistant turn text cleanly across full-text search and
+  transcript merges, and `scripts/storage/nightly-drive-backup.sh` wraps single-step live SQLite
+  snapshots with Slack failure alerts.
 - Redaction recognizes credentials in displayed and written service configuration before storage
   and export. Covered: `=>` pairs from `plutil -p` (also with `=\u003e`), including
   `{length = …, bytes = 0x…}` data values and quoted values that hold unescaped quotes, and from

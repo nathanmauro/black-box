@@ -4,7 +4,8 @@ Start with [installation](installation.md), then [connect an agent](agent-integr
 the [capture-and-recall demonstration](showcase.md). The [project README](../README.md) gives the overview.
 
 Unless labeled otherwise, these guides describe the current source checkout. A downloaded release
-may differ: [v0.2.0](releases/v0.2.0.md) is a historical artifact with its own compatibility boundaries.
+may differ: [v0.2.0](releases/v0.2.0.md) is the latest published release artifact, and the
+[v0.3.0 draft notes](releases/v0.3.0.md) summarize source changes accumulated since September.
 Upgrading source or downloading a JAR does not update an already-running installation.
 
 ## Use Black Box
