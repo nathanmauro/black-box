@@ -164,4 +164,4 @@ and historical design records.
 
 ## License
 
-[MIT](LICENSE) © 2026 Nathan Mauro
+[MIT](LICENSE) © 2026 [Nathan Mauro](https://nathanmauro.io)
