@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Black Box masks the exact values of its own configured credentials (any credential-named
+  environment variable or property it was started with) at every redaction entry point, whatever
+  shape displays them: capture, saved melds and braids, the text sent to summary and meld backends,
+  their answers, and export. Encoded forms (JSON, URL, XML, Base64) are covered, weak or common
+  values are skipped, and it works independently of `SBA_REDACT_ENABLED`; switch it off with
+  `SBA_MASK_CONFIGURED_SECRETS=false`. A direct meld preview's answer is now redacted before it is
+  returned.
 - The nightly backup now covers the Black Box and Job Scout databases and encrypts what leaves the
   machine. `scripts/storage/blackbox_offsite_backup.py` takes a WAL-safe snapshot, runs
   `PRAGMA integrity_check`, records per-table row counts and SHA-256 hashes in an authenticated

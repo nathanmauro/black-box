@@ -227,27 +227,28 @@ These tables cover the application variables; hook and wrapper variables are sep
 
 ### Server, storage, authentication, and navigation
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_PORT` | `8766` | HTTP port |
-| `SBA_BIND_ADDRESS` | `127.0.0.1` | Bind address; authentication is optional and disabled by default. Enable [authentication](authentication.md) and HTTPS before network exposure. |
-| `SBA_DATASOURCE_URL` | `jdbc:sqlite:sba-agentic.db` | Default SQLite location; the PostgreSQL profile defaults to `jdbc:postgresql://localhost:5432/blackbox`. |
-| `SPRING_PROFILES_ACTIVE` | No PostgreSQL profile | Set `postgres` to select the PostgreSQL driver, schema, and SQL behavior. |
-| `SBA_DATASOURCE_USERNAME` | `blackbox` | PostgreSQL database role |
-| `SBA_DATASOURCE_PASSWORD` | Empty | PostgreSQL password, supplied through a protected runtime environment |
-| `SBA_DATASOURCE_POOL_SIZE` | `8` | PostgreSQL maximum connections; default SQLite pool size is fixed at 4 |
-| `SBA_AUTH_ENABLED` | `false` | Enable the browser-session and agent-bearer authentication boundary |
-| `SBA_AUTH_USERNAME` | `blackbox` | Browser login name |
-| `SBA_AUTH_PASSWORD` | Empty | Independently generated browser secret; required when authentication is enabled |
-| `SBA_AUTH_API_TOKEN` | Empty | Separate independently generated agent bearer secret; required when authentication is enabled |
-| `SBA_AUTH_SECURE_COOKIES` | `true` | Secure browser cookies; disable only in trusted loopback HTTP fixtures |
-| `SBA_REDACT_ENABLED` | `true` | Redact secret-looking text and structured secret fields before persistence |
-| `SBA_EDITOR_ENABLED` | `true` | Enable catalog-bound open-in-editor actions |
-| `SBA_EDITOR_COMMAND` | Cursor application CLI on macOS | Absolute Cursor/VS Code-compatible executable |
-| `SBA_EDITOR_ALLOWLIST` | Fixed Cursor and VS Code CLI locations | Comma-separated absolute executable allowlist; not automatic discovery of installed editors |
-| `SBA_EDITOR_TIMEOUT` | `5s` | Maximum editor/Finder handoff time |
-| `SBA_EXPORT_OBSIDIAN_DIR` | Empty | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI |
-| `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
+| Variable                             | Default                                | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SBA_PORT`                           | `8766`                                 | HTTP port                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `SBA_BIND_ADDRESS`                   | `127.0.0.1`                            | Bind address; authentication is optional and disabled by default. Enable [authentication](authentication.md) and HTTPS before network exposure.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `SBA_DATASOURCE_URL`                 | `jdbc:sqlite:sba-agentic.db`           | Default SQLite location; the PostgreSQL profile defaults to `jdbc:postgresql://localhost:5432/blackbox`.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `SPRING_PROFILES_ACTIVE`             | No PostgreSQL profile                  | Set `postgres` to select the PostgreSQL driver, schema, and SQL behavior.                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `SBA_DATASOURCE_USERNAME`            | `blackbox`                             | PostgreSQL database role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `SBA_DATASOURCE_PASSWORD`            | Empty                                  | PostgreSQL password, supplied through a protected runtime environment                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `SBA_DATASOURCE_POOL_SIZE`           | `8`                                    | PostgreSQL maximum connections; default SQLite pool size is fixed at 4                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `SBA_AUTH_ENABLED`                   | `false`                                | Enable the browser-session and agent-bearer authentication boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `SBA_AUTH_USERNAME`                  | `blackbox`                             | Browser login name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `SBA_AUTH_PASSWORD`                  | Empty                                  | Independently generated browser secret; required when authentication is enabled                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `SBA_AUTH_API_TOKEN`                 | Empty                                  | Separate independently generated agent bearer secret; required when authentication is enabled                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `SBA_AUTH_SECURE_COOKIES`            | `true`                                 | Secure browser cookies; disable only in trusted loopback HTTP fixtures                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `SBA_REDACT_ENABLED`                 | `true`                                 | Redact secret-looking text and structured secret fields before persistence                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `SBA_MASK_CONFIGURED_SECRETS`        | `true`                                 | Replace the exact values of this service's own credential-named settings wherever they appear in captured, summarized or exported text; independent of `SBA_REDACT_ENABLED`                                                                                                                                                                                                                                                                                                                                                             |
+| `SBA_EDITOR_ENABLED`                 | `true`                                 | Enable catalog-bound open-in-editor actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `SBA_EDITOR_COMMAND`                 | Cursor application CLI on macOS        | Absolute Cursor/VS Code-compatible executable                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `SBA_EDITOR_ALLOWLIST`               | Fixed Cursor and VS Code CLI locations | Comma-separated absolute executable allowlist; not automatic discovery of installed editors                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `SBA_EDITOR_TIMEOUT`                 | `5s`                                   | Maximum editor/Finder handoff time                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `SBA_EXPORT_OBSIDIAN_DIR`            | Empty                                  | Configure the built-in Markdown summary export target; export is explicitly requested through API/UI                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `SBA_PROJECTS_VOICE_CANONICAL_SCOPE` | Empty                                  | Optional verified voice project path. When set, exact dated Codex voice-session directories (`~/Documents/Codex/YYYY-MM-DD/realtime-voice-chat[-N]` or `YYYY-MM-DD-new-realtime-voice-chat`) are grouped under it as reversible `codex-voice` aliases. Recorded session paths are preserved and captures are never classified by a project mentioned in conversation. Leave unset to disable; existing `codex-voice` aliases can be removed with `DELETE /api/project-aliases?aliasKey=...`. See [ChatGPT MCP gateway](chatgpt-mcp.md). |
 
 Ingestion redaction applies before storage to event text, tool input/output, and metadata. The
 stored human turn, session title and first human turn, the SQLite full-text index and the optional
@@ -330,7 +331,7 @@ The same names also match displayed service configuration:
   (`"SBA_DB_PASSWORD" => "AKIA…" …"` keeps the text after the key). A `plutil -p` data value
   (`{length = 16, bytes = 0x…}`) is removed whole.
 - `PlistBuddy -c Print` shows an entry as `NAME = value` through the end of its line: an
-  environment-style name with a credential word followed by ` = ` at the start of a line
+  environment-style name with a credential word followed by `=` at the start of a line
   (`SBA_DB_PASSWORD = …`) loses the rest of the line.
 - JSON-encoded text, such as a tool result the capture hook stored with `jq tojson`:
   backslash-escaped key and value quotes (`\"api_key\": \"…\"`, up to four encoding levels) are
@@ -391,7 +392,7 @@ The same names also match displayed service configuration:
 - Commands that write a credential: `launchctl setenv NAME value`, PlistBuddy `Set :…:NAME value`
   and `Add :…:NAME type value` (through the end of the `-c` argument), `plutil -replace` or
   `-insert` with a key path ending in the name and a type, `defaults write domain NAME [-type]
-  value`, and the `-w` password of `security add-generic-password` or `add-internet-password`.
+value`, and the `-w` password of `security add-generic-password` or `add-internet-password`.
   The name follows the structured policy above, so `_KEY` names count.
 - HTML-safe JSON escapes for `<` and `>` (`\u003c`, `\u003e`) and unicode-escaped quotes
   (`\u0022`, `\u0027`) are decoded in the first scan's result, which is then scanned again. Values
@@ -448,8 +449,8 @@ Known limits:
 - An environment-style `_KEY` or `CREDENTIAL` name assigned with `=` or `:` to a value that reads
   as a shell reference (`$NAME`, `${…}`, `$(…)`) keeps it, so an `env` listing whose such value
   starts with `$` and a letter keeps it. With `=>` the value is replaced.
-- `PlistBuddy -c Print` and `defaults read`: a `_KEY` or `CREDENTIAL` name followed by ` = `
-  (`STRIPE_KEY = …`) keeps its value, a name with lowercase letters followed by ` = `
+- `PlistBuddy -c Print` and `defaults read`: a `_KEY` or `CREDENTIAL` name followed by `=`
+  (`STRIPE_KEY = …`) keeps its value, a name with lowercase letters followed by `=`
   (`password = …`) keeps everything after the first word of its value, and an unquoted list element
   after a quoted flag, as `defaults read` prints an alphanumeric string, is kept.
 - Flags: single-dash flags (`-p`, and `-w` outside `security add-…-password`), an argument on the
@@ -488,6 +489,7 @@ Known limits:
   `--token now reads …`, `Make --api-key required.`), including a listed word glued to `/`, an
   apostrophe, a hyphen, an em dash, an ellipsis or `!` (`--api-key and/or --token`,
   `--token that's all`).
+
 - Names: a quoted name with dots is not matched (`"sba.judge.password" => …`,
   `{"sba.judge.password": …}`, `defaults read`'s `"sync.auth.token" = …;`), nor is a lowercase or
   mixed-case name that ends with `key` but holds no credential word (`jev_key`, `JevKey`), a name
@@ -531,7 +533,7 @@ Known limits:
   `privateKeyLoc = null` and `PrivateKeyword = 123` lose their values, as `password: …` and
   `token = …` already did, and an environment-style `_KEY` code followed by a colon loses the next
   word (`INVALID_DOTENV_KEY: [REDACTED] key part`). An environment-style credential name followed by
-  ` = ` at the start of a line loses the rest of that line (`SECRET_KEY = os.environ.get(…)`), and a
+  `=` at the start of a line loses the rest of that line (`SECRET_KEY = os.environ.get(…)`), and a
   double-quoted `=>` key at the start of a line loses its line through the last quote, including
   later pairs on a one-line Ruby or PHP hash (`"password" => "…", "user" => "me"`); a single-quoted
   or symbol key keeps them. A long name holds a credential word more often by chance:
@@ -594,6 +596,48 @@ background, a summary redacts up to 2,000 events before it calls the backend, so
 the number of events (about 15 seconds for 2,000 Bash commands of 49,000 characters of dense escaped
 near misses each).
 
+**Configured secret values.** The rules above recognize a credential by the shape around it: a
+name, a flag, a property-list key. Black Box also masks the exact values of its own credentials,
+whatever is around them, the way a CI system masks its registered secrets. At startup it reads
+every setting whose name is a credential name by the secret-key policy above (`sba.judge.api-key`,
+`SBA_AUTH_API_TOKEN`, `spring.datasource.password`, `TYPESAFE_API_KEY`), from every source the
+process was started with: environment variables, system properties, command-line arguments,
+configuration files and files brought in with `spring.config.import`. A name that counts tokens
+(`max-tokens`) is not a credential name. Each value is then replaced with `[REDACTED]` at every
+redaction entry point: event text, tool input and output, metadata and member names at ingestion;
+saved melds and braids; the text sent to a summary or meld backend; the summary, title and direct
+meld preview that come back; and export. So a plain `diff`, a Markdown table, a `launchctl list`
+argument or any other display no rule knows still cannot carry one of these values into storage.
+
+- A value is matched as written and as a display can encode it: JSON-escaped (also with escaped
+  slashes, HTML-safe `\u003c` escapes in either hex case, and escaped twice as JSON inside a JSON
+  string), URL-encoded (`+` or `%20`, either hex case), XML-escaped, and Base64 (standard and URL
+  alphabets). Matching is exact and case-sensitive.
+- A value is registered only when it is specific enough to replace everywhere: at least 8
+  characters, at least 5 distinct characters, not a number or date, and either 16 characters or
+  longer or a mix of letter cases, digits and punctuation. Common development values (`postgres`,
+  `password`, `changeme`, `lm-studio`) are never registered, so a development password does not
+  turn every mention of PostgreSQL into a marker. An unresolved `${...}` placeholder, a plain URL
+  and a path that exists on disk (a setting that names where a credential is) are not values; a
+  URL of the form `scheme://user:password@host` registers its password.
+- Masking runs before the rules and again after them, and applies even when
+  `SBA_REDACT_ENABLED=false` or custom `sba.ingestion.redact-patterns` replace the rules. Set
+  `SBA_MASK_CONFIGURED_SECRETS=false` to switch it off on its own. With redaction disabled, text
+  that holds no configured value is still stored exactly as received.
+- A value that crosses the 50,000-character scan boundary is replaced whole before the text is
+  clipped, so no prefix of it is kept.
+- The startup log reports how many values are registered, never a name or a value.
+
+Limits: values are read once at startup, so a credential rotated without a restart is masked by
+its old value only. Only this process's settings are known: a credential that belongs to another
+program is still a matter for the rules above. A value split across two JSON strings or two lines,
+transformed (hashed, reversed, truncated, upper-cased) or embedded in a longer Base64 payload is
+not matched. Rows stored before a value was configured are not rewritten; reads of those rows,
+including the local bundle a direct meld preview returns, show them as stored, while the text sent
+to a summary or meld backend is masked on the way out. The capture hook's own outbox redaction
+runs in the agent's process and does not know the service's values; the service masks them when
+the capture arrives.
+
 Summary Markdown export resolves its explicitly configured root to a canonical directory; a
 configured root alias is supported. Descendant directory symlinks and symbolic-link/non-regular destination
 notes are rejected. Existing hard-linked notes are replaced without changing their other aliases. Ordinary repeat exports replace the completed note atomically, preserving
@@ -620,17 +664,17 @@ database, not the service database. See [PostgreSQL](postgres-backend.md).
 
 ### Summaries and local AI
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_SUMMARY_BACKEND` | `external` | Summary backend; choose `local` explicitly for local model use |
-| `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command, executed through `/bin/sh -c` |
-| `SBA_SUMMARY_TIMEOUT` | `10m` | External summary subprocess timeout |
-| `SBA_LOCAL_AI_ENABLED` | `true` | Enable OpenAI-compatible local model calls |
-| `SBA_LOCAL_AI_BASE_URL` | `http://localhost:1234` | Local model base URL |
-| `SBA_LOCAL_AI_CHAT_PATH` | `/v1/chat/completions` | Chat endpoint path, resolved against the base URL; an absolute URL (a scheme or a leading `//`) names its own host |
-| `SBA_LOCAL_AI_MODEL` | `local-model` | Configured local model identifier |
-| `SBA_LOCAL_AI_API_KEY` | `lm-studio` | Local-compatible API credential; replace when the selected server requires it |
-| `SBA_LOCAL_AI_MAX_INPUT_CHARS` | `8000` | Per-request input window; larger transcripts are map-reduced |
+| Variable                       | Default                           | Purpose                                                                                                            |
+| ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `SBA_SUMMARY_BACKEND`          | `external`                        | Summary backend; choose `local` explicitly for local model use                                                     |
+| `SBA_SUMMARY_EXTERNAL_COMMAND` | `scripts/summarize-with-codex.sh` | External summary command, executed through `/bin/sh -c`                                                            |
+| `SBA_SUMMARY_TIMEOUT`          | `10m`                             | External summary subprocess timeout                                                                                |
+| `SBA_LOCAL_AI_ENABLED`         | `true`                            | Enable OpenAI-compatible local model calls                                                                         |
+| `SBA_LOCAL_AI_BASE_URL`        | `http://localhost:1234`           | Local model base URL                                                                                               |
+| `SBA_LOCAL_AI_CHAT_PATH`       | `/v1/chat/completions`            | Chat endpoint path, resolved against the base URL; an absolute URL (a scheme or a leading `//`) names its own host |
+| `SBA_LOCAL_AI_MODEL`           | `local-model`                     | Configured local model identifier                                                                                  |
+| `SBA_LOCAL_AI_API_KEY`         | `lm-studio`                       | Local-compatible API credential; replace when the selected server requires it                                      |
+| `SBA_LOCAL_AI_MAX_INPUT_CHARS` | `8000`                            | Per-request input window; larger transcripts are map-reduced                                                       |
 
 Summaries are scheduled automatically in the background when a session records a terminal
 event (`SessionEnd`, `Stop`, or `SubagentStop`) and has no summary yet; `summarize` and
@@ -652,12 +696,12 @@ subprocess does not execute queued work or launch worker agents.
 `POST /api/continuations/synthesize` can ask the local model above to restate one deterministic
 continuation prompt. It is off by default; `GET /api/continuations` never calls a model.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_CONTINUATION_SYNTHESIS_ENABLED` | `false` | Create the restatement adapter; without it every request reports `disabled` |
+| Variable                                        | Default | Purpose                                                                                                                                                |
+| ----------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SBA_CONTINUATION_SYNTHESIS_ENABLED`            | `false` | Create the restatement adapter; without it every request reports `disabled`                                                                            |
 | `SBA_CONTINUATION_SYNTHESIS_ALLOW_NON_LOOPBACK` | `false` | Allow a chat completions URL (`SBA_LOCAL_AI_CHAT_PATH` resolved against `SBA_LOCAL_AI_BASE_URL`) whose host is not `localhost`, `127.0.0.0/8` or `::1` |
-| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS` | `512` | `max_tokens` for the model call, when one is made |
-| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS` | `4000` | Longest reply accepted; a longer reply is rejected as `truncated` |
+| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_TOKENS`  | `512`   | `max_tokens` for the model call, when one is made                                                                                                      |
+| `SBA_CONTINUATION_SYNTHESIS_MAX_OUTPUT_CHARS`   | `4000`  | Longest reply accepted; a longer reply is rejected as `truncated`                                                                                      |
 
 When enabled, each POST recomputes the deterministic candidates and makes at most one call to the
 chat completions URL (with `SBA_LOCAL_AI_ENABLED=true`), using the local client's timeout. It makes
@@ -679,36 +723,36 @@ the configured host.
 
 The wrappers have their own environment settings:
 
-| Variable | Checked-in default | Purpose |
-| --- | --- | --- |
-| `SBA_SUMMARY_CODEX_BIN` | Homebrew Codex executable location | Override with the installed Codex executable |
-| `SBA_SUMMARY_CODEX_AUTH` | `auth.json` in the configured Codex state directory | Wrapper credential source; honors `CODEX_HOME` for its default directory |
-| `SBA_SUMMARY_CODEX_MODEL` | Unset | Omit `--model` unless explicitly configured |
-| `SBA_SUMMARY_CLAUDE_BIN` | `claude` | Claude executable |
-| `SBA_SUMMARY_CLAUDE_MODEL` | `claude-opus-4-8` | Wrapper model argument; check support in the installed client/provider |
-| `SBA_SUMMARY_CLAUDE_EFFORT` | `max` | Wrapper effort argument |
+| Variable                    | Checked-in default                                  | Purpose                                                                  |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ |
+| `SBA_SUMMARY_CODEX_BIN`     | Homebrew Codex executable location                  | Override with the installed Codex executable                             |
+| `SBA_SUMMARY_CODEX_AUTH`    | `auth.json` in the configured Codex state directory | Wrapper credential source; honors `CODEX_HOME` for its default directory |
+| `SBA_SUMMARY_CODEX_MODEL`   | Unset                                               | Omit `--model` unless explicitly configured                              |
+| `SBA_SUMMARY_CLAUDE_BIN`    | `claude`                                            | Claude executable                                                        |
+| `SBA_SUMMARY_CLAUDE_MODEL`  | `claude-opus-4-8`                                   | Wrapper model argument; check support in the installed client/provider   |
+| `SBA_SUMMARY_CLAUDE_EFFORT` | `max`                                               | Wrapper effort argument                                                  |
 
 These are source defaults, not a claim that a particular client or provider currently accepts
 every model argument. External wrappers require their CLI and credentials in the service context.
 
 ### Memory recall and Elasticsearch
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_MEMORY_EMBEDDING_ENABLED` | `true` | Enable structured-intent semantic recall; unavailable embeddings leave lexical recall usable |
-| `SBA_MEMORY_EMBEDDING_URL` | `http://localhost:11434` | Ollama-compatible memory embedding base URL |
-| `SBA_MEMORY_EMBEDDING_PATH` | `/api/embeddings` | Embedding request path |
-| `SBA_MEMORY_EMBEDDING_MODEL` | `nomic-embed-text` | Model for structured intent and stored summary vectors |
-| `SBA_MEMORY_EMBEDDING_DIMENSIONS` | `768` | Expected vector dimensions |
-| `SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX` | `search_document: ` | Stored-text prefix, including trailing space; empty disables |
-| `SBA_MEMORY_EMBEDDING_QUERY_PREFIX` | `search_query: ` | Query prefix, including trailing space; empty disables |
-| `SBA_MEMORY_RECALL_RELEVANCE_FLOOR` | `0.61` | Cosine floor for semantic-only additions; values at or below zero disable it |
-| `SBA_RECALL_TELEMETRY_PROJECT_ALIASES` | Empty | Comma-separated allowlist of safe declared telemetry project aliases |
-| `SBA_SQLITE_VEC_PATH` | Empty | Optional SQLite native accelerator; empty uses portable Java cosine ranking. PostgreSQL skips extension loading. |
-| `SBA_ELASTICSEARCH_ENABLED` | `false` | Enable optional secondary event indexing |
-| `SBA_ELASTICSEARCH_URL` | `http://localhost:9200` | Elasticsearch base URL |
-| `SBA_ELASTICSEARCH_INDEX` | `sba-agentic-events` | Event index name |
-| `SBA_ELASTICSEARCH_REPLICAS` | `0` | Replica setting when creating the event index |
+| Variable                               | Default                  | Purpose                                                                                                          |
+| -------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `SBA_MEMORY_EMBEDDING_ENABLED`         | `true`                   | Enable structured-intent semantic recall; unavailable embeddings leave lexical recall usable                     |
+| `SBA_MEMORY_EMBEDDING_URL`             | `http://localhost:11434` | Ollama-compatible memory embedding base URL                                                                      |
+| `SBA_MEMORY_EMBEDDING_PATH`            | `/api/embeddings`        | Embedding request path                                                                                           |
+| `SBA_MEMORY_EMBEDDING_MODEL`           | `nomic-embed-text`       | Model for structured intent and stored summary vectors                                                           |
+| `SBA_MEMORY_EMBEDDING_DIMENSIONS`      | `768`                    | Expected vector dimensions                                                                                       |
+| `SBA_MEMORY_EMBEDDING_DOCUMENT_PREFIX` | `search_document: `      | Stored-text prefix, including trailing space; empty disables                                                     |
+| `SBA_MEMORY_EMBEDDING_QUERY_PREFIX`    | `search_query: `         | Query prefix, including trailing space; empty disables                                                           |
+| `SBA_MEMORY_RECALL_RELEVANCE_FLOOR`    | `0.61`                   | Cosine floor for semantic-only additions; values at or below zero disable it                                     |
+| `SBA_RECALL_TELEMETRY_PROJECT_ALIASES` | Empty                    | Comma-separated allowlist of safe declared telemetry project aliases                                             |
+| `SBA_SQLITE_VEC_PATH`                  | Empty                    | Optional SQLite native accelerator; empty uses portable Java cosine ranking. PostgreSQL skips extension loading. |
+| `SBA_ELASTICSEARCH_ENABLED`            | `false`                  | Enable optional secondary event indexing                                                                         |
+| `SBA_ELASTICSEARCH_URL`                | `http://localhost:9200`  | Elasticsearch base URL                                                                                           |
+| `SBA_ELASTICSEARCH_INDEX`              | `sba-agentic-events`     | Event index name                                                                                                 |
+| `SBA_ELASTICSEARCH_REPLICAS`           | `0`                      | Replica setting when creating the event index                                                                    |
 
 Semantic recall returns Decisions, Handoffs, Observations, Ideas, and Evidence. Projections are lexical-only;
 summary vectors are stored but not returned by recall, and the full event corpus is not
@@ -733,37 +777,37 @@ reads. Point `SBA_ASK_MEMORY_INDEX` at an index you actually populate. `sba-agen
 valid target for lexical retrieval, but it carries no vector field, so hybrid retrieval degrades to
 BM25 against it.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_ASK_MEMORY_INDEX` | `agent-memory` | Ask retrieval index |
-| `SBA_ASK_VECTOR_FIELD` | `vector` | Vector field in that index |
-| `SBA_ASK_EMBEDDING_ENABLED` | `true` | Enable Ask query embeddings |
-| `SBA_ASK_EMBEDDING_URL` | `http://localhost:11434` | Ask embedding base URL |
-| `SBA_ASK_EMBEDDING_PATH` | `/api/embeddings` | Ask embedding request path |
-| `SBA_ASK_EMBEDDING_MODEL` | `nomic-embed-text` | Ask embedding model |
-| `SBA_ASK_EMBEDDING_DIMENSIONS` | `768` | Ask vector dimensions |
-| `SBA_ASK_DEFAULT_CITATIONS` | `6` | Default answer citation count |
-| `SBA_ASK_DEFAULT_RETRIEVE_RESULTS` | `10` | Default retrieval result count |
-| `SBA_ASK_ANSWER_MAX_TOKENS` | `640` | Answer token budget |
+| Variable                           | Default                  | Purpose                        |
+| ---------------------------------- | ------------------------ | ------------------------------ |
+| `SBA_ASK_MEMORY_INDEX`             | `agent-memory`           | Ask retrieval index            |
+| `SBA_ASK_VECTOR_FIELD`             | `vector`                 | Vector field in that index     |
+| `SBA_ASK_EMBEDDING_ENABLED`        | `true`                   | Enable Ask query embeddings    |
+| `SBA_ASK_EMBEDDING_URL`            | `http://localhost:11434` | Ask embedding base URL         |
+| `SBA_ASK_EMBEDDING_PATH`           | `/api/embeddings`        | Ask embedding request path     |
+| `SBA_ASK_EMBEDDING_MODEL`          | `nomic-embed-text`       | Ask embedding model            |
+| `SBA_ASK_EMBEDDING_DIMENSIONS`     | `768`                    | Ask vector dimensions          |
+| `SBA_ASK_DEFAULT_CITATIONS`        | `6`                      | Default answer citation count  |
+| `SBA_ASK_DEFAULT_RETRIEVE_RESULTS` | `10`                     | Default retrieval result count |
+| `SBA_ASK_ANSWER_MAX_TOKENS`        | `640`                    | Answer token budget            |
 
 ### Hook environment variables
 
 Capture and recall hooks are opt-in; see [Connect an agent](agent-integration.md) for registration.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `SBA_AGENTIC_URL` | `http://localhost:8766` | Capture/recall service URL |
-| `SBA_AGENT_SOURCE` | Positional source argument, otherwise `unknown` | Capture source override |
-| `SBA_CAPTURE_DURABLE` | `0` | Set `1` to enable the sanitized local outbox; its default URL is numeric-loopback `http://127.0.0.1:8766` |
-| `SBA_CAPTURE_OUTBOX_DIR` | `~/.blackbox/outbox` | Private local capture queue directory |
-| `SBA_CAPTURE_HTTPS_ORIGIN` | Unset | Exact normalized HTTPS destination opt-in; must match the selected URL and uses an origin-bound macOS Keychain bearer |
-| `SBA_RECALL_WITHIN_HOURS` | `720` | Recall lookback, 30 days |
-| `SBA_RECALL_LIMIT` | `3` | Maximum hook items |
-| `SBA_RECALL_MAX_CHARS` | `4000` | Hook context-block budget, separate from MCP's default 24,000-character item-text clamp |
-| `SBA_RECALL_CLIENT` | `unknown` | Client label; `--client` takes precedence |
-| `SBA_RECALL_LOG` | `recall.log` in the user's Black Box state directory | Fire log; explicit empty value or `off` disables it |
-| `SBA_RECALL_PURPOSE` | `normal` | Declared `normal`, `audit`, or `test` use; other values normalize to `unknown` |
-| `SBA_RECALL_PROJECT_ALIAS` | `unknown` | Safe declared alias; must satisfy the format and server allowlist |
+| Variable                   | Default                                              | Purpose                                                                                                               |
+| -------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `SBA_AGENTIC_URL`          | `http://localhost:8766`                              | Capture/recall service URL                                                                                            |
+| `SBA_AGENT_SOURCE`         | Positional source argument, otherwise `unknown`      | Capture source override                                                                                               |
+| `SBA_CAPTURE_DURABLE`      | `0`                                                  | Set `1` to enable the sanitized local outbox; its default URL is numeric-loopback `http://127.0.0.1:8766`             |
+| `SBA_CAPTURE_OUTBOX_DIR`   | `~/.blackbox/outbox`                                 | Private local capture queue directory                                                                                 |
+| `SBA_CAPTURE_HTTPS_ORIGIN` | Unset                                                | Exact normalized HTTPS destination opt-in; must match the selected URL and uses an origin-bound macOS Keychain bearer |
+| `SBA_RECALL_WITHIN_HOURS`  | `720`                                                | Recall lookback, 30 days                                                                                              |
+| `SBA_RECALL_LIMIT`         | `3`                                                  | Maximum hook items                                                                                                    |
+| `SBA_RECALL_MAX_CHARS`     | `4000`                                               | Hook context-block budget, separate from MCP's default 24,000-character item-text clamp                               |
+| `SBA_RECALL_CLIENT`        | `unknown`                                            | Client label; `--client` takes precedence                                                                             |
+| `SBA_RECALL_LOG`           | `recall.log` in the user's Black Box state directory | Fire log; explicit empty value or `off` disables it                                                                   |
+| `SBA_RECALL_PURPOSE`       | `normal`                                             | Declared `normal`, `audit`, or `test` use; other values normalize to `unknown`                                        |
+| `SBA_RECALL_PROJECT_ALIAS` | `unknown`                                            | Safe declared alias; must satisfy the format and server allowlist                                                     |
 
 Hook success does not prove persistence or delivery: the bridges deliberately do not fail the
 host turn. Legacy direct capture and recall hooks do not attach bearer authentication; setting

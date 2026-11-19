@@ -24,11 +24,16 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RedactionService implements ExportRedactor, IngestionRedactor {
 
+    private static final Logger log = LoggerFactory.getLogger(RedactionService.class);
     private static final String REDACTED = "[REDACTED]";
     // Words that make any name a credential name, in every form and letter case.
     private static final String STRONG_SECRET_WORDS =
@@ -234,7 +239,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return null;
 
-        return redactDefaults(text, exportRules);
+        return redactOwnAndDefaults(text, exportRules);
     }
 
     @Override
@@ -243,7 +248,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return null;
 
-        return redactDefaults(text, BUILT_IN_RULES);
+        return redactOwnAndDefaults(text, BUILT_IN_RULES);
     }
 
     // The structured, separator-insensitive secret-key policy for member names and property-list
@@ -262,30 +267,75 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     private final boolean enabled;
     private final boolean defaultRules;
     private final List<RedactionRule> rules;
+    // The exact values of this service's own credentials: masked at every entry point, before and
+    // independently of the rules above, including when ingestion redaction is disabled or customized.
+    private final ConfiguredSecretMasker ownSecrets;
 
+    /** Rules only, with no configured values to mask. */
     public RedactionService(IngestionProperties properties) {
+        this(properties, ConfiguredSecretMasker.none());
+    }
+
+    @Autowired
+    public RedactionService(IngestionProperties properties, Environment environment) {
+        this(properties, configuredSecrets(properties, environment));
+    }
+
+    RedactionService(IngestionProperties properties, ConfiguredSecretMasker ownSecrets) {
         this.enabled = properties.isRedactEnabled();
         List<String> customPatterns = properties.getRedactPatterns();
         this.defaultRules = customPatterns.isEmpty();
         this.rules = defaultRules ? BUILT_IN_RULES : customRules(customPatterns);
+        this.ownSecrets = ownSecrets;
+    }
+
+    private static ConfiguredSecretMasker configuredSecrets(IngestionProperties properties, Environment environment) {
+        if (!properties.isMaskConfiguredSecrets()) {
+
+            return ConfiguredSecretMasker.none();
+        }
+        ConfiguredSecretMasker masker = ConfiguredSecretMasker.ofValues(
+                ConfiguredSecretValues.collect(environment, RedactionService::isCredentialSetting));
+        // The count only: never a name or a value.
+        log.info("Masking {} configured secret value(s) in captured and exported text", masker.secretCount());
+
+        return masker;
+    }
+
+    // A setting that holds a credential, by the structured secret-key policy; a token limit
+    // (sba.local-ai.max-tokens) is not one.
+    private static boolean isCredentialSetting(String name) {
+
+        return isSecretKey(name) && !countsTokens(name);
     }
 
     @Override
     public String redact(String text) {
-        if (!enabled || text == null) {
+        if (text == null) {
 
-            return text;
+            return null;
+        }
+        if (!enabled) {
+
+            return ownSecrets.mask(text);
         }
         if (defaultRules) {
 
-            return redactDefaults(text, rules);
+            return redactOwnAndDefaults(text, rules);
         }
-        String redacted = clipScalar(text);
+        String redacted = clipScalar(ownSecrets.maskWithin(text, MAX_SCAN_CHARS));
         for (RedactionRule rule : rules) {
             redacted = rule.redact(redacted);
         }
 
-        return redacted;
+        return ownSecrets.mask(redacted);
+    }
+
+    // Own values first: a rule that replaced only part of one would leave a remainder that no longer
+    // matches. Again afterwards, for a value the rules' escape decoding brought into view.
+    private String redactOwnAndDefaults(String text, List<RedactionRule> rules) {
+
+        return ownSecrets.mask(redactDefaults(ownSecrets.maskWithin(text, MAX_SCAN_CHARS), rules));
     }
 
     private static String redactDefaults(String text, List<RedactionRule> rules) {
@@ -401,9 +451,13 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
     @Override
     public Object redactDeep(Object value) {
-        if (!enabled || value == null) {
+        if (value == null || (!enabled && ownSecrets.isEmpty())) {
 
             return value;
+        }
+        if (!enabled) {
+
+            return redactTree(value, ownSecrets::mask, false, false);
         }
 
         return redactTree(value, this::redact, defaultRules, false);
@@ -428,7 +482,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             // Not one JSON value, such as text stored before tool payloads were JSON.
             return redactForSummary(json);
         }
-        Object redacted = redactTree(stored.value(), RedactionService::redactStoredText, true, true);
+        Object redacted = redactTree(stored.value(), this::redactStoredText, true, true);
         if (!stored.cut() && Objects.equals(redacted, stored.value())) {
 
             return json;
@@ -442,9 +496,9 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
     }
 
-    private static String redactStoredText(String text) {
+    private String redactStoredText(String text) {
 
-        return redactDefaults(text, BUILT_IN_RULES);
+        return redactOwnAndDefaults(text, BUILT_IN_RULES);
     }
 
     /** A stored JSON value as Jackson reads one, and whether it was cut at its budget. */

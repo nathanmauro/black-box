@@ -10,6 +10,7 @@ public class IngestionProperties {
     private int maxTextLength = 20_000;
     private boolean redactEnabled = true;
     private List<String> redactPatterns = new ArrayList<>();
+    private boolean maskConfiguredSecrets = true;
 
     public int getMaxTextLength() {
 
@@ -27,6 +28,15 @@ public class IngestionProperties {
 
     public void setRedactEnabled(boolean redactEnabled) {
         this.redactEnabled = redactEnabled;
+    }
+
+    public boolean isMaskConfiguredSecrets() {
+
+        return maskConfiguredSecrets;
+    }
+
+    public void setMaskConfiguredSecrets(boolean maskConfiguredSecrets) {
+        this.maskConfiguredSecrets = maskConfiguredSecrets;
     }
 
     public List<String> getRedactPatterns() {

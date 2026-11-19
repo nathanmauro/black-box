@@ -140,6 +140,9 @@ sba:
     # Secret-looking values (private key blocks, bearer/API keys, AWS credentials, and password/token
     # assignments) are replaced with [REDACTED] before persistence.
     redact-enabled: ${SBA_REDACT_ENABLED:true}
+    # The exact values of this service's own credential-named settings (environment, properties,
+    # imported files) are replaced wherever they appear, whatever redact-enabled and redact-patterns say.
+    mask-configured-secrets: ${SBA_MASK_CONFIGURED_SECRETS:true}
   judge:
     enabled: ${SBA_JUDGE_ENABLED:false}
     provider: ${SBA_JUDGE_PROVIDER:jev}
