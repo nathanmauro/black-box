@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# Nightly offsite snapshot of the live Black Box SQLite DB.
+# Nightly encrypted offsite backup of the Black Box and Job Scout SQLite databases.
 #
-# Snapshot with blackbox_backup.py (one-step backup API, read-only source, quick_check), compress
-# with zstd, copy into a Google Drive for desktop folder, keep the newest KEEP_REMOTE there and
-# KEEP_LOCAL locally. Prunes only files matching its own blackbox-nightly-* pattern.
+# blackbox_offsite_backup.py does the work: a WAL-safe snapshot of each database, integrity_check,
+# row counts, an AES-256 archive with an authenticated manifest, a copy into a Google Drive for
+# desktop folder, and a restore test of that offsite copy. It keeps the newest KEEP_REMOTE sets
+# there and KEEP_LOCAL locally, and prunes only files matching its own names.
 # Failure posts to Slack through `todo notify --route alerts` when that CLI exists.
+#
+# SBA_BACKUP_DRY_RUN=1 prints the plan and touches nothing. An empty SBA_BACKUP_JOBS_SOURCE
+# skips the Job Scout database.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DB="${SBA_BACKUP_SOURCE:-$HOME/.local/share/sba-agentic/sba-agentic.db}"
+JOBS_DB="${SBA_BACKUP_JOBS_SOURCE-$HOME/Developer/proj/job-scout/state/jobs.sqlite3}"
 LOCAL_DIR="${SBA_BACKUP_LOCAL_DIR:-$HOME/.local/share/sba-agentic/backups/nightly}"
 DRIVE_ROOT="${SBA_BACKUP_DRIVE_ROOT:-$HOME/Library/CloudStorage/GoogleDrive-nathan.e.mauro@gmail.com/My Drive}"
 REMOTE_DIR="${SBA_BACKUP_REMOTE_DIR:-$DRIVE_ROOT/Data/Backups/black-box}"
+PASSPHRASE_FILE="${SBA_BACKUP_PASSPHRASE_FILE:-$HOME/.config/blackbox/backup-passphrase}"
 KEEP_REMOTE="${SBA_BACKUP_KEEP_REMOTE:-3}"
 KEEP_LOCAL="${SBA_BACKUP_KEEP_LOCAL:-1}"
-
-STAMP="$(date +%Y%m%d-%H%M%S)"
-NAME="blackbox-nightly-$STAMP"
+DRY_RUN="${SBA_BACKUP_DRY_RUN:-0}"
 
 log() {
     printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
@@ -30,45 +34,31 @@ fail() {
     exit 1
 }
 
-# Keep the newest $2 files matching blackbox-nightly-*$3 in directory $1.
-prune() {
-    local dir="$1"
-    local keep="$2"
-    local suffix="$3"
-    local old
-    old="$(find "$dir" -maxdepth 1 -type f -name "blackbox-nightly-*$suffix" | sort -r | tail -n +"$((keep + 1))")"
-    if [ -n "$old" ]; then
-        printf '%s\n' "$old" | while IFS= read -r file; do
-            rm -f -- "$file"
-            log "pruned $file"
-        done
-    fi
-}
+args=(
+    backup
+    --database "blackbox-nightly=$SOURCE_DB"
+    --local-dir "$LOCAL_DIR"
+    --offsite-dir "$REMOTE_DIR"
+    --passphrase-file "$PASSPHRASE_FILE"
+    --keep-local "$KEEP_LOCAL"
+    --keep-offsite "$KEEP_REMOTE"
+)
 
-command -v zstd >/dev/null 2>&1 || fail "zstd_missing"
+if [ -n "$JOBS_DB" ]; then
+    args+=(--database "jobscout-nightly=$JOBS_DB")
+fi
+
+if [ "$DRY_RUN" = "1" ]; then
+    result="$(python3 "$SCRIPT_DIR/blackbox_offsite_backup.py" "${args[@]}")" ||
+        fail "$(printf '%s' "$result" | tr -d '\n')"
+    log "dry run $result"
+    exit 0
+fi
+
 [ -d "$DRIVE_ROOT" ] || fail "drive_not_mounted"
 mkdir -p "$LOCAL_DIR" "$REMOTE_DIR"
 
-log "snapshot start $SOURCE_DB"
-result="$(python3 "$SCRIPT_DIR/blackbox_backup.py" sqlite \
-    --source "$SOURCE_DB" \
-    --output "$LOCAL_DIR/$NAME.db" \
-    --execute)" || fail "$(printf '%s' "$result" | tr -d '\n')"
-log "snapshot $result"
-
-zstd -q -T0 -6 --rm "$LOCAL_DIR/$NAME.db" -o "$LOCAL_DIR/$NAME.db.zst" || fail "zstd_failed"
-zstd -q -t "$LOCAL_DIR/$NAME.db.zst" || fail "zstd_verify_failed"
-printf '%s\n' "$result" >"$LOCAL_DIR/$NAME.json"
-log "compressed $(du -h "$LOCAL_DIR/$NAME.db.zst" | cut -f1)"
-
-# Copy under a temp name, then rename, so Drive never uploads a half-written archive.
-cp "$LOCAL_DIR/$NAME.db.zst" "$REMOTE_DIR/.$NAME.db.zst.partial" || fail "drive_copy_failed"
-mv "$REMOTE_DIR/.$NAME.db.zst.partial" "$REMOTE_DIR/$NAME.db.zst"
-cp "$LOCAL_DIR/$NAME.json" "$REMOTE_DIR/$NAME.json"
-log "copied to $REMOTE_DIR"
-
-prune "$REMOTE_DIR" "$KEEP_REMOTE" ".db.zst"
-prune "$REMOTE_DIR" "$KEEP_REMOTE" ".json"
-prune "$LOCAL_DIR" "$KEEP_LOCAL" ".db.zst"
-prune "$LOCAL_DIR" "$KEEP_LOCAL" ".json"
-log "done $NAME"
+log "backup start"
+result="$(python3 "$SCRIPT_DIR/blackbox_offsite_backup.py" "${args[@]}" --execute)" ||
+    fail "$(printf '%s' "$result" | tr -d '\n')"
+log "done $result"

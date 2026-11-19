@@ -182,25 +182,89 @@ compatible extensions and roles. Compare native typed records and application be
 restore and after restart. Never use a broad cleanup against a shared cluster to make a rehearsal
 pass. This change intentionally provides no production restore command.
 
-## Nightly offsite snapshot (installed service)
+## Nightly encrypted offsite backup (installed service)
 
 `com.nathan.sba-agentic-backup` runs
 [`nightly-drive-backup.sh`](../scripts/storage/nightly-drive-backup.sh) at 03:30 local time. It
-snapshots the live DB with the backup CLI, compresses it with zstd, and copies it into Google Drive
-for desktop (`My Drive/Data/Backups/black-box/`). It keeps the newest 3 there and 1 locally under
-`~/.local/share/sba-agentic/backups/nightly/`. Each archive has a `.json` sidecar with the CLI's
-completion record, including the snapshot's SHA-256. A failure is sent to Slack through
-`todo notify --route alerts`. The log is `~/Library/Logs/sba-agentic-backup.log`.
+calls [`blackbox_offsite_backup.py`](../scripts/storage/blackbox_offsite_backup.py) for two
+databases: the Black Box database (`blackbox-nightly`) and the Job Scout database
+(`jobscout-nightly`). For each one the tool:
+
+1. Takes a snapshot with the backup CLI above, so rows that live only in the WAL are included.
+2. Runs `PRAGMA integrity_check` on the snapshot and counts the rows of every ordinary table.
+3. Compresses it with zstd when zstd is installed, then encrypts it with `openssl enc`
+   (AES-256-CBC, PBKDF2-HMAC-SHA256, 600,000 iterations).
+4. Writes a manifest with the SHA-256 of the archive and of the snapshot, the schema fingerprint
+   and the row counts. The manifest carries an HMAC keyed from the same passphrase, so an edited
+   manifest or a wrong passphrase is rejected before anything is decrypted.
+5. Copies the archive and then the manifest into the local directory and the offsite directory,
+   under a hidden partial name first, and re-reads each published archive to check its hash.
+6. Restores the offsite copy into a new scratch directory and compares its hash, schema and row
+   counts with the manifest, then deletes the scratch copy.
+7. Keeps the newest 3 sets offsite and 1 locally. It prunes only its own
+   `<label>-<stamp>.sqlite3[.zst].enc` and `<label>-<stamp>.manifest.json` names.
+
+The offsite directory is any local directory. The installed job points it at Google Drive for
+desktop (`My Drive/Data/Backups/black-box/`), which uploads it; a temporary directory works the
+same way, so the whole path is testable without credentials. The tool never creates the offsite
+directory: a missing one usually means the drive is not mounted.
+
+The manifest is not encrypted. It holds table names and row counts, never row content or a
+source path. A failure is sent to Slack through `todo notify --route alerts` as a stable error
+code. The log is `~/Library/Logs/sba-agentic-backup.log`.
+
+### One-time setup
+
+The job fails closed with `passphrase_file_missing` until a passphrase exists. Create one that
+only your account can read, and keep a second copy somewhere that is not this disk (a password
+manager): without it the archives cannot be restored.
 
 ```bash
+mkdir -p ~/.config/blackbox
+openssl rand -base64 48 > ~/.config/blackbox/backup-passphrase
+chmod 600 ~/.config/blackbox/backup-passphrase
+
 cp scripts/storage/com.nathan.sba-agentic-backup.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nathan.sba-agentic-backup.plist
 launchctl kickstart gui/$(id -u)/com.nathan.sba-agentic-backup   # run now
 ```
 
-To rehearse a restore, decompress a copy into a scratch directory, check that its SHA-256 matches
-the sidecar, and open it with `PRAGMA quick_check`. Never decompress over the running service's
-database.
+| Variable                                           | Default                                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `SBA_BACKUP_SOURCE`                                | `~/.local/share/sba-agentic/sba-agentic.db`                                     |
+| `SBA_BACKUP_JOBS_SOURCE`                           | `~/Developer/proj/job-scout/state/jobs.sqlite3`; set it empty to skip Job Scout |
+| `SBA_BACKUP_PASSPHRASE_FILE`                       | `~/.config/blackbox/backup-passphrase`                                          |
+| `SBA_BACKUP_LOCAL_DIR`                             | `~/.local/share/sba-agentic/backups/nightly`                                    |
+| `SBA_BACKUP_DRIVE_ROOT` / `SBA_BACKUP_REMOTE_DIR`  | Google Drive for desktop, `Data/Backups/black-box`                              |
+| `SBA_BACKUP_KEEP_REMOTE` / `SBA_BACKUP_KEEP_LOCAL` | `3` / `1`                                                                       |
+| `SBA_BACKUP_DRY_RUN`                               | `0`; `1` prints the plan and touches nothing                                    |
+
+Earlier versions of this job uploaded unencrypted `blackbox-nightly-*.db.zst` files. The job no
+longer writes or prunes them; remove the old ones from Drive by hand once an encrypted set exists.
+
+### Rehearsing a restore
+
+`restore-test` verifies any published set without touching a live database. It checks the
+manifest HMAC and the archive hash, decrypts into a directory that must not exist yet, and
+compares the result with the manifest. Without `--execute` it prints the plan only.
+
+```bash
+python3 scripts/storage/blackbox_offsite_backup.py restore-test \
+  --manifest "<offsite dir>/blackbox-nightly-<stamp>.manifest.json" \
+  --passphrase-file ~/.config/blackbox/backup-passphrase \
+  --scratch-dir /tmp/blackbox-restore-test \
+  --keep-restored --execute
+```
+
+`--keep-restored` leaves `<scratch dir>/<label>.sqlite3` for inspection; without it the scratch
+directory is deleted after verification. To put a restored file into service, follow the
+disposable restore rehearsal rules above. Never decrypt over the running service's database.
+
+To try the whole path against throwaway copies, point every variable at a temporary directory:
+
+```bash
+python3 -B -m unittest discover -s scripts/storage -p 'test_blackbox_offsite_backup.py'
+```
 
 ## Outside the artifact
 
