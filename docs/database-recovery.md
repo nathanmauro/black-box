@@ -242,6 +242,14 @@ launchctl kickstart gui/$(id -u)/com.nathan.sba-agentic-backup   # run now
 Earlier versions of this job uploaded unencrypted `blackbox-nightly-*.db.zst` files. The job no
 longer writes or prunes them; remove the old ones from Drive by hand once an encrypted set exists.
 
+### Checking backup health from the service
+
+`GET /api/diagnostics/storage` lists the newest local manifests and reports, per database label,
+whether the newest set is sealed, complete, fresh, and backed by an archive of the recorded size
+(`?verifyChecksums=true` also rehashes it). The service never reads the passphrase, so it cannot
+check the MAC; `restore-test` below remains the cryptographic proof. See
+[Storage diagnostics](storage-diagnostics.md).
+
 ### Rehearsing a restore
 
 `restore-test` verifies any published set without touching a live database. It checks the

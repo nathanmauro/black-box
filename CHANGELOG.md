@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- `GET /api/diagnostics/storage` reports storage health read-only: SQLite file, WAL and SHM sizes and
+  `PRAGMA` readings, per-table row counts, FTS and embedding/vector index parity, per-channel
+  redaction counters, and structural checks of the nightly backup manifests (sealed envelope,
+  archive presence and size, optional SHA-256). Responses carry no secret, path, hash or MAC, and
+  the service never reads the backup passphrase. See `docs/storage-diagnostics.md`.
+- An offline recall quality benchmark (`scripts/recall-benchmark.sh`, also run by `mvn test`) seeds
+  a synthetic multi-project corpus and scores recall, compact search and braid discovery with
+  precision@k, MRR, NDCG@10 and latency percentiles, with no Elasticsearch, model or network call.
+  See `docs/recall-benchmark.md`.
 - Black Box masks the exact values of its own configured credentials (any credential-named
   environment variable or property it was started with) at every redaction entry point, whatever
   shape displays them: capture, saved melds and braids, the text sent to summary and meld backends,

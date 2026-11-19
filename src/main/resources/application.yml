@@ -53,6 +53,12 @@ sba:
   storage:
     # Explicit, irreversible retirement of dormant board rows after a database backup.
     retire-workflow: ${SBA_RETIRE_WORKFLOW:false}
+  diagnostics:
+    # Local copy of the nightly offsite backup's sealed manifests, read by GET
+    # /api/diagnostics/storage. The server never reads the backup passphrase. A leading ~/ is
+    # the service user's home; blank skips the check.
+    backup-dir: ${SBA_DIAGNOSTICS_BACKUP_DIR:~/.local/share/sba-agentic/backups/nightly}
+    backup-max-age-hours: ${SBA_DIAGNOSTICS_BACKUP_MAX_AGE_HOURS:36}
   editor:
     # File navigation is catalog-bound and revalidated on every request. Only fixed,
     # explicitly allowlisted VS Code-compatible CLI binaries can be launched.

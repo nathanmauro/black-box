@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import dev.nathan.sbaagentic.recording.ExportRedactor;
 import dev.nathan.sbaagentic.recording.IngestionProperties;
 import dev.nathan.sbaagentic.recording.IngestionRedactor;
+import dev.nathan.sbaagentic.recording.RedactionStatistics;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -239,7 +240,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return null;
 
-        return redactOwnAndDefaults(text, exportRules);
+        return counters.export.record(text, redactOwnAndDefaults(text, exportRules));
     }
 
     @Override
@@ -247,6 +248,11 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         if (text == null)
 
             return null;
+
+        return counters.summary.record(text, summaryText(text));
+    }
+
+    private String summaryText(String text) {
 
         return redactOwnAndDefaults(text, BUILT_IN_RULES);
     }
@@ -270,6 +276,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // The exact values of this service's own credentials: masked at every entry point, before and
     // independently of the rules above, including when ingestion redaction is disabled or customized.
     private final ConfiguredSecretMasker ownSecrets;
+    private final RedactionCounters counters = new RedactionCounters();
 
     /** Rules only, with no configured values to mask. */
     public RedactionService(IngestionProperties properties) {
@@ -315,6 +322,23 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return null;
         }
+
+        return counters.ingest.record(text, ingestText(text));
+    }
+
+    /** Counts and configuration flags since this service was created. */
+    public RedactionStatistics statistics() {
+
+        return new RedactionStatistics(
+                enabled,
+                defaultRules,
+                ownSecrets.secretCount(),
+                counters.ingest.snapshot(),
+                counters.export.snapshot(),
+                counters.summary.snapshot());
+    }
+
+    private String ingestText(String text) {
         if (!enabled) {
 
             return ownSecrets.mask(text);
@@ -476,11 +500,16 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
             return null;
         }
+
+        return counters.summary.record(json, summaryJson(json, maxChars));
+    }
+
+    private String summaryJson(String json, int maxChars) {
         StoredJson stored = readStoredJson(json, maxChars);
         if (stored == null) {
 
             // Not one JSON value, such as text stored before tool payloads were JSON.
-            return redactForSummary(json);
+            return summaryText(json);
         }
         Object redacted = redactTree(stored.value(), this::redactStoredText, true, true);
         if (!stored.cut() && Objects.equals(redacted, stored.value())) {
@@ -492,7 +521,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             return STORED_JSON.writeValueAsString(redacted);
         } catch (JsonProcessingException ex) {
 
-            return redactForSummary(json);
+            return summaryText(json);
         }
     }
 
