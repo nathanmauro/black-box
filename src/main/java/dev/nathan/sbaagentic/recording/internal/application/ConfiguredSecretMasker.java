@@ -226,8 +226,31 @@ final class ConfiguredSecretMasker {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         forms.add(Base64.getEncoder().withoutPadding().encodeToString(bytes));
         forms.add(Base64.getUrlEncoder().withoutPadding().encodeToString(bytes));
+        // Inside a longer Base64 stream (user:value in a registry auth, `echo value | base64` with its
+        // newline) the value can start at any byte offset mod 3, and its edge characters mix in the
+        // neighbouring bytes. Each offset registers the characters the value's own bytes decide.
+        for (int offset = 0; offset < 3; offset++) {
+            forms.add(alignedBase64(Base64.getEncoder().withoutPadding(), bytes, offset));
+            forms.add(alignedBase64(Base64.getUrlEncoder().withoutPadding(), bytes, offset));
+        }
 
         return forms;
+    }
+
+    /**
+     * The Base64 characters that depend only on {@code value} when it starts {@code offset} bytes
+     * into a 3-byte block and more bytes may follow. With one byte before it, the block's first two
+     * characters still hold bits of that byte; with two, the first three do. A trailing partial
+     * block's last character holds bits of whatever comes next, so it is dropped too.
+     */
+    static String alignedBase64(Base64.Encoder encoder, byte[] value, int offset) {
+        byte[] shifted = new byte[offset + value.length];
+        System.arraycopy(value, 0, shifted, offset, value.length);
+        String encoded = encoder.encodeToString(shifted);
+        int lead = offset == 0 ? 0 : offset + 1;
+        int end = encoded.length() - (shifted.length % 3 == 0 ? 0 : 1);
+
+        return lead < end ? encoded.substring(lead, end) : "";
     }
 
     private static String jsonEscape(String text, boolean htmlSafe) {

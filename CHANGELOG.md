@@ -20,6 +20,11 @@ All notable changes to this project will be documented in this file.
   values are skipped, and it works independently of `SBA_REDACT_ENABLED`; switch it off with
   `SBA_MASK_CONFIGURED_SECRETS=false`. A direct meld preview's answer is now redacted before it is
   returned.
+- Configured-secret masking also catches a value embedded inside a longer Base64 stream, such as a
+  registry `auth` of `user:value` or `echo value | base64` with its trailing newline, at every byte
+  alignment. Previously only a Base64 stream holding exactly the value was masked. New stress tests
+  cover adversarial regex input at the full scan budget, throughput, concurrency, idempotence, and
+  deep nesting.
 - The nightly backup now covers the Black Box and Job Scout databases and encrypts what leaves the
   machine. `scripts/storage/blackbox_offsite_backup.py` takes a WAL-safe snapshot, runs
   `PRAGMA integrity_check`, records per-table row counts and SHA-256 hashes in an authenticated
