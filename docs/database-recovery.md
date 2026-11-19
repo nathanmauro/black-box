@@ -198,11 +198,23 @@ databases: the Black Box database (`blackbox-nightly`) and the Job Scout databas
    and the row counts. The manifest carries an HMAC keyed from the same passphrase, so an edited
    manifest or a wrong passphrase is rejected before anything is decrypted.
 5. Copies the archive and then the manifest into the local directory and the offsite directory,
-   under a hidden partial name first, and re-reads each published archive to check its hash.
+   under a hidden partial name first, flushes each copy to disk, and re-reads each published
+   archive to check its hash.
 6. Restores the offsite copy into a new scratch directory and compares its hash, schema and row
-   counts with the manifest, then deletes the scratch copy.
-7. Keeps the newest 3 sets offsite and 1 locally. It prunes only its own
-   `<label>-<stamp>.sqlite3[.zst].enc` and `<label>-<stamp>.manifest.json` names.
+   counts with the manifest, then deletes the scratch copy. A set that fails this check is removed
+   from both directories again, so it never counts as a kept set or looks healthy.
+7. Keeps the set it just wrote plus the newest complete sets, 3 offsite and 1 locally. A set with
+   an archive but no manifest (or the reverse) is what a killed run left behind; it is removed and
+   never counted. It prunes only its own `<label>-<stamp>.sqlite3[.zst].enc` and
+   `<label>-<stamp>.manifest.json` names.
+
+The stamp is UTC (`YYYYMMDD-HHMMSS`), so a DST change or a time-zone move never makes an older set
+sort as the newest. One run holds a lock on the local directory; a second one fails with
+`backup_in_progress`. At its start a run removes the hidden staging directories and partial copies
+an earlier killed run left, and SIGTERM (launchd bootout, shutdown) still runs the cleanup. A
+failure on one database does not skip the next: every database is attempted, and the result names
+each failure. The local directory may not be the offsite directory or inside it, because the
+plaintext snapshot is staged there.
 
 The offsite directory is any local directory. The installed job points it at Google Drive for
 desktop (`My Drive/Data/Backups/black-box/`), which uploads it; a temporary directory works the
@@ -217,7 +229,10 @@ code. The log is `~/Library/Logs/sba-agentic-backup.log`.
 
 The job fails closed with `passphrase_file_missing` until a passphrase exists. Create one that
 only your account can read, and keep a second copy somewhere that is not this disk (a password
-manager): without it the archives cannot be restored.
+manager): without it the archives cannot be restored. The passphrase is the file's first line
+without its newline. A carriage return, a NUL or more than 1023 bytes fail with
+`passphrase_invalid`, because `openssl -pass file:` would read different bytes than the manifest
+check.
 
 ```bash
 mkdir -p ~/.config/blackbox
@@ -254,7 +269,9 @@ check the MAC; `restore-test` below remains the cryptographic proof. See
 
 `restore-test` verifies any published set without touching a live database. It checks the
 manifest HMAC and the archive hash, decrypts into a directory that must not exist yet, and
-compares the result with the manifest. Without `--execute` it prints the plan only.
+compares the result with the manifest. The manifest must keep its published
+`<label>-<stamp>.manifest.json` name and name its own archive, so an older set cannot pass for a
+newer one. Without `--execute` it prints the plan only.
 
 ```bash
 python3 scripts/storage/blackbox_offsite_backup.py restore-test \

@@ -56,7 +56,8 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 [ -d "$DRIVE_ROOT" ] || fail "drive_not_mounted"
-mkdir -p "$LOCAL_DIR" "$REMOTE_DIR"
+# Under set -e a bare mkdir failure would exit before fail, without an alert.
+mkdir -p "$LOCAL_DIR" "$REMOTE_DIR" || fail "backup_dir_unavailable"
 
 log "backup start"
 result="$(python3 "$SCRIPT_DIR/blackbox_offsite_backup.py" "${args[@]}" --execute)" ||

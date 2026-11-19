@@ -8,6 +8,7 @@ any published manifest. Nothing is read or written without --execute.
 """
 
 import argparse
+import fcntl
 import hashlib
 import hmac
 import json
@@ -15,6 +16,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import sqlite3
 import stat
 import subprocess
@@ -41,8 +43,22 @@ ARCHIVE_SUFFIXES = {"zstd": ".sqlite3.zst.enc", "none": ".sqlite3.enc"}
 MANIFEST_SUFFIX = ".manifest.json"
 LABEL = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 STAMP = re.compile(r"\d{8}-\d{6}")
+SET_FILE = re.compile(
+    r"[a-z0-9][a-z0-9-]{0,62}-\d{8}-\d{6}(?:\.manifest\.json|\.sqlite3(?:\.zst)?\.enc)"
+)
+STAGING_PREFIX = ".offsite-backup-"
 BLOCK = 1024 * 1024
 PIPELINE_TIMEOUT_SECONDS = 6 * 60 * 60
+# `openssl -pass file:` reads at most this many bytes of the first line.
+MAX_PASSPHRASE_BYTES = 1023
+
+
+class Terminated(BaseException):
+    """SIGTERM (launchd bootout, shutdown) as an exception, so every cleanup block still runs."""
+
+
+def terminate(signum, frame):
+    raise Terminated()
 
 
 class Parser(argparse.ArgumentParser):
@@ -106,7 +122,12 @@ def resolve_compression(choice):
 
 
 def read_passphrase(path):
-    """First line of a private file, the same bytes `openssl -pass file:` uses."""
+    """First line of a private file, the same bytes `openssl -pass file:` uses.
+
+    openssl cuts the line at its newline only, stops at a NUL and reads at most 1023 bytes. A
+    passphrase where that differs from the whole line (a CRLF file) is refused, so the manifest
+    key and the archive key always come from the same bytes.
+    """
     try:
         info = os.stat(path)
     except OSError:
@@ -120,12 +141,15 @@ def read_passphrase(path):
 
     try:
         with open(path, "rb") as handle:
-            passphrase = handle.readline().rstrip(b"\r\n")
+            line = handle.readline()
     except OSError:
         raise BackupError("passphrase_file_missing") from None
 
+    passphrase = line[:-1] if line.endswith(b"\n") else line
     if not passphrase:
         raise BackupError("passphrase_empty")
+    if b"\r" in passphrase or b"\0" in passphrase or len(passphrase) > MAX_PASSPHRASE_BYTES:
+        raise BackupError("passphrase_invalid")
 
     return passphrase
 
@@ -229,11 +253,21 @@ def run_pipeline(commands, source, destination):
             stdout.flush()
             os.fsync(stdout.fileno())
     except (OSError, subprocess.TimeoutExpired):
-        for process in processes:
-            process.kill()
+        stop_processes(processes)
         return False
+    except BaseException:
+        # Interrupted: no child may keep writing into a directory that is about to be removed.
+        stop_processes(processes)
+        raise
 
     return all(code == 0 for code in codes)
+
+
+def stop_processes(processes):
+    for process in processes:
+        process.kill()
+    for process in processes:
+        process.wait()
 
 
 def encrypt(snapshot, archive, compression, passphrase_file):
@@ -302,18 +336,45 @@ def open_manifest(path, passphrase):
     if not hmac.compare_digest(manifest_mac(body, passphrase, salt), mac):
         raise BackupError("manifest_authentication_failed")
 
-    archive = body.get("archive", {})
-    supported = (
-        body.get("format") == FORMAT
-        and archive.get("cipher") == CIPHER
-        and archive.get("iterations") == KDF_ITERATIONS
-        and archive.get("compression") in ARCHIVE_SUFFIXES
-        and Path(str(archive.get("name"))).name == archive.get("name")
-    )
-    if not supported:
+    if not supported_manifest(body, Path(path).name):
         raise BackupError("manifest_unsupported")
 
     return body
+
+
+def supported_manifest(body, file_name):
+    """The format this tool writes, with names that tie the manifest to one label and stamp.
+
+    The label becomes a file name in the scratch directory, and a manifest renamed to another
+    stamp would let an older set pass for a newer one, so both are checked, not trusted.
+    """
+    if not isinstance(body, dict) or not isinstance(body.get("archive"), dict):
+        return False
+
+    archive = body["archive"]
+    label = body.get("label")
+    stamp = body.get("stamp")
+    compression = archive.get("compression")
+    named = (
+        isinstance(label, str)
+        and isinstance(stamp, str)
+        and isinstance(compression, str)
+        and LABEL.fullmatch(label) is not None
+        and STAMP.fullmatch(stamp) is not None
+        and compression in ARCHIVE_SUFFIXES
+    )
+    if not named:
+        return False
+
+    base = label + "-" + stamp
+
+    return (
+        body.get("format") == FORMAT
+        and archive.get("cipher") == CIPHER
+        and archive.get("iterations") == KDF_ITERATIONS
+        and archive.get("name") == base + ARCHIVE_SUFFIXES[compression]
+        and file_name == base + MANIFEST_SUFFIX
+    )
 
 
 def restore_test(manifest_path, passphrase_file, scratch_dir, keep_restored=False):
@@ -365,15 +426,19 @@ def restore_test(manifest_path, passphrase_file, scratch_dir, keep_restored=Fals
 
 
 def publish(source, directory, name):
-    """Copy under a hidden partial name, rename, then re-read what actually landed."""
+    """Copy under a hidden partial name, flush, rename, then re-read what actually landed."""
     partial = directory / ("." + name + ".partial")
     final = directory / name
     try:
-        shutil.copyfile(source, partial)
+        # A partial left by a killed run, or a symlink planted there, is removed, never written
+        # through.
+        remove_file(partial)
+        copy_durably(source, partial)
         os.replace(partial, final)
+        sync_directory(directory)
     except OSError:
         try:
-            partial.unlink()
+            remove_file(partial)
         except OSError:
             pass
         raise BackupError("publish_failed") from None
@@ -381,21 +446,98 @@ def publish(source, directory, name):
     return final
 
 
-def prune(directory, label, keep):
-    """Keep the newest `keep` sets for one label. Only this tool's own names are removed."""
+def remove_file(path):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+
+
+def copy_durably(source, destination):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    with (
+        open(source, "rb") as reader,
+        os.fdopen(os.open(destination, flags, 0o600), "wb") as writer,
+    ):
+        shutil.copyfileobj(reader, writer, BLOCK)
+        writer.flush()
+        flush_to_disk(writer.fileno())
+
+
+def flush_to_disk(fd):
+    """fsync, as F_FULLFSYNC on macOS: a plain fsync there can stop in the drive's cache."""
+    full_sync = getattr(fcntl, "F_FULLFSYNC", None)
+    if full_sync is not None:
+        try:
+            fcntl.fcntl(fd, full_sync)
+            return
+        except OSError:
+            pass
+    os.fsync(fd)
+
+
+def sync_directory(directory):
+    """Make a rename durable. Some file systems refuse fsync on a directory; that is not fatal."""
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def withdraw(paths):
+    """Remove a set that failed its checks, so it neither counts as a kept set nor looks healthy."""
+    for path in paths:
+        try:
+            remove_file(path)
+        except OSError:
+            pass
+
+
+def prune(directory, label, keep, current):
+    """Keep `current` and the newest complete sets for one label, `keep` sets in all.
+
+    A set is complete when its archive and its manifest are both present. An incomplete set is
+    what a killed run left behind: it is removed, and never counted against `keep`. Only this
+    tool's own names are removed.
+    """
     pattern = re.compile(
-        re.escape(label) + r"-(\d{8}-\d{6})(\.manifest\.json|\.sqlite3(\.zst)?\.enc)"
+        re.escape(label) + r"-(\d{8}-\d{6})(?:(\.manifest\.json)|\.sqlite3(?:\.zst)?\.enc)"
     )
     stamps = {}
 
     for entry in directory.iterdir():
         match = pattern.fullmatch(entry.name)
         if match and entry.is_file() and not entry.is_symlink():
-            stamps.setdefault(match.group(1), []).append(entry)
+            kind = "manifest" if match.group(2) else "archive"
+            stamps.setdefault(match.group(1), []).append((kind, entry))
+
+    complete = sorted(
+        (
+            stamp
+            for stamp, entries in stamps.items()
+            if {kind for kind, _ in entries} == {"manifest", "archive"}
+        ),
+        reverse=True,
+    )
+    # The set just written and verified is never pruned, even when a clock change makes an older
+    # stamp sort after it.
+    kept = {current}
+    for stamp in complete:
+        if len(kept) >= max(keep, 1):
+            break
+        kept.add(stamp)
 
     removed = []
-    for stamp in sorted(stamps, reverse=True)[max(keep, 1) :]:
-        for entry in stamps[stamp]:
+    for stamp, entries in stamps.items():
+        if stamp in kept:
+            continue
+        for _, entry in entries:
             entry.unlink()
             removed.append(entry.name)
 
@@ -414,7 +556,7 @@ def backup_one(label, source, options, passphrase):
         if (directory / archive_name).exists() or (directory / manifest_name).exists():
             raise BackupError("output_exists")
 
-    staging = Path(tempfile.mkdtemp(prefix=".offsite-backup-", dir=local_dir))
+    staging = Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=local_dir))
     try:
         os.chmod(staging, 0o700)
         snapshot = staging / "snapshot.sqlite3"
@@ -453,12 +595,31 @@ def backup_one(label, source, options, passphrase):
             json.dump(seal_manifest(body, passphrase), handle, sort_keys=True, indent=2)
             handle.write("\n")
 
-        # The archive lands before its manifest, so a manifest never names a missing archive.
-        for directory in (local_dir, offsite_dir):
-            published = publish(staged_archive, directory, archive_name)
-            if sha256_file(published) != archive_sha256:
-                raise BackupError("publish_checksum_mismatch")
-            publish(staged_manifest, directory, manifest_name)
+        published = []
+        try:
+            # The archive lands before its manifest, so a manifest never names a missing archive.
+            for directory in (local_dir, offsite_dir):
+                archive_copy = publish(staged_archive, directory, archive_name)
+                published.append(archive_copy)
+                if sha256_file(archive_copy) != archive_sha256:
+                    raise BackupError("publish_checksum_mismatch")
+                published.append(publish(staged_manifest, directory, manifest_name))
+
+            if not options["skip_restore_test"]:
+                # Prove the copy that left the machine, not the one still on local disk.
+                restored = restore_test(
+                    offsite_dir / manifest_name,
+                    options["passphrase_file"],
+                    staging / "restore-test",
+                )
+                if (
+                    restored["sha256"] != database["sha256"]
+                    or restored["stamp"] != options["stamp"]
+                ):
+                    raise BackupError("restore_test_mismatch")
+        except BaseException:
+            withdraw(published)
+            raise
 
         result = {
             "label": label,
@@ -472,20 +633,13 @@ def backup_one(label, source, options, passphrase):
             "tables": len(database["tables"]),
             "total_rows": database["total_rows"],
             "compression": compression,
-            "restore_test": "skipped",
+            "restore_test": "skipped" if options["skip_restore_test"] else "verified",
         }
 
-        if not options["skip_restore_test"]:
-            # Prove the copy that left the machine, not the one still on local disk.
-            restore_test(
-                offsite_dir / manifest_name,
-                options["passphrase_file"],
-                staging / "restore-test",
-            )
-            result["restore_test"] = "verified"
-
-        result["pruned_local"] = prune(local_dir, label, options["keep_local"])
-        result["pruned_offsite"] = prune(offsite_dir, label, options["keep_offsite"])
+        result["pruned_local"] = prune(local_dir, label, options["keep_local"], options["stamp"])
+        result["pruned_offsite"] = prune(
+            offsite_dir, label, options["keep_offsite"], options["stamp"]
+        )
 
         return result
     finally:
@@ -493,7 +647,9 @@ def backup_one(label, source, options, passphrase):
 
 
 def backup_plan(args):
-    stamp = args.stamp or datetime.now().strftime("%Y%m%d-%H%M%S")
+    # UTC: a local stamp jumps back at a DST change or a time-zone move, and prune and the
+    # diagnostics endpoint both read the newest set from the stamp.
+    stamp = args.stamp or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     if not STAMP.fullmatch(stamp) or args.keep_local < 1 or args.keep_offsite < 1:
         raise BackupError("invalid_arguments")
 
@@ -536,17 +692,70 @@ def run_backup(args):
         if not directory.is_dir():
             raise BackupError(code)
 
+    local = options["local_dir"].resolve()
+    offsite = options["offsite_dir"].resolve()
+    # Staging holds plaintext in the local directory: inside the offsite one it would be uploaded,
+    # and one shared directory would get the smaller of the two retention counts.
+    if local == offsite or offsite in local.parents:
+        raise BackupError("local_dir_inside_offsite_dir")
+
+    lock = lock_directory(options["local_dir"])
+    try:
+        sweep_leftovers(options["local_dir"], options["offsite_dir"])
+        results, failures = back_up_each(options, passphrase)
+    finally:
+        os.close(lock)
+
+    if failures:
+        failure = BackupError(failures[0]["error"])
+        failure.label = failures[0]["database"]
+        failure.completed = [result["label"] for result in results]
+        failure.failures = failures
+        raise failure
+
+    return dict(summary, status="complete", databases=results)
+
+
+def back_up_each(options, passphrase):
+    """Every database is attempted: one that fails must not leave the others without a backup."""
     results = []
+    failures = []
     for label, source in options["databases"]:
         try:
             results.append(backup_one(label, source, options, passphrase))
         except BackupError as error:
-            failure = BackupError(str(error))
-            failure.label = label
-            failure.completed = [result["label"] for result in results]
-            raise failure from None
+            failures.append({"database": label, "error": str(error)})
 
-    return dict(summary, status="complete", databases=results)
+    return results, failures
+
+
+def lock_directory(directory):
+    """One run per local directory: a second one would sweep or prune the first one's files."""
+    fd = os.open(directory, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        raise BackupError("backup_in_progress") from None
+
+    return fd
+
+
+def sweep_leftovers(local_dir, offsite_dir):
+    """Remove what a killed run left: plaintext staging directories and partial copies.
+
+    Runs under the directory lock, so nothing removed here belongs to a run still in progress.
+    """
+    for entry in local_dir.iterdir():
+        if entry.name.startswith(STAGING_PREFIX) and entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry, ignore_errors=True)
+
+    for directory in (local_dir, offsite_dir):
+        for entry in directory.iterdir():
+            name = entry.name
+            partial = name.startswith(".") and name.endswith(".partial")
+            if partial and SET_FILE.fullmatch(name[1 : -len(".partial")]) and not entry.is_dir():
+                remove_file(entry)
 
 
 def run_restore_test(args):
@@ -563,6 +772,7 @@ def run_restore_test(args):
 
 
 def main(argv=None):
+    previous = signal.signal(signal.SIGTERM, terminate)
     try:
         args = parse_args(argv)
         result = run_backup(args) if args.command == "backup" else run_restore_test(args)
@@ -572,11 +782,14 @@ def main(argv=None):
         if getattr(error, "label", None):
             result["database"] = error.label
             result["completed"] = error.completed
-    except KeyboardInterrupt:
+            result["failures"] = error.failures
+    except (KeyboardInterrupt, Terminated):
         result, code = {"status": "failed", "error": "interrupted"}, 1
     except Exception:
         # Same contract as blackbox_backup.py: no paths, environment or child stderr.
         result, code = {"status": "failed", "error": "backup_failed"}, 1
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
     print(json.dumps(result, sort_keys=True))
 

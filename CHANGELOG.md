@@ -28,8 +28,11 @@ All notable changes to this project will be documented in this file.
 - The nightly backup now covers the Black Box and Job Scout databases and encrypts what leaves the
   machine. `scripts/storage/blackbox_offsite_backup.py` takes a WAL-safe snapshot, runs
   `PRAGMA integrity_check`, records per-table row counts and SHA-256 hashes in an authenticated
-  manifest, and restores the offsite copy into a scratch directory to verify it. The job needs a
-  passphrase file before its first run; see `docs/database-recovery.md`.
+  manifest, and restores the offsite copy into a scratch directory to verify it. A set that fails
+  its restore test is withdrawn, an incomplete set left by a killed run never counts toward
+  retention, SIGTERM still cleans up the plaintext staging copy, stamps are UTC, and one run holds a
+  lock on the local directory. The job needs a passphrase file before its first run; see
+  `docs/database-recovery.md`.
 - Session finalization promotes a session's latest recorded Handoff directly as its summary
   (`summary_source = handoff`) without calling a summary model; sessions without a Handoff continue
   through the configured summary backend.

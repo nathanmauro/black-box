@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Real CLI runs against disposable WAL databases; the offsite target is a temp directory."""
 
+import contextlib
+import fcntl
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -14,7 +18,12 @@ import threading
 import time
 import unittest
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
+
+# Loading the scripts must not leave a __pycache__ beside them.
+sys.dont_write_bytecode = True
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "blackbox_offsite_backup.py"
@@ -62,9 +71,14 @@ class OffsiteBackupTest(unittest.TestCase):
 
         return data
 
-    def backup(self, *extra, databases=None, success=True, stamp=STAMP, execute=True):
+    def backup(self, *extra, databases=None, success=True, stamp=STAMP, execute=True, local=None):
+        args = self.backup_args(databases=databases, stamp=stamp, execute=execute, local=local)
+
+        return self.cli(*args, *extra, success=success)
+
+    def backup_args(self, *extra, databases=None, stamp=STAMP, execute=True, local=None):
         databases = databases or {"blackbox": self.blackbox}
-        args = ["backup", "--local-dir", self.local, "--offsite-dir", self.offsite]
+        args = ["backup", "--local-dir", local or self.local, "--offsite-dir", self.offsite]
         args += ["--passphrase-file", self.passphrase, "--stamp", stamp]
         for label, path in databases.items():
             args += ["--database", "{}={}".format(label, path)]
@@ -72,7 +86,28 @@ class OffsiteBackupTest(unittest.TestCase):
         if execute:
             args.append("--execute")
 
-        return self.cli(*args, *extra, success=success)
+        return [str(arg) for arg in args + list(extra)]
+
+    def run_in_process(self, args):
+        """main() in this process, so a test can replace one step of a real run."""
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = OFFSITE.main(args)
+
+        return code, json.loads(output.getvalue())
+
+    def stamps(self, directory, label="blackbox"):
+        """Stamps of the complete sets (archive and manifest) for one label."""
+        manifests = {
+            path.name[len(label) + 1 : -len(OFFSITE.MANIFEST_SUFFIX)]
+            for path in directory.glob(label + "-*" + OFFSITE.MANIFEST_SUFFIX)
+        }
+        archives = {
+            path.name[len(label) + 1 :].split(".", 1)[0]
+            for path in directory.glob(label + "-*.enc")
+        }
+
+        return sorted(manifests & archives)
 
     def restore(self, manifest, *extra, success=True, scratch=None):
         scratch = scratch or self.root / "scratch"
@@ -468,6 +503,211 @@ class OffsiteBackupTest(unittest.TestCase):
         for path in foreign:
             self.assertEqual(path.read_text(), "keep me")
 
+    def test_a_set_that_fails_its_restore_test_is_withdrawn_and_never_counted(self):
+        self.seed_wal(self.blackbox)
+        nights = ["20260102-030400", "20260103-030400", "20260104-030400"]
+        for stamp in nights:
+            self.backup("--skip-restore-test", "--keep-offsite", "3", stamp=stamp)
+
+        def failing_restore(*args, **kwargs):
+            raise OFFSITE.BackupError("restored_checksum_mismatch")
+
+        failed_night = self.backup_args("--keep-offsite", "3", stamp="20260105-030400")
+        with mock.patch.object(OFFSITE, "restore_test", failing_restore):
+            code, data = self.run_in_process(failed_night)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(data["error"], "restored_checksum_mismatch")
+        self.assertEqual(list(self.offsite.glob("*20260105*")), [])
+        self.assertEqual(list(self.local.glob("*20260105*")), [])
+        self.assertEqual(self.stamps(self.offsite), nights)
+
+        # A run killed between its archive and its manifest leaves an incomplete set behind.
+        orphan = self.offsite / "blackbox-20260106-030400.sqlite3.enc"
+        orphan.write_bytes(b"left by a killed run")
+        self.backup("--skip-restore-test", "--keep-offsite", "3", stamp="20260107-030400")
+
+        self.assertFalse(orphan.exists())
+        self.assertEqual(self.stamps(self.offsite), nights[1:] + ["20260107-030400"])
+
+    def test_the_set_just_written_survives_a_clock_that_moved_back(self):
+        self.seed_wal(self.blackbox)
+        self.backup("--skip-restore-test", stamp="20260102-090000")
+
+        data = self.backup("--skip-restore-test", "--keep-local", "1", stamp="20260102-070000")
+
+        self.assertEqual(self.stamps(self.local), ["20260102-070000"])
+        self.assertEqual(self.stamps(self.offsite), ["20260102-070000", "20260102-090000"])
+        self.assertEqual(data["databases"][0]["pruned_offsite"], [])
+
+    def test_default_stamp_is_utc(self):
+        before = datetime.now(timezone.utc).replace(microsecond=0)
+        data = self.cli(
+            "backup",
+            "--database",
+            "blackbox={}".format(self.blackbox),
+            "--local-dir",
+            self.local,
+            "--offsite-dir",
+            self.offsite,
+            "--passphrase-file",
+            self.passphrase,
+        )
+        after = datetime.now(timezone.utc)
+
+        stamp = datetime.strptime(data["stamp"], "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc)
+        self.assertLessEqual(before, stamp)
+        self.assertLessEqual(stamp, after)
+
+    def test_sigterm_removes_plaintext_staging_and_publishes_nothing(self):
+        self.seed_wal(self.blackbox)
+        bindir = self.root / "bin"
+        bindir.mkdir()
+        started = self.root / "openssl-started"
+        # Stands in for an encryption still running when launchd stops the job.
+        fake = bindir / "openssl"
+        fake.write_text('#!/bin/sh\ntouch "$OPENSSL_STARTED"\nexec sleep 60\n')
+        fake.chmod(0o700)
+        env = dict(
+            os.environ,
+            PATH=str(bindir) + os.pathsep + os.environ["PATH"],
+            OPENSSL_STARTED=str(started),
+        )
+        process = subprocess.Popen(
+            [sys.executable, str(SCRIPT), *self.backup_args("--compression", "none")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        self.addCleanup(process.kill)
+
+        deadline = time.monotonic() + 60
+        while not started.exists():
+            self.assertIsNone(process.poll(), "the backup exited before encrypting")
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.05)
+        self.assertEqual(len(list(self.local.glob(".offsite-backup-*/snapshot.sqlite3"))), 1)
+
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=30)
+
+        self.assertEqual(process.returncode, 1)
+        self.assertEqual(stderr, "")
+        self.assertEqual(json.loads(stdout)["error"], "interrupted")
+        self.assertEqual(list(self.local.iterdir()), [])
+        self.assertEqual(list(self.offsite.iterdir()), [])
+
+    def test_leftovers_of_a_killed_run_are_swept_and_foreign_files_kept(self):
+        self.seed_wal(self.blackbox)
+        staging = self.local / ".offsite-backup-killed01"
+        staging.mkdir()
+        (staging / "snapshot.sqlite3").write_bytes(b"plaintext snapshot")
+        partial = self.offsite / ".blackbox-20260101-000000.sqlite3.enc.partial"
+        partial.write_bytes(b"half an archive")
+        foreign = [self.local / ".keep-me", self.offsite / ".notes.partial"]
+        for path in foreign:
+            path.write_text("keep me")
+
+        self.backup("--skip-restore-test")
+
+        self.assertFalse(staging.exists())
+        self.assertFalse(partial.exists())
+        for path in foreign:
+            self.assertEqual(path.read_text(), "keep me")
+
+    def test_publish_never_writes_through_a_planted_partial(self):
+        source = self.root / "archive.bin"
+        source.write_bytes(b"archive bytes")
+        victim = self.root / "victim.txt"
+        victim.write_text("untouched")
+        (self.offsite / ".set.enc.partial").symlink_to(victim)
+
+        published = OFFSITE.publish(source, self.offsite, "set.enc")
+
+        self.assertEqual(victim.read_text(), "untouched")
+        self.assertFalse(published.is_symlink())
+        self.assertEqual(published.read_bytes(), b"archive bytes")
+        self.assertEqual(published.stat().st_mode & 0o077, 0)
+        self.assertEqual(sorted(path.name for path in self.offsite.iterdir()), ["set.enc"])
+
+    def test_manifest_label_stamp_and_names_must_agree(self):
+        passphrase = OFFSITE.read_passphrase(self.passphrase)
+        body = {
+            "format": OFFSITE.FORMAT,
+            "label": "../elsewhere/jobs",
+            "stamp": STAMP,
+            "archive": {
+                "name": "jobs-{}.sqlite3.enc".format(STAMP),
+                "cipher": OFFSITE.CIPHER,
+                "iterations": OFFSITE.KDF_ITERATIONS,
+                "compression": "none",
+            },
+        }
+        forged = self.root / "jobs-{}.manifest.json".format(STAMP)
+        forged.write_text(json.dumps(OFFSITE.seal_manifest(body, passphrase)))
+        with self.assertRaisesRegex(OFFSITE.BackupError, "manifest_unsupported"):
+            OFFSITE.open_manifest(forged, passphrase)
+
+        self.seed_wal(self.blackbox)
+        self.backup("--skip-restore-test", stamp="20260102-030405")
+        # A genuine older set renamed to pass for a newer stamp.
+        renamed = self.manifest(stamp="20260109-030405")
+        shutil.copyfile(self.manifest(stamp="20260102-030405"), renamed)
+
+        data = self.restore(renamed, "--execute", success=False)
+
+        self.assertEqual(data["error"], "manifest_unsupported")
+        self.assertFalse((self.root / "scratch").exists())
+
+    def test_passphrase_openssl_would_read_differently_is_refused(self):
+        self.seed_wal(self.blackbox)
+        for content in (b"fixture-passphrase\r\n", b"fixture\0passphrase\n", b"x" * 1024 + b"\n"):
+            self.passphrase.write_bytes(content)
+            self.assertEqual(self.backup(success=False)["error"], "passphrase_invalid")
+
+        self.assertEqual(list(self.offsite.iterdir()), [])
+
+    def test_a_failed_first_database_does_not_skip_the_next(self):
+        with closing(sqlite3.connect(self.jobs)) as db:
+            db.execute("CREATE TABLE jobs(id INTEGER PRIMARY KEY, title TEXT)")
+            db.execute("INSERT INTO jobs(title) VALUES ('job')")
+            db.commit()
+
+        data = self.backup(
+            databases={"blackbox": self.root / "missing.db", "jobscout": self.jobs},
+            success=False,
+        )
+
+        self.assertEqual(data["database"], "blackbox")
+        self.assertEqual(data["completed"], ["jobscout"])
+        self.assertEqual(data["failures"], [{"database": "blackbox", "error": data["error"]}])
+        self.assertTrue(self.manifest(label="jobscout").exists())
+        self.assertEqual(list(self.offsite.glob("blackbox-*")), [])
+
+    def test_local_directory_inside_the_offsite_directory_is_refused(self):
+        self.seed_wal(self.blackbox)
+        inside = self.offsite / "staging"
+        inside.mkdir()
+
+        for local in (self.offsite, inside):
+            data = self.backup(success=False, local=local)
+            self.assertEqual(data["error"], "local_dir_inside_offsite_dir")
+
+        self.assertEqual([path.name for path in self.offsite.iterdir()], ["staging"])
+        self.assertEqual(list(inside.iterdir()), [])
+
+    def test_a_second_run_on_the_same_local_directory_is_refused(self):
+        self.seed_wal(self.blackbox)
+        lock = os.open(self.local, os.O_RDONLY)
+        self.addCleanup(os.close, lock)
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        data = self.backup(success=False)
+
+        self.assertEqual(data["error"], "backup_in_progress")
+        self.assertEqual(list(self.offsite.iterdir()), [])
+
     @unittest.skipUnless(shutil.which("zstd"), "zstd is not installed")
     def test_zstd_and_uncompressed_archives_both_restore(self):
         self.seed_wal(self.blackbox)
@@ -584,6 +824,16 @@ class NightlyScriptTest(unittest.TestCase):
         self.assertIn("passphrase_file_missing", alert)
         self.assertNotIn(str(self.root), alert)
         self.assertEqual(list(self.remote.glob("*")), [])
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores directory permissions")
+    def test_an_unwritable_drive_folder_still_alerts(self):
+        self.drive.chmod(0o500)
+        self.addCleanup(self.drive.chmod, 0o700)
+
+        result = self.run_script()
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("backup_dir_unavailable", self.alerts.read_text())
 
     def test_unmounted_drive_alerts_before_any_snapshot(self):
         result = self.run_script(SBA_BACKUP_DRIVE_ROOT=str(self.root / "absent"))
