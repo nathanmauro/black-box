@@ -52,3 +52,6 @@ archive byte, so it is off by default.
 
 The default matches the nightly job's `SBA_BACKUP_LOCAL_DIR`. If that job writes elsewhere, point
 `SBA_DIAGNOSTICS_BACKUP_DIR` at the same directory.
+
+For the decision, handoff and braid trail itself, see
+[Continuity diagnostics and braid-graph export](continuity-diagnostics.md).
