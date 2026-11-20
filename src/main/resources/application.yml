@@ -53,6 +53,12 @@ sba:
   storage:
     # Explicit, irreversible retirement of dormant board rows after a database backup.
     retire-workflow: ${SBA_RETIRE_WORKFLOW:false}
+  diagnostics:
+    # Local copy of the nightly offsite backup's sealed manifests, read by GET
+    # /api/diagnostics/storage. The server never reads the backup passphrase. A leading ~/ is
+    # the service user's home; blank skips the check.
+    backup-dir: ${SBA_DIAGNOSTICS_BACKUP_DIR:~/.local/share/sba-agentic/backups/nightly}
+    backup-max-age-hours: ${SBA_DIAGNOSTICS_BACKUP_MAX_AGE_HOURS:36}
   editor:
     # File navigation is catalog-bound and revalidated on every request. Only fixed,
     # explicitly allowlisted VS Code-compatible CLI binaries can be launched.
@@ -140,6 +146,9 @@ sba:
     # Secret-looking values (private key blocks, bearer/API keys, AWS credentials, and password/token
     # assignments) are replaced with [REDACTED] before persistence.
     redact-enabled: ${SBA_REDACT_ENABLED:true}
+    # The exact values of this service's own credential-named settings (environment, properties,
+    # imported files) are replaced wherever they appear, whatever redact-enabled and redact-patterns say.
+    mask-configured-secrets: ${SBA_MASK_CONFIGURED_SECRETS:true}
   judge:
     enabled: ${SBA_JUDGE_ENABLED:false}
     provider: ${SBA_JUDGE_PROVIDER:jev}

@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- `GET /api/diagnostics/storage` reports storage health read-only: SQLite file, WAL and SHM sizes and
+  `PRAGMA` readings, per-table row counts, FTS and embedding/vector index parity, per-channel
+  redaction counters, and structural checks of the nightly backup manifests (sealed envelope,
+  archive presence and size, optional SHA-256). Responses carry no secret, path, hash or MAC, and
+  the service never reads the backup passphrase. See `docs/storage-diagnostics.md`.
+- An offline recall quality benchmark (`scripts/recall-benchmark.sh`, also run by `mvn test`) seeds
+  a synthetic multi-project corpus and scores recall, compact search and braid discovery with
+  precision@k, MRR, NDCG@10 and latency percentiles, with no Elasticsearch, model or network call.
+  See `docs/recall-benchmark.md`.
+- Black Box masks the exact values of its own configured credentials (any credential-named
+  environment variable or property it was started with) at every redaction entry point, whatever
+  shape displays them: capture, saved melds and braids, the text sent to summary and meld backends,
+  their answers, and export. Encoded forms (JSON, URL, XML, Base64) are covered, weak or common
+  values are skipped, and it works independently of `SBA_REDACT_ENABLED`; switch it off with
+  `SBA_MASK_CONFIGURED_SECRETS=false`. A direct meld preview's answer is now redacted before it is
+  returned.
+- Configured-secret masking also catches a value embedded inside a longer Base64 stream, such as a
+  registry `auth` of `user:value` or `echo value | base64` with its trailing newline, at every byte
+  alignment. Previously only a Base64 stream holding exactly the value was masked. New stress tests
+  cover adversarial regex input at the full scan budget, throughput, concurrency, idempotence, and
+  deep nesting.
+- The nightly backup now covers the Black Box and Job Scout databases and encrypts what leaves the
+  machine. `scripts/storage/blackbox_offsite_backup.py` takes a WAL-safe snapshot, runs
+  `PRAGMA integrity_check`, records per-table row counts and SHA-256 hashes in an authenticated
+  manifest, and restores the offsite copy into a scratch directory to verify it. A set that fails
+  its restore test is withdrawn, an incomplete set left by a killed run never counts toward
+  retention, SIGTERM still cleans up the plaintext staging copy, stamps are UTC, and one run holds a
+  lock on the local directory. The job needs a passphrase file before its first run; see
+  `docs/database-recovery.md`.
 - Session finalization promotes a session's latest recorded Handoff directly as its summary
   (`summary_source = handoff`) without calling a summary model; sessions without a Handoff continue
   through the configured summary backend.

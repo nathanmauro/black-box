@@ -99,7 +99,9 @@ public class ProjectMeldService implements ProjectMeldOperations {
                         evidence,
                         exportRedactor::redactForSummary,
                         json -> exportRedactor.redactJsonForSummary(json, MAX_JSON_CHARS));
-                preview = summaryBackend.summarize(directPrompt(outbound.text()));
+                // The answer is shown before any save redacts it, and a model can repeat a credential
+                // in a form of its own.
+                preview = exportRedactor.redactForSummary(summaryBackend.summarize(directPrompt(outbound.text())));
                 status = "preview";
             } catch (RuntimeException ex) {
                 throw new ResponseStatusException(

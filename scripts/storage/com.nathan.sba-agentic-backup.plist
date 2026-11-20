@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Nightly offsite Black Box snapshot (scripts/storage/nightly-drive-backup.sh).
+  Nightly encrypted offsite backup of the Black Box and Job Scout databases
+  (scripts/storage/nightly-drive-backup.sh). Needs ~/.config/blackbox/backup-passphrase first;
+  see docs/database-recovery.md.
 
   Install:
     cp scripts/storage/com.nathan.sba-agentic-backup.plist ~/Library/LaunchAgents/

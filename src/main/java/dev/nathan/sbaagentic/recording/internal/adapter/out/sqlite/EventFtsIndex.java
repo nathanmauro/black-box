@@ -1,5 +1,7 @@
 package dev.nathan.sbaagentic.recording.internal.adapter.out.sqlite;
 
+import dev.nathan.sbaagentic.recording.FullTextIndexStatus;
+import dev.nathan.sbaagentic.recording.internal.application.port.FullTextIndexInspector;
 import jakarta.annotation.PostConstruct;
 import java.time.Clock;
 import java.util.List;
@@ -40,7 +42,7 @@ import org.springframework.stereotype.Repository;
  * renumber its implicit rowids and silently remap every FTS hit.
  */
 @Repository
-public class EventFtsIndex {
+public class EventFtsIndex implements FullTextIndexInspector {
 
     private static final Logger log = LoggerFactory.getLogger(EventFtsIndex.class);
 
@@ -137,6 +139,42 @@ public class EventFtsIndex {
     public boolean ready() {
 
         return available && backfillComplete;
+    }
+
+    /**
+     * Read-only parity check. Counting a contentless FTS5 table walks its docsize b-tree, which is
+     * linear in the event count but never touches event text.
+     */
+    @Override
+    public FullTextIndexStatus inspect() {
+        Long eventRows = jdbcTemplate.queryForObject("SELECT count(*) FROM agent_events", Long.class);
+        long events = eventRows == null ? 0 : eventRows;
+        if (!sqlite) {
+
+            return new FullTextIndexStatus("not_applicable", events, null, null, null, false);
+        }
+        Long indexed;
+        Map<String, Object> state;
+        try {
+            indexed = jdbcTemplate.queryForObject("SELECT count(*) FROM event_fts", Long.class);
+            state = state();
+        } catch (RuntimeException ex) {
+
+            return new FullTextIndexStatus("unavailable", events, null, null, null, false);
+        }
+        Long last = state == null ? null : ((Number) state.get("last_rowid")).longValue();
+        Long target = state == null ? null : ((Number) state.get("target_rowid")).longValue();
+        boolean complete = state != null && ((Number) state.get("complete")).intValue() == 1;
+        String status;
+        if (!available) {
+            status = "unavailable";
+        } else if (!complete) {
+            status = "backfilling";
+        } else {
+            status = indexed != null && indexed == events ? "in_sync" : "drift";
+        }
+
+        return new FullTextIndexStatus(status, events, indexed, last, target, complete);
     }
 
     /** Fail-soft switch, flipped by the feed on a MATCH error; a later re-probe can restore. */
