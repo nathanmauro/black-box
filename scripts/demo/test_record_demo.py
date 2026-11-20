@@ -20,9 +20,12 @@ class RecorderCleanupTest(unittest.TestCase):
         self.repo = self.root / "repo"
         for name in ("scripts", "src", "target", "docs/assets"):
             (self.repo / name).mkdir(parents=True)
-        (self.repo / "pom.xml").touch()
+        (self.repo / "scripts/demo").mkdir()
+        shutil.copy(SCRIPT.parent / "demo/recorder-jar.sh", self.repo / "scripts/demo")
+        (self.repo / "pom.xml").write_text(
+            "<project><artifactId>sba-agentic</artifactId>\n<version>9.9.9</version></project>\n")
         (self.repo / "scripts/record-demo.sh").write_text(SCRIPT.read_text())
-        with zipfile.ZipFile(self.repo / "target/demo.jar", "w") as jar:
+        with zipfile.ZipFile(self.repo / "target/sba-agentic-9.9.9.jar", "w") as jar:
             jar.writestr("CaptureDecisionRequest.class", b"fixture")
         self.bin = self.root / "bin"
         self.bin.mkdir()

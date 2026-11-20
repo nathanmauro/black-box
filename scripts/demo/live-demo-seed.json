@@ -1,0 +1,92 @@
+{
+  "comment": "Synthetic history for scripts/live-demo.sh. Every project, provider and number is invented.",
+  "captures": [
+    {
+      "tool": "captureDecision",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-1",
+        "repo": "/demo/ledger-service",
+        "decision": "Store money as integer minor units with an ISO 4217 currency code",
+        "rationale": "Integer arithmetic has no rounding drift, and every client language reads it the same way.",
+        "alternatives": [
+          "Floating point amounts: rejected because binary fractions drift on repeated addition",
+          "Decimal strings: rejected because every consumer would need its own parsing rules"
+        ],
+        "confidence": 0.95,
+        "openLoops": []
+      }
+    },
+    {
+      "tool": "captureDecision",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-1",
+        "repo": "/demo/ledger-service",
+        "decision": "Publish ledger events through a transactional outbox",
+        "rationale": "The event row commits with the ledger row, so a broker outage cannot lose an event.",
+        "alternatives": [
+          "Dual write to the database and the broker: rejected because a crash between writes loses events",
+          "Change data capture on the ledger table: rejected because it couples consumers to the schema"
+        ],
+        "confidence": 0.8,
+        "openLoops": ["Outbox table retention is unset"]
+      }
+    },
+    {
+      "tool": "captureDecision",
+      "seedAs": "stale",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-1",
+        "repo": "/demo/ledger-service",
+        "decision": "Process payment webhooks synchronously inside the HTTP request",
+        "rationale": "It is the smallest thing that works at launch volume.",
+        "alternatives": ["Queue from day one: rejected as premature at launch volume"],
+        "confidence": 0.6,
+        "openLoops": []
+      }
+    },
+    {
+      "tool": "captureDecision",
+      "supersedes": "stale",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-2",
+        "repo": "/demo/ledger-service",
+        "decision": "Acknowledge payment webhooks fast and process them from a queue",
+        "rationale": "The provider times out at 10 seconds, and synchronous processing missed that under load.",
+        "alternatives": [
+          "Keep synchronous webhook processing: rejected because timeouts trigger provider retries"
+        ],
+        "confidence": 0.9,
+        "openLoops": []
+      }
+    },
+    {
+      "tool": "captureHandoff",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-2",
+        "repo": "/demo/ledger-service",
+        "toAgent": "next-session",
+        "contextSummary": "The webhook queue consumer is merged. Duplicate webhook deliveries are not handled yet.",
+        "openLoops": ["Provider retries can deliver the same payment webhook twice"],
+        "nextAction": "Decide how to deduplicate webhook deliveries before the refund handler ships"
+      }
+    },
+    {
+      "tool": "captureDecision",
+      "arguments": {
+        "source": "manual",
+        "clientSessionId": "seed-history-3",
+        "repo": "/demo/docs-portal",
+        "decision": "Generate the webhook reference pages from the OpenAPI file",
+        "rationale": "Generated webhook pages cannot drift from the published duplicate delivery contract.",
+        "alternatives": ["Hand-written webhook pages: rejected because they go stale"],
+        "confidence": 0.7,
+        "openLoops": []
+      }
+    }
+  ]
+}
