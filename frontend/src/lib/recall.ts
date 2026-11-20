@@ -122,3 +122,53 @@ export function buildRecallBriefing(
   output += `\n\nExport limits: ${shortened} captures truncated; ${omitted} captures omitted. Open evidence links for full source.`;
   return output;
 }
+
+export function buildDecisionAdr(item: RecalledItem, origin?: string): string {
+  const title = (item.headline || "Recorded Decision").replace(/\r?\n/g, " ").trim();
+  const status = item.supersededByEventId
+    ? `Superseded by \`${item.supersededByEventId}\``
+    : "Accepted";
+  const observedDate = item.observedAt ? item.observedAt.slice(0, 10) : "unknown";
+  const evidenceUrl = origin
+    ? new URL(recalledItemHref(item), origin).href
+    : recalledItemHref(item);
+  const lines: string[] = [
+    `# ADR: ${title}`,
+    "",
+    `- **Status:** ${status}`,
+    `- **Date:** ${observedDate}${item.observedAt ? ` (\`${item.observedAt}\`)` : ""}`,
+    `- **Source:** \`${item.source}\` (event \`${item.eventId}\`, session \`${item.sessionId}\`)`,
+    `- **Project:** \`${item.repo || "not recorded"}\``,
+    `- **Evidence:** ${evidenceUrl}`,
+  ];
+  if (item.supersedesEventId) {
+    lines.push(`- **Supersedes:** \`${item.supersedesEventId}\``);
+  }
+  if (item.confidence != null && Number.isFinite(item.confidence)) {
+    const clamped = Math.max(0, Math.min(1, Number(item.confidence)));
+    lines.push(`- **Confidence:** ${Math.round(clamped * 100)}%`);
+  }
+  lines.push(
+    "",
+    "## Decision",
+    "",
+    (item.headline || item.body || "(No decision text recorded.)").trim(),
+    "",
+    "## Rationale",
+    "",
+    (item.rationale || "(No explicit rationale recorded.)").trim(),
+  );
+  if (item.alternatives?.length) {
+    lines.push("", "## Rejected Alternatives", "");
+    for (const alt of item.alternatives) {
+      lines.push(`- ${alt}`);
+    }
+  }
+  if (item.openLoops?.length) {
+    lines.push("", "## Open Loops", "");
+    for (const loop of item.openLoops) {
+      lines.push(`- ${loop}`);
+    }
+  }
+  return lines.join("\n");
+}

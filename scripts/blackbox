@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# blackbox - unified CLI entrypoint for the Black Box local flight recorder.
+#
+# Usage:
+#   ./scripts/blackbox demo
+#   ./scripts/blackbox start [--offline] [--port=8766]
+#   ./scripts/blackbox status [--url=http://127.0.0.1:8766]
+#   ./scripts/blackbox init [--apply] [--url=http://127.0.0.1:8766]
+#   ./scripts/blackbox export-adr [--project=<path>] [--output=<dir>] [--apply]
+#   ./scripts/blackbox <doctor|sessions|search|ingest|summarize|summarize-missing|embeddings-backfill> [args...]
+
+set -euo pipefail
+
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+read_pom_jar_name() {
+  python3 - "$PROJECT_DIR/pom.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+tree = ET.parse(sys.argv[1])
+root = tree.getroot()
+ns = {"m": root.tag.split("}")[0].lstrip("{")} if "}" in root.tag else {}
+p = "m:" if ns else ""
+artifact = root.findtext(f"{p}artifactId", default="", namespaces=ns).strip()
+version = root.findtext(f"{p}version", default="", namespaces=ns).strip()
+if artifact and version:
+    print(f"{artifact}-{version}.jar")
+PY
+}
+
+find_jar() {
+  local expected
+  expected="$(read_pom_jar_name 2>/dev/null || true)"
+  if [[ -n "$expected" && -f "${PROJECT_DIR}/target/${expected}" ]]; then
+    printf '%s' "${PROJECT_DIR}/target/${expected}"
+    return 0
+  fi
+  return 0
+}
+
+ensure_jar() {
+  local jar expected
+  expected="$(read_pom_jar_name 2>/dev/null || true)"
+  jar="$(find_jar)"
+  if [[ -z "$jar" || ! -f "$jar" ]]; then
+    if [[ -n "$expected" && -f "${PROJECT_DIR}/target/${expected}" && -n "$(lsof -t -- "${PROJECT_DIR}/target/${expected}" 2>/dev/null || true)" ]]; then
+      printf 'Error: a running process holds %s; build from an isolated checkout instead.\n' "$expected" >&2
+      exit 1
+    fi
+    printf 'Building Black Box jar (mvn -q -DskipTests package)...\n' >&2
+    (cd "$PROJECT_DIR" && mvn -q -DskipTests package)
+    jar="$(find_jar)"
+  fi
+  if [[ -z "$jar" || ! -f "$jar" ]]; then
+    printf 'Error: unable to locate runnable jar %s under %s/target\n' "${expected:-<unknown>}" "$PROJECT_DIR" >&2
+    exit 1
+  fi
+  printf '%s' "$jar"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/blackbox <command> [options]
+
+High-level commands:
+  demo                               Run the isolated quickstart demo (throwaway DB + sample recall)
+  start [--offline] [--port=8766]    Start the Black Box server (--offline disables all external/model calls)
+  status [--url=http://127.0.0.1:8766]
+                                     Check a running Black Box server's /api/status endpoint
+
+CLI commands (run directly against the local database without starting the HTTP server):
+  init [--apply] [--url=...]         Preview or apply MCP commands, client hooks, and agent skill
+  export-adr [--project=...] [--apply]
+                                     Preview or export project Decisions to Markdown ADRs (docs/adr/)
+  doctor                             Show storage statistics and optional model/index health
+  sessions [--limit=25]              List recent recorded sessions
+  search <query> [--limit=25]        Search recorded events
+  ingest [--text=<note>] [...]       Capture a manual event
+  summarize <session-id>             Summarize a recorded session
+  summarize-missing [--limit=10]     Summarize sessions that lack a summary
+  embeddings-backfill [--apply]      Preview or backfill missing memory embeddings
+EOF
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  -h|--help|help)
+    if [[ $# -gt 1 ]]; then
+      JAR="$(ensure_jar)"
+      exec java -jar "$JAR" "$@"
+    fi
+    usage
+    exit 0
+    ;;
+  demo)
+    shift
+    exec "${PROJECT_DIR}/scripts/quickstart.sh" "$@"
+    ;;
+  start)
+    shift
+    offline=0
+    port="${SBA_PORT:-8766}"
+    pass_args=()
+    for arg in "$@"; do
+      case "$arg" in
+        --offline)
+          offline=1
+          ;;
+        --port=*)
+          port="${arg#--port=}"
+          ;;
+        *)
+          pass_args+=("$arg")
+          ;;
+      esac
+    done
+    JAR="$(ensure_jar)"
+    if [[ "$offline" -eq 1 ]]; then
+      exec java -jar "$JAR" --spring.profiles.active=offline --server.port="$port" "${pass_args[@]+"${pass_args[@]}"}"
+    else
+      exec java -jar "$JAR" --server.port="$port" "${pass_args[@]+"${pass_args[@]}"}"
+    fi
+    ;;
+  status)
+    shift
+    url="${SBA_AGENTIC_URL:-http://127.0.0.1:8766}"
+    for arg in "$@"; do
+      case "$arg" in
+        --url=*) url="${arg#--url=}" ;;
+      esac
+    done
+    if command -v jq >/dev/null 2>&1; then
+      curl -fsS "${url%/}/api/status" | jq .
+    else
+      curl -fsS "${url%/}/api/status"
+      printf '\n'
+    fi
+    ;;
+  *)
+    JAR="$(ensure_jar)"
+    exec java -jar "$JAR" "$@"
+    ;;
+esac

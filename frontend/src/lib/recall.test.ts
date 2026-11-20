@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { RecalledItem } from "./api";
-import { BRIEFING_MAX_CHARS, buildRecallBriefing, newestRecorded } from "./recall";
+import {
+  BRIEFING_MAX_CHARS,
+  buildDecisionAdr,
+  buildRecallBriefing,
+  newestRecorded,
+} from "./recall";
 const base: RecalledItem = {
   eventId: "e1",
   sessionId: "s1",
@@ -185,5 +190,38 @@ describe("continuity evidence export", () => {
       expect(newestRecorded([fallback, a], "handoff")).toBe(a);
       expect(newestRecorded([a, fallback], "handoff")).toBe(a);
     }
+  });
+  it("formats a Decision item into a complete Markdown ADR with provenance and status", () => {
+    const adr = buildDecisionAdr(
+      {
+        ...base,
+        headline: "Keep SQLite as the local default",
+        rationale: "Single-user workstation does not need an external server.",
+        confidence: 0.92,
+        alternatives: ["Require PostgreSQL", "Use in-memory H2"],
+        openLoops: ["Revisit when multi-replica sync is requested"],
+        supersedesEventId: "e0",
+      },
+      "https://blackbox.example",
+    );
+    expect(adr).toContain("# ADR: Keep SQLite as the local default");
+    expect(adr).toContain("- **Status:** Accepted");
+    expect(adr).toContain("- **Date:** 2026-10-01 (`2026-10-01T12:00:00Z`)");
+    expect(adr).toContain("- **Source:** `codex` (event `e1`, session `s1`)");
+    expect(adr).toContain("- **Project:** `/repos/alpha`");
+    expect(adr).toContain(
+      "- **Evidence:** https://blackbox.example/?view=browse&session=s1&event=e1&project=",
+    );
+    expect(adr).toContain("- **Supersedes:** `e0`");
+    expect(adr).toContain("- **Confidence:** 92%");
+    expect(adr).toContain("## Decision\n\nKeep SQLite as the local default");
+    expect(adr).toContain(
+      "## Rationale\n\nSingle-user workstation does not need an external server.",
+    );
+    expect(adr).toContain("## Rejected Alternatives\n\n- Require PostgreSQL\n- Use in-memory H2");
+    expect(adr).toContain("## Open Loops\n\n- Revisit when multi-replica sync is requested");
+
+    const superseded = buildDecisionAdr({ ...base, supersededByEventId: "e2" });
+    expect(superseded).toContain("- **Status:** Superseded by `e2`");
   });
 });

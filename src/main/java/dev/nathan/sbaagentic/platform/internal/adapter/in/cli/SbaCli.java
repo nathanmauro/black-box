@@ -3,7 +3,9 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingBackfillRequest;
 import dev.nathan.sbaagentic.memory.MemoryEmbeddingOperations;
+import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.platform.CliCommands;
 import dev.nathan.sbaagentic.recording.EventIngestRequest;
 import dev.nathan.sbaagentic.recording.EventRecorder;
@@ -14,10 +16,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
@@ -37,6 +41,7 @@ public class SbaCli implements ApplicationRunner {
     private final SummaryOperations summaryService;
     private final SummaryModelOperations localAiClient;
     private final ObjectMapper objectMapper;
+    private final MemoryRecallOperations memoryRecallOperations;
 
     public SbaCli(
             EventRecorder ingestService,
@@ -46,6 +51,48 @@ public class SbaCli implements ApplicationRunner {
             SummaryOperations summaryService,
             SummaryModelOperations localAiClient,
             ObjectMapper objectMapper) {
+        this(
+                ingestService,
+                repository,
+                searchService,
+                memoryEmbeddingOperations,
+                summaryService,
+                localAiClient,
+                objectMapper,
+                new MemoryRecallOperations() {
+                    @Override
+                    public RecallResult recall(String scope, int withinHours, List<String> kinds, Integer limit) {
+
+                        return new RecallResult(
+                                scope == null ? "" : scope, withinHours, kinds, 0, List.of(), "lexical", false);
+                    }
+
+                    @Override
+                    public RecallResult recall(
+                            String scope,
+                            String project,
+                            String query,
+                            int withinHours,
+                            List<String> kinds,
+                            Integer limit,
+                            boolean includeSuperseded) {
+
+                        return new RecallResult(
+                                project == null ? "" : project, withinHours, kinds, 0, List.of(), "lexical", false);
+                    }
+                });
+    }
+
+    @Autowired
+    public SbaCli(
+            EventRecorder ingestService,
+            RecordingCatalog repository,
+            MemorySearchOperations searchService,
+            MemoryEmbeddingOperations memoryEmbeddingOperations,
+            SummaryOperations summaryService,
+            SummaryModelOperations localAiClient,
+            ObjectMapper objectMapper,
+            MemoryRecallOperations memoryRecallOperations) {
         this.ingestService = ingestService;
         this.repository = repository;
         this.searchService = searchService;
@@ -53,6 +100,7 @@ public class SbaCli implements ApplicationRunner {
         this.summaryService = summaryService;
         this.localAiClient = localAiClient;
         this.objectMapper = objectMapper;
+        this.memoryRecallOperations = memoryRecallOperations;
     }
 
     @Override
@@ -77,6 +125,8 @@ public class SbaCli implements ApplicationRunner {
             case "embeddings-backfill" -> embeddingsBackfill(args);
             case "summarize" -> summarize(positional);
             case "summarize-missing" -> summarizeMissing(args);
+            case "init" -> init(args);
+            case "export-adr" -> exportAdr(args);
             default -> usage();
         }
     }
@@ -181,6 +231,25 @@ public class SbaCli implements ApplicationRunner {
     private void embeddingsBackfill(ApplicationArguments args) throws IOException {
         writeJson(memoryEmbeddingOperations.backfillEmbeddings(new MemoryEmbeddingBackfillRequest(
                 flag(args, "apply"), optionInt(args, "batch-size", 100), optionInt(args, "progress-every", 250))));
+    }
+
+    private void init(ApplicationArguments args) throws IOException {
+        Path homeDir = Path.of(option(args, "home", System.getProperty("user.home", ".")));
+        Path repoRoot = Path.of(option(args, "repo-root", System.getProperty("user.dir", ".")));
+        String url = option(args, "url", "http://127.0.0.1:8766");
+        boolean apply = flag(args, "apply");
+        writeJson(new ClientOnboardingPlanner(objectMapper).plan(homeDir, repoRoot, url, apply));
+    }
+
+    private void exportAdr(ApplicationArguments args) throws IOException {
+        Path project = Path.of(option(args, "project", System.getProperty("user.dir", ".")));
+        String outputOpt = option(args, "output", null);
+        Path outputDir = outputOpt == null || outputOpt.isBlank() ? project.resolve("docs/adr") : Path.of(outputOpt);
+        int withinHours = optionInt(args, "within-hours", 8760);
+        boolean includeSuperseded = !args.containsOption("include-superseded") || flag(args, "include-superseded");
+        boolean apply = flag(args, "apply");
+        writeJson(new AdrExportPlanner(memoryRecallOperations)
+                .export(project, outputDir, withinHours, includeSuperseded, apply));
     }
 
     private void usage() {

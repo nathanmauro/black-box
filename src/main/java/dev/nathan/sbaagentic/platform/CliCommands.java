@@ -24,7 +24,15 @@ public final class CliCommands {
             new Command(
                     "summarize", "summarize <session-id>", "Summarize a recorded session with the configured backend."),
             new Command(
-                    "summarize-missing", "summarize-missing [--limit=10]", "Summarize sessions that lack a summary."));
+                    "summarize-missing", "summarize-missing [--limit=10]", "Summarize sessions that lack a summary."),
+            new Command(
+                    "init",
+                    "init [--apply] [--url=http://127.0.0.1:8766] [--home=<dir>] [--repo-root=<dir>]",
+                    "Preview MCP commands, hook wiring, and the Black Box agent skill; --apply writes them."),
+            new Command(
+                    "export-adr",
+                    "export-adr [--project=<path>] [--output=<dir>] [--within-hours=8760] [--include-superseded] [--apply]",
+                    "Preview Markdown Architecture Decision Records (ADRs) with Git drift checks; --apply writes them."));
 
     private CliCommands() {}
 

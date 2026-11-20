@@ -1157,11 +1157,23 @@ describe("RecallPage", () => {
 
     it("reports a failed build without touching the recall result", async () => {
       updateParams({ project: "/repos/alpha" });
+      vi.mocked(getRecall).mockResolvedValueOnce(result([item]));
       vi.mocked(getContinuations).mockRejectedValueOnce(new Error("Prompts offline"));
       render(() => <RecallPage />);
       fireEvent.click(await enabledBuild());
       expect(await screen.findByRole("alert")).toHaveTextContent("Prompts offline");
       expect(screen.getByRole("heading", { name: "Run a recall query" })).toBeInTheDocument();
     });
+  });
+
+  it("copies a Decision card as Markdown ADR with provenance", async () => {
+    updateParams({ project: "/repos/alpha", run: "1" });
+    render(() => <RecallPage />);
+    const card = await screen.findByRole("article", { name: item.headline! });
+    fireEvent.click(within(card).getByRole("button", { name: "Copy ADR" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    expect(writeText.mock.calls[0][0]).toContain(`# ADR: ${item.headline}`);
+    expect(writeText.mock.calls[0][0]).toContain("- **Status:** Accepted");
+    expect(await within(card).findByText("ADR Markdown copied.")).toBeInTheDocument();
   });
 });

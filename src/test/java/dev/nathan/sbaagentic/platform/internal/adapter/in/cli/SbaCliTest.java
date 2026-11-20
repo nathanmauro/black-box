@@ -85,6 +85,14 @@ class SbaCliTest {
                 cli.run(new DefaultApplicationArguments(command));
                 verify(summaries).summarizeMissing(10);
             }
+            case "init" -> {
+                cli.run(new DefaultApplicationArguments(command));
+                verify(mapper).writerWithDefaultPrettyPrinter();
+            }
+            case "export-adr" -> {
+                cli.run(new DefaultApplicationArguments(command));
+                verify(mapper).writerWithDefaultPrettyPrinter();
+            }
             default -> throw new AssertionError("Missing dispatch contract for " + command);
         }
     }

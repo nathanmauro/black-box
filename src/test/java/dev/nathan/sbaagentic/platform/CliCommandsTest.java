@@ -17,7 +17,9 @@ class CliCommandsTest {
                         "ingest",
                         "embeddings-backfill",
                         "summarize",
-                        "summarize-missing");
+                        "summarize-missing",
+                        "init",
+                        "export-adr");
         for (String command : CliCommands.names()) {
             assertThat(CliCommands.isCommand(command)).isTrue();
             assertThat(CliCommands.usage()).contains("  " + command);

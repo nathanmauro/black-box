@@ -31,7 +31,12 @@ import {
   NO_PROJECT_SCOPE,
   primaryProjectScope,
 } from "../lib/projects";
-import { buildRecallBriefing, newestRecorded, recalledItemHref } from "../lib/recall";
+import {
+  buildDecisionAdr,
+  buildRecallBriefing,
+  newestRecorded,
+  recalledItemHref,
+} from "../lib/recall";
 import { forgetRecall, recallFor, rememberRecall } from "../lib/recallMemory";
 import { sourceFilter } from "../lib/stores";
 
@@ -687,6 +692,15 @@ function RecallCard(props: {
   const [rationale, setRationale] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [failure, setFailure] = createSignal("");
+  const [adrStatus, setAdrStatus] = createSignal("");
+  async function copyAdr() {
+    try {
+      await navigator.clipboard.writeText(buildDecisionAdr(props.item, window.location.origin));
+      setAdrStatus("ADR Markdown copied.");
+    } catch {
+      setAdrStatus("Clipboard unavailable.");
+    }
+  }
   async function submitReplacement(event: SubmitEvent) {
     event.preventDefault();
     if (busy() || !decision().trim() || !rationale().trim() || !props.item.repo) return;
@@ -788,16 +802,16 @@ function RecallCard(props: {
           </p>
         )}
       </Show>
-      <Show
-        when={
-          props.item.kind.toLowerCase() === "decision" &&
-          props.item.repo &&
-          !props.item.supersededByEventId
-        }
-      >
-        <Show
-          when={replacing()}
-          fallback={
+      <Show when={props.item.kind.toLowerCase() === "decision"}>
+        <div class="recall-card-actions">
+          <button
+            type="button"
+            class="secondary-action recall-adr-trigger"
+            onClick={() => void copyAdr()}
+          >
+            Copy ADR
+          </button>
+          <Show when={props.item.repo && !props.item.supersededByEventId && !replacing()}>
             <button
               type="button"
               class="secondary-action recall-replace-trigger"
@@ -805,59 +819,72 @@ function RecallCard(props: {
             >
               Replace decision
             </button>
-          }
+          </Show>
+          <Show when={adrStatus()}>
+            <span class="recall-hint" role="status">
+              {adrStatus()}
+            </span>
+          </Show>
+        </div>
+      </Show>
+      <Show
+        when={
+          props.item.kind.toLowerCase() === "decision" &&
+          props.item.repo &&
+          !props.item.supersededByEventId &&
+          replacing()
+        }
+      >
+        <form
+          class="recall-replacement"
+          aria-label="Replace recorded decision"
+          onSubmit={(event) => void submitReplacement(event)}
         >
-          <form
-            class="recall-replacement"
-            aria-label="Replace recorded decision"
-            onSubmit={(event) => void submitReplacement(event)}
-          >
-            <p>
-              Record a new decision and explain why it replaces this one. The original evidence
-              stays available in history.
+          <p>
+            Record a new decision and explain why it replaces this one. The original evidence stays
+            available in history.
+          </p>
+          <label>
+            New decision
+            <textarea
+              required
+              maxlength="12000"
+              value={decision()}
+              onInput={(event) => setDecision(event.currentTarget.value)}
+            />
+          </label>
+          <label>
+            Why this replaces the earlier decision
+            <textarea
+              required
+              maxlength="12000"
+              value={rationale()}
+              onInput={(event) => setRationale(event.currentTarget.value)}
+            />
+          </label>
+          <Show when={failure()}>
+            <p class="inline-error" role="alert">
+              Replacement failed: {failure()}
             </p>
-            <label>
-              New decision
-              <textarea
-                required
-                maxlength="12000"
-                value={decision()}
-                onInput={(event) => setDecision(event.currentTarget.value)}
-              />
-            </label>
-            <label>
-              Why this replaces the earlier decision
-              <textarea
-                required
-                maxlength="12000"
-                value={rationale()}
-                onInput={(event) => setRationale(event.currentTarget.value)}
-              />
-            </label>
-            <Show when={failure()}>
-              <p class="inline-error" role="alert">
-                Replacement failed: {failure()}
-              </p>
-            </Show>
-            <div>
-              <button
-                type="submit"
-                class="primary-action"
-                disabled={busy() || !decision().trim() || !rationale().trim()}
-              >
-                {busy() ? "Recording…" : "Record replacement"}
-              </button>
-              <button
-                type="button"
-                class="secondary-action"
-                disabled={busy()}
-                onClick={() => setReplacing(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Show>
+          </Show>
+          <div>
+            <button
+              type="submit"
+              class="primary-action"
+              disabled={busy() || !decision().trim() || !rationale().trim()}
+            >
+              {busy() ? "Recording…" : "Record replacement"}
+            </button>
+            <button
+              type="button"
+              class="secondary-action"
+              disabled={busy()}
+              onClick={() => setReplacing(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </Show>
     </article>
   );

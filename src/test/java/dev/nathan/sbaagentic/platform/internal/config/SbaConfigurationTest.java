@@ -80,6 +80,21 @@ class SbaConfigurationTest {
     }
 
     @Test
+    void bindsOfflineProfileWithZeroExternalCallsOrModelEndpoints() {
+        contextRunner.withPropertyValues("spring.profiles.active=offline").run(context -> {
+            assertThat(context.getBean(SummaryProperties.class).getBackend()).isEqualTo("local");
+            assertThat(context.getBean(SummaryModelProperties.class).isEnabled())
+                    .isFalse();
+            assertThat(context.getBean(MemoryEmbeddingProperties.class).isEnabled())
+                    .isFalse();
+            assertThat(context.getBean(AskProperties.class).isEmbeddingEnabled())
+                    .isFalse();
+            assertThat(context.getBean(ElasticsearchProperties.class).isEnabled())
+                    .isFalse();
+        });
+    }
+
+    @Test
     void preservesEnvironmentBindingAcrossModuleOwnedProperties() {
         contextRunner
                 .withPropertyValues(
