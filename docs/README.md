@@ -3,9 +3,8 @@
 Start with [installation](installation.md), then [connect an agent](agent-integration.md) and try
 the [capture-and-recall demonstration](showcase.md). The [project README](../README.md) gives the overview.
 
-Unless labeled otherwise, these guides describe the current source checkout. A downloaded release
-may differ: [v0.2.0](releases/v0.2.0.md) is the latest published release artifact, and the
-[v0.3.0 draft notes](releases/v0.3.0.md) summarize source changes accumulated since September.
+Unless labeled otherwise, these guides describe the current source checkout (`0.3.0`). See the
+[v0.3.0 release notes](releases/v0.3.0.md) and earlier [v0.2.0](releases/v0.2.0.md) boundaries.
 Upgrading source or downloading a JAR does not update an already-running installation.
 
 ## Use Black Box
@@ -27,6 +26,8 @@ Upgrading source or downloading a JAR does not update an already-running install
 | Guide                                                               | What it covers                                                       |
 | ------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | [Operations](operations.md)                                         | Configuration, services, containers, and file navigation.            |
+| [Storage diagnostics](storage-diagnostics.md)                       | Read-only SQLite, FTS/embedding parity, redaction, and backup checks.|
+| [Continuity diagnostics](continuity-diagnostics.md)                 | Continuity linter and redacted braid-graph JSON/Mermaid export.      |
 | [Authentication](authentication.md)                                 | Browser and bearer access for a network-exposed server.              |
 | [Database recovery](database-recovery.md)                           | Snapshot, restore, and recovery limits.                              |
 | [Durable capture](durable-capture.md)                               | Opt-in local outbox, retry behavior, and acknowledgement limits.     |
@@ -50,6 +51,7 @@ automatically synchronize a local SQLite database with a cloud database.
 | [Java test stories](java-tests.md)                                                             | A reading order for the capability tests and which suite owns each guarantee.                                                                                                                                                                                                                                                                                                                                                                                              |
 | [Performance notes](performance/transcript-deduplication.md)                                   | Reproducible measurements and regression checks for [transcript deduplication](performance/transcript-deduplication.md), [lineage metadata batching](performance/lineage-metadata.md), [dashboard timestamp range bounds](performance/dashboard-activity-range.md), [lazy stream payloads](performance/stream-payload-work.md), [on-demand route loading](performance/frontend-route-loading.md), and [frontend request budgets](performance/frontend-request-budgets.md). |
 | [Recall observability](recall-observability.md)                                                | What recall telemetry measures, and what it cannot establish.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| [Recall quality benchmark](recall-benchmark.md)                                                | Offline synthetic retrieval regression harness (P@k, MRR, NDCG@10, latency percentiles).                                                                                                                                                                                                                                                                                                                                                                                   |
 | [Showcase](showcase.md)                                                                        | Reproduce the synthetic demo and README images.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | [Building Black Box with Black Box](building-black-box.md)                                     | A dated example of using captured context during development.                                                                                                                                                                                                                                                                                                                                                                                                              |
 

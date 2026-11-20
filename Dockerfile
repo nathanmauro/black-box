@@ -3,7 +3,7 @@
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
-COPY target/sba-agentic-*.jar app.jar
+COPY target/black-box-*.jar app.jar
 
 VOLUME /data
 

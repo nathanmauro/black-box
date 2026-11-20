@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+- Packaged artifact and MCP server names moved from `sba-agentic` to `black-box` (`black-box-0.3.0.jar`);
+  existing client aliases, default SQLite filename (`sba-agentic.db`), Elasticsearch index, and `SBA_*`
+  environment variables remain backward-compatible.
+- Removed the unused Jev and Cortex judgment integration (`judgment` module, `docs/cortex.md`, and
+  Jev menubar trace helpers).
+- Added the zero-egress `offline` Spring profile (`--spring.profiles.active=offline`), unified
+  `./scripts/blackbox` CLI wrapper (`start`, `status`, `demo`, `init`, `export-adr`), bundled
+  portable agent skill (`skills/black-box/SKILL.md`), and Recall UI **Copy ADR** action.
+- Added a scripted live demo (`scripts/live-demo.sh`, `docs/live-demo.md`) and hardened all demo
+  launchers (`scripts/demo/recorder-jar.sh`) to resolve the project-version JAR without touching an
+  installed service's JAR.
+- Added custom Black Box app icons and `manifest.webmanifest`, plus `GET /api/diagnostics/continuity`
+  and redacted `GET /api/export/braid-graph` (JSON/Mermaid; see `docs/continuity-diagnostics.md`).
 - `GET /api/diagnostics/storage` reports storage health read-only: SQLite file, WAL and SHM sizes and
   `PRAGMA` readings, per-table row counts, FTS and embedding/vector index parity, per-channel
   redaction counters, and structural checks of the nightly backup manifests (sealed envelope,

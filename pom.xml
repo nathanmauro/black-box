@@ -12,10 +12,10 @@
     </parent>
 
     <groupId>dev.nathan</groupId>
-    <artifactId>sba-agentic</artifactId>
-    <version>0.2.0</version>
-    <name>sba-agentic</name>
-    <description>Local Spring Boot agentic control plane for Claude Code, Codex, local AI, and Elasticsearch.</description>
+    <artifactId>black-box</artifactId>
+    <version>0.3.0</version>
+    <name>Black Box</name>
+    <description>Local-first memory bus for coding agents (MCP, REST, SQLite, SolidJS UI).</description>
 
     <properties>
         <java.version>21</java.version>

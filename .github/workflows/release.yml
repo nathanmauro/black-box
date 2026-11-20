@@ -26,11 +26,11 @@ jobs:
       - run: mvn -B verify
       - name: Checksum the release artifact
         working-directory: target
-        run: sha256sum sba-agentic-*.jar > SHA256SUMS
+        run: sha256sum black-box-*.jar > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/sba-agentic-*.jar
+            target/black-box-*.jar
             target/SHA256SUMS
           body_path: docs/releases/${{ github.ref_name }}.md
           fail_on_unmatched_files: true

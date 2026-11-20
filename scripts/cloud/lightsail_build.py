@@ -48,8 +48,12 @@ def main():
         relative_jar = jar.relative_to(ROOT.resolve())
     except ValueError:
         parser.error("Copy the reviewed JAR beneath this checkout's target/ directory before building")
-    if relative_jar.parts[0] != "target" or not jar.name.startswith("sba-agentic-") or jar.suffix != ".jar":
-        parser.error("JAR must match target/sba-agentic-*.jar to stay within the minimal Docker context")
+    if (
+        relative_jar.parts[0] != "target"
+        or not jar.name.startswith(("black-box-", "sba-agentic-"))
+        or jar.suffix != ".jar"
+    ):
+        parser.error("JAR must match target/black-box-*.jar (or legacy target/sba-agentic-*.jar) to stay within the minimal Docker context")
     checksum = inspect_jar(jar)
     tag = args.tag or "blackbox:cloud-" + checksum[:16]
     plan = {"jarSha256": checksum, "sourceRevision": args.source_revision, "tag": tag, "platform": "linux/amd64",

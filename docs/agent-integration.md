@@ -9,19 +9,20 @@ Black Box exposes MCP over Streamable HTTP at `http://localhost:8766/mcp`.
 Codex:
 
 ```bash
-codex mcp add sba-agentic --url http://localhost:8766/mcp
+codex mcp add black-box --url http://localhost:8766/mcp
 codex mcp list
 ```
 
 Claude Code:
 
 ```bash
-claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
+claude mcp add --transport http --scope user black-box http://localhost:8766/mcp
 claude mcp list
 ```
 
-Restart the client if the tools do not appear. The server keeps the historical MCP id
-`sba-agentic`; the product name is Black Box.
+Restart the client if the tools do not appear. Existing client setups registered under the
+historical `sba-agentic` alias keep working without changes. You can also preview or apply MCP
+commands, hooks, and the bundled skill via `./scripts/blackbox init` (`--apply` to write).
 
 ### Memory tools
 

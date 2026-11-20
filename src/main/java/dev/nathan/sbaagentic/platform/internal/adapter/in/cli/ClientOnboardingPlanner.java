@@ -43,8 +43,8 @@ public final class ClientOnboardingPlanner {
         targets.add(planSkillFile(normalizedRepo.resolve(".claude/skills/black-box/SKILL.md"), baseUrl, apply));
 
         Map<String, String> mcpCommands = new LinkedHashMap<>();
-        mcpCommands.put("claude", "claude mcp add --transport http --scope user sba-agentic " + mcpUrl);
-        mcpCommands.put("codex", "codex mcp add sba-agentic --url " + mcpUrl);
+        mcpCommands.put("claude", "claude mcp add --transport http --scope user black-box " + mcpUrl);
+        mcpCommands.put("codex", "codex mcp add black-box --url " + mcpUrl);
 
         return new OnboardingReport(
                 apply ? "applied" : "dry-run",

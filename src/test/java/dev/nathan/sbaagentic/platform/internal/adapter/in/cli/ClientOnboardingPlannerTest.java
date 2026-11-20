@@ -32,8 +32,8 @@ class ClientOnboardingPlannerTest {
         assertThat(report.mcpEndpoint()).isEqualTo("http://127.0.0.1:8766/mcp");
         assertThat(report.mcpCommands())
                 .containsEntry(
-                        "claude", "claude mcp add --transport http --scope user sba-agentic http://127.0.0.1:8766/mcp")
-                .containsEntry("codex", "codex mcp add sba-agentic --url http://127.0.0.1:8766/mcp");
+                        "claude", "claude mcp add --transport http --scope user black-box http://127.0.0.1:8766/mcp")
+                .containsEntry("codex", "codex mcp add black-box --url http://127.0.0.1:8766/mcp");
         assertThat(report.targets())
                 .extracting(ClientOnboardingPlanner.TargetResult::status)
                 .containsExactly("would_create", "would_create", "would_create");

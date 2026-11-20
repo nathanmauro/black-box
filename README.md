@@ -56,8 +56,8 @@ its scratch directory when you are done.
 For a persistent installation, downloads, Windows guidance, and service setup, follow the
 [installation guide](docs/installation.md).
 
-**Source vs. tagged release:** this README describes `main`. The earlier
-[v0.2.0](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0) JAR predates the October
+**Source vs. tagged release:** this README describes `main` (`0.3.0`, [release notes](docs/releases/v0.3.0.md)).
+The earlier [v0.2.0](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0) JAR predates the
 decision-ledger narrowing and still includes the retired task board; see its
 [release boundaries](docs/releases/v0.2.0.md) and [board retirement notes](docs/board-retirement.md)
 before upgrading an existing installation.
@@ -67,14 +67,17 @@ before upgrading an existing installation.
 A running Black Box server exposes Streamable HTTP MCP at `http://localhost:8766/mcp`:
 
 ```bash
-codex mcp add sba-agentic --url http://localhost:8766/mcp
-claude mcp add --transport http --scope user sba-agentic http://localhost:8766/mcp
+codex mcp add black-box --url http://localhost:8766/mcp
+claude mcp add --transport http --scope user black-box http://localhost:8766/mcp
 ```
 
-Use your chosen port if it differs. Once registered against a running server, agents can call
-`recallContext` at the start of a task and `captureDecision` or `captureHandoff` at closeout. Opt-in
-hooks can also record session events (including Claude `Stop` responses) or inject a compact startup
-recall packet; see [Agent integration](docs/agent-integration.md) and the restricted
+(Existing client registrations using the historical `sba-agentic` alias continue working unchanged.)
+Or preview hooks, MCP commands, and the bundled agent skill in one dry-run command with
+`./scripts/blackbox init` (pass `--apply` to write them). Use your chosen port if it differs. Once
+registered against a running server, agents can call `recallContext` at the start of a task and
+`captureDecision` or `captureHandoff` at closeout. Opt-in hooks can also record session events
+(including Claude `Stop` responses) or inject a compact startup recall packet; see
+[Agent integration](docs/agent-integration.md) and the restricted
 [ChatGPT gateway](docs/chatgpt-mcp.md).
 
 ## Find the context behind the work

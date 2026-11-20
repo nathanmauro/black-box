@@ -14,10 +14,10 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 HELPER = SCRIPTS / "demo/recorder-jar.sh"
 LAUNCHERS = ("demo.sh", "quickstart.sh", "record-demo.sh")
 OLDER_JAR = "sba-agentic-0.1.0.jar"
-PROJECT_JAR = "sba-agentic-9.9.9.jar"
+PROJECT_JAR = "black-box-9.9.9.jar"
 POM = """<project>
   <parent><artifactId>spring-boot-starter-parent</artifactId><version>3.0.0</version></parent>
-  <artifactId>sba-agentic</artifactId>
+  <artifactId>black-box</artifactId>
   <version>9.9.9</version>
 </project>
 """

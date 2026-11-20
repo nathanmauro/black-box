@@ -95,7 +95,7 @@ describe("actual E2E server launch boundary", () => {
     expect(actual.cwd).toBe(f.tempDir);
     expect(actual.args).toEqual([
       "-jar",
-      path.join(f.repo, "target/sba-agentic-0.2.0.jar"),
+      path.join(f.repo, "target/black-box-0.3.0.jar"),
       "--spring.config.location=classpath:/application.yml",
       "--spring.profiles.active=default",
     ]);
@@ -106,7 +106,7 @@ describe("actual E2E server launch boundary", () => {
     expect(actual.env.SBA_PORT).toBe("8799");
     expect(actual.env.SBA_BIND_ADDRESS).toBe("127.0.0.1");
     expect(actual.env.SBA_SUMMARY_BACKEND).toBe("local");
-    for (const name of ["LOCAL_AI", "ELASTICSEARCH", "MEMORY_EMBEDDING", "ASK_EMBEDDING", "JUDGE"])
+    for (const name of ["LOCAL_AI", "ELASTICSEARCH", "MEMORY_EMBEDDING", "ASK_EMBEDDING"])
       expect(actual.env[`SBA_${name}_ENABLED`]).toBe("false");
     expect(actual.env.SBA_EDITOR_ENABLED).toBe("true");
     expect(actual.env.SBA_EDITOR_COMMAND).toBe(path.join(f.tempDir, "fake-editor"));

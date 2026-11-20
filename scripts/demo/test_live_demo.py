@@ -14,7 +14,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "live-demo.sh"
 SEED = Path(__file__).resolve().parent / "live-demo-seed.json"
 POM = """<project>
   <parent><artifactId>spring-boot-starter-parent</artifactId><version>3.0.0</version></parent>
-  <artifactId>sba-agentic</artifactId>
+  <artifactId>black-box</artifactId>
   <version>9.9.9</version>
 </project>
 """
@@ -95,7 +95,7 @@ class LiveDemoGuardTest(unittest.TestCase):
 
     def test_runs_the_project_version_jar_with_an_isolated_environment(self):
         self.add_current_jar("sba-agentic-0.1.0.jar")
-        jar = self.add_current_jar("sba-agentic-9.9.9.jar")
+        jar = self.add_current_jar("black-box-9.9.9.jar")
         self.env.update(
             {
                 "SPRING_APPLICATION_JSON": '{"spring":{"datasource":{"url":"jdbc:sqlite:decoy.db"}}}',
@@ -136,7 +136,7 @@ class LiveDemoGuardTest(unittest.TestCase):
         self.assertTrue(older.exists())
 
     def test_refuses_to_rebuild_a_jar_held_by_a_process(self):
-        jar = self.repo / "target/sba-agentic-9.9.9.jar"
+        jar = self.repo / "target/black-box-9.9.9.jar"
         jar.write_bytes(b"held")
         os.utime(jar, (1_000_000_000, 1_000_000_000))
         self.executable(

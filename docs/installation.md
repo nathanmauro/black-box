@@ -13,10 +13,9 @@ This guide covers three ways to get it running, platform support, and what data 
 | [Source build](#build-from-source) | You want the current `main` branch, the hook scripts, or the service templates | Java 21+, Maven 3.9+, Git |
 | [Isolated demo](#try-the-isolated-demo) | You want to see capture and recall work before connecting a real agent | Source checkout, Java 21+, Maven 3.9+, Bash, `curl`, `jq`, `lsof` |
 
-The current published release is **v0.2.0** (JAR and `SHA256SUMS`, published 2026-09-20). The
-`main` branch is newer than that release: it has removed the task board and runner (see
-[board retirement](board-retirement.md)) and includes later UI and recall changes. The README
-screenshots show `main`. If you want what the screenshots show, build from source.
+The `0.3.0` build packages `target/black-box-0.3.0.jar` ([v0.3.0 release notes](releases/v0.3.0.md)).
+The earlier published [v0.2.0](releases/v0.2.0.md) JAR (`sba-agentic-0.2.0.jar`, 2026-09-20) predates
+the task-board retirement and later UI/recall changes. The README screenshots reflect `0.3.0` / `main`.
 
 Node.js is not needed to run Black Box. The built UI is committed and packaged into the JAR; Node is
 only for working on the frontend itself (see [frontend standards](frontend-standards.md)).
@@ -41,30 +40,26 @@ locking, which Windows Python does not provide.
 
 ## Run the release JAR
 
-Download `sba-agentic-0.2.0.jar` and `SHA256SUMS` from the
-[v0.2.0 release](https://github.com/nathanmauro/black-box/releases/tag/v0.2.0) into one directory,
-then verify and start it:
+Download `black-box-0.3.0.jar` and `SHA256SUMS` from the
+[v0.3.0 release](https://github.com/nathanmauro/black-box/releases/tag/v0.3.0) (or `sba-agentic-0.2.0.jar`
+for v0.2.0) into one directory, then verify and start it:
 
 ```bash
 shasum -a 256 -c SHA256SUMS        # macOS; on Linux use: sha256sum -c SHA256SUMS
-SBA_SUMMARY_BACKEND=local SBA_LOCAL_AI_ENABLED=false \
-  SBA_MEMORY_EMBEDDING_ENABLED=false SBA_ASK_EMBEDDING_ENABLED=false \
-  java -jar sba-agentic-0.2.0.jar
+java -jar black-box-0.3.0.jar --spring.profiles.active=offline
 ```
 
-Open <http://127.0.0.1:8766>. These four settings make no model calls: summaries use a compacted
-transcript, and recall stays lexical. Without them, a terminal session event schedules a summary
-through the default external Codex wrapper (when present), and recall tries embeddings at
-`localhost:11434` (see [data leaving your machine](#data-leaving-your-machine)). The v0.2.0 release
-notes show a shorter two-variable command that leaves embedding calls to that loopback default enabled. The database is
-created as `sba-agentic.db` in the current directory, so start the JAR from a stable directory or set
+Open <http://127.0.0.1:8766>. The `offline` profile makes no model or external calls: sessions with
+a standing handoff promote that handoff as their summary, other sessions use compacted transcripts,
+and recall stays lexical. Without it, a terminal session event schedules a summary through the
+default external Codex wrapper (when present), and recall tries embeddings at `localhost:11434`
+(see [data leaving your machine](#data-leaving-your-machine)). The database is created as
+`sba-agentic.db` in the current directory, so start the JAR from a stable directory or set
 `SBA_DATASOURCE_URL=jdbc:sqlite:/path/to/blackbox/sba-agentic.db`.
 
 The release JAR does not include the repository's `scripts/` directory: no hooks, summary wrappers,
-or service templates. Clone the repository at the `v0.2.0` tag if you want those to match the
-release. The [v0.2.0 release notes](releases/v0.2.0.md) describe its features, upgrade steps from
-0.1.0, and release boundaries; that release still includes the task board that `main` has since
-removed.
+or service templates. Clone the repository at the matching release tag if you want those to match
+the release.
 
 ### Windows (unverified)
 
@@ -72,12 +67,8 @@ This is a manual, untested equivalent for PowerShell. Compare the printed hash w
 JAR in `SHA256SUMS` yourself.
 
 ```powershell
-Get-FileHash .\sba-agentic-0.2.0.jar -Algorithm SHA256
-$env:SBA_SUMMARY_BACKEND = "local"
-$env:SBA_LOCAL_AI_ENABLED = "false"
-$env:SBA_MEMORY_EMBEDDING_ENABLED = "false"
-$env:SBA_ASK_EMBEDDING_ENABLED = "false"
-java -jar .\sba-agentic-0.2.0.jar
+Get-FileHash .\black-box-0.3.0.jar -Algorithm SHA256
+java -jar .\black-box-0.3.0.jar --spring.profiles.active=offline
 ```
 
 ## Build from source
@@ -86,25 +77,18 @@ java -jar .\sba-agentic-0.2.0.jar
 git clone https://github.com/nathanmauro/black-box.git
 cd black-box
 mvn -q -DskipTests package
-SBA_SUMMARY_BACKEND=local SBA_LOCAL_AI_ENABLED=false \
-  SBA_MEMORY_EMBEDDING_ENABLED=false SBA_ASK_EMBEDDING_ENABLED=false \
-  java -jar target/sba-agentic-0.2.0.jar
+java -jar target/black-box-0.3.0.jar --spring.profiles.active=offline
 ```
 
-Or run the packaged JAR directly with the `offline` Spring profile:
-
-```bash
-java -jar target/sba-agentic-0.2.0.jar --spring.profiles.active=offline
-```
-
-The `offline` profile on `main` disables external summary scripts, local model calls, memory/Ask
-embeddings, Elasticsearch, and continuation synthesis in a single flag (equivalent
-to setting `SBA_SUMMARY_BACKEND=local`, `SBA_LOCAL_AI_ENABLED=false`,
+Or use the wrapper CLI (`./scripts/blackbox start --offline`, `./scripts/blackbox init`,
+`./scripts/blackbox export-adr`). The `offline` profile disables external summary scripts, local
+model calls, memory/Ask embeddings, Elasticsearch, and continuation synthesis in a single flag
+(equivalent to setting `SBA_SUMMARY_BACKEND=local`, `SBA_LOCAL_AI_ENABLED=false`,
 `SBA_MEMORY_EMBEDDING_ENABLED=false`, `SBA_ASK_EMBEDDING_ENABLED=false`, and
 `SBA_ELASTICSEARCH_ENABLED=false`).
-The Maven version on `main` is still `0.2.0`, so the JAR has the same file name as the release even
-though its contents are newer. Run `mvn test` for the backend suite. Never run `mvn package` in a
-checkout whose JAR a running service is using: packaging replaces the file under the live process.
+
+Run `mvn test` for the backend suite. Never run `mvn package` in a checkout whose JAR a running
+service is using: packaging replaces the file under the live process.
 [Operations](operations.md#run-as-a-service) explains how to run and update a service safely.
 
 ## Try the isolated demo

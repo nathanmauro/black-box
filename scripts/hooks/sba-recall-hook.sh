@@ -216,7 +216,7 @@ BLOCK="$(jq -r \
     else
       (["Black Box recall: prior agent decisions/handoffs for this repo (\(window_label)):"]
         + ($items | to_entries | map("\(.key + 1). \(.value | sentence)"))
-        + ["Query more with the sba-agentic recallContext MCP tool (topic queries, more kinds), or see \($agenticUrl)."])
+        + ["Query more with the Black Box recallContext MCP tool (topic queries, more kinds), or see \($agenticUrl)."])
       | join("\n")
       | trim_block($max)
     end

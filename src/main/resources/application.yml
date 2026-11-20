@@ -1,6 +1,6 @@
 spring:
   application:
-    name: sba-agentic
+    name: black-box
   lifecycle:
     # Shutdown first ends /api/stream subscriptions and MCP listening streams, which never finish on
     # their own; graceful shutdown then waits only for real in-flight requests. This bounds that wait
@@ -15,8 +15,8 @@ spring:
   ai:
     mcp:
       server:
-        name: sba-agentic
-        version: 0.2.0
+        name: black-box
+        version: 0.3.0
         protocol: STREAMABLE
         streamable-http:
           mcp-endpoint: /mcp

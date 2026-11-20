@@ -8,10 +8,44 @@
 # the project version, never by a glob. Builds never run `mvn clean`, because that would delete the
 # older jar. A jar a process holds open is never rebuilt.
 
+recorder_project_artifact_and_version() {
+  awk '
+    {
+      line = $0
+      gsub(/<parent>.*<\/parent>/, "", line)
+      if (in_parent) {
+        if (index(line, "</parent>")) {
+          sub(/^.*<\/parent>/, "", line)
+          in_parent = 0
+        } else {
+          next
+        }
+      }
+      if (index(line, "<parent>")) {
+        sub(/<parent>.*$/, "", line)
+        in_parent = 1
+      }
+      if (!artifact && match(line, /<artifactId>[^<]+<\/artifactId>/)) {
+        s = substr(line, RSTART, RLENGTH)
+        gsub(/<\/?artifactId>/, "", s)
+        artifact = s
+      }
+      if (!version && match(line, /<version>[^<]+<\/version>/)) {
+        s = substr(line, RSTART, RLENGTH)
+        gsub(/<\/?version>/, "", s)
+        version = s
+      }
+    }
+    END {
+      if (artifact != "" && version != "") {
+        print artifact "\t" version
+      }
+    }
+  ' "${PROJECT_DIR}/pom.xml" 2>/dev/null || true
+}
+
 recorder_project_version() {
-  grep -m1 -A1 '<artifactId>sba-agentic</artifactId>' "${PROJECT_DIR}/pom.xml" 2>/dev/null \
-    | sed -n 's|.*<version>\(.*\)</version>.*|\1|p' \
-    || true
+  recorder_project_artifact_and_version | awk -F'\t' '{ print $2 }'
 }
 
 # A jar that predates the context endpoints would boot fine and then return 404 on /api/decisions,
@@ -39,11 +73,11 @@ build_recorder_jar() {
 
 # Sets RECORDER_JAR to a current jar, building one if needed.
 ensure_recorder_jar() {
-  local version
+  local artifact version
 
-  version="$(recorder_project_version)"
-  [[ -n "$version" ]] || die "Could not read the project version from pom.xml."
-  RECORDER_JAR="${PROJECT_DIR}/target/sba-agentic-${version}.jar"
+  IFS=$'\t' read -r artifact version <<<"$(recorder_project_artifact_and_version)"
+  [[ -n "$artifact" && -n "$version" ]] || die "Could not read the project version from pom.xml."
+  RECORDER_JAR="${PROJECT_DIR}/target/${artifact}-${version}.jar"
 
   if recorder_jar_is_current "$RECORDER_JAR"; then
     ok "Using existing jar: ${RECORDER_JAR##*/}"
