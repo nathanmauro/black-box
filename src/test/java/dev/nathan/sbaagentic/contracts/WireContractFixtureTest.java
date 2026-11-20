@@ -11,7 +11,6 @@ import dev.nathan.sbaagentic.ask.AskRequest;
 import dev.nathan.sbaagentic.ask.AskResponse;
 import dev.nathan.sbaagentic.ask.AskRetrieveResponse;
 import dev.nathan.sbaagentic.ask.AskStatus;
-import dev.nathan.sbaagentic.judgment.EventJudgment;
 import dev.nathan.sbaagentic.lineage.CreateSessionLinkRequest;
 import dev.nathan.sbaagentic.lineage.DagEdge;
 import dev.nathan.sbaagentic.lineage.DagNode;
@@ -119,8 +118,7 @@ class WireContractFixtureTest {
 
         Map<String, Class<?>> frames = Map.ofEntries(
                 entry("event.appended", StreamEvents.EventAppended.class),
-                entry("session.updated", StreamEvents.SessionUpdated.class),
-                entry("judgment.appended", StreamEvents.JudgmentAppended.class));
+                entry("session.updated", StreamEvents.SessionUpdated.class));
         JsonNode sseFrames = fixture.path("sseFrames");
         assertThat(toSet(sseFrames.fieldNames())).isEqualTo(frames.keySet());
         frames.forEach((name, type) ->
@@ -316,13 +314,16 @@ class WireContractFixtureTest {
                 "continuation-synthesis-v1",
                 java.util.List.of(continuationCitation));
         var continuationSynthesis = new ContinuationSynthesisResponse.Synthesis("ok", null);
-        updates.put("ContinuationSynthesisRequest", new ContinuationSynthesisRequest("/repo", 8760, "bbc1-104d185173789cbe307fcab8"));
+        updates.put(
+                "ContinuationSynthesisRequest",
+                new ContinuationSynthesisRequest("/repo", 8760, "bbc1-104d185173789cbe307fcab8"));
         updates.put("ContinuationSynthesisResponse.Citation", continuationCitation);
         updates.put("ContinuationSynthesisResponse.Synthesized", continuationSynthesized);
         updates.put("ContinuationSynthesisResponse.Synthesis", continuationSynthesis);
         updates.put(
                 "ContinuationSynthesisResponse",
-                new ContinuationSynthesisResponse(continuationCandidate, continuationSynthesized, continuationSynthesis));
+                new ContinuationSynthesisResponse(
+                        continuationCandidate, continuationSynthesized, continuationSynthesis));
         var braid = new ProjectSavedMeld(
                 "braid-1",
                 null,
@@ -458,7 +459,6 @@ class WireContractFixtureTest {
                 entry("DashboardStats.BreakdownCount", DashboardStats.BreakdownCount.class),
                 entry("DashboardStats.DailyCount", DashboardStats.DailyCount.class),
                 entry("ElasticHealth", ElasticHealth.class),
-                entry("EventJudgment", EventJudgment.class),
                 entry("EventFeedItem", EventFeedItem.class),
                 entry("EventFeedResponse", EventFeedResponse.class),
                 entry("EventIngestRequest", EventIngestRequest.class),

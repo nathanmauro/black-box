@@ -1,6 +1,5 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.web;
 
-import dev.nathan.sbaagentic.judgment.JudgmentHealthOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.recording.DashboardStats;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
@@ -17,17 +16,12 @@ public class SystemController {
     private final RecordingCatalog repository;
     private final SummaryModelOperations localAiClient;
     private final MemorySearchOperations memorySearch;
-    private final JudgmentHealthOperations judgmentHealth;
 
     public SystemController(
-            RecordingCatalog repository,
-            SummaryModelOperations localAiClient,
-            MemorySearchOperations memorySearch,
-            JudgmentHealthOperations judgmentHealth) {
+            RecordingCatalog repository, SummaryModelOperations localAiClient, MemorySearchOperations memorySearch) {
         this.repository = repository;
         this.localAiClient = localAiClient;
         this.memorySearch = memorySearch;
-        this.judgmentHealth = judgmentHealth;
     }
 
     @GetMapping("/status")
@@ -36,8 +30,7 @@ public class SystemController {
         return Map.of(
                 "storage", repository.stats(),
                 "localAi", localAiClient.health(),
-                "elasticsearch", memorySearch.elasticHealth(),
-                "judge", judgmentHealth.health());
+                "elasticsearch", memorySearch.elasticHealth());
     }
 
     @GetMapping("/stats")
@@ -56,11 +49,5 @@ public class SystemController {
     public Object elasticsearchHealth() {
 
         return memorySearch.elasticHealth();
-    }
-
-    @GetMapping("/health/judge")
-    public Object judgeHealth() {
-
-        return judgmentHealth.health();
     }
 }

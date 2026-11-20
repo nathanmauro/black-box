@@ -254,7 +254,6 @@ Modules (first package segment = owning capability):
 - `project` — logical project identity, aliases, catalog, timelines, secure open-in-editor
 - `summary` — session finalization and summary backends (external Codex wrapper by default;
   `SBA_SUMMARY_BACKEND=local` for an OpenAI-compatible local server)
-- `judgment` — optional cortex beat folding and typed Orbit judgments
 - `ask`, `query`, `platform` (SSE hub, CLI, MCP wiring)
 
 Each module keeps a hexagonal internal layout: `internal/domain`, `internal/application` (+`port`),

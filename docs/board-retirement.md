@@ -12,7 +12,7 @@ implementation.
   `GET /api/session-links/child-counts?ids=...` retain session relationships and child counts.
 - `GET /api/dag?sessionId=...` remains the session-only lineage projection. Browse retains its
   parent/child navigation, session DAG view, link badges, and child counts.
-- `event.appended`, `session.updated`, and `judgment.appended` retain their non-task behavior,
+- `event.appended` and `session.updated` retain their non-task behavior,
   including lineage hints used by the UI and Orbit.
 - Projects, capture, recall, search, summaries, and historical Handoff events remain available.
 

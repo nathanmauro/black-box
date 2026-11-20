@@ -58,15 +58,14 @@ or a dependency boundary justify another package.
 | `query` | The one grammar-v2 query-string parser (pure, dependency-free); SQL/ES compilation stays in the consuming modules |
 | `project` | Logical project identity, aliases, catalog, timelines, and melds |
 | `memory` | Recall, context assembly, search/facets, and optional Elasticsearch projection |
-| `judgment` | Optional cortex beat folding, typed Jev judgment, persisted event judgments, and judgment REST/SSE surfaces |
 | `summary` | Session finalization, summary backends, transcript export |
 | `ask` | Retrieval orchestration and answer synthesis |
 | `lineage` | Session links, hook-derived subagent relationships, child counts, and session DAG projection |
 | `platform` | Bootstrap, generic errors, health, SPA, SSE hub, MCP registration, configuration, CLI shell |
 
 `platform` is the composition edge and may depend on public module APIs. Feature modules never
-import platform internals. `lineage` depends on the public recording API; `judgment` and platform
-SSE enrichment consume the public lineage API.
+import platform internals. `lineage` depends on the public recording API; platform
+SSE enrichment consumes the public lineage API.
 
 ## Public means intentional
 

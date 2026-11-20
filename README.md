@@ -117,7 +117,7 @@ best-effort; see [configuration and redaction limits](docs/operations.md#configu
 ## Architecture and measured behavior
 
 Black Box is structured as a feature-first modular monolith (`recording`, `memory`, `lineage`,
-`project`, `summary`, `judgment`, `ask`, `query`, `platform`) on Java 21, Spring Boot, and Spring
+`project`, `summary`, `ask`, `query`, `platform`) on Java 21, Spring Boot, and Spring
 Modulith, with SolidJS/TypeScript compiled into the JAR:
 
 - **Enforced module boundaries:** cross-module and hexagonal dependency rules are checked in tests

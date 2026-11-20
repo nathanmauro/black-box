@@ -313,7 +313,7 @@ On launch it:
   is inherited;
 - loads only the classpath `application.yml`, overridden on the command line. Redaction is off,
   `max-text-length` is 65,536, the summary backend is `local` with local AI off, and embeddings,
-  ask-embeddings, Elasticsearch, judge, editor and workflow retirement are off. Transcript roots
+  ask-embeddings, Elasticsearch, editor and workflow retirement are off. Transcript roots
   point inside the private HOME;
 - binds a fresh loopback port, never 8766, 8799 or 18879, in the server's own process group.
 

@@ -119,10 +119,6 @@ public class EventBroadcaster implements SmartLifecycle {
         publish("session.updated", payloadSupplier);
     }
 
-    public void publishJudgmentAppended(StreamEvents.JudgmentAppended payload) {
-        publish("judgment.appended", () -> payload);
-    }
-
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)
     void heartbeat() {
         for (Subscriber subscriber : subscribers) {

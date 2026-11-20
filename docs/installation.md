@@ -91,6 +91,17 @@ SBA_SUMMARY_BACKEND=local SBA_LOCAL_AI_ENABLED=false \
   java -jar target/sba-agentic-0.2.0.jar
 ```
 
+Or run the packaged JAR directly with the `offline` Spring profile:
+
+```bash
+java -jar target/sba-agentic-0.2.0.jar --spring.profiles.active=offline
+```
+
+The `offline` profile on `main` disables external summary scripts, local model calls, memory/Ask
+embeddings, Elasticsearch, and continuation synthesis in a single flag (equivalent
+to setting `SBA_SUMMARY_BACKEND=local`, `SBA_LOCAL_AI_ENABLED=false`,
+`SBA_MEMORY_EMBEDDING_ENABLED=false`, `SBA_ASK_EMBEDDING_ENABLED=false`, and
+`SBA_ELASTICSEARCH_ENABLED=false`).
 The Maven version on `main` is still `0.2.0`, so the JAR has the same file name as the release even
 though its contents are newer. Run `mvn test` for the backend suite. Never run `mvn package` in a
 checkout whose JAR a running service is using: packaging replaces the file under the live process.
@@ -116,10 +127,15 @@ report. Both leave the demo server running and print its PID so you can stop it;
 Black Box stores its data locally, but some optional features send text elsewhere. Local storage
 is not a promise that nothing leaves the machine.
 
-- **Session summaries default to an external CLI.** With no configuration, a terminal event
-  (`SessionEnd`, `Stop`, or `SubagentStop`) automatically schedules a summary through [`scripts/summarize-with-codex.sh`](../scripts/summarize-with-codex.sh),
-  which sends transcript text to the Codex CLI and its provider. Set `SBA_SUMMARY_BACKEND=local` to
-  avoid this.
+- **One-flag offline mode (`--spring.profiles.active=offline` or `./scripts/blackbox start --offline`).**
+  Activating the `offline` profile switches summaries to compacted transcripts (`local`
+  with `SBA_LOCAL_AI_ENABLED=false`) and disables memory embeddings, Ask embeddings, Elasticsearch,
+  and continuation synthesis.
+- **Session summaries default to an external CLI when `offline` is not active.** With no
+  configuration, a terminal event (`SessionEnd`, `Stop`, or `SubagentStop`) automatically schedules
+  a summary through [`scripts/summarize-with-codex.sh`](../scripts/summarize-with-codex.sh), which
+  sends transcript text to the Codex CLI and its provider. Set `--spring.profiles.active=offline` or
+  `SBA_SUMMARY_BACKEND=local` to avoid this.
 - **"Local" model endpoints are whatever you point them at.** `SBA_SUMMARY_BACKEND=local` calls
   `SBA_LOCAL_AI_BASE_URL` (default `http://localhost:1234`, for LM Studio or another
   OpenAI-compatible server). Recall embeddings call `SBA_MEMORY_EMBEDDING_URL` (default
@@ -129,8 +145,8 @@ is not a promise that nothing leaves the machine.
   external backend selected. `SBA_MEMORY_EMBEDDING_ENABLED=false` disables memory embeddings, and
   recall stays lexical. Disable Ask embeddings separately with `SBA_ASK_EMBEDDING_ENABLED=false`.
 - **Optional integrations send what you configure them to send**, such as an Elasticsearch index,
-  Ask embeddings (`SBA_ASK_EMBEDDING_URL`), the off-by-default [cortex judge](cortex.md), an
-  authenticated HTTPS deployment, or the [ChatGPT gateway](chatgpt-mcp.md).
+  Ask embeddings (`SBA_ASK_EMBEDDING_URL`), an authenticated HTTPS deployment, or the
+  [ChatGPT gateway](chatgpt-mcp.md).
 
 Capture, browsing, lineage, and lexical recall work with no model and no Elasticsearch. The full
 variable list is in [Operations: configuration](operations.md#configuration).

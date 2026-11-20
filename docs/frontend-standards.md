@@ -150,7 +150,7 @@ Run it from `frontend/`, or use `./scripts/verify.sh --e2e` for the full local v
 Install the matching browser with `npx playwright install chromium` locally; Linux CI uses
 `npx playwright install --with-deps chromium`. Keep port 8799 available. The suite only seeds
 `127.0.0.1:8799`, uses owned temporary SQLite storage, clears ambient application configuration,
-disables model providers/judge, and checks the protected port 8766 before and after. Do not bypass
+disables model providers, and checks the protected port 8766 before and after. Do not bypass
 those guards or point it at an existing service. The editor journey invokes a fixture executable.
 
 Use one worker and zero retries: the suite shares an owned project fixture and checks exact editor

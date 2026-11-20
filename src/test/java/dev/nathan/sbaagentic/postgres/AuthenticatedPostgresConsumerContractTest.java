@@ -284,7 +284,6 @@ class AuthenticatedPostgresConsumerContractTest {
         assertThat(get("/api/sessions/" + sessionId).path("cwd").asText()).isEqualTo(repo);
         assertThat(get("/api/sessions/" + sessionId + "/links").path("parents").isArray())
                 .isTrue();
-        assertThat(get("/api/sessions/" + sessionId + "/judgments").isArray()).isTrue();
 
         initializeMcp();
         JsonNode listed = rpc("tools/list", Map.of()).path("tools");

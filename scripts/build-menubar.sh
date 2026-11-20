@@ -13,10 +13,9 @@ trap 'rm -rf "$staging_dir"' EXIT
 mkdir -p "$staging_dir/Black Box Recall.app/Contents/MacOS"
 xcrun swiftc -swift-version 5 -O -module-cache-path "$build_dir/module-cache" \
   -target "$(uname -m)-apple-macosx13.0" \
-  -framework AppKit -framework Carbon -framework Security -framework LocalAuthentication \
+  -framework AppKit -framework Carbon \
   "$repo_dir/macos/BlackBoxRecall/RecallURL.swift" "$repo_dir/macos/BlackBoxRecall/ChromeLaunch.swift" \
-  "$repo_dir/macos/BlackBoxRecall/RecallSuggestions.swift" "$repo_dir/macos/BlackBoxRecall/JevTraceCore.swift" \
-  "$repo_dir/macos/BlackBoxRecall/JevTraceClient.swift" "$repo_dir/macos/BlackBoxRecall/JevKeychain.swift" \
+  "$repo_dir/macos/BlackBoxRecall/RecallSuggestions.swift" \
   "$repo_dir/macos/BlackBoxRecall/main.swift" \
   -o "$staging_dir/Black Box Recall.app/Contents/MacOS/BlackBoxRecall"
 cp "$repo_dir/macos/BlackBoxRecall/Info.plist" "$staging_dir/Black Box Recall.app/Contents/Info.plist"

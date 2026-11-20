@@ -76,7 +76,7 @@ xcrun swiftc -swift-version 5 -module-cache-path "$test_dir/module-cache" \
   "$repo_dir/macos/BlackBoxRecall/RecallURL.swift" "$repo_dir/macos/BlackBoxRecall/ChromeLaunch.swift" \
   "$repo_dir/macos/BlackBoxRecall/RecallSuggestions.swift" "$test_dir/main.swift" -o "$test_dir/url-tests"
 "$test_dir/url-tests"
-/bin/bash -n "$repo_dir/scripts/build-menubar.sh" "$repo_dir/scripts/install-menubar.sh" "$repo_dir/scripts/test-menubar.sh" "$repo_dir/scripts/test-jev-trace.sh" "$repo_dir/scripts/eval-jev-recall.sh"
+/bin/bash -n "$repo_dir/scripts/build-menubar.sh" "$repo_dir/scripts/install-menubar.sh" "$repo_dir/scripts/test-menubar.sh"
 "$repo_dir/scripts/build-menubar.sh"
 install_snapshot() {
   for path in "$HOME/Applications/Black Box Recall.app/Contents/Info.plist" \
@@ -103,5 +103,4 @@ fi
 grep -q '^Dry run: no files or services changed\.' "$test_dir/dry-run.txt"
 echo 'Build, URL fixtures, shell syntax, and installer dry run passed'
 
-"$repo_dir/scripts/test-jev-trace.sh"
 python3 "$repo_dir/scripts/test-menubar-installer.py"

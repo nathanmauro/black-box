@@ -20,7 +20,7 @@ available.
 
 The [companion](companion.md)'s expanded recall field is the embedded alternative. It opens
 `/recall?project=…&query=…&run=1` for the open project (or across projects from the river), without
-a global shortcut, live matches, or Jev trace. The Recall page accepts both link forms; see
+a global shortcut or live matches. The Recall page accepts both link forms; see
 [project continuity](project-continuity.md).
 
 Live matches call `GET /api/recall` with the same legacy `scope` and one-week Decision/Handoff
@@ -29,33 +29,6 @@ changed query cancels the previous request and discards late responses. Requests
 eight seconds. Ordinary previews use the existing recall ranking. Loading, no-match, and
 connection errors appear inside the dropdown. Standard Command–A/C/X/V/Z editing shortcuts work
 in the query field.
-
-## Trace a remembered thread with Jev
-
-**Trace with Jev** (Command–J) compares the thing you remember with evidence captured later. It first selects
-a likely source from a bounded 30-day recall shortlist, then looks for a related later capture in
-the same repository. The dropdown shows **You may remember this** and, when supported,
-**Captured later**. Both open the original event in Chrome.
-
-Relationship labels describe the source: a later decision differs, a capture reports completion,
-or a capture reports a blocker. They are advisory judgments over retrieved excerpts, not proof of
-the current state of a project. A missing connection means none was established in the bounded
-candidate set. It does not mean nothing happened later. Timestamps describe when evidence was
-captured; an old event can be described in a newer capture.
-
-Tracing is an explicit action. Ordinary typing does not call Jev. A trace sends the query and
-bounded Decision/Handoff excerpts, with each capture's kind, capture time, and repository folder
-name, to TypeSafe's HTTPS API (the provider described in [Cortex judgment stage](cortex.md)) in at
-most two calls; it does not send whole transcripts or continuously relay new events. Jev selects
-short candidate labels which the helper maps back to local source links; excerpts can themselves
-contain source identifiers. The helper renders source text and fixed labels, not generated
-summaries. Query changes and popup dismissal cancel the pending trace; ordinary search remains
-available during errors or uncertainty.
-
-The provider key belongs in the helper's macOS Keychain item. It is never stored in the application
-bundle, repository, or login-agent plist. Jev setup is separate from basic search installation.
-The implementation follows TypeSafe's [typed API](https://docs.typesafe.ai/api) and
-[evidence reranking pattern](https://docs.typesafe.ai/cookbooks/rerank_typesafe).
 
 It prefers an installed **Black Box** Chrome web app whose shortcut URL has the same origin as
 the server. It discovers the app under `~/Applications/Chrome Apps.localized/` from its plist
@@ -82,25 +55,8 @@ notarized distribution.
 ./scripts/install-menubar.sh --install # install and start at login
 ```
 
-To enable Trace, first make `TYPESAFE_API_KEY` available in the installing shell through your
-normal private credential setup, then run:
-
-```bash
-./scripts/install-menubar.sh --install --enable-jev
-```
-
-This configures the installed app's own Keychain item and saves only a nonsecret enable flag,
-`BLACKBOX_JEV_ENABLED=1`, in its login agent; Trace stays unavailable without both. Never put the
-key into this command line, the repository, or a support transcript.
-Basic installs preserve an existing server origin and Jev enable flag. Ad hoc rebuilds may require
-re-running the explicit enable step to restore Keychain access for the new binary. That setup
-command can show macOS's approval prompt for the helper's own TypeSafe item; a refusal preserves
-the existing item. Normal use suppresses Keychain prompts and reports unavailable access instead
-of waiting for a security dialog.
-
-A basic installation writes only `~/Applications/Black Box Recall.app` and
-`~/Library/LaunchAgents/dev.blackbox.quick-recall.plist`, and loads that login agent;
-`--enable-jev` additionally writes the helper's Keychain item (see Uninstall).
+An installation writes only `~/Applications/Black Box Recall.app` and
+`~/Library/LaunchAgents/dev.blackbox.quick-recall.plist`, and loads that login agent.
 Existing targets must have the helper's own identity before the installer replaces them;
 symlink targets are rejected. A manually launched copy must be quit before reinstalling; the installer
 refuses to overwrite a running copy outside its launch agent. It explicitly starts the installed
@@ -135,10 +91,9 @@ existing instance instead of intentionally registering another shortcut.
 
 This checks URL round trips (Unicode, spaces, `+`, `&`, `#`, and percent characters), rejects unsafe
 base URLs, checks Chrome app/profile selection and recall preview decoding/exact-event links,
-compiles and signs the actual app, checks shell syntax, and exercises the installer dry run.
-It also checks Jev response validation, source qualification, exact repository/date filtering,
-mocked two-call transport and cancellation, plus installer configuration preservation and rollback.
-The installer fixtures use `python3`, temporary targets, and inert `launchctl`/Keychain stand-ins.
+compiles and signs the actual app, checks shell syntax, and exercises the installer dry run,
+plus installer configuration preservation and rollback.
+The installer fixtures use `python3`, temporary targets, and inert `launchctl` stand-ins.
 It does not install or launch the GUI. The dry-run check reads, but never writes, the real install
 targets under your home directory; set `HOME` to an empty temporary directory to isolate those
 reads as well. For a real use check after installation:
@@ -151,21 +106,6 @@ reads as well. For a real use check after installation:
    results. Change queries quickly and verify old matches do not replace newer results.
 5. Click Open results and confirm the same behavior. Choose Quit and confirm it stays stopped.
 6. Relaunch the installed app, then launch it again and confirm only one menu bar helper remains.
-
-The Jev evaluation command is deliberately separate and requires `--live` before any provider
-call. Its bundled fixtures are synthetic:
-
-```bash
-./scripts/eval-jev-recall.sh --live --fixture fixtures/jev-recall-trace.json
-```
-
-It reports selected source IDs, typed judgments, distributions, model, token usage, call count,
-and latency without printing the credential or source payloads. These small cases are regression
-smokes; they do not establish global model accuracy. For a native UI check without sending real
-history, run `python3 scripts/serve-jev-recall-fixture.py`, temporarily install with
-`BLACKBOX_URL=http://127.0.0.1:18767/`, and trace “the app that dropped my search query”. That
-trace still sends the synthetic excerpts to TypeSafe. Restore the normal server origin after that
-check. The fixture server opens no database and serves only synthetic evidence.
 
 ## Uninstall
 
@@ -185,12 +125,6 @@ rm -rf "$HOME/Applications/Black Box Recall.app"
 ```
 
 If the helper was already unloaded, `bootout` may report that the service was not found. These paths
-belong only to the quick-recall helper; no server service is involved. If you enabled Jev, its
-Keychain item remains; remove it separately when no longer needed:
+belong only to the quick-recall helper; no server service is involved.
 
-```bash
-security delete-generic-password -s dev.blackbox.quick-recall.typesafe -a typesafe
-```
-
-Implementation records: [quick recall](superpowers/plans/2026-10-02-macos-quick-recall.md) and
-[Jev trace](superpowers/plans/2026-10-02-jev-recall-trace.md).
+Implementation record: [quick recall](superpowers/plans/2026-10-02-macos-quick-recall.md).

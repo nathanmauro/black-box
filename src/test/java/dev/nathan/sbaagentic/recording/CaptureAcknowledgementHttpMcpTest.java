@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.nathan.sbaagentic.SbaAgenticApplication;
-import dev.nathan.sbaagentic.judgment.JudgmentProperties;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -62,11 +61,9 @@ class CaptureAcknowledgementHttpMcpTest {
                         "--sba.elasticsearch.enabled=false",
                         "--sba.memory.embedding.enabled=false",
                         "--sba.ask.embedding-enabled=false",
-                        "--sba.judge.enabled=false",
                         "--sba.schema.retire-workflow=false",
                         "--spring.main.banner-mode=off",
                         "--logging.level.root=WARN");
-        assertThat(app.getBean(JudgmentProperties.class).isEnabled()).isFalse();
         jdbc = app.getBean(JdbcTemplate.class);
         base = "http://127.0.0.1:" + app.getWebServer().getPort();
         app.addApplicationListener((ApplicationListener<PayloadApplicationEvent<?>>) published -> {

@@ -377,11 +377,6 @@ class DatabaseRestoreContractTest {
                         .isEqualTo(1);
                 assertThat(app.get("/api/projects/" + fixture.projectKey() + "/melds"))
                         .isEqualTo(fixture.melds());
-                assertThat(app.get("/api/sessions/" + fixture.parent() + "/judgments")
-                                .get(0)
-                                .path("eventId")
-                                .asText())
-                        .isEqualTo(fixture.eventId());
                 JsonNode current =
                         app.get("/api/recall?project=" + encode(fixture.alias()) + "&query=restore&kinds=decision");
                 assertThat(current.path("items")).hasSize(1);

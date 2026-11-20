@@ -6,7 +6,7 @@ It uses no Eclipse formatter. The formatter has been exercised on JDK 21.0.12. A
 required by the additional syntax-aware return-spacing step.
 
 No formatting goal is bound to the normal Maven lifecycle. `mvn test`, `mvn verify`, and ordinary
-builds do not acquire a formatting gate. The project-wide source pass includes the optional Cortex module; see the
+builds do not acquire a formatting gate. See the
 [rollout record](superpowers/plans/2026-09-22-java-formatting-integration.md).
 
 ## Commands

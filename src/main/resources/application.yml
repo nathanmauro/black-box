@@ -149,17 +149,6 @@ sba:
     # The exact values of this service's own credential-named settings (environment, properties,
     # imported files) are replaced wherever they appear, whatever redact-enabled and redact-patterns say.
     mask-configured-secrets: ${SBA_MASK_CONFIGURED_SECRETS:true}
-  judge:
-    enabled: ${SBA_JUDGE_ENABLED:false}
-    provider: ${SBA_JUDGE_PROVIDER:jev}
-    # Private serialized request content. Enable only with an approved local log sink.
-    payload-telemetry-enabled: ${SBA_JUDGE_PAYLOAD_TELEMETRY_ENABLED:false}
-    max-others: ${SBA_JUDGE_MAX_OTHERS:8}
-    timeout-ms: ${SBA_JUDGE_TIMEOUT_MS:12000}
-    beat:
-      gap-ms: ${SBA_JUDGE_BEAT_GAP_MS:4000}
-      max-events: ${SBA_JUDGE_BEAT_MAX_EVENTS:12}
-      max-chars: ${SBA_JUDGE_BEAT_MAX_CHARS:1500}
 
 ---
 # Keep SQLite driver properties off the PostgreSQL connection pool.

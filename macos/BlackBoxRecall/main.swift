@@ -42,10 +42,6 @@ private final class SuggestionButton: NSButton {
     }
 }
 
-private final class TraceDocument: NSStackView {
-    override var isFlipped: Bool { true }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSSearchFieldDelegate {
     private let logger = Logger(subsystem: bundleID, category: "quick-recall")
     private var statusItem: NSStatusItem!
@@ -64,14 +60,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
         configuration.httpCookieStorage = nil
         return URLSession(configuration: configuration)
     }()
-    private let traceClient = JevTraceClient()
-    private let traceButton = NSButton(title: "Trace with Jev", target: nil, action: nil)
-    private let traceScroll = NSScrollView()
-    private let traceDocument = TraceDocument()
-    private var traceHeight: NSLayoutConstraint?
-    private var traceGeneration = 0
-    private var traceTask: Task<Void, Never>?
-    private var traceURLs: [URL] = []
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
@@ -158,16 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
         let openButton = NSButton(title: "Open results", target: self, action: #selector(openResults))
         openButton.bezelStyle = .rounded
         openButton.isEnabled = baseURL != nil
-        traceButton.target = self
-        traceButton.action = #selector(startTrace)
-        traceButton.bezelStyle = .rounded
-        traceButton.keyEquivalent = "j"
-        traceButton.keyEquivalentModifierMask = .command
-        traceButton.toolTip = "Explicitly send bounded retrieved capture excerpts to TypeSafe for an advisory trace (Command–J)."
-        traceButton.isEnabled = baseURL != nil
         let quitButton = NSButton(title: "Quit", target: NSApp, action: #selector(NSApplication.terminate(_:)))
         quitButton.bezelStyle = .inline
-        let buttons = NSStackView(views: [openButton, traceButton, NSView(), quitButton])
+        let buttons = NSStackView(views: [openButton, NSView(), quitButton])
         buttons.orientation = .horizontal
         messageLabel.font = .systemFont(ofSize: 11)
         messageLabel.textColor = .secondaryLabelColor
@@ -175,17 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
         suggestionsStack.alignment = .leading
         suggestionsStack.spacing = 4
         suggestionsStack.isHidden = true
-        traceDocument.orientation = .vertical
-        traceDocument.alignment = .leading
-        traceDocument.spacing = 7
-        traceScroll.hasVerticalScroller = true
-        traceScroll.autohidesScrollers = true
-        traceScroll.drawsBackground = false
-        traceScroll.documentView = traceDocument
-        traceScroll.isHidden = true
-        traceHeight = traceScroll.heightAnchor.constraint(equalToConstant: 0)
-        traceHeight?.isActive = true
-        let stack = NSStackView(views: [heading, searchField, suggestionsStack, traceScroll, shortcut, messageLabel, buttons])
+        let stack = NSStackView(views: [heading, searchField, suggestionsStack, shortcut, messageLabel, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -199,7 +170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
             searchField.widthAnchor.constraint(equalTo: stack.widthAnchor),
             suggestionsStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            traceScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
             messageLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             buttons.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
@@ -244,11 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
 
     func popoverDidClose(_ notification: Notification) {
         cancelPreview()
-        cancelTrace()
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        cancelTrace(clear: true)
         schedulePreview()
     }
 
@@ -343,119 +311,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
         openURL(suggestions[sender.tag].eventURL(base: baseURL))
     }
 
-    private func cancelTrace(clear: Bool = false) {
-        traceGeneration += 1
-        traceTask?.cancel()
-        traceTask = nil
-        traceButton.title = "Trace with Jev"
-        if clear { renderTraceMessage(nil) }
-    }
-
-    @objc private func startTrace() {
-        cancelTrace(clear: true)
-        guard popover.isShown, let baseURL else { return }
-        let query: String
-        do { query = try JevTraceCore.query(searchField.stringValue) }
-        catch { renderTraceMessage(JevTraceError.invalidQuery.localizedDescription); return }
-        guard ProcessInfo.processInfo.environment["BLACKBOX_JEV_ENABLED"] == "1" else {
-            renderTraceMessage(JevTraceError.missingKey.localizedDescription)
-            return
-        }
-        guard let key = JevKeychain.read() else {
-            renderTraceMessage(JevTraceError.unavailableKeychain.localizedDescription)
-            return
-        }
-        let generation = traceGeneration
-        traceButton.title = "Restart trace"
-        renderTraceMessage("Retrieving captures for Jev… Bounded source excerpts are sent to TypeSafe only for this action.")
-        traceTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let result = try await self.traceClient.trace(query: query, base: baseURL, key: key) { [weak self] phase in
-                    guard let self, self.traceGeneration == generation, self.popover.isShown else { return }
-                    self.renderTraceMessage(phase)
-                }
-                await MainActor.run {
-                    guard self.traceGeneration == generation, self.popover.isShown else { return }
-                    self.traceTask = nil
-                    self.traceButton.title = "Trace with Jev"
-                    self.renderTrace(result, base: baseURL)
-                }
-            } catch {
-                await MainActor.run {
-                    guard self.traceGeneration == generation, self.popover.isShown else { return }
-                    self.traceTask = nil
-                    self.traceButton.title = "Trace with Jev"
-                    if !(error is CancellationError) {
-                        self.renderTraceMessage((error as? JevTraceError)?.localizedDescription ?? JevTraceError.retrieval.localizedDescription)
-                    }
-                }
-            }
-        }
-    }
-
-    private func clearTraceViews() {
-        traceURLs = []
-        for view in traceDocument.arrangedSubviews {
-            traceDocument.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-    }
-
-    private func addTraceText(_ text: String, bold: Bool = false) {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = bold ? .boldSystemFont(ofSize: 12) : .systemFont(ofSize: 11)
-        label.textColor = bold ? .labelColor : .secondaryLabelColor
-        traceDocument.addArrangedSubview(label)
-        label.widthAnchor.constraint(equalToConstant: 337).isActive = true
-    }
-
-    private func renderTraceMessage(_ message: String?) {
-        clearTraceViews()
-        if let message { addTraceText(message) }
-        updateTraceSize()
-    }
-
-    private func renderTrace(_ result: TraceResult, base: URL) {
-        clearTraceViews()
-        if let anchor = result.anchor { addTraceCapture(anchor, heading: "You may remember this", base: base) }
-        if let later = result.later {
-            addTraceCapture(later, heading: "Captured later · " + (result.relation?.label ?? "Related follow-up"), base: base)
-        }
-        addTraceText(result.note)
-        updateTraceSize()
-    }
-
-    private func addTraceCapture(_ capture: TraceCapture, heading: String, base: URL) {
-        addTraceText(heading, bold: true)
-        let date = capture.date.map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .short) } ?? "Date unavailable"
-        addTraceText("\(capture.project) · \(capture.kind.capitalized) · \(date)")
-        addTraceText("Source excerpt:\n" + capture.excerpt)
-        let button = NSButton(title: "Open capture", target: self, action: #selector(openTraceCapture(_:)))
-        button.bezelStyle = .rounded
-        button.tag = traceURLs.count
-        button.setAccessibilityLabel("Open capture: " + heading)
-        traceURLs.append(capture.eventURL(base: base))
-        traceDocument.addArrangedSubview(button)
-    }
-
-    private func updateTraceSize() {
-        traceScroll.isHidden = traceDocument.arrangedSubviews.isEmpty
-        if !traceScroll.isHidden {
-            traceDocument.frame = NSRect(x: 0, y: 0, width: 337, height: max(20, traceDocument.fittingSize.height))
-            traceDocument.layoutSubtreeIfNeeded()
-            traceDocument.frame.size.height = max(20, traceDocument.fittingSize.height)
-            traceHeight?.constant = min(220, traceDocument.frame.height + 5)
-            traceDocument.scroll(.zero)
-        } else { traceHeight?.constant = 0 }
-        resizePopover()
-    }
-
-    @objc private func openTraceCapture(_ sender: NSButton) {
-        guard traceURLs.indices.contains(sender.tag) else { return }
-        openURL(traceURLs[sender.tag])
-    }
-
     private func focusSearch() {
         guard let window = popover.contentViewController?.view.window else { return }
         window.title = "Black Box Recall"
@@ -480,7 +335,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
     private func openURL(_ url: URL) {
         guard let baseURL else { return }
         cancelPreview()
-        cancelTrace()
         setMessage("Opening results…")
         guard let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome"),
               let executable = Bundle(url: chrome)?.executableURL else {
@@ -492,9 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
         // Chrome with its app-ID + launch-URL switches; a running Chrome forwards this argv.
         let process = Process()
         process.executableURL = executable
-        var browserEnvironment = ProcessInfo.processInfo.environment
-        browserEnvironment.removeValue(forKey: "TYPESAFE_API_KEY")
-        process.environment = browserEnvironment
+        process.environment = ProcessInfo.processInfo.environment
         process.arguments = launch?.arguments(for: url) ?? [url.absoluteString]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -562,35 +414,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSS
 
     func applicationWillTerminate(_ notification: Notification) {
         cancelPreview()
-        cancelTrace()
-        traceClient.invalidate()
         previewSession.invalidateAndCancel()
         if let hotKey { UnregisterEventHotKey(hotKey) }
         if let eventHandler { RemoveEventHandler(eventHandler) }
         DistributedNotificationCenter.default().removeObserver(self)
     }
-}
-
-// Key setup is explicit and uses the installed bundle so its Keychain access owns the record.
-let commandArguments = Array(CommandLine.arguments.dropFirst())
-if commandArguments == ["--validate-jev-key"] {
-    if JevTraceClient.validKey(ProcessInfo.processInfo.environment["TYPESAFE_API_KEY"]) != nil { exit(0) }
-    FileHandle.standardError.write(Data("TYPESAFE_API_KEY is missing or invalid; no value was printed.\n".utf8))
-    exit(1)
-}
-if commandArguments == ["--check-jev-key"] {
-    let present = JevKeychain.read() != nil
-    print(present ? "present" : "unavailable")
-    exit(present ? 0 : 1)
-}
-if commandArguments == ["--configure-jev-key"] {
-    let installed = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Black Box Recall.app")
-    if Bundle.main.bundleIdentifier != bundleID || Bundle.main.bundleURL.standardizedFileURL != installed.standardizedFileURL {
-        FileHandle.standardError.write(Data("Configure Jev using the installed Black Box Recall bundle.\n".utf8))
-        exit(1)
-    }
-    do { try JevKeychain.configureFromEnvironment(); print("Jev key configured in the helper’s Keychain record."); exit(0) }
-    catch { FileHandle.standardError.write(Data(((error as? JevTraceError)?.localizedDescription ?? "Jev key setup failed.").utf8)); exit(1) }
 }
 
 // Used by the installer before persisting optional configuration; no GUI is created.

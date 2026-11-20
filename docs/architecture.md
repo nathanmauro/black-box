@@ -11,8 +11,8 @@ task queue or worker runner; track work in whatever tool you already use (the ma
 Linear).
 
 The core loop requires only the Spring Boot process and SQLite. SSE is not a durability boundary:
-`event.appended` frames carry a durable, replayable append cursor, while `session.updated` and
-`judgment.appended` are transient hints (see [SSE and lineage hints](#sse-and-lineage-hints)).
+`event.appended` frames carry a durable, replayable append cursor, while `session.updated` is
+a transient hint (see [SSE and lineage hints](#sse-and-lineage-hints)).
 Session summarization runs after canonical capture, in the background. A terminal capture
 (`SessionEnd`, `Stop`, or `SubagentStop`) automatically schedules a summary for a session that has
 none, and the `summarize` commands run it explicitly. With the default `external` backend that
@@ -51,13 +51,12 @@ flowchart LR
     subgraph Core["Black Box modules"]
         LINEAGE["lineage<br/>session links and DAG projection"]
         MEMORY["memory<br/>structured recall and search"]
-        JUDGMENT["judgment<br/>optional cortex judgments"]
         RECORDING["recording<br/>canonical event writes"]
         PROJECT["project<br/>catalog and secure code navigation"]
         BROADCAST["platform SSE hub<br/>best effort"]
     end
 
-    DB[("Canonical relational store (SQLite default)<br/>agent_sessions · agent_events<br/>event_judgments<br/>memory_embeddings<br/>session_links · project_aliases")]
+    DB[("Canonical relational store (SQLite default)<br/>agent_sessions · agent_events<br/>memory_embeddings<br/>session_links · project_aliases")]
     ES["Optional Elasticsearch<br/>secondary event index"]
     EXTERNAL["Default external summary wrapper<br/>Codex CLI vendor path"]
     LOCAL["Opt-in local summary backend<br/>OpenAI-compatible server"]
@@ -71,15 +70,12 @@ flowchart LR
     REST --> LINEAGE & MEMORY & RECORDING & PROJECT
     LINEAGE --> RECORDING
     MEMORY --> RECORDING
-    JUDGMENT --> RECORDING & LINEAGE
     PROJECT --> DB
     PROJECT -. "validated CodeReference" .-> EDITOR
     RECORDING --> DB
-    JUDGMENT --> DB
     LINEAGE --> DB
     RECORDING -. "event recorded after commit" .-> BROADCAST
     LINEAGE -. "parent and link hints" .-> BROADCAST
-    JUDGMENT -. "after beat judgment" .-> BROADCAST
     BROADCAST --> STREAM
     STREAM -. "refresh" .-> AGENTS & UI
     MEMORY -. "new event mirror when enabled" .-> ES
@@ -102,14 +98,11 @@ callbacks. Session lineage has its own module and no task-board dependency.
 ```mermaid
 flowchart LR
     PLATFORM["platform"] --> ASK["ask"]
-    PLATFORM --> JUDGMENT["judgment"]
     PLATFORM --> MEMORY["memory"]
     PLATFORM --> RECORDING["recording"]
     PLATFORM --> SUMMARY["summary"]
     PLATFORM --> LINEAGE["lineage"]
     ASK --> MEMORY
-    JUDGMENT --> RECORDING
-    JUDGMENT --> LINEAGE
     MEMORY --> PROJECT["project"]
     MEMORY --> RECORDING
     PROJECT --> RECORDING
@@ -127,10 +120,6 @@ canonical evidence. See `EventIngestService.ingest`, `SubagentLinkListener`, and
 The stable package rules and contributor guidance live in
 [`docs/architecture/package-conventions.md`](architecture/package-conventions.md).
 
-The optional `judgment` module owns the cortex stage described in [`docs/cortex.md`](cortex.md):
-folding events into beats, asking the shared `orbit-jev-v1` question set when enabled, persisting
-typed answers, and publishing `judgment.appended` as an advisory stream update.
-
 The `project` module also owns local file navigation. `GET /api/projects/code-scopes` projects only
 session-backed catalog scopes that exist beneath a filesystem-verified Git root. The UI derives an
 opaque-key plus relative-path `CodeReference`; `POST /api/open-in-editor` and
@@ -144,7 +133,7 @@ uses the shell-based summary adapter.
 
 The `lineage` module owns `session_links`, hook-derived subagent relationships, child counts, and
 the session-only DAG projection. It depends on the public recording API, and is consumed by the
-judgment module and the platform SSE broadcaster. It has no task-board or runner dependency.
+platform SSE broadcaster. It has no task-board or runner dependency.
 
 | Operation | REST | Contract |
 | --- | --- | --- |
@@ -164,8 +153,7 @@ runner. Historical Handoff events remain ordinary recallable captures. See
 
 ## SSE and lineage hints
 
-`GET /api/stream` retains `event.appended` and `session.updated`; the cortex stage adds
-`judgment.appended` when `sba.judge.enabled=true`. `event.appended` includes `role`, `textPreview`,
+`GET /api/stream` retains `event.appended` and `session.updated`. `event.appended` includes `role`, `textPreview`,
 and `parentSessionId`; `session.updated` includes `spawnedBy` and `linkTypes`. The lineage module
 continues supplying those hints to the broadcaster and Orbit continues using the same session
 relationships.
@@ -174,8 +162,8 @@ relationships.
 A client that reconnects with `Last-Event-ID` replays missed captures in pages of up to 2,000
 positions; an unknown, legacy (`<observedAt>|<id>`), or other-database cursor produces
 `replay.reset`, and the client must reload canonical REST state. `since=<ISO-8601>` is an optional
-observed-time filter, not a cursor. `session.updated` and `judgment.appended` remain transient,
-best-effort hints with no replay. The retired `task.*` lifecycle and annotation frames are no longer
+observed-time filter, not a cursor. `session.updated` remains a transient,
+best-effort hint with no replay. The retired `task.*` lifecycle and annotation frames are no longer
 emitted. The full contract is in [durable stream recovery](durable-stream-recovery.md).
 
 ## Logical project identity

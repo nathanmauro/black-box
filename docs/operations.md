@@ -32,7 +32,7 @@ does not make those operations read-only or disable their configured providers.
 
 A normal command closes its application context and exits after its synchronous operation finishes.
 A command failure still exits nonzero. Successful `ingest` confirms canonical capture; optional
-background terminal summaries and judgments can be interrupted during shutdown. Run `summarize`
+background terminal summaries can be interrupted during shutdown. Run `summarize`
 or `summarize-missing` explicitly when you need to wait for the summary operation and its stored
 result. No-command HTTP service mode stays running until shutdown.
 
@@ -64,8 +64,7 @@ unless `--text` is supplied. A pipe that never closes likewise waits for its pro
 
 An optional macOS menu bar helper, [macOS quick recall](macos-quick-recall.md), searches an already
 running server from a **Control–Option–B** shortcut. It installs its own app and login agent
-(`dev.blackbox.quick-recall`), never this server service; its opt-in **Trace with Jev** action sends
-bounded excerpts to TypeSafe ([Cortex judgment stage](cortex.md)) only when invoked. The
+(`dev.blackbox.quick-recall`), never this server service. The
 [companion](companion.md)'s recall field is the embedded alternative. Both open the Recall page with
 `run=1`; the helper uses the legacy `scope` parameter, which the page still accepts.
 
@@ -171,8 +170,7 @@ request cannot be interrupted, so it is abandoned when the process exits unless 
 another half second. A warning names the sessions left without a summary; they keep none until
 `summarize-missing` (CLI) or `POST /api/sessions/summarize-missing` backfills them. Backfill uses a
 session's handoff where one still stands, so those sessions make no model call.
-An optional judgment underway gets 0.5 seconds, and queued beats are not judged. These limits keep a
-stop inside launchd's exit timeout, 5 seconds for a job installed from the template (it sets no
+These limits keep a stop inside launchd's exit timeout, 5 seconds for a job installed from the template (it sets no
 `ExitTimeOut`), after which launchd sends SIGKILL. A service manager with a shorter stop timeout
 needs a smaller phase timeout, for example
 `--spring.lifecycle.timeout-per-shutdown-phase=1s`.
@@ -307,18 +305,18 @@ delimiter, another quote or a JSON escape after the quote ends it.
 
 The same names also match displayed service configuration:
 
-- `=>` pairs, as printed by `plutil -p` (`"SBA_JUDGE_API_KEY" => "…"`), `launchctl print`
-  (`SBA_JUDGE_API_KEY => …`), Ruby and PHP, also with an HTML-safe `=\u003e`. A `=>` value is never
+- `=>` pairs, as printed by `plutil -p` (`"SBA_API_KEY" => "…"`), `launchctl print`
+  (`SBA_API_KEY => …`), Ruby and PHP, also with an HTML-safe `=\u003e`. A `=>` value is never
   read as a shell reference, so `SBA_SIGNING_KEY => $…` loses it.
-- A name that starts its displayed line is a key/value pair in any letter case (`JevApiKey => …`,
-  `db_password => …`, `sba.judge.password => …`). It starts its line when only indentation stands
+- A name that starts its displayed line is a key/value pair in any letter case (`ApiKey => …`,
+  `db_password => …`, `db.password => …`). It starts its line when only indentation stands
   before it, optionally after a `cat -n`, file-view or `grep -n`/`rg` gutter with or without a path
   (`24:`, `path:12:`, `path-13-`), quote marks, a Markdown heading, a list or diff marker, an
   opening code span or bold marker, or the dotted prefix of the name when it holds up to 128
   characters (a longer one counts only when a single segment takes it past 128, and never past 256).
   An unquoted value after such a name runs to the end of its line, so its spaces, commas, quotes and
   backslashes go too; inside a code span or bold text that opened before the name it ends at the
-  closer, so `` `JevApiKey => …` is shown`` keeps the prose after it. A spaced `name => value` whose
+  closer, so `` `ApiKey => …` is shown`` keeps the prose after it. A spaced `name => value` whose
   name has lowercase letters is kept as a lambda or arrow-function parameter when the name does not
   start its line (`tokens.map(token => …)`) or when the value opens a block or parenthesis or uses
   the name itself (`token => token.trim()`). The same name inline in prose keeps the rest of its
@@ -491,12 +489,11 @@ Known limits:
   `--token now reads …`, `Make --api-key required.`), including a listed word glued to `/`, an
   apostrophe, a hyphen, an em dash, an ellipsis or `!` (`--api-key and/or --token`,
   `--token that's all`).
-
-- Names: a quoted name with dots is not matched (`"sba.judge.password" => …`,
-  `{"sba.judge.password": …}`, `defaults read`'s `"sync.auth.token" = …;`), nor is a lowercase or
-  mixed-case name that ends with `key` but holds no credential word (`jev_key`, `JevKey`), a name
+- Names: a quoted name with dots is not matched (`"db.password" => …`,
+  `{"db.password": …}`, `defaults read`'s `"sync.auth.token" = …;`), nor is a lowercase or
+  mixed-case name that ends with `key` but holds no credential word (`sort_key`, `SortKey`), a name
   written as a code subscript or argument (`plist['EnvironmentVariables']['SBA_DB_PASSWORD'] = …`,
-  `os.environ["SBA_X_TOKEN"] = …`, `System.setProperty("sba.judge.password", …)`), or a run of more
+  `os.environ["SBA_X_TOKEN"] = …`, `System.setProperty("db.password", …)`), or a run of more
   than 256 name characters. A property-list `<key>` and the name that `launchctl setenv`,
   PlistBuddy `Set`/`Add` or `defaults write` writes are read only up to 128 characters, so a longer
   name keeps its value there (`launchctl setenv` with a 129-character `…_PASSWORD` name). A list

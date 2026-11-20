@@ -30,7 +30,7 @@ class PackageArchitectureTest {
      * packages are deliberately not grandfathered with class-by-class exceptions.
      */
     private static final Set<String> FULLY_MIGRATED_MODULES =
-            Set.of("ask", "memory", "platform", "project", "query", "recording", "summary", "lineage", "judgment");
+            Set.of("ask", "memory", "platform", "project", "query", "recording", "summary", "lineage");
 
     private final JavaClasses classes = new ClassFileImporter()
             .withImportOption(new ImportOption.DoNotIncludeTests())

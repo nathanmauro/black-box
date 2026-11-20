@@ -1,7 +1,6 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Lightweight payloads pushed over the {@code /api/stream} Server-Sent Events channel. These carry
@@ -34,21 +33,6 @@ public final class StreamEvents {
             String lastSeenAt,
             String spawnedBy,
             List<String> linkTypes) {}
-
-    /** A judged beat appended by the cortex stage, named SSE event {@code judgment.appended}. */
-    public record JudgmentAppended(
-            List<String> eventIds,
-            String sessionId,
-            String beatId,
-            String phase,
-            double salience,
-            double novelty,
-            double human,
-            Map<String, Double> kin,
-            String judge,
-            String model,
-            String version,
-            String judgedAt) {}
 
     private StreamEvents() {}
 }

@@ -1,5 +1,5 @@
 # Zero-egress local profile (--spring.profiles.active=offline or SPRING_PROFILES_ACTIVE=offline).
-# Disables external CLI summaries, local LLM endpoints, embedding calls, Elasticsearch, and Cortex judge.
+# Disables external CLI summaries, local LLM endpoints, embedding calls, and Elasticsearch.
 sba:
   summary:
     backend: local
@@ -11,8 +11,6 @@ sba:
   ask:
     embedding-enabled: false
   elasticsearch:
-    enabled: false
-  judge:
     enabled: false
   continuation:
     synthesis:

@@ -43,7 +43,7 @@ While connected, an empty feed or a backdated/tied notification requests that sa
 a mixed burst keeps that requirement until the coalesced refresh. Ordinary newer notifications keep
 the existing pending-row behavior and continue after the 50-notification buffer fills. An explicit
 past `until:` filter continues to pause ordinary live updates; reset/reconnect still reconciles it. The existing
-`session.updated` and `judgment.appended` frames remain transient and have no durable event cursor.
+`session.updated` frame remains transient and has no durable event cursor.
 
 `since=<ISO-8601>` is an optional inclusive observed-time filter, applied to both replay and live
 drains, including reconnects to the same URL. Matching frames still arrive in append order. A
