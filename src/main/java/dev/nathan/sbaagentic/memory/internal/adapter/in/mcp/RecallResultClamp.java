@@ -60,7 +60,10 @@ final class RecallResultClamp {
                 kept.size(),
                 List.copyOf(kept),
                 result.mode(),
-                truncated);
+                truncated,
+                // Broadcasts carry their own count and character cap; maxChars bounds recalled items only.
+                result.broadcasts(),
+                result.broadcastsOmitted());
     }
 
     static long cost(RecallResult result) {

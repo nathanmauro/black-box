@@ -353,7 +353,8 @@ class RecallTelemetryTest {
                 service,
                 mock(MemorySearchOperations.class),
                 mock(RecordingCaptureOperations.class),
-                mock(EvidenceService.class));
+                mock(EvidenceService.class),
+                mock(BroadcastService.class));
         var callback = java.util.Arrays.stream(tools.get())
                 .filter(tool -> tool.getToolDefinition().name().equals("recallContext"))
                 .findFirst()
@@ -384,7 +385,8 @@ class RecallTelemetryTest {
                 service,
                 mock(MemorySearchOperations.class),
                 mock(RecordingCaptureOperations.class),
-                mock(EvidenceService.class));
+                mock(EvidenceService.class),
+                mock(BroadcastService.class));
         var callback = java.util.Arrays.stream(tools.get())
                 .filter(tool -> tool.getToolDefinition().name().equals("recallContext"))
                 .findFirst()

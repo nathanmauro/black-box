@@ -2,9 +2,16 @@ package dev.nathan.sbaagentic.memory.internal.adapter.in.mcp;
 
 import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemorySearchOperations;
+import dev.nathan.sbaagentic.memory.ProjectBroadcast;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastClear;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastClearResult;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastListQuery;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastListResponse;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastService;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastUpsert;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
 import dev.nathan.sbaagentic.memory.internal.application.IdeaDetail;
 import dev.nathan.sbaagentic.recording.AgentSession;
@@ -42,18 +49,21 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
     private final MemorySearchOperations memorySearch;
     private final RecordingCaptureOperations captureOperations;
     private final EvidenceService evidence;
+    private final BroadcastService broadcasts;
 
     public MemoryMcpTools(
             RecordingCatalog recordingCatalog,
             MemoryRecallOperations memoryRecall,
             MemorySearchOperations memorySearch,
             RecordingCaptureOperations captureOperations,
-            EvidenceService evidence) {
+            EvidenceService evidence,
+            BroadcastService broadcasts) {
         this.recordingCatalog = recordingCatalog;
         this.memoryRecall = memoryRecall;
         this.memorySearch = memorySearch;
         this.captureOperations = captureOperations;
         this.evidence = evidence;
+        this.broadcasts = broadcasts;
     }
 
     @Override
@@ -151,7 +161,10 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                     + "and ideas "
                     + "that earlier agents "
                     + "(or an earlier you) committed — before starting work, so you do not re-decide what was "
-                    + "already settled. Returns structured fields and the full captured text, not raw search hits.")
+                    + "already settled. Returns structured fields and the full captured text, not raw search hits. "
+                    + "When the recall resolves to a project (project, or a repo path in repoOrTopic), it also "
+                    + "returns that project's live broadcasts: hazards, then tentacles, then invariants, at most "
+                    + "8 items and 1,500 characters; broadcastsOmitted counts the rest.")
     public RecallResult recallContext(
             @ToolParam(
                             required = false,
@@ -470,6 +483,80 @@ public class MemoryMcpTools implements Supplier<ToolCallback[]> {
                 notes,
                 project,
                 alsoIn));
+    }
+
+    @Tool(
+            description = "Add or refresh a live broadcast for this project: something every concurrent or newly "
+                    + "started session here must know right now. kind 'hazard' = active lock, dirty tree, or "
+                    + "warning (expires after 72h unless ttlHours says otherwise); 'invariant' = standing project "
+                    + "fact (sticky); 'tentacle' = a thread, tangent, worktree, or branch you started and have not "
+                    + "finished (sticky; only clearBroadcast closes it). Same repo + key replaces the open one. "
+                    + "Clear it the moment the condition ends.")
+    public ProjectBroadcast setBroadcast(
+            @ToolParam(description = "Source client: claude, codex, or manual.") String source,
+            @ToolParam(description = "Client session id or stable grouping key for your run.") String clientSessionId,
+            @ToolParam(description = "Repo path this broadcast is about (your working directory).") String repo,
+            @ToolParam(
+                            description = "Stable slug, unique per project, e.g. 'worktree-live-sift-v02'. "
+                                    + "Reuse it to refresh; letters, digits, '.', '_', ':', '-'; max 80.")
+                    String key,
+            @ToolParam(description = "One-line operational notice, at most 280 characters.") String message,
+            @ToolParam(required = false, description = "hazard (default), invariant, or tentacle.") String kind,
+            @ToolParam(
+                            required = false,
+                            description = "info, warn, or blocker. Omit for the kind default "
+                                    + "(warn for hazards, info otherwise).")
+                    String severity,
+            @ToolParam(
+                            required = false,
+                            description = "Hours until it drops out of recall. Omit for the kind default; 0 = sticky.")
+                    Integer ttlHours,
+            @ToolParam(
+                            required = false,
+                            description = "When to resurface a tentacle, ISO-8601 date-time with offset or a date. "
+                                    + "Omit to go stale after 72h without a refresh.")
+                    String followUpAt) {
+
+        return broadcasts.set(
+                new BroadcastUpsert(source, clientSessionId, repo, key, kind, message, severity, ttlHours, followUpAt));
+    }
+
+    @Tool(
+            description = "Subtract a broadcast from this project's live set once its condition has ended "
+                    + "(lock released, tree committed, tentacle finished or abandoned). Idempotent: clearing "
+                    + "an already-cleared or unknown key succeeds with cleared=false. History is kept.")
+    public BroadcastClearResult clearBroadcast(
+            @ToolParam(description = "Source client: claude, codex, or manual.") String source,
+            @ToolParam(description = "Client session id or stable grouping key for your run.") String clientSessionId,
+            @ToolParam(description = "Repo path the broadcast was set for (your working directory).") String repo,
+            @ToolParam(description = "The broadcast key to clear.") String key,
+            @ToolParam(required = false, description = "Why it ended, e.g. 'merged', 'abandoned', 'lock released'.")
+                    String reason) {
+
+        return broadcasts.clear(new BroadcastClear(source, clientSessionId, repo, key, reason));
+    }
+
+    @Tool(
+            description = "List live broadcasts for a project, or across every project with allProjects=true. "
+                    + "staleOnly=true returns open tentacles that need attention: past followUpAt, lapsed while "
+                    + "still open, or untouched for staleAfterHours (default 72), longest-neglected first.")
+    public BroadcastListResponse listBroadcasts(
+            @ToolParam(
+                            required = false,
+                            description = "Project path or registered alias. Required unless allProjects=true.")
+                    String project,
+            @ToolParam(required = false, description = "Filter to hazard, invariant, or tentacle.") String kind,
+            @ToolParam(required = false, description = "true = only stale tentacles.") Boolean staleOnly,
+            @ToolParam(required = false, description = "Age threshold for staleOnly. Omit for 72.")
+                    Integer staleAfterHours,
+            @ToolParam(required = false, description = "true = every project.") Boolean allProjects,
+            @ToolParam(required = false, description = "true = include cleared history and expired hazards/invariants.")
+                    Boolean includeCleared,
+            @ToolParam(required = false, description = "Maximum broadcasts to return. Omit for 50, max 200.")
+                    Integer limit) {
+
+        return broadcasts.list(
+                new BroadcastListQuery(project, kind, staleOnly, staleAfterHours, allProjects, includeCleared, limit));
     }
 
     @Tool(description = "Recall an idea and the evidence that supports or refutes it across every revision.")

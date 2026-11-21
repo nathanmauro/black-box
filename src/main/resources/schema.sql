@@ -173,3 +173,31 @@ CREATE TABLE IF NOT EXISTS event_stream_positions (
     position BIGINT PRIMARY KEY CHECK (position > 0),
     event_id TEXT NOT NULL UNIQUE
 );
+
+-- Per-project broadcasts: a mutable live set (hazard, invariant, tentacle) every session should
+-- see. Clearing is a soft delete so nothing vanishes without history. Timestamps are fixed-width
+-- UTC text (millisecond precision), so plain text comparison orders them on both backends.
+CREATE TABLE IF NOT EXISTS project_broadcasts (
+    id TEXT PRIMARY KEY,
+    project_scope TEXT NOT NULL,
+    broadcast_key TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('hazard', 'invariant', 'tentacle')),
+    message TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK (severity IN ('info', 'warn', 'blocker')),
+    source TEXT NOT NULL,
+    client_session_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT,
+    follow_up_at TEXT,
+    cleared_at TEXT,
+    cleared_by TEXT,
+    clear_reason TEXT
+);
+
+-- Upsert identity: at most one uncleared broadcast per (project, key); cleared rows are history.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_project_broadcasts_open_key
+    ON project_broadcasts (project_scope, broadcast_key) WHERE cleared_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_project_broadcasts_kind_open
+    ON project_broadcasts (kind, updated_at) WHERE cleared_at IS NULL;

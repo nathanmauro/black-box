@@ -77,7 +77,7 @@
     "ProjectTimelineResponse": {"projectKey":"/repo","canonicalKey":"/repo","label":"repo","limit":50,"offset":0,"count":1,"items":[]},
     "ProjectTrajectoryResponse": {"projectKey":"/repo","canonicalKey":"/repo","label":"repo","generatedAt":"2026-07-20T12:00:00Z","totalCaptures":1,"captures":[],"tasks":[]},
     "ProjectionPath": {"title":"Ship graph","description":"Capture futures","confidence":0.72},
-    "RecallResult": {"scope":"/repo","withinHours":168,"kinds":["handoff"],"count":1,"items":[],"mode":"hybrid","truncated":false},
+    "RecallResult": {"scope":"/repo","withinHours":168,"kinds":["handoff"],"count":1,"items":[],"mode":"hybrid","truncated":false,"broadcasts":[{"key":"dirty-main","kind":"hazard","severity":"warn","message":"Main has uncommitted edits; stage exact paths.","updatedAt":"2026-07-20T12:00:00Z","expiresAt":"2026-07-23T12:00:00Z"}],"broadcastsOmitted":0},
     "RecalledItem": {"eventId":"event-1","sessionId":"session-1","kind":"handoff","source":"codex","clientSessionId":"client-1","repo":"/repo","observedAt":"2026-07-20T12:00:00Z","headline":"done","rationale":null,"alternatives":[],"confidence":null,"openLoops":[],"nextAction":"verify","toAgent":"next","score":null,"supersedesEventId":"event-prior","supersededByEventId":"event-next","body":"Captured observation\nIts full supporting evidence."},
     "SearchResponse": {"query":"refactor","local":[],"elastic":[],"elasticHealth":{"enabled":false,"available":false,"indexName":"events","detail":"disabled"}},
     "SessionLink": {"id":"link-1","parentSessionId":"parent","childSessionId":"child","linkType":"spawned","createdAt":"2026-07-20T12:00:00Z"},

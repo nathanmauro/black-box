@@ -35,6 +35,9 @@ commands, hooks, and the bundled skill via `./scripts/blackbox init` (`--apply` 
 | `captureIdea`        | Capture an idea someone proposed that is not being acted on now (a human's aside or an agent's suggestion)              |
 | `captureEvidence`    | Capture a verifiable fact with provenance and optional support or refute links                                          |
 | `recallIdea`         | Return an idea with supporting and refuting Evidence across revisions                                                   |
+| `setBroadcast`       | Add or refresh a live project broadcast by key: `hazard`, `invariant`, or `tentacle`                                    |
+| `clearBroadcast`     | Subtract a broadcast once its condition ends; idempotent, keeps history                                                 |
+| `listBroadcasts`     | List a project's broadcasts, or stale tentacles across every project with `allProjects` and `staleOnly`                 |
 | `recallContext`      | Recall Decisions, Handoffs, Observations, Ideas, and Evidence lexically or semantically; Projections are lexical-only   |
 | `searchContext`      | Bounded discovery excerpts, filter diagnostics, provenance and source references                                        |
 | `findBraids`         | Bounded discovery and exact lookup of saved braid artifacts across assigned and unassigned projects                     |
@@ -382,6 +385,45 @@ The task/spec REST API and seven coordination MCP tools have been retired. Reloa
 cached MCP clients after upgrading to refresh their tool inventory. Capture, recall, search,
 projections, ideas, recent sessions, and model-status tools remain. See
 [retirement and upgrade notes](board-retirement.md) for storage and local-state boundaries.
+
+## Project broadcasts
+
+Decisions are immutable and handoffs are snapshots. A broadcast is the third shape: a small,
+mutable set per project of what every concurrent or newly started session there must know right
+now. Agents add one with a stable `key`, refresh it by setting the same key again, and clear it
+when the condition ends. Cleared rows stay as history.
+
+| Kind        | Meaning                                                    | Default severity | Default TTL |
+| ----------- | ---------------------------------------------------------- | ---------------- | ----------- |
+| `hazard`    | Active lock, dirty tree, live server, or warning           | `warn`           | 72 hours    |
+| `invariant` | Standing project fact, such as a schema or API freeze      | `info`           | sticky      |
+| `tentacle`  | Started-but-unfinished thread, tangent, worktree, branch   | `info`           | sticky      |
+
+`severity` is `info`, `warn`, or `blocker`. `ttlHours=0` makes a broadcast sticky. Messages hold
+at most 280 characters; keys are slugs of at most 80 characters, unique per project among open
+broadcasts. `repo` resolves through project aliases to the canonical project.
+
+Only `clearBroadcast` closes a tentacle. A tentacle's TTL hides it from recall when it lapses, but
+it stays listed and counts as stale. A tentacle is stale when it lapsed while open, when its
+`followUpAt` has passed, or, without a follow-up, when nobody refreshed it within
+`staleAfterHours` (default 72).
+
+`recallContext` and `/api/recall` attach the project's active broadcasts as `broadcasts` when the
+recall resolves to a project (`project`, or an absolute path as the legacy scope). They are
+ordered hazards, then tentacles, then invariants, louder and newer first, and capped at 8 items
+and 1,500 characters of key plus message. `broadcastsOmitted` counts what did not fit. A topic
+recall has no project and carries no broadcasts. The `maxChars` clamp bounds items only.
+
+REST:
+
+- `GET /api/broadcasts?project=&kind=&staleOnly=&staleAfterHours=&allProjects=&includeCleared=&limit=`
+  returns `{broadcasts, count, staleAfterHours, asOf}`. `project` is required unless
+  `allProjects=true`. `includeCleared=true` adds cleared history and expired hazards and invariants.
+- `PUT` or `POST /api/broadcasts` with `{source, clientSessionId, repo, key, message, kind,
+  severity, ttlHours, followUpAt}` upserts and returns the broadcast.
+- `DELETE /api/broadcasts?repo=&key=&reason=` or `POST /api/broadcasts/clear` with
+  `{source, clientSessionId, repo, key, reason}` clears it and returns `{projectScope, key, cleared,
+  broadcast}`; `cleared` is false when nothing was open.
 
 ## Recall scope and limits
 

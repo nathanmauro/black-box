@@ -7,12 +7,14 @@ import dev.nathan.sbaagentic.memory.MemoryRecallOperations;
 import dev.nathan.sbaagentic.memory.MemoryRecallProperties;
 import dev.nathan.sbaagentic.memory.RecallRequestContext;
 import dev.nathan.sbaagentic.memory.RecallResult;
+import dev.nathan.sbaagentic.memory.RecalledBroadcast;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.ReciprocalRankFusion;
 import dev.nathan.sbaagentic.memory.internal.application.RecallTelemetry.Sample;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore;
 import dev.nathan.sbaagentic.memory.internal.application.port.MemoryVectorStore.ScoredKey;
 import dev.nathan.sbaagentic.memory.internal.application.port.TextEmbedder;
+import dev.nathan.sbaagentic.memory.internal.domain.BroadcastDigest;
 import dev.nathan.sbaagentic.memory.internal.domain.EmbeddingVector;
 import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.EvidenceKind;
@@ -27,6 +29,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -66,12 +70,15 @@ public class ContextService implements MemoryRecallOperations {
     private static final int DEFAULT_RECALL_ITEMS = 10;
     private static final String VECTOR_EVENT_PREFIX = "event:";
 
+    private static final Logger log = LoggerFactory.getLogger(ContextService.class);
+
     private final MemoryEventReader repository;
     private final TextEmbedder embedder;
     private final MemoryVectorStore vectorStore;
     private final MemoryRecallProperties recallProperties;
     private final RecallTelemetry telemetry;
     private final dev.nathan.sbaagentic.recording.ProjectScopeResolver projects;
+    private final RecallBroadcastSource broadcasts;
 
     public ContextService(
             MemoryEventReader repository,
@@ -90,7 +97,6 @@ public class ContextService implements MemoryRecallOperations {
         this(repository, embedder, vectorStore, recallProperties, telemetry, scope -> List.of(scope));
     }
 
-    @Autowired
     public ContextService(
             MemoryEventReader repository,
             TextEmbedder embedder,
@@ -98,7 +104,20 @@ public class ContextService implements MemoryRecallOperations {
             MemoryRecallProperties recallProperties,
             RecallTelemetry telemetry,
             dev.nathan.sbaagentic.recording.ProjectScopeResolver projects) {
+        this(repository, embedder, vectorStore, recallProperties, telemetry, projects, RecallBroadcastSource.none());
+    }
+
+    @Autowired
+    public ContextService(
+            MemoryEventReader repository,
+            TextEmbedder embedder,
+            MemoryVectorStore vectorStore,
+            MemoryRecallProperties recallProperties,
+            RecallTelemetry telemetry,
+            dev.nathan.sbaagentic.recording.ProjectScopeResolver projects,
+            RecallBroadcastSource broadcasts) {
         this.projects = projects;
+        this.broadcasts = broadcasts;
         this.repository = repository;
         this.embedder = embedder;
         this.vectorStore = vectorStore;
@@ -132,15 +151,54 @@ public class ContextService implements MemoryRecallOperations {
         }
         List<String> projectScopes = project == null || project.isBlank() ? null : projects.scopesFor(project.strip());
         String effectiveQuery = explicit ? query : scope;
+        RecallResult result;
         if (RecallRequestContext.current() == null) {
             try (var ignored = RecallRequestContext.open("internal", null, null, null)) {
-
-                return measuredRecall(
+                result = measuredRecall(
                         effectiveQuery, withinHours, kinds, limit, projectScopes, explicit, includeSuperseded);
             }
+        } else {
+            result = measuredRecall(
+                    effectiveQuery, withinHours, kinds, limit, projectScopes, explicit, includeSuperseded);
         }
 
-        return measuredRecall(effectiveQuery, withinHours, kinds, limit, projectScopes, explicit, includeSuperseded);
+        return withBroadcasts(result, broadcastScopes(projectScopes, explicit ? null : scope));
+    }
+
+    /**
+     * Broadcasts attach only when recall resolved to a project: an explicit {@code project}, or a
+     * legacy scope that is an absolute path. A topic query has no project, so it gets none.
+     */
+    private List<String> broadcastScopes(List<String> projectScopes, String legacyScope) {
+        if (projectScopes != null) {
+
+            return projectScopes;
+        }
+        if (legacyScope == null || !legacyScope.strip().startsWith("/")) {
+
+            return List.of();
+        }
+
+        return projects.scopesFor(legacyScope.strip());
+    }
+
+    /** A broken broadcast read must never cost the caller its recall. */
+    private RecallResult withBroadcasts(RecallResult result, List<String> scopes) {
+        if (result == null || scopes == null || scopes.isEmpty()) {
+
+            return result;
+        }
+        try {
+            BroadcastDigest digest = broadcasts.digestFor(scopes);
+            List<RecalledBroadcast> attached =
+                    digest.items().stream().map(RecalledBroadcast::of).toList();
+
+            return result.withBroadcasts(attached, digest.omitted());
+        } catch (RuntimeException ex) {
+            log.warn("Recall returned without broadcasts: {}", ex.toString());
+
+            return result;
+        }
     }
 
     private RecallResult measuredRecall(

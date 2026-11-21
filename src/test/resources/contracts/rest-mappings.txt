@@ -1,7 +1,9 @@
 # Sorted method/path snapshot. Implementation controller classes are intentionally excluded.
+DELETE /api/broadcasts
 DELETE /api/project-aliases
 GET /api/ask/retrieve
 GET /api/ask/status
+GET /api/broadcasts
 GET /api/continuations
 GET /api/dag
 GET /api/diagnostics/continuity
@@ -50,6 +52,8 @@ GET /sessions
 GET /sessions/**
 GET /stream
 POST /api/ask
+POST /api/broadcasts
+POST /api/broadcasts/clear
 POST /api/continuations/synthesize
 POST /api/decisions
 POST /api/events
@@ -69,4 +73,5 @@ POST /api/sessions/summarize
 POST /api/sessions/summarize-missing
 POST /api/sessions/{sessionId}/exports/{targetId}
 POST /api/sessions/{sessionId}/summarize
+PUT /api/broadcasts
 PUT /api/project-aliases

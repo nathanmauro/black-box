@@ -13,6 +13,7 @@ import dev.nathan.sbaagentic.memory.MemorySearchOperations;
 import dev.nathan.sbaagentic.memory.RecallResult;
 import dev.nathan.sbaagentic.memory.RecalledItem;
 import dev.nathan.sbaagentic.memory.SearchResponse;
+import dev.nathan.sbaagentic.memory.internal.application.BroadcastService;
 import dev.nathan.sbaagentic.memory.internal.application.EvidenceService;
 import dev.nathan.sbaagentic.recording.CaptureDecisionRequest;
 import dev.nathan.sbaagentic.recording.CaptureEvidenceRequest;
@@ -61,13 +62,17 @@ class MemoryMcpToolsTest {
     @Mock
     EvidenceService evidence;
 
+    @Mock
+    BroadcastService broadcasts;
+
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     private MemoryMcpTools tools;
 
     @BeforeEach
     void setUp() {
-        tools = new MemoryMcpTools(recordingCatalog, memoryRecall, memorySearch, captureOperations, evidence);
+        tools = new MemoryMcpTools(
+                recordingCatalog, memoryRecall, memorySearch, captureOperations, evidence, broadcasts);
     }
 
     @Test
