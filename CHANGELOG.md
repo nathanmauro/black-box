@@ -4,14 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 - Added per-project broadcasts: a mutable live set of `hazard`, `invariant`, and `tentacle` notices
   per project (`project_broadcasts` table), with MCP `setBroadcast` / `clearBroadcast` /
   `listBroadcasts`, REST under `/api/broadcasts`, a stale-tentacle sweep across projects
   (`staleOnly`), and a bounded `broadcasts` digest (8 items, 1,500 characters) in `recallContext`
   and `/api/recall` when recall resolves to a project.
-
-## [0.3.0] - 2026-11-20
-
 - Packaged artifact and MCP server names moved from `sba-agentic` to `black-box` (`black-box-0.3.0.jar`);
   existing client aliases, default SQLite filename (`sba-agentic.db`), Elasticsearch index, and `SBA_*`
   environment variables remain backward-compatible.
