@@ -2,6 +2,7 @@ package dev.nathan.sbaagentic.platform.internal.adapter.in.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -20,9 +21,11 @@ import dev.nathan.sbaagentic.recording.StorageStats;
 import dev.nathan.sbaagentic.summary.AiHealth;
 import dev.nathan.sbaagentic.summary.SummaryModelOperations;
 import dev.nathan.sbaagentic.summary.SummaryOperations;
+import java.nio.file.Path;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
@@ -38,9 +41,15 @@ class SbaCliTest {
     private final ObjectMapper mapper = mock(ObjectMapper.class);
     private final SbaCli cli = new SbaCli(recorder, catalog, search, embeddings, summaries, model, mapper);
 
+    // init reads ~/.claude and ~/.codex; point it here so the test never depends on the real home.
+    @TempDir
+    Path tempHome;
+
     @BeforeEach
-    void output() {
-        when(mapper.writerWithDefaultPrettyPrinter()).thenReturn(mock(ObjectWriter.class));
+    void output() throws Exception {
+        ObjectWriter writer = mock(ObjectWriter.class);
+        when(writer.writeValueAsString(any())).thenReturn("{}");
+        when(mapper.writerWithDefaultPrettyPrinter()).thenReturn(writer);
     }
 
     static Stream<String> commands() {
@@ -86,8 +95,10 @@ class SbaCliTest {
                 verify(summaries).summarizeMissing(10);
             }
             case "init" -> {
-                cli.run(new DefaultApplicationArguments(command));
-                verify(mapper).writerWithDefaultPrettyPrinter();
+                cli.run(new DefaultApplicationArguments(
+                        command, "--home=" + tempHome, "--repo-root=" + tempHome));
+                // The planner renders each target's before/after JSON, then the report.
+                verify(mapper, atLeastOnce()).writerWithDefaultPrettyPrinter();
             }
             case "export-adr" -> {
                 cli.run(new DefaultApplicationArguments(command));
