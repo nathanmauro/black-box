@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Broadcasts are visible in the web UI: a `/broadcasts` page (every project, grouped, with kind,
+  stale-only, and include-cleared filters) behind a utility-bar icon whose badge counts warnings,
+  blockers, and stale tentacles; a Broadcasts panel at the top of each project's rail; and the
+  recall digest on the Recall page. Set and clear now emit a transient `broadcast.changed` stream
+  event after commit, so every surface refreshes live.
+
 ## [0.3.0] - 2026-11-21
 
 - Added per-project broadcasts: a mutable live set of `hazard`, `invariant`, and `tentacle` notices

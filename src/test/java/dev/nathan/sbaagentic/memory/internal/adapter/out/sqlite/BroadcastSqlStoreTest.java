@@ -3,6 +3,7 @@ package dev.nathan.sbaagentic.memory.internal.adapter.out.sqlite;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.nathan.sbaagentic.memory.BroadcastChanged;
 import dev.nathan.sbaagentic.memory.ProjectBroadcast;
 import dev.nathan.sbaagentic.memory.internal.application.BroadcastClear;
 import dev.nathan.sbaagentic.memory.internal.application.BroadcastClearResult;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,8 @@ class BroadcastSqlStoreTest {
 
     private final MovableClock clock = new MovableClock(Instant.parse("2026-11-21T12:00:00Z"));
 
+    private final List<Object> published = new ArrayList<>();
+
     private JdbcTemplate jdbc;
     private BroadcastService service;
 
@@ -47,7 +51,7 @@ class BroadcastSqlStoreTest {
         new ResourceDatabasePopulator(new ClassPathResource("schema.sql")).execute(dataSource);
 
         jdbc = new JdbcTemplate(dataSource);
-        service = new BroadcastService(new BroadcastSqlStore(jdbc), scope -> List.of(scope), clock);
+        service = new BroadcastService(new BroadcastSqlStore(jdbc), scope -> List.of(scope), clock, published::add);
     }
 
     @Test
@@ -90,6 +94,18 @@ class BroadcastSqlStoreTest {
         assertThat(tentacle.expiresAt()).isNull();
         assertThat(List.of(hazard, invariant, tentacle))
                 .allSatisfy(b -> assertThat(b.status()).isEqualTo("active"));
+    }
+
+    @Test
+    void setAndClearAnnounceEachRealChangeOnce() {
+        service.set(hazard(BLACK_BOX, "lock", "Release build running."));
+        service.clear(new BroadcastClear("claude", "s-1", BLACK_BOX, "lock", "build finished"));
+        service.clear(new BroadcastClear("claude", "s-1", BLACK_BOX, "lock", null));
+
+        assertThat(published)
+                .containsExactly(
+                        new BroadcastChanged(BLACK_BOX, "lock", "hazard", BroadcastChanged.CHANGE_SET),
+                        new BroadcastChanged(BLACK_BOX, "lock", "hazard", BroadcastChanged.CHANGE_CLEARED));
     }
 
     @Test

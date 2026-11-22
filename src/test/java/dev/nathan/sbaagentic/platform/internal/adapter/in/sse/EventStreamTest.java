@@ -160,6 +160,39 @@ class EventStreamTest {
     }
 
     @Test
+    void broadcastSetIsPushedToSubscriberAfterCommit() throws Exception {
+        HttpClient client = HttpClient.newHttpClient();
+        var response = client.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/stream"))
+                        .header("Accept", "text/event-stream")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofInputStream());
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+            await().atMost(Duration.ofSeconds(5)).until(() -> broadcaster.subscriberCount() >= 1);
+
+            String body = """
+                    {"source":"claude","repo":"/tmp/project","key":"stream-lock",\
+                    "kind":"hazard","message":"Release build running."}""";
+            var put = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/broadcasts"))
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(body))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(put.statusCode()).isEqualTo(200);
+
+            assertThat(readUntil(in, "\"key\":\"stream-lock\""))
+                    .contains("event:broadcast.changed")
+                    .contains("\"change\":\"set\"")
+                    .contains("\"kind\":\"hazard\"");
+        } finally {
+            response.body().close();
+            client.shutdownNow();
+        }
+    }
+
+    @Test
     void streamReplaysSinceOldestFirstWithSseCursorIds() throws Exception {
         insertReplayFixture("replay-session", "replay-event-1", "2026-09-21T12:00:00Z", "first");
         insertReplayFixture("replay-session", "replay-event-2", "2026-09-21T12:00:01Z", "second");

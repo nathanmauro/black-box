@@ -10,6 +10,7 @@ import {
   Show,
   type JSX,
 } from "solid-js";
+import BroadcastList from "../components/BroadcastList";
 import KindBadge from "../components/KindBadge";
 import SavedBraidsReader from "../components/SavedBraidsReader";
 import ProjectPicker from "../components/ProjectPicker";
@@ -25,6 +26,7 @@ import {
   getProjectTrajectory,
   mergeProjectAlias,
   type AgentEvent,
+  type ProjectBroadcast,
   type ProjectMeld,
   type ProjectMeldSessionRef,
   type ProjectScope,
@@ -33,6 +35,7 @@ import {
   type ProjectTimelineResponse,
   type ProjectTrajectoryResponse,
 } from "../lib/api";
+import { createLiveBroadcasts } from "../lib/broadcasts";
 import { timeAgo, truncatePath } from "../lib/format";
 import {
   findProjectByIdentifier,
@@ -119,6 +122,11 @@ function ProjectCatalog() {
     async (key) => (key ? getProjectTrajectory(key) : emptyTrajectory()),
     { initialValue: emptyTrajectory() },
   );
+  // projectKey is an opaque route id; the broadcast list resolves aliases from the canonical path.
+  const broadcasts = createLiveBroadcasts(() => {
+    const canonical = selectedProject()?.canonicalKey;
+    return canonical ? { project: canonical } : null;
+  });
   const [melds, { refetch: refetchMelds }] = createResource(
     selectedKey,
     async (key) => (key ? getProjectMelds(key) : []),
@@ -511,6 +519,11 @@ function ProjectCatalog() {
                       <Show when={selectedTrajectoryNode()}>
                         {(node) => <TrajectoryDetailCard node={node()} project={project()} />}
                       </Show>
+                      <BroadcastsPanel
+                        broadcasts={broadcasts.error ? [] : broadcasts().broadcasts}
+                        loading={broadcasts.loading}
+                        error={broadcasts.error}
+                      />
                       <ProjectIdentityPanel
                         project={project()}
                         candidates={projectCandidates()}
@@ -786,6 +799,44 @@ function ProjectIdentityPanel(props: {
               {message()}
             </p>
           )}
+        </Show>
+      </div>
+    </section>
+  );
+}
+
+function BroadcastsPanel(props: {
+  broadcasts: ProjectBroadcast[];
+  loading: boolean;
+  error: unknown;
+}) {
+  return (
+    <section class="project-rail-panel" aria-labelledby="project-broadcasts-title">
+      <div class="pane-head">
+        <span id="project-broadcasts-title" class="eyebrow">
+          Broadcasts
+        </span>
+        <A href="/broadcasts">{props.broadcasts.length.toLocaleString()}</A>
+      </div>
+      <div class="project-rail-body">
+        <Show
+          when={!props.error}
+          fallback={
+            <p class="inline-error" role="alert">
+              {errorMessage(props.error, "Broadcasts unavailable.")}
+            </p>
+          }
+        >
+          <Show
+            when={props.broadcasts.length}
+            fallback={
+              <p class="project-rail-empty">
+                {props.loading ? "Loading broadcasts…" : "Nothing live for this project."}
+              </p>
+            }
+          >
+            <BroadcastList broadcasts={props.broadcasts} />
+          </Show>
         </Show>
       </div>
     </section>

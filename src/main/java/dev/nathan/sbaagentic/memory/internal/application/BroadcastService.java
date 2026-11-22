@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.memory.internal.application;
 
+import dev.nathan.sbaagentic.memory.BroadcastChanged;
 import dev.nathan.sbaagentic.memory.ProjectBroadcast;
 import dev.nathan.sbaagentic.memory.internal.application.port.BroadcastStore;
 import dev.nathan.sbaagentic.memory.internal.application.port.BroadcastStore.StoredBroadcast;
@@ -25,6 +26,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,11 +62,14 @@ public class BroadcastService implements RecallBroadcastSource {
     private final BroadcastStore store;
     private final ProjectScopeResolver projects;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    public BroadcastService(BroadcastStore store, ProjectScopeResolver projects, Clock clock) {
+    public BroadcastService(
+            BroadcastStore store, ProjectScopeResolver projects, Clock clock, ApplicationEventPublisher events) {
         this.store = store;
         this.projects = projects;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional
@@ -93,7 +98,10 @@ public class BroadcastService implements RecallBroadcastSource {
                 null,
                 null);
 
-        return view(store.upsert(candidate), now, defaultStaleAfter());
+        ProjectBroadcast saved = view(store.upsert(candidate), now, defaultStaleAfter());
+        announce(saved, BroadcastChanged.CHANGE_SET);
+
+        return saved;
     }
 
     @Transactional
@@ -109,8 +117,10 @@ public class BroadcastService implements RecallBroadcastSource {
 
         var closed = store.clear(scope, key, now, clearedBy, reason);
         if (closed.isPresent()) {
+            ProjectBroadcast cleared = view(closed.get(), now, defaultStaleAfter());
+            announce(cleared, BroadcastChanged.CHANGE_CLEARED);
 
-            return new BroadcastClearResult(scope, key, true, view(closed.get(), now, defaultStaleAfter()));
+            return new BroadcastClearResult(scope, key, true, cleared);
         }
 
         // Idempotent: a repeated clear reports the earlier one instead of failing.
@@ -171,6 +181,11 @@ public class BroadcastService implements RecallBroadcastSource {
                 .toList();
 
         return BroadcastDigest.select(active);
+    }
+
+    // Listeners that touch live clients run after commit, so a refresh never reads ahead of it.
+    private void announce(ProjectBroadcast broadcast, String change) {
+        events.publishEvent(new BroadcastChanged(broadcast.projectScope(), broadcast.key(), broadcast.kind(), change));
     }
 
     private ProjectBroadcast view(StoredBroadcast row, Instant now, Duration staleAfter) {

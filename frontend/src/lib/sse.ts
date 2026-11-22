@@ -27,12 +27,21 @@ export type SessionUpdated = {
   linkTypes?: string[];
 };
 
+/** Refresh hint sent after a broadcast is set or cleared; reload `/api/broadcasts` for state. */
+export type BroadcastChanged = {
+  projectScope: string;
+  key: string;
+  kind: string;
+  change: "set" | "cleared" | string;
+};
+
 export type LiveStore = {
   status: () => LiveStatus;
   events: () => EventAppended[];
   onEventAppended: (callback: (event: EventAppended) => void) => () => void;
   onSessionUpdated: (callback: (event: SessionUpdated) => void) => () => void;
   onReset?: (callback: () => void) => () => void;
+  onBroadcastChanged?: (callback: (event: BroadcastChanged) => void) => () => void;
 };
 
 export const LiveStoreContext = createContext<LiveStore>();
@@ -43,6 +52,11 @@ export function createLiveStore(): LiveStore {
   const eventListeners = new Set<(event: EventAppended) => void>();
   const sessionListeners = new Set<(event: SessionUpdated) => void>();
   const resetListeners = new Set<() => void>();
+  const broadcastListeners = new Set<(event: BroadcastChanged) => void>();
+  const onBroadcastChanged = (callback: (event: BroadcastChanged) => void) => {
+    broadcastListeners.add(callback);
+    return () => broadcastListeners.delete(callback);
+  };
 
   if (typeof EventSource === "undefined") {
     setStatus("down");
@@ -57,6 +71,7 @@ export function createLiveStore(): LiveStore {
         sessionListeners.add(callback);
         return () => sessionListeners.delete(callback);
       },
+      onBroadcastChanged,
     };
   }
 
@@ -74,6 +89,12 @@ export function createLiveStore(): LiveStore {
     const payload = parseSseData<SessionUpdated>(message);
     if (!payload) return;
     for (const listener of sessionListeners) listener(payload);
+  });
+
+  source.addEventListener("broadcast.changed", (message) => {
+    const payload = parseSseData<BroadcastChanged>(message);
+    if (!payload) return;
+    for (const listener of broadcastListeners) listener(payload);
   });
 
   source.addEventListener("replay.reset", () => {
@@ -98,6 +119,7 @@ export function createLiveStore(): LiveStore {
       sessionListeners.add(callback);
       return () => sessionListeners.delete(callback);
     },
+    onBroadcastChanged,
   };
 }
 

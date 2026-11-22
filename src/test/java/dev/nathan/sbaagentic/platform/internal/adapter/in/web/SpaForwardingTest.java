@@ -26,7 +26,7 @@ class SpaForwardingTest {
     MockMvc mvc;
 
     @ParameterizedTest(name = "{0} opens the application")
-    @ValueSource(strings = {"/sessions/abc-123", "/search", "/stream", "/ideas", "/companion"})
+    @ValueSource(strings = {"/sessions/abc-123", "/search", "/stream", "/ideas", "/broadcasts", "/companion"})
     void browserDeepLinksForwardToIndex(String route) throws Exception {
         mvc.perform(get(route)).andExpect(status().isOk()).andExpect(forwardedUrl("/index.html"));
     }

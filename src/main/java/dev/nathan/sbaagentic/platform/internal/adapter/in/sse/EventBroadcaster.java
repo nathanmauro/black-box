@@ -1,5 +1,6 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
+import dev.nathan.sbaagentic.memory.BroadcastChanged;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.List;
@@ -117,6 +118,11 @@ public class EventBroadcaster implements SmartLifecycle {
 
     public void publishSessionUpdated(Supplier<StreamEvents.SessionUpdated> payloadSupplier) {
         publish("session.updated", payloadSupplier);
+    }
+
+    /** Transient refresh hint: the payload names what changed; clients reload the broadcast list. */
+    public void publishBroadcastChanged(BroadcastChanged payload) {
+        publish("broadcast.changed", () -> payload);
     }
 
     @Scheduled(fixedDelay = 15_000, initialDelay = 15_000)

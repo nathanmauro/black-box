@@ -1,16 +1,17 @@
-import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { A, useLocation, useSearchParams } from "@solidjs/router";
 import CommandPalette from "./components/CommandPalette";
 import SourceChips from "./components/SourceChips";
 import { CodeNavigationProvider } from "./lib/codeNavigation";
 import { humanOnly, toggleHumanOnly } from "./lib/humanOnly";
+import { createLiveBroadcasts, needsAttention } from "./lib/broadcasts";
 import { createLiveStore, LiveStoreContext } from "./lib/sse";
 
 type AppProps = {
   children?: JSX.Element;
 };
 
-type UtilityLinkId = "stream" | "browse" | "projects" | "recall" | "ideas";
+type UtilityLinkId = "stream" | "browse" | "projects" | "recall" | "ideas" | "broadcasts";
 
 const UTILITY_LINKS: Array<{
   id: UtilityLinkId;
@@ -23,12 +24,17 @@ const UTILITY_LINKS: Array<{
   { id: "projects", href: "/projects", label: "Projects", icon: "projects" },
   { id: "recall", href: "/recall", label: "Recall", icon: "recall" },
   { id: "ideas", href: "/ideas", label: "Ideas", icon: "ideas" },
+  { id: "broadcasts", href: "/broadcasts", label: "Broadcasts", icon: "broadcasts" },
 ];
 
 export default function App(props: AppProps) {
   const live = createLiveStore();
   const location = useLocation();
   const bare = () => location.pathname === "/companion";
+  const broadcasts = createLiveBroadcasts(() => (bare() ? null : {}), live);
+  const attentionCount = createMemo(() =>
+    broadcasts.error ? 0 : broadcasts().broadcasts.filter(needsAttention).length,
+  );
   const [params] = useSearchParams<{ view?: string }>();
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [sourcesOpen, setSourcesOpen] = createSignal(false);
@@ -121,10 +127,15 @@ export default function App(props: AppProps) {
                         href={item.href}
                         activeClass=""
                         class={utilityLinkClass(item, location.pathname, params.view)}
-                        aria-label={item.label}
-                        title={item.label}
+                        aria-label={utilityLinkLabel(item, attentionCount())}
+                        title={utilityLinkLabel(item, attentionCount())}
                       >
                         <UtilityIcon kind={item.icon} />
+                        <Show when={item.id === "broadcasts" && attentionCount() > 0}>
+                          <span class="utility-badge" aria-hidden="true">
+                            {attentionCount()}
+                          </span>
+                        </Show>
                       </A>
                     )}
                   </For>
@@ -200,6 +211,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
+function utilityLinkLabel(item: (typeof UTILITY_LINKS)[number], attention: number): string {
+  if (item.id !== "broadcasts" || attention === 0) return item.label;
+  return `${item.label}: ${attention} need attention`;
+}
+
 function utilityLinkClass(
   item: (typeof UTILITY_LINKS)[number],
   pathname: string,
@@ -217,7 +233,7 @@ function utilityLinkClass(
 }
 
 type UtilityIconKind =
-  "activity" | "browse" | "projects" | "recall" | "ideas" | "sources" | "human";
+  "activity" | "browse" | "projects" | "recall" | "ideas" | "broadcasts" | "sources" | "human";
 
 function UtilityIcon(props: { kind: UtilityIconKind }) {
   if (props.kind === "activity") {
@@ -263,6 +279,18 @@ function UtilityIcon(props: { kind: UtilityIconKind }) {
         <path d="M7.6 13.4c0-1.8-2.5-2.9-2.5-5.9a4.9 4.9 0 0 1 9.8 0c0 3-2.5 4.1-2.5 5.9z" />
         <path d="M7.9 15.6h4.2" />
         <path d="M8.7 17.6h2.6" />
+      </svg>
+    );
+  }
+
+  if (props.kind === "broadcasts") {
+    return (
+      <svg class="utility-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="10" cy="10" r="1.6" />
+        <path d="M6.6 6.6a4.8 4.8 0 0 0 0 6.8" />
+        <path d="M13.4 6.6a4.8 4.8 0 0 1 0 6.8" />
+        <path d="M4.2 4.2a8.2 8.2 0 0 0 0 11.6" />
+        <path d="M15.8 4.2a8.2 8.2 0 0 1 0 11.6" />
       </svg>
     );
   }

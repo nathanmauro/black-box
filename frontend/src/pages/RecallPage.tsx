@@ -12,6 +12,7 @@ import {
   untrack,
   type JSX,
 } from "solid-js";
+import BroadcastList from "../components/BroadcastList";
 import ContinuationPanel from "../components/ContinuationPanel";
 import KindBadge from "../components/KindBadge";
 import ProjectPicker from "../components/ProjectPicker";
@@ -580,6 +581,20 @@ export default function RecallPage() {
                   <span>Text matching · semantic retrieval unavailable or not used</span>
                 </Show>
               </div>
+              <Show when={resolved().broadcasts?.length}>
+                <section class="recall-broadcasts" aria-labelledby="recall-broadcasts-title">
+                  <div class="recall-briefing-head">
+                    <h2 id="recall-broadcasts-title">Live broadcasts</h2>
+                    <A href="/broadcasts">All broadcasts</A>
+                  </div>
+                  <BroadcastList broadcasts={resolved().broadcasts ?? []} />
+                  <Show when={(resolved().broadcastsOmitted ?? 0) > 0}>
+                    <p class="recall-hint">
+                      {resolved().broadcastsOmitted} more did not fit the recall digest.
+                    </p>
+                  </Show>
+                </section>
+              </Show>
               <Show
                 when={filteredItems().length}
                 fallback={

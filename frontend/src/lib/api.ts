@@ -139,6 +139,51 @@ export type RecallResult = {
   count: number;
   items: RecalledItem[];
   mode?: "hybrid" | "lexical" | string | null;
+  broadcasts?: RecalledBroadcast[];
+  broadcastsOmitted?: number;
+};
+
+export type BroadcastKind = "hazard" | "invariant" | "tentacle";
+export type BroadcastSeverity = "info" | "warn" | "blocker";
+
+/** The bounded digest recall attaches when it resolved to a project. */
+export type RecalledBroadcast = {
+  key: string;
+  kind: BroadcastKind | string;
+  severity: BroadcastSeverity | string;
+  message: string;
+  updatedAt: string;
+  expiresAt?: string | null;
+  followUpAt?: string | null;
+};
+
+export type ProjectBroadcast = RecalledBroadcast & {
+  id: string;
+  projectScope: string;
+  source?: string | null;
+  clientSessionId?: string | null;
+  createdAt: string;
+  clearedAt?: string | null;
+  clearedBy?: string | null;
+  clearReason?: string | null;
+  status: "active" | "expired" | "cleared" | string;
+  stale: boolean;
+};
+
+export type BroadcastListResponse = {
+  broadcasts: ProjectBroadcast[];
+  count: number;
+  staleAfterHours: number;
+  asOf: string;
+};
+
+export type BroadcastListParams = {
+  /** A project key, alias, or path; omit to list every project. */
+  project?: string;
+  kind?: BroadcastKind;
+  staleOnly?: boolean;
+  includeCleared?: boolean;
+  limit?: number;
 };
 
 export type IdeaOrigin = "human-aside" | "agent-proposed" | "joint";
@@ -818,6 +863,18 @@ export type CaptureDecisionRequest = {
 
 export function captureDecision(request: CaptureDecisionRequest): Promise<IngestResponse> {
   return postJson("/api/decisions", request);
+}
+
+export function getBroadcasts(params: BroadcastListParams = {}): Promise<BroadcastListResponse> {
+  const query = new URLSearchParams();
+  const project = params.project?.trim();
+  if (project) query.set("project", project);
+  else query.set("allProjects", "true");
+  if (params.kind) query.set("kind", params.kind);
+  if (params.staleOnly) query.set("staleOnly", "true");
+  if (params.includeCleared) query.set("includeCleared", "true");
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  return getJson(`/api/broadcasts?${query.toString()}`);
 }
 
 export function getIdeas(params: IdeaListParams = {}): Promise<IdeaListResponse> {

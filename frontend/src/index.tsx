@@ -6,6 +6,7 @@ import type { ActivityPageProps } from "./pages/ActivityPage";
 import "./theme.css";
 
 const ActivityPage = lazyRoute<ActivityPageProps>(() => import("./pages/ActivityPage"));
+const BroadcastsPage = lazyRoute(() => import("./pages/BroadcastsPage"));
 const CompanionPage = lazyRoute(() => import("./pages/CompanionPage"));
 const GraphPage = lazyRoute(() => import("./pages/GraphPage"));
 const IdeasPage = lazyRoute(() => import("./pages/IdeasPage"));
@@ -39,6 +40,7 @@ render(
       <Route path="/projects/:projectKey" component={ProjectsPage} />
       <Route path="/graph" component={GraphPage} />
       <Route path="/ideas" component={IdeasPage} />
+      <Route path="/broadcasts" component={BroadcastsPage} />
       <Route path="/companion" component={CompanionPage} />
     </Router>
   ),

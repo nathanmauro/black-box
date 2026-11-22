@@ -425,6 +425,13 @@ REST:
   `{source, clientSessionId, repo, key, reason}` clears it and returns `{projectScope, key, cleared,
   broadcast}`; `cleared` is false when nothing was open.
 
+Web UI: the Broadcasts icon in the utility bar opens `/broadcasts`, every project's open set
+grouped by project, with kind, stale-only, and include-cleared filters. Its badge counts what needs
+a human's eye: anything above `info` severity plus stale tentacles. A project page shows that
+project's set at the top of its right rail, and the Recall page shows the recall digest above the
+results. All three reload on the `broadcast.changed` stream event, so a set or clear appears
+without a page refresh. The UI reads only; agents still set and clear through MCP or REST.
+
 ## Recall scope and limits
 
 Core lexical recall needs no model or Elasticsearch. Semantic recall covers Decisions, Handoffs,

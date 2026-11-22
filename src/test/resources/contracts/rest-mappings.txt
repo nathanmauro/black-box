@@ -41,6 +41,7 @@ GET /api/sessions/{sessionId}/transcript
 GET /api/stats
 GET /api/status
 GET /api/stream
+GET /broadcasts
 GET /companion
 GET /graph
 GET /ideas

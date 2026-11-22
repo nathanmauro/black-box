@@ -163,7 +163,9 @@ A client that reconnects with `Last-Event-ID` replays missed captures in pages o
 positions; an unknown, legacy (`<observedAt>|<id>`), or other-database cursor produces
 `replay.reset`, and the client must reload canonical REST state. `since=<ISO-8601>` is an optional
 observed-time filter, not a cursor. `session.updated` remains a transient,
-best-effort hint with no replay. The retired `task.*` lifecycle and annotation frames are no longer
+best-effort hint with no replay. `broadcast.changed` (`{projectScope, key, kind, change}`, where
+`change` is `set` or `cleared`) is sent after a broadcast write commits; it is also transient, and
+clients reload `/api/broadcasts` rather than apply it as state. The retired `task.*` lifecycle and annotation frames are no longer
 emitted. The full contract is in [durable stream recovery](durable-stream-recovery.md).
 
 ## Logical project identity

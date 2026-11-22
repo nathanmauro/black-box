@@ -4,6 +4,7 @@ import { createStore, type SetStoreFunction } from "solid-js/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteProjectAlias,
+  getBroadcasts,
   getProjectMelds,
   getUnassignedBraids,
   getProjects,
@@ -45,6 +46,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     deleteProjectAlias: vi.fn(),
+    getBroadcasts: vi.fn(),
     getProjectMelds: vi.fn(),
     getUnassignedBraids: vi.fn(),
     getProjects: vi.fn(),
@@ -125,6 +127,12 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ items: [], count: 0, nextBefore: null });
   navigate.mockReset();
+  vi.mocked(getBroadcasts).mockReset().mockResolvedValue({
+    broadcasts: [],
+    count: 0,
+    staleAfterHours: 72,
+    asOf: "2026-11-22T12:00:00Z",
+  });
   vi.mocked(getProjects)
     .mockReset()
     .mockResolvedValue([groupedProject, otherProject, ...protectedProjects]);
@@ -247,6 +255,38 @@ describe("ProjectsPage", () => {
     expect(await screen.findByRole("region", { name: "Trajectory detail" })).toHaveTextContent(
       "Current project state",
     );
+  });
+
+  it("shows the selected project's live broadcasts at the top of the rail", async () => {
+    vi.mocked(getBroadcasts).mockResolvedValue({
+      broadcasts: [
+        {
+          id: "b-1",
+          projectScope: "sba-key",
+          key: "release-lock",
+          kind: "hazard",
+          severity: "warn",
+          message: "Release build running.",
+          createdAt: "2026-11-22T10:00:00Z",
+          updatedAt: "2026-11-22T10:00:00Z",
+          status: "active",
+          stale: false,
+        },
+      ],
+      count: 1,
+      staleAfterHours: 72,
+      asOf: "2026-11-22T12:00:00Z",
+    });
+    render(() => <ProjectsPage />);
+
+    const panel = (await screen.findByText("Release build running.")).closest(
+      ".project-rail-panel",
+    ) as HTMLElement;
+    expect(within(panel).getByText("Broadcasts")).toBeInTheDocument();
+    expect(within(panel).getByText("release-lock")).toBeInTheDocument();
+    expect(getBroadcasts).toHaveBeenCalledWith({
+      project: "/Users/nathan/Developer/proj/sba-agentic",
+    });
   });
 
   it("uses the trajectory graph as the default center-pane view", async () => {
