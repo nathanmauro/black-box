@@ -25,6 +25,7 @@ import dev.nathan.sbaagentic.recording.AgentEvent;
 import dev.nathan.sbaagentic.recording.RecordingCaptureOperations;
 import dev.nathan.sbaagentic.recording.RecordingCatalog;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.time.Clock;
@@ -409,6 +410,27 @@ class RecallTelemetryTest {
             assertThat(RecallRequestContext.current()).isSameAs(outer);
         }
         assertThat(RecallRequestContext.current()).isNull();
+    }
+
+    @Test
+    void statelessMcpCallFallsBackToTheDeclaredClient() {
+        var tools = new MemoryMcpTools(
+                mock(RecordingCatalog.class),
+                service,
+                mock(MemorySearchOperations.class),
+                mock(RecordingCaptureOperations.class),
+                mock(EvidenceService.class),
+                mock(BroadcastService.class));
+        var callback = java.util.Arrays.stream(tools.get())
+                .filter(tool -> tool.getToolDefinition().name().equals("recallContext"))
+                .findFirst()
+                .orElseThrow();
+        // A stateless server hands tools the transport context, not a session exchange.
+        var context = new ToolContext(Map.of("exchange", McpTransportContext.create(Map.of())));
+
+        callback.call("{\"repoOrTopic\":\"\",\"telemetryClient\":\"claude\"}", context);
+
+        assertThat(record()).containsEntry("client", "claude").containsEntry("transport", "mcp");
     }
 
     private Map<String, Object> record() {

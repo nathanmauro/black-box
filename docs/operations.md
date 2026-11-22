@@ -152,13 +152,13 @@ not establish health: check `/api/status`, the UI, and a representative API rout
 
 ### Stopping and restarting
 
-Stopping the service first ends every `/api/stream` subscription and every MCP listening stream
-(`GET /mcp`), because those responses never finish on their own. They end cleanly, so browsers and
-other `EventSource` clients reconnect with `Last-Event-ID` and resume after their last event (see
-[durable stream recovery](durable-stream-recovery.md)); MCP clients start a new session. One kind is
-not reached: an MCP listening stream resumed with `Last-Event-ID`, which the MCP SDK cannot replay,
-stays open until the phase timeout below cuts it off. During shutdown a new `/api/stream` request
-ends after its opening frames, and a new MCP request receives 503. Graceful shutdown then waits for
+Stopping the service first ends every `/api/stream` subscription, because those responses never
+finish on their own. They end cleanly, so browsers and other `EventSource` clients reconnect with
+`Last-Event-ID` and resume after their last event (see
+[durable stream recovery](durable-stream-recovery.md)). During shutdown a new `/api/stream` request
+ends after its opening frames. MCP is stateless: each `POST /mcp` is answered on its own, there is
+no `Mcp-Session-Id` and no listening stream (`GET /mcp` answers 405), so MCP clients keep working
+across a restart without reconnecting a session. Graceful shutdown then waits for
 in-flight requests and their post-commit fan-out, such as Elasticsearch indexing, for at most
 `spring.lifecycle.timeout-per-shutdown-phase` (2 seconds) per shutdown phase. That bound also ends
 shutdown before browsers reconnect, 3 seconds after a stream ends; a reconnect answered with 503 by

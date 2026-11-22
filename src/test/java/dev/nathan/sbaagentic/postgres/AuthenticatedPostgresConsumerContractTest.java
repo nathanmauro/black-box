@@ -295,11 +295,11 @@ class AuthenticatedPostgresConsumerContractTest {
         JsonNode hit = findById(discovered.path("items"), "eventId", eventId);
         assertThat(hit.path("sourceReference").path("eventPath").asText()).isEqualTo("/api/events/" + eventId);
         assertFullEvent(get(hit.path("sourceReference").path("eventPath").asText()), payload, input);
-        assertThat(mcpSession).isNotBlank();
+        // MCP is stateless, so a bearer token is the only credential on a request.
+        assertThat(mcpSession).isNull();
         var mcpWithoutBearer = request("/mcp", null)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json, text/event-stream")
-                .header("Mcp-Session-Id", mcpSession)
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(
                         Map.of("jsonrpc", "2.0", "id", 1000, "method", "tools/list", "params", Map.of()))));
         assertThat(send(mcpWithoutBearer).statusCode()).isEqualTo(401);

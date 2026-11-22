@@ -17,7 +17,11 @@ spring:
       server:
         name: black-box
         version: 0.3.0
-        protocol: STREAMABLE
+        # Stateless: every POST /mcp stands alone, so a restart never strands a client holding a
+        # session id the new process does not know, and GET /mcp answers 405 instead of opening a
+        # listening stream. Black Box never pushes server-initiated MCP messages.
+        protocol: STATELESS
+        # The stateless transport reads its endpoint from the streamable-http properties.
         streamable-http:
           mcp-endpoint: /mcp
   mustache:

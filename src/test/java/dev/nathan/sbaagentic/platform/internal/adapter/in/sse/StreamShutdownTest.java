@@ -1,7 +1,6 @@
 package dev.nathan.sbaagentic.platform.internal.adapter.in.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,7 +18,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.apache.catalina.Container;
 import org.apache.catalina.core.StandardContext;
@@ -32,9 +30,9 @@ import org.springframework.boot.web.embedded.tomcat.TomcatWebServer;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 
 /**
- * Restart the service while stream clients are attached. Browser tabs, stream followers and MCP
- * clients hold Server-Sent Event responses open indefinitely, and graceful shutdown waits for every
- * open request. The streams must end when shutdown begins, or a service manager's exit timeout
+ * Restart the service while stream clients are attached. Browser tabs and stream followers hold
+ * Server-Sent Event responses open indefinitely, and graceful shutdown waits for every open request.
+ * MCP is stateless, so it never holds a listening stream that shutdown would have to end. The streams must end when shutdown begins, or a service manager's exit timeout
  * (5 s for the launchd job) kills the process before queued work and post-commit fan-out finish.
  */
 @Timeout(value = 2, unit = TimeUnit.MINUTES)
@@ -80,23 +78,19 @@ class StreamShutdownTest {
     }
 
     @Test
-    void shutdownEndsAttachedMcpListeningStreamsInsteadOfWaitingForThem() throws Exception {
+    void mcpOpensNoListeningStreamForShutdownToWaitOn() throws Exception {
         var app = start("mcp-stream.db");
-        String session = initializeMcp(app);
-        // MCP clients keep this GET open to receive server-initiated messages.
-        CompletableFuture<HttpResponse<String>> listening = http.sendAsync(
+        var listening = http.send(
                 HttpRequest.newBuilder(URI.create(base(app) + "/mcp"))
+                        .timeout(Duration.ofSeconds(5))
                         .header("Accept", "text/event-stream")
-                        .header("Mcp-Session-Id", session)
                         .GET()
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
-        await().atMost(Duration.ofSeconds(10)).until(() -> openStreams(app) == 1);
 
-        Duration shutdown = timeClose(app);
-
-        assertThat(shutdown).isLessThan(PROMPT_SHUTDOWN);
-        assertThat(listening.get(5, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        assertThat(listening.statusCode()).isEqualTo(405);
+        assertThat(openStreams(app)).isZero();
+        assertThat(timeClose(app)).isLessThan(PROMPT_SHUTDOWN);
     }
 
     @Test
@@ -199,47 +193,6 @@ class StreamShutdownTest {
         assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
 
         return json.readTree(response.body()).path("eventId").asText();
-    }
-
-    private String initializeMcp(ServletWebServerApplicationContext app) throws Exception {
-        var initialize = postMcp(
-                app,
-                null,
-                Map.of(
-                        "jsonrpc",
-                        "2.0",
-                        "id",
-                        1,
-                        "method",
-                        "initialize",
-                        "params",
-                        Map.of(
-                                "protocolVersion",
-                                "2025-03-26",
-                                "capabilities",
-                                Map.of(),
-                                "clientInfo",
-                                Map.of("name", "shutdown-fixture", "version", "1"))));
-        assertThat(initialize.statusCode()).as(initialize.body()).isEqualTo(200);
-        String session = initialize.headers().firstValue("Mcp-Session-Id").orElseThrow();
-        var initialized = postMcp(app, session, Map.of("jsonrpc", "2.0", "method", "notifications/initialized"));
-        assertThat(initialized.statusCode()).isBetween(200, 299);
-
-        return session;
-    }
-
-    private HttpResponse<String> postMcp(
-            ServletWebServerApplicationContext app, String session, Map<String, Object> message) throws Exception {
-        var request = HttpRequest.newBuilder(URI.create(base(app) + "/mcp"))
-                .timeout(Duration.ofSeconds(20))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json, text/event-stream");
-        if (session != null) request.header("Mcp-Session-Id", session);
-
-        return http.send(
-                request.POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(message)))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
     }
 
     /** Reads frames until the event arrives and returns the opaque SSE ID that delivered it. */

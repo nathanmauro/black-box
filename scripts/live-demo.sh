@@ -266,7 +266,8 @@ mcp_rpc() {
   printf '%s' "$payload" | jq -c '.result'
 }
 
-# Sets MCP_SESSION. The id comes from a response header, as a real client receives it.
+# Sets MCP_SESSION from the response header, as a real client receives it. The server is stateless,
+# so it is normally empty; a stateful server's id is still honored.
 mcp_open_session() {
   local client_name="$1"
   local body headers_file="${DEMO_DIR}/mcp-headers.txt"
@@ -279,11 +280,11 @@ mcp_open_session() {
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -X POST "${BASE_URL}/mcp" -d "$body"
   MCP_SESSION="$(tr -d '\r' <"$headers_file" | awk 'tolower($1) == "mcp-session-id:" { print $2 }')"
-  [[ -n "$MCP_SESSION" ]] || die "The MCP server returned no session id."
   mcp_post "$MCP_SESSION" '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null
 }
 
 mcp_close_session() {
+  [[ -n "$1" ]] || return 0
   curl -sS -o /dev/null -X DELETE -H "Mcp-Session-Id: $1" \
     -H 'Accept: application/json, text/event-stream' "${BASE_URL}/mcp"
 }
