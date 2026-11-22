@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Build releases on the image the ci workflow verifies (see ci.yml pins).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
