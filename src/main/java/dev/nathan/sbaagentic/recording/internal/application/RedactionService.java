@@ -62,6 +62,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
     // Clip oversized unredacted input before applying any rules. Anything past this
     // scan budget is dropped rather than stored unscanned; replacements may expand it.
     private static final int MAX_SCAN_CHARS = 50_000;
+    // The tree walk recurses once per level and the rules at each leaf need stack of their own;
+    // anything deeper than any real tool payload is replaced whole rather than walked.
+    private static final int MAX_TREE_DEPTH = 256;
+    private static final String TOO_DEEP = "[REDACTED: nested deeper than " + MAX_TREE_DEPTH + " levels]";
     private static final String CLIP_MARKER = " …[truncated]";
     // Backslashes before an escaped quote at the fourth JSON encoding level (\\\\\\\\\\\\\\\").
     private static final int MAX_ESCAPE_RUN = 15;
@@ -549,7 +553,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 return null;
             }
             JsonBudget budget = new JsonBudget(maxChars);
-            Object value = readJsonValue(parser, budget);
+            Object value = readJsonValue(parser, budget, 0);
             if (!budget.cut && parser.nextToken() != null) {
 
                 return null;
@@ -583,8 +587,16 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
         }
     }
 
-    private static Object readJsonValue(JsonParser parser, JsonBudget budget) throws IOException {
+    private static Object readJsonValue(JsonParser parser, JsonBudget budget, int depth) throws IOException {
         JsonToken token = parser.currentToken();
+        boolean container = token == JsonToken.START_OBJECT || token == JsonToken.START_ARRAY;
+        if (container && depth > MAX_TREE_DEPTH) {
+            // skipChildren walks the rest of this value without recursing.
+            parser.skipChildren();
+            budget.read(1);
+
+            return TOO_DEEP;
+        }
         if (token == JsonToken.START_OBJECT) {
             budget.read(1);
             Map<String, Object> members = new LinkedHashMap<>();
@@ -596,7 +608,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                 }
                 budget.read(name.length() + 1);
                 parser.nextToken();
-                members.put(name, readJsonValue(parser, budget));
+                members.put(name, readJsonValue(parser, budget, depth + 1));
                 if (budget.cut) {
 
                     return members;
@@ -616,7 +628,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
 
                     return elements;
                 }
-                elements.add(readJsonValue(parser, budget));
+                elements.add(readJsonValue(parser, budget, depth + 1));
                 if (budget.cut) {
 
                     return elements;
@@ -672,6 +684,16 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
      */
     private static Object redactTree(
             Object value, UnaryOperator<String> leaf, boolean structured, boolean acrossElements) {
+
+        return redactTree(value, leaf, structured, acrossElements, 0);
+    }
+
+    private static Object redactTree(
+            Object value, UnaryOperator<String> leaf, boolean structured, boolean acrossElements, int depth) {
+        if (depth > MAX_TREE_DEPTH && (value instanceof Map<?, ?> || value instanceof List<?>)) {
+
+            return TOO_DEEP;
+        }
         if (value instanceof String text) {
 
             return leaf.apply(text);
@@ -696,7 +718,10 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
                     key = safeName;
                 }
                 redacted.put(
-                        key, secretValue ? REDACTED : redactTree(entry.getValue(), leaf, structured, acrossElements));
+                        key,
+                        secretValue
+                                ? REDACTED
+                                : redactTree(entry.getValue(), leaf, structured, acrossElements, depth + 1));
             }
 
             return redacted;
@@ -707,7 +732,7 @@ public class RedactionService implements ExportRedactor, IngestionRedactor {
             // lines of an Edit tool's structuredPatch: the open name carries over to the next one.
             String openName = null;
             for (Object item : list) {
-                Object safe = redactTree(item, leaf, structured, acrossElements);
+                Object safe = redactTree(item, leaf, structured, acrossElements, depth + 1);
                 if (structured && safe instanceof String line) {
                     String leading = openName == null ? line : redactLeadingPropertyListValue(line, openName);
                     String tailName = openSecretMember(leading);

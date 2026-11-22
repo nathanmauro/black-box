@@ -140,7 +140,10 @@ class RedactionStressTest {
 
         Object redacted = assertTimeoutPreemptively(ADVERSARIAL_BUDGET, () -> redactor.redactDeep(input));
 
-        assertThat(String.valueOf(redacted)).doesNotContain(SECRET);
+        // Past the depth cap the subtree is replaced, not walked, so stack use stays bounded.
+        assertThat(String.valueOf(redacted))
+                .doesNotContain(SECRET)
+                .contains("nested deeper than 256 levels");
     }
 
     // ---------------------------------------------------------------- Adversarial regex inputs
