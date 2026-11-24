@@ -3,7 +3,7 @@ name: ci
 # Runs on pull requests and on pushes to main, plus on demand. A push to a branch with no open pull
 # request runs nothing, so work in progress does not spend Actions minutes; opening the pull request
 # starts CI, and every later push to that branch re-runs it. The macOS matrix was dropped to keep
-# minutes down; the same checks, including the packaged browser suite, run locally via
+# minutes down. The packaged browser suite runs only on workflow_dispatch; locally it runs via
 # ./scripts/verify.sh --e2e.
 on:
   workflow_dispatch:
@@ -141,16 +141,36 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  # The packaged browser suite is slow (packaging plus Chromium), so it runs only on demand here;
+  # ./scripts/verify.sh --e2e runs the same journeys locally.
+  frontend-e2e:
+    if: github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_HTML_OPEN: never
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
           cache: maven
       - run: npm ci
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npx tsc --noEmit
-      - run: npm test
       - name: Browser fixture safety tools
         run: |
           sudo apt-get update -qq
